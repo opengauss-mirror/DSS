@@ -141,15 +141,27 @@ cp -r $LIB_PATH/openssl/comm/include              $DSS_LIBRARYS/openssl/include
 cp -r $LIB_PATH/zlib1.2.11/comm/include           $DSS_LIBRARYS/zlib/include
 cp -r $LIB_PATH/lz4/comm/include                  $DSS_LIBRARYS/lz4/include
 
+status=0
 if [ -f "/usr/include/libaio.h" ];then
     echo "begin cp libaio.h from /usr/include/"
     cp -r /usr/include/libaio.h                   $DSS_LIBRARYS/libaio/include
-elif [ -f "${DSS_OPEN_SRC_PATH}"/libaio/libaio-*/src/libaio.h ];then
-    echo "begin cp libaio.h from open_source/libaio/"
-    cp -r ${DSS_OPEN_SRC_PATH}/libaio/libaio-*/src/libaio.h $DSS_LIBRARYS/libaio/include
-else
-    echo "system does not install libaio software, pls install by yum install libaio-devel"
-    exit 1
+    status=1
+fi
+
+if [ ${status} -eq 0 ];then
+    for file in "${DSS_OPEN_SRC_PATH}"/libaio/libaio-*/src/libaio.h
+    do
+        if [ -f "${file}" ];then
+            echo "begin cp libaio.h from open_source/libaio/"
+            cp -r ${DSS_OPEN_SRC_PATH}/libaio/libaio-*/src/libaio.h $DSS_LIBRARYS/libaio/include
+            status=1
+        fi
+    done
+
+    if [ ${status} -eq 0 ];then
+        echo "system does not install libaio software, pls install by yum install libaio-devel"
+        exit 1
+    fi
 fi
 
 cp -r $COPT_LIB_PATH/cbb/include                  $DSS_LIBRARYS/cbb/include
