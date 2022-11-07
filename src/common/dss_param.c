@@ -1,0 +1,661 @@
+/*
+ * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
+ *
+ * DSS is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *
+ *          http://license.coscl.org.cn/MulanPSL2
+ *
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ * -------------------------------------------------------------------------
+ *
+ * dss_param.c
+ *
+ *
+ * IDENTIFICATION
+ *    src/common/dss_param.c
+ *
+ * -------------------------------------------------------------------------
+ */
+
+#include "dss_errno.h"
+#include "cm_num.h"
+#include "cm_ip.h"
+#include "cm_encrypt.h"
+#include "cm_utils.h"
+#include "dss_malloc.h"
+#include "dss_param_verify.h"
+#include "dss_param.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+dss_config_t *g_inst_cfg = NULL;
+
+// clang-format off
+static config_item_t g_dss_params[] = {
+    /* name, isdefault, attr, default_value, value, runtime_value, description, range, datatype, comment,
+    id, effect, scale, verify, notify, notify_pfile, alias */
+    { "SSL_CERT_NOTIFY_TIME", CM_TRUE, CM_FALSE, "30", NULL, NULL, "-", "[7,180]",
+        "GS_TYPE_INTEGER", NULL, 0, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "DSS_CM_SO_NAME",           CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
+      "GS_TYPE_VARCHAR", NULL, 1, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
+    { "LSNR_PATH",                 CM_TRUE, CM_FALSE, "/tmp/", NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL,
+        2, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
+    { "LOG_HOME",                  CM_TRUE, CM_TRUE,  "",      NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL,
+        3, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "_LOG_BACKUP_FILE_COUNT",    CM_TRUE, CM_FALSE, "20",    NULL, NULL, "-", "[0,128]",  "GS_TYPE_INTEGER", NULL,
+        4, EFFECT_REBOOT, CFG_INS, dss_verify_log_backup_file_count, dss_notify_log_backup_file_count, NULL, NULL},
+    { "_LOG_MAX_FILE_SIZE",        CM_TRUE, CM_FALSE, "256M",   NULL, NULL, "-", "[1M,4G]",     "GS_TYPE_INTEGER", NULL,
+        5, EFFECT_REBOOT, CFG_INS, dss_verify_log_file_size, dss_notify_log_file_size, NULL, NULL},
+    { "INST_ID",                   CM_TRUE, CM_FALSE, "0",     NULL, NULL, "-", "[0,64)",    "GS_TYPE_INTEGER", NULL,
+        6, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "STORAGE_MODE",              CM_TRUE, CM_FALSE, "DISK",  NULL, NULL, "-", "CLUSTER_RAID,RAID,DISK",
+        "GS_TYPE_VARCHAR", NULL, 7, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "_LOG_LEVEL",                CM_TRUE, CM_FALSE, "7",    NULL, NULL, "-", "[0,4087]",  "GS_TYPE_INTEGER", NULL,
+        8, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_log_level, dss_notify_log_level, NULL, NULL},
+    { "MAX_SESSION_NUMS",          CM_TRUE, CM_FALSE, "8192",   NULL, NULL, "-", "[16,16320]",    "GS_TYPE_INTEGER",
+        NULL, 9, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "DISK_LOCK_INTERVAL",        CM_TRUE, CM_FALSE, "100",   NULL, NULL, "-", "[1,600000]", "GS_TYPE_INTEGER", NULL,
+        10, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "DLOCK_RETRY_COUNT",         CM_TRUE, CM_FALSE, "50",    NULL, NULL, "-", "[1,500000]", "GS_TYPE_INTEGER", NULL,
+        11, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "_AUDIT_BACKUP_FILE_COUNT",  CM_TRUE, CM_FALSE, "10",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL,
+        12, EFFECT_REBOOT, CFG_INS, dss_verify_audit_backup_file_count, dss_notify_audit_backup_file_count, NULL, NULL},
+    { "_AUDIT_MAX_FILE_SIZE",      CM_TRUE, CM_FALSE, "10M",   NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL,
+        13, EFFECT_REBOOT, CFG_INS, dss_verify_audit_file_size, dss_notify_audit_file_size, NULL, NULL},
+    { "_LOG_FILE_PERMISSIONS",     CM_TRUE, CM_FALSE, "600",   NULL, NULL, "-", "[600-777]", "GS_TYPE_INTEGER", NULL,
+        14, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "_LOG_PATH_PERMISSIONS",     CM_TRUE, CM_FALSE, "700",   NULL, NULL, "-", "[700-777]", "GS_TYPE_INTEGER", NULL,
+        15, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "SSL_PWD_CIPHERTEXT", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
+        "GS_TYPE_VARCHAR", NULL, 16, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "_SHM_KEY", CM_TRUE, CM_FALSE,     "1",         NULL, NULL, "-", "[1,64]",
+      "GS_TYPE_INTEGER", NULL, 17, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
+    { "DSS_NODES_LIST",        CM_TRUE, CM_FALSE,     "0:127.0.0.1:1611", NULL, NULL, "-", "-",
+        "GS_TYPE_VARCHAR", NULL, 18,  EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
+    { "INTERCONNECT_TYPE",        CM_TRUE, CM_FALSE,     "TCP",       NULL, NULL, "-", "TCP,RDMA",
+        "GS_TYPE_VARCHAR", NULL, 19, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
+    { "INTERCONNECT_CHANNEL_NUM", CM_TRUE, CM_FALSE,     "2",         NULL, NULL, "-", "[1,32]",
+      "GS_TYPE_INTEGER", NULL, 20, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
+    { "WORK_THREAD_COUNT", CM_TRUE, CM_FALSE,     "2",         NULL, NULL, "-", "[2,64]",
+        "GS_TYPE_INTEGER", NULL, 21, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
+    { "RECV_MSG_POOL_SIZE",            CM_TRUE, CM_FALSE,     "16M",       NULL, NULL, "-", "[1M,1G]",
+      "GS_TYPE_INTEGER", NULL, 22, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
+    { "MES_ELAPSED_SWITCH",       CM_TRUE, CM_FALSE,     "FALSE",     NULL, NULL, "-", "FALSE,TRUE",
+      "GS_TYPE_BOOLEAN", NULL, 23, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
+    { "DISK_LOCK_FILE_PATH",           CM_TRUE, CM_FALSE, "/tmp", NULL, NULL, "-", "-",
+        "GS_TYPE_VARCHAR", NULL, 24, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
+    { "SSL_CA", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
+        "GS_TYPE_VARCHAR", NULL, 25, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "SSL_KEY", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
+        "GS_TYPE_VARCHAR", NULL, 26, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "SSL_CRL", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
+        "GS_TYPE_VARCHAR", NULL, 27, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "SSL_CERT", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
+        "GS_TYPE_VARCHAR", NULL, 28, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "SSL_CIPHER", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
+        "GS_TYPE_VARCHAR", NULL, 29, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+#ifdef ENABLE_GLOBAL_CACHE
+    { "POOL_NAMES",           CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
+        "GS_TYPE_VARCHAR", NULL, 30, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
+    { "IMAGE_NAMES",           CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
+        "GS_TYPE_VARCHAR", NULL, 31, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
+    { "CEPH_CONFIG",           CM_TRUE, CM_FALSE, "/etc/ceph/ceph.conf", NULL, NULL, "-", "-",
+        "GS_TYPE_VARCHAR", NULL, 32, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
+    { "VOLUME_TYPES",           CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
+        "GS_TYPE_VARCHAR", NULL, 33, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
+#endif
+    { "_AUDIT_LEVEL",           CM_TRUE, CM_FALSE, "1",    NULL, NULL, "-", "[0,255]",  "GS_TYPE_INTEGER", NULL,
+        34, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_audit_level, dss_notify_audit_level, NULL, NULL},
+};
+
+// clang-format on
+static const char *g_dss_config_file = (const char *)"dss_inst.ini";
+#define DSS_PARAM_COUNT (sizeof(g_dss_params) / sizeof(config_item_t))
+
+static status_t dss_load_session_cfg(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "MAX_SESSION_NUMS");
+    int32 sessions;
+    if (cm_str2int(value, &sessions) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MAX_SESSION_NUMS");
+        return CM_ERROR;
+    }
+    if (sessions < DSS_MIN_SESSIONID_CFG || sessions > CM_MAX_SESSIONS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MAX_SESSION_NUMS");
+        return CM_ERROR;
+    }
+
+    inst_cfg->params.cfg_session_num = (uint32)sessions;
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_storage_mode(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "STORAGE_MODE");
+
+    if (cm_str_equal_ins(value, "CLUSTER_RAID")) {
+        inst_cfg->params.dss_mode = DSS_MODE_CLUSTER_RAID;
+    } else if (cm_str_equal_ins(value, "RAID")) {
+        inst_cfg->params.dss_mode = DSS_MODE_RAID;
+    } else if (cm_str_equal_ins(value, "DISK")) {
+        inst_cfg->params.dss_mode = DSS_MODE_DISK;
+    } else {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, value);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_mes_pool_size(dss_config_t *inst_cfg)
+{
+    int64 mes_pool_size;
+    char *value = cm_get_config_value(&inst_cfg->config, "RECV_MSG_POOL_SIZE");
+    if (cm_str2size(value, &mes_pool_size) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "RECV_MSG_POOL_SIZE");
+        return CM_ERROR;
+    }
+
+    inst_cfg->params.mes_pool_size = (uint64)mes_pool_size;
+    if ((inst_cfg->params.mes_pool_size < DSS_MIN_RECV_MSG_BUFF_SIZE) ||
+        (inst_cfg->params.mes_pool_size > DSS_MAX_RECV_MSG_BUFF_SIZE)) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "RECV_MSG_POOL_SIZE");
+        return CM_ERROR;
+    }
+    LOG_RUN_INF("Cluster Raid mode, mes_pool_size = %lld.", mes_pool_size);
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_mes_url(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "DSS_NODES_LIST");
+    status_t status = cm_split_mes_urls(inst_cfg->params.nodes, inst_cfg->params.ports, value);
+    if (status != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DSS_NODES_LIST");
+        return status;
+    }
+    int32 node_cnt = 0;
+    for (int i = 0; i < DSS_MAX_INSTANCES; i++) {
+        if (inst_cfg->params.ports[i] != 0) {
+            inst_cfg->params.inst_map |= ((uint64)1 << i);
+            node_cnt++;
+        }
+    }
+    inst_cfg->params.inst_cnt = (uint32)node_cnt;
+    LOG_RUN_INF("Cluster Raid mode, node count = %d.", node_cnt);
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_mes_conn_type(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "INTERCONNECT_TYPE");
+    if (cm_str_equal_ins(value, "TCP")) {
+        inst_cfg->params.pipe_type = CS_TYPE_TCP;
+    } else if (cm_str_equal_ins(value, "RDMA")) {
+        inst_cfg->params.pipe_type = CS_TYPE_RDMA;
+    } else {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "INTERCONNECT_TYPE");
+        return CM_ERROR;
+    }
+    LOG_RUN_INF("Cluster Raid mode, pipe type = %u.", inst_cfg->params.pipe_type);
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_mes_channel_num(dss_config_t *inst_cfg)
+{
+    uint32 channel_num;
+    char *value = cm_get_config_value(&inst_cfg->config, "INTERCONNECT_CHANNEL_NUM");
+    if (cm_str2uint32(value, &channel_num) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid parameter value of 'INTERCONNECT_CHANNEL_NUM'");
+        return CM_ERROR;
+    }
+
+    if (channel_num < CM_MES_MIN_CHANNEL_NUM || channel_num > CM_MES_MAX_CHANNEL_NUM) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "INTERCONNECT_CHANNEL_NUM");
+        return CM_ERROR;
+    }
+
+    inst_cfg->params.channel_num = channel_num;
+    LOG_RUN_INF("Cluster Raid mode, channel_num = %u.", inst_cfg->params.channel_num);
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_mes_work_thread_cnt(dss_config_t *inst_cfg)
+{
+    uint32 work_thread_cnt;
+    char *value = cm_get_config_value(&inst_cfg->config, "WORK_THREAD_COUNT");
+    if (cm_str2uint32(value, &work_thread_cnt) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid parameter value of 'WORK_THREAD_COUNT'");
+        return CM_ERROR;
+    }
+
+    if (work_thread_cnt < DSS_MIN_WORK_THREAD_COUNT || work_thread_cnt > DSS_MAX_WORK_THREAD_COUNT) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "WORK_THREAD_COUNT");
+        return CM_ERROR;
+    }
+
+    inst_cfg->params.work_thread_cnt = work_thread_cnt;
+    LOG_RUN_INF("Cluster Raid mode, work_thread_cnt = %u.", inst_cfg->params.work_thread_cnt);
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_mes_elapsed_switch(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "MES_ELAPSED_SWITCH");
+    if (cm_str_equal_ins(value, "TRUE")) {
+        inst_cfg->params.elapsed_switch = CM_TRUE;
+    } else if (cm_str_equal_ins(value, "FALSE")) {
+        inst_cfg->params.elapsed_switch = CM_FALSE;
+    } else {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MES_ELAPSED_SWITCH");
+        return CM_ERROR;
+    }
+
+    LOG_RUN_INF("Cluster Raid mode, elapsed_switch = %u.", inst_cfg->params.elapsed_switch);
+    return CM_SUCCESS;
+}
+
+int32 dss_decrypt_pwd_cb(const char *cipher_text, uint32 cipher_len, char *plain_text, uint32 plain_len)
+{
+    if (cipher_text == NULL) {
+        CM_THROW_ERROR(ERR_INVALID_PARAM, "SSL_PWD_CIPHERTEXT");
+        LOG_DEBUG_ERR("[DSS] failed to decrypt SSL cipher: cipher is NULL");
+        return CM_ERROR;
+    }
+    if (cipher_len == 0 || cipher_len >= DSS_PARAM_BUFFER_SIZE) {
+        CM_THROW_ERROR(ERR_INVALID_PARAM, "SSL_PWD_CIPHERTEXT");
+        LOG_DEBUG_ERR("[DSS] failed to decrypt SSL cipher: cipher size [%u] is invalid.", cipher_len);
+        return CM_ERROR;
+    }
+    if (plain_text == NULL) {
+        CM_THROW_ERROR(ERR_INVALID_PARAM, "SSL_PWD_CIPHERTEXT");
+        LOG_DEBUG_ERR("[DSS] failed to decrypt SSL cipher: plain is NULL");
+        return CM_ERROR;
+    }
+    if (plain_len < CM_PASSWD_MAX_LEN) {
+        CM_THROW_ERROR(ERR_INVALID_PARAM, "SSL_PWD_CIPHERTEXT");
+        LOG_DEBUG_ERR("[DSS] failed to decrypt SSL cipher: plain len [%u] is invalid.", plain_len);
+        return CM_ERROR;
+    }
+    cipher_t cipher;
+    if (cm_base64_decode(cipher_text, cipher_len, (uchar *)&cipher, (uint32)(sizeof(cipher_t) + 1)) == 0) {
+        CM_THROW_ERROR(ERR_INVALID_PARAM, "SSL_PWD_CIPHERTEXT");
+        LOG_DEBUG_ERR("[DSS] failed to decode SSL cipher.");
+        return CM_ERROR;
+    }
+    if (cipher.cipher_len > 0) {
+        if (cm_decrypt_pwd(&cipher, (uchar *)plain_text, &plain_len) != CM_SUCCESS) {
+            LOG_DEBUG_ERR("[DSS] failed to decrypt ssl pwd.");
+            return CM_ERROR;
+        }
+    } else {
+        CM_THROW_ERROR(ERR_INVALID_PARAM, "SSL_PWD_CIPHERTEXT");
+        LOG_DEBUG_ERR("[DSS] failed to decrypt ssl pwd for the cipher len is invalid.");
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+status_t dss_load_mes_ssl(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "SSL_CA");
+    if (dss_set_ssl_param("SSL_CA", value) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CA");
+        return CM_ERROR;
+    }
+    value = cm_get_config_value(&inst_cfg->config, "SSL_KEY");
+    if (dss_set_ssl_param("SSL_KEY", value) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_KEY");
+        return CM_ERROR;
+    }
+    value = cm_get_config_value(&inst_cfg->config, "SSL_CRL");
+    if (dss_set_ssl_param("SSL_CRL", value) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CRL");
+        return CM_ERROR;
+    }
+    value = cm_get_config_value(&inst_cfg->config, "SSL_CERT");
+    if (dss_set_ssl_param("SSL_CERT", value) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CERT");
+        return CM_ERROR;
+    }
+    value = cm_get_config_value(&inst_cfg->config, "SSL_CIPHER");
+    if (dss_set_ssl_param("SSL_CIPHER", value) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CIPHER");
+        return CM_ERROR;
+    }
+    value = cm_get_config_value(&inst_cfg->config, "SSL_CERT_NOTIFY_TIME");
+    if (dss_set_ssl_param("SSL_CERT_NOTIFY_TIME", value) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CERT_NOTIFY_TIME");
+        return CM_ERROR;
+    }
+    value = cm_get_config_value(&inst_cfg->config, "SSL_PWD_CIPHERTEXT");
+    if (dss_set_ssl_param("SSL_PWD_CIPHERTEXT", value) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_PWD_CIPHERTEXT");
+        return CM_ERROR;
+    }
+    if (!CM_IS_EMPTY_STR(value)) {
+        return mes_register_decrypt_pwd(dss_decrypt_pwd_cb);
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_mes_params(dss_config_t *inst_cfg)
+{
+    CM_RETURN_IFERR(dss_load_mes_url(inst_cfg));
+    CM_RETURN_IFERR(dss_load_mes_conn_type(inst_cfg));
+    CM_RETURN_IFERR(dss_load_mes_channel_num(inst_cfg));
+    CM_RETURN_IFERR(dss_load_mes_work_thread_cnt(inst_cfg));
+    CM_RETURN_IFERR(dss_load_mes_pool_size(inst_cfg));
+    CM_RETURN_IFERR(dss_load_mes_elapsed_switch(inst_cfg));
+    CM_RETURN_IFERR(dss_load_mes_ssl(inst_cfg));
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_disk_lock_interval(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "DISK_LOCK_INTERVAL");
+    int32 lock_interval;
+
+    if (cm_str2int(value, &lock_interval) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DISK_LOCK_INTERVAL");
+        return CM_ERROR;
+    }
+
+    if (lock_interval < DSS_MIN_LOCK_INTERVAL || lock_interval > DSS_MAX_LOCK_INTERVAL) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DISK_LOCK_INTERVAL");
+        return CM_ERROR;
+    }
+    inst_cfg->params.lock_interval = lock_interval;
+
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_dlock_retry_count(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "DLOCK_RETRY_COUNT");
+    uint32 dlock_retry_count;
+
+    if (cm_str2uint32(value, &dlock_retry_count) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DLOCK_RETRY_COUNT");
+        return CM_ERROR;
+    }
+
+    if (dlock_retry_count < DSS_MIN_DLOCK_RETRY_COUNT || dlock_retry_count > DSS_MAX_DLOCK_RETRY_COUNT) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DLOCK_RETRY_COUNT");
+        return CM_ERROR;
+    }
+    inst_cfg->params.dlock_retry_count = dlock_retry_count;
+
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_path(dss_config_t *inst_cfg)
+{
+    int32 ret;
+    char *value = cm_get_config_value(&inst_cfg->config, "LSNR_PATH");
+    if (dss_verify_lsnr_path(value) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid LSNR_PATH");
+        return CM_ERROR;
+    }
+    ret = snprintf_s(inst_cfg->params.lsnr_path, DSS_UNIX_PATH_MAX, DSS_UNIX_PATH_MAX - 1, "%s/%s", value,
+        DSS_UNIX_DOMAIN_SOCKET_NAME);
+    if (ret == -1) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid LSNR_PATH");
+        return CM_ERROR;
+    }
+
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_disk_lock_file_path(dss_config_t *inst_cfg)
+{
+    int32 ret;
+    char *value = cm_get_config_value(&inst_cfg->config, "DISK_LOCK_FILE_PATH");
+    if (dss_verify_lock_file_path(value) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid DISK_LOCK_FILE_PATH");
+        return CM_ERROR;
+    }
+    ret = snprintf_s(inst_cfg->params.disk_lock_file_path, DSS_UNIX_PATH_MAX, DSS_UNIX_PATH_MAX - 1, "%s", value);
+    if (ret == -1) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid DISK_LOCK_FILE_PATH");
+        return CM_ERROR;
+    }
+
+    return CM_SUCCESS;
+}
+
+status_t dss_set_cfg_dir(const char *home, dss_config_t *inst_cfg)
+{
+    char home_realpath[DSS_MAX_PATH_BUFFER_SIZE];
+    bool8 is_home_empty = (home == NULL || home[0] == '\0');
+    if (is_home_empty) {
+        const char *home_env = getenv(DSS_ENV_HOME);
+        if (home_env == NULL || home_env[0] == '\0') {
+            DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid cfg dir");
+            return CM_ERROR;
+        }
+        if (realpath_file(home_env, home_realpath, DSS_MAX_PATH_BUFFER_SIZE) != CM_SUCCESS) {
+            DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid cfg dir");
+            return CM_ERROR;
+        }
+    } else {
+        uint32 len = (uint32)strlen(home);
+        if (len >= DSS_MAX_PATH_BUFFER_SIZE) {
+            DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid cfg dir");
+            return CM_ERROR;
+        }
+    }
+    int32 iret_snprintf = snprintf_s(inst_cfg->home, DSS_MAX_PATH_BUFFER_SIZE, DSS_MAX_PATH_BUFFER_SIZE - 1, "%s",
+        is_home_empty ? home_realpath : home);
+    DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
+    g_inst_cfg = inst_cfg;
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_instance_id(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "INST_ID");
+    if (cm_str2bigint(value, &inst_cfg->params.inst_id) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "the value of 'INST_ID' is invalid");
+        return CM_ERROR;
+    }
+
+    if (inst_cfg->params.inst_id < DSS_MIN_INST_ID || inst_cfg->params.inst_id >= DSS_MAX_INST_ID) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "the value of 'INST_ID' is invalid");
+        return CM_ERROR;
+    }
+
+    LOG_RUN_INF("The instanceid is %lld.", inst_cfg->params.inst_id);
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_shm_key(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "_SHM_KEY");
+    // 单个机器上最多允许(1<<DSS_MAX_SHM_KEY_BITS)这么多个用户并发使用dss的范围的ipc key，这样是为了防止重叠
+    // key组成为: (((基础_SHM_KEY << DSS_MAX_SHM_KEY_BITS)      + inst_id) << 16) | 实际的业务id，
+    // 实际的业务id具体范围现在分为[1,2][3,18],[19,20496]
+    if (cm_str2uint32(value, &inst_cfg->params.shm_key) != CM_SUCCESS) {
+        LOG_DEBUG_ERR("invalid parameter value of '_SHM_KEY', value:%s.", value);
+        return CM_ERROR;
+    }
+
+    if (inst_cfg->params.shm_key < DSS_MIN_SHM_KEY || inst_cfg->params.shm_key > DSS_MAX_SHM_KEY) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "the value of '_SHM_KEY' is invalid");
+        return CM_ERROR;
+    }
+    LOG_RUN_INF("_SHM_KEY is %u.", inst_cfg->params.shm_key);
+    return CM_SUCCESS;
+}
+
+status_t dss_load_config(dss_config_t *inst_cfg)
+{
+    char file_name[DSS_FILE_PATH_MAX_LENGTH];
+    errno_t ret = memset_sp(&inst_cfg->params, sizeof(dss_params_t), 0, sizeof(dss_params_t));
+    if (ret != EOK) {
+        return CM_ERROR;
+    }
+
+    // get config info
+    ret = snprintf_s(file_name, DSS_FILE_PATH_MAX_LENGTH, DSS_FILE_PATH_MAX_LENGTH - 1, "%s/cfg/%s", inst_cfg->home,
+        g_dss_config_file);
+    if (ret == -1) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid config file path");
+        return CM_ERROR;
+    }
+
+    if (cm_load_config(g_dss_params, DSS_PARAM_COUNT, file_name, &inst_cfg->config, CM_FALSE) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load config");
+        return CM_ERROR;
+    }
+
+    CM_RETURN_IFERR(dss_load_path(inst_cfg));
+    CM_RETURN_IFERR(dss_load_disk_lock_file_path(inst_cfg));
+    CM_RETURN_IFERR(dss_load_instance_id(inst_cfg));
+    CM_RETURN_IFERR(dss_load_storage_mode(inst_cfg));
+    CM_RETURN_IFERR(dss_load_session_cfg(inst_cfg));
+    CM_RETURN_IFERR(dss_load_disk_lock_interval(inst_cfg));
+    CM_RETURN_IFERR(dss_load_dlock_retry_count(inst_cfg));
+    CM_RETURN_IFERR(dss_load_mes_params(inst_cfg));
+    CM_RETURN_IFERR(dss_load_shm_key(inst_cfg));
+#ifdef ENABLE_GLOBAL_CACHE
+    CM_RETURN_IFERR(dss_load_cephrbd_params(inst_cfg));
+    CM_RETURN_IFERR(dss_load_cephrbd_config_file(inst_cfg));
+#endif
+    return CM_SUCCESS;
+}
+
+status_t dss_set_ssl_param(const char *param_name, const char *param_value)
+{
+    if (param_name == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "the ssl param name should not be null.");
+        return CM_ERROR;
+    }
+    if (cm_str_equal(param_name, "SSL_PWD_PLAINTEXT") || cm_str_equal(param_name, "SSL_PWD_CIPHERTEXT")) {
+        LOG_RUN_INF("dss set ssl param, param_name=%s param_value=%s", param_name, "***");
+    } else {
+        LOG_RUN_INF("dss set ssl param, param_name=%s param_value=%s", param_name, param_value);
+    }
+    cbb_param_t param_type;
+    param_value_t out_value;
+    CM_RETURN_IFERR(mes_chk_md_param(param_name, param_value, &param_type, &out_value));
+    if (mes_set_md_param(param_type, &out_value) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, param_name);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+#define SSL_CERT_CHK_TIME 2  // check the ssl certificate at 2 o'clock every day
+static bool32 g_chk_ssl_first = CM_TRUE;
+
+void dss_ssl_ca_cert_expire(void)
+{
+    date_detail_t detail;
+    cm_now_detail(&detail);
+    if ((detail.hour == (uint8)SSL_CERT_CHK_TIME) && g_chk_ssl_first) {
+        g_chk_ssl_first = CM_FALSE;
+        (void)mes_chk_ssl_cert_expire();
+    } else if (detail.hour != (uint8)SSL_CERT_CHK_TIME && !g_chk_ssl_first) {
+        g_chk_ssl_first = CM_TRUE;
+    }
+}
+
+static status_t dss_set_cfg_param_core(text_t *text, char *value, dss_def_t *def)
+{
+    bool32 force = CM_TRUE;
+    config_item_t *item = cm_get_config_item(&g_inst_cfg->config, text, CM_TRUE);
+    if (item == NULL) {
+        CM_THROW_ERROR(ERR_INVALID_PARAM, def->name);
+        return CM_ERROR;
+    }
+
+    if ((item->verify) && (item->verify((void *)value, (void *)def) != CM_SUCCESS)) {
+        return CM_ERROR;
+    }
+
+    if (def->scope != CONFIG_SCOPE_DISK) {
+        if (item->notify && item->notify(NULL, (void *)item, def->value)) {
+            return CM_ERROR;
+        }
+    } else {
+        if (item->notify_pfile && item->notify_pfile(NULL, (void *)item, def->value)) {
+            return CM_ERROR;
+        }
+    }
+
+    if (item->attr & ATTR_READONLY) {
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+        force = CM_TRUE;
+#else
+        force = CM_FALSE;  // can not alter parameter whose attr is readonly  for release
+#endif
+    }
+    if (cm_alter_config(&g_inst_cfg->config, def->name, def->value, def->scope, force) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+    LOG_RUN_INF("parameter %s has been changed successfully", def->name);
+    return CM_SUCCESS;
+}
+
+status_t dss_set_cfg_param(char *name, char *value, char *scope)
+{
+    CM_ASSERT(name != NULL);
+    CM_ASSERT(value != NULL);
+    CM_ASSERT(scope != NULL);
+
+    // 1. parse name
+    dss_def_t def;
+    text_t text = {.str = name, .len = (uint32)strlen(name)};
+    if (text.len == 0) {
+        CM_THROW_ERROR(ERR_INVALID_PARAM, text.str);
+        return CM_ERROR;
+    }
+    cm_trim_text(&text);
+    cm_text_upper(&text);
+    CM_RETURN_IFERR(cm_text2str(&text, def.name, CM_PARAM_BUFFER_SIZE));
+
+    // 2. parse scope
+    if (strcmp(scope, "memory") == 0) {
+        def.scope = CONFIG_SCOPE_MEMORY;
+    } else if (strcmp(scope, "pfile") == 0) {
+        def.scope = CONFIG_SCOPE_DISK;
+    } else {
+        def.scope = CONFIG_SCOPE_BOTH;
+    }
+
+    return dss_set_cfg_param_core(&text, value, &def);
+}
+
+status_t dss_get_cfg_param(const char *name, char **value)
+{
+    CM_ASSERT(name != NULL);
+    dss_def_t def;
+    text_t text = {.str = (char *)name, .len = (uint32)strlen(name)};
+    if (text.len == 0) {
+        CM_THROW_ERROR(ERR_INVALID_PARAM, text.str);
+        return CM_ERROR;
+    }
+
+    cm_trim_text(&text);
+    cm_text_upper(&text);
+    CM_RETURN_IFERR(cm_text2str(&text, def.name, CM_NAME_BUFFER_SIZE));
+
+    *value = cm_get_config_value(&g_inst_cfg->config, def.name);
+    if (*value == NULL) {
+        CM_THROW_ERROR(ERR_INVALID_VALUE, name);
+        return CM_ERROR;
+    }
+
+    return CM_SUCCESS;
+}
+
+#ifdef __cplusplus
+}
+#endif
