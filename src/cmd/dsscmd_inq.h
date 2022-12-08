@@ -37,6 +37,7 @@ status_t dss_check_volume_register(char *entry_path, int64 host_id, bool32 *is_r
 status_t dss_unreghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_info);
 status_t dss_reghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_info);
 status_t dss_inq_reg_core(const char *home, int64 host_id, dss_vg_info_t *vg_info);
+bool32 is_register(iof_reg_in_t *reg, int64 host_id, int64 *iofence_key);
 
 #ifdef __cplusplus
 }

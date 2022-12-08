@@ -142,6 +142,10 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid);
 void dss_check_mes_conn(uint64 cur_inst_map);
 status_t dss_startup_mes(void);
 void dss_stop_mes(void);
+int32 dss_process_broadcast_ack(
+    dss_session_t *session, char *data, unsigned int len, dss_recv_msg_t *recv_msg_output);
+void dss_proc_broadcast_req(dss_session_t *session, mes_message_t *receive_msg);
+void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg);
 
 #ifdef __cplusplus
 }

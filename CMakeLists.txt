@@ -1,4 +1,4 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.12.1)
+﻿CMAKE_MINIMUM_REQUIRED(VERSION 3.12.1)
 PROJECT(dss)
 
 message(${CMAKE_BUILD_TYPE})
@@ -93,6 +93,12 @@ OPTION(ENABLE_EXPORT_API "Enable hidden internal api" OFF)
 message(STATUS "ENABLE_EXPORT_API = ${ENABLE_EXPORT_API}")
 IF (ENABLE_EXPORT_API)
     add_compile_options(-fvisibility=hidden)
+ENDIF()
+
+OPTION(ENABLE_DSSTEST "Enable dss test" OFF)
+message(STATUS "(ENABLE_DSSTEST = ${ENABLE_DSSTEST}")
+IF (ENABLE_DSSTEST)
+    add_definitions(-DENABLE_DSSTEST)
 ENDIF()
 
 execute_process(
