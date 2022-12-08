@@ -70,53 +70,6 @@ status_t dsscmd_rmv_impl(dss_conn_t *conn, const char *vg_name, const char *volu
     return dsscmd_add_or_remove_volumn(conn, vg_name, volume_name, DSS_CMD_REMOVE_VOLUME);
 }
 
-status_t dss_register_host_sync(dss_conn_t *connection)
-{
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-    // make up packet
-    dss_init_set(&connection->pack);
-    send_pack = &connection->pack;
-    send_pack->head->cmd = DSS_CMD_REGH;
-    send_pack->head->flags = 0;
-
-    // send it and wait for ack
-    ack_pack = &connection->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&connection->pipe, send_pack, ack_pack));
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-    return CM_SUCCESS;
-}
-
-status_t dss_unregister_host_sync(dss_conn_t *connection)
-{
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-    // make up packet
-    dss_init_set(&connection->pack);
-    send_pack = &connection->pack;
-    send_pack->head->cmd = DSS_CMD_UNREGH;
-    send_pack->head->flags = 0;
-    // send it and wait for ack
-    ack_pack = &connection->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&connection->pipe, send_pack, ack_pack));
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_UNREGH), errcode, errmsg);
-        return CM_ERROR;
-    }
-    return CM_SUCCESS;
-}
-
 status_t dss_kick_host_sync(dss_conn_t *connection, int64 kick_hostid)
 {
     dss_packet_t *send_pack;

@@ -191,6 +191,7 @@ static status_t dss_get_conn(dss_conn_t **conn)
     }
     if ((*conn)->pipe.link.uds.closed) {
         LOG_RUN_ERR("[DSS API] ABORT INFO : dss server stoped, application need restart.");
+        cm_fync_logfile();
         _exit(1);
     }
     return CM_SUCCESS;
@@ -465,6 +466,11 @@ int dss_islink(const char *name, bool *result)
 
 int dss_readlink(const char *link_path, char *buf, int bufsize)
 {
+    if (bufsize <= 0) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid bufsize when get cfg");
+        return DSS_ERROR;
+    }
+
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("readlink get conn error."));

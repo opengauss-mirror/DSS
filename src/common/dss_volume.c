@@ -45,6 +45,9 @@ status_t dss_open_volume(const char *name, const char *code, int flags, dss_volu
     if (volume->handle == INVALID_HANDLE_VALUE) {
         if (cm_get_os_error() == DSS_IO_ERROR) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, name);
+            LOG_RUN_ERR("[DSS] ABORT INFO: OPEN VOLUME I/O ERROR");
+            cm_fync_logfile();
+            _exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_OPEN, name, cm_get_os_error());
         }
@@ -66,6 +69,9 @@ status_t dss_open_simple_volume(const char *name, int flags, dss_simple_volume_t
     if (volume->handle == INVALID_HANDLE_VALUE) {
         if (cm_get_os_error() == DSS_IO_ERROR) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, name);
+            LOG_RUN_ERR("[DSS] ABORT INFO: OPEN SIMPLE VOLUME I/O ERROR");
+            cm_fync_logfile();
+            _exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_OPEN, name, cm_get_os_error());
         }
@@ -112,6 +118,9 @@ static status_t dss_seek_volume(dss_volume_t *volume, uint64 offset)
     if (SetFilePointer(volume->handle, low32, &high32, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
         if (cm_get_os_error() == DSS_IO_ERROR) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
+            LOG_RUN_ERR("[DSS] ABORT INFO: SEEK VOLUME I/O ERROR");
+            cm_fync_logfile();
+            _exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SEEK, volume->name_p, volume->id, cm_get_os_error());
         }
@@ -130,6 +139,9 @@ static status_t dss_try_read_volume(dss_volume_t *volume, char *buffer, int32 si
     if (!ReadFile(volume->handle, buffer, (DWORD)size, (LPDWORD)read_size, NULL)) {
         if (cm_get_os_error() == DSS_IO_ERROR) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
+            LOG_RUN_ERR("[DSS] ABORT INFO: READ VOLUME I/O ERROR");
+            cm_fync_logfile();
+            _exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_READ, volume->name_p, volume->id, cm_get_os_error());
         }
@@ -144,6 +156,9 @@ static status_t dss_try_write_volume(dss_volume_t *volume, char *buffer, int32 s
     if (!WriteFile(volume->handle, buffer, (DWORD)size, (LPDWORD)written_size, NULL)) {
         if (cm_get_os_error() == DSS_IO_ERROR) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
+            LOG_RUN_ERR("[DSS] ABORT INFO: WRITE VOLUME I/O ERROR");
+            cm_fync_logfile();
+            _exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_WRITE, volume->name_p, volume->id, cm_get_os_error());
         }
@@ -161,6 +176,9 @@ status_t dss_open_volume_raw(const char *name, const char *code, int flags, dss_
     if (volume->handle == -1) {
         if (cm_get_os_error() == DSS_IO_ERROR) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, name);
+            LOG_RUN_ERR("[DSS] ABORT INFO: OPEN VOLUME RAW I/O ERROR");
+            cm_fync_logfile();
+            _exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_OPEN, name, cm_get_os_error());
         }
@@ -180,6 +198,9 @@ status_t dss_open_simple_volume_raw(const char *name, int flags, dss_simple_volu
     if (volume->handle == -1) {
         if (cm_get_os_error() == DSS_IO_ERROR) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, name);
+            LOG_RUN_ERR("[DSS] ABORT INFO: OPEN SIMPLE VOLUME RAW I/O ERROR");
+            cm_fync_logfile();
+            _exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_OPEN, name, cm_get_os_error());
         }
@@ -214,6 +235,9 @@ uint64 dss_get_volume_size_raw(dss_volume_t *volume)
         DSS_LOG_WITH_OS_MSG("failed to seek file with handle %d", volume->handle);
         if (cm_get_os_error() == DSS_IO_ERROR) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
+            LOG_RUN_ERR("[DSS] ABORT INFO: GET VOLUME SIZE I/O ERROR");
+            cm_fync_logfile();
+            _exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SEEK, volume->name_p, volume->id, cm_get_os_error());
         }
@@ -228,6 +252,9 @@ static status_t dss_try_pread_volume_raw(dss_volume_t *volume, int64 offset, cha
     if (*read_size == -1) {
         if (cm_get_os_error() == DSS_IO_ERROR) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
+            LOG_RUN_ERR("[DSS] ABORT INFO: PREAD VOLUME I/O ERROR");
+            cm_fync_logfile();
+            _exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_READ, volume->name_p, volume->id, cm_get_os_error());
         }
@@ -244,6 +271,9 @@ static int32 dss_try_pwrite_volume_raw(
     if (*written_size == -1) {
         if (cm_get_os_error() == DSS_IO_ERROR) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
+            LOG_RUN_ERR("[DSS] ABORT INFO: PWRITE VOLUME I/O ERROR");
+            cm_fync_logfile();
+            _exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_WRITE, volume->name_p, volume->id, cm_get_os_error());
         }
@@ -356,6 +386,9 @@ uint64 dss_get_volume_size_rbd(dss_volume_t *volume)
         DSS_LOG_WITH_OS_MSG("failed to read size with handle %d", volume->handle);
         if (cm_get_os_error() == DSS_IO_ERROR) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
+            LOG_RUN_ERR("[DSS] ABORT INFO: GET VOLUME SIZE RBD I/O ERROR");
+            cm_fync_logfile();
+            _exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SEEK, volume->name_p, volume->id, cm_get_os_error());
         }
@@ -371,6 +404,9 @@ static status_t dss_try_pread_volume_rbd(
     if (*read_size < 0) {
         if (cm_get_os_error() == DSS_IO_ERROR) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
+            LOG_RUN_ERR("[DSS] ABORT INFO: PREAD VOLUME RBD I/O ERROR");
+            cm_fync_logfile();
+            _exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_READ, volume->name_p, volume->id, cm_get_os_error());
         }
@@ -386,6 +422,9 @@ static int32 dss_try_pwrite_volume_rbd(
     if (*written_size < 0) {
         if (cm_get_os_error() == DSS_IO_ERROR) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
+            LOG_RUN_ERR("[DSS] ABORT INFO: PWRITE VOLUME RBD I/O ERROR");
+            cm_fync_logfile();
+            _exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_WRITE, volume->name_p, volume->id, cm_get_os_error());
         }

@@ -123,10 +123,9 @@ static status_t dss_load_session_cfg(dss_config_t *inst_cfg)
 {
     char *value = cm_get_config_value(&inst_cfg->config, "MAX_SESSION_NUMS");
     int32 sessions;
-    if (cm_str2int(value, &sessions) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MAX_SESSION_NUMS");
-        return CM_ERROR;
-    }
+    status_t status = cm_str2int(value, &sessions);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MAX_SESSION_NUMS"));
+
     if (sessions < DSS_MIN_SESSIONID_CFG || sessions > CM_MAX_SESSIONS) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MAX_SESSION_NUMS");
         return CM_ERROR;
@@ -157,10 +156,8 @@ static status_t dss_load_mes_pool_size(dss_config_t *inst_cfg)
 {
     int64 mes_pool_size;
     char *value = cm_get_config_value(&inst_cfg->config, "RECV_MSG_POOL_SIZE");
-    if (cm_str2size(value, &mes_pool_size) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "RECV_MSG_POOL_SIZE");
-        return CM_ERROR;
-    }
+    status_t status = cm_str2size(value, &mes_pool_size);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "RECV_MSG_POOL_SIZE"));
 
     inst_cfg->params.mes_pool_size = (uint64)mes_pool_size;
     if ((inst_cfg->params.mes_pool_size < DSS_MIN_RECV_MSG_BUFF_SIZE) ||
@@ -176,10 +173,7 @@ static status_t dss_load_mes_url(dss_config_t *inst_cfg)
 {
     char *value = cm_get_config_value(&inst_cfg->config, "DSS_NODES_LIST");
     status_t status = cm_split_mes_urls(inst_cfg->params.nodes, inst_cfg->params.ports, value);
-    if (status != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DSS_NODES_LIST");
-        return status;
-    }
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DSS_NODES_LIST"));
     int32 node_cnt = 0;
     for (int i = 0; i < DSS_MAX_INSTANCES; i++) {
         if (inst_cfg->params.ports[i] != 0) {
@@ -211,10 +205,9 @@ static status_t dss_load_mes_channel_num(dss_config_t *inst_cfg)
 {
     uint32 channel_num;
     char *value = cm_get_config_value(&inst_cfg->config, "INTERCONNECT_CHANNEL_NUM");
-    if (cm_str2uint32(value, &channel_num) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid parameter value of 'INTERCONNECT_CHANNEL_NUM'");
-        return CM_ERROR;
-    }
+    status_t status = cm_str2uint32(value, &channel_num);
+    DSS_RETURN_IFERR2(
+        status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid parameter value of 'INTERCONNECT_CHANNEL_NUM'"));
 
     if (channel_num < CM_MES_MIN_CHANNEL_NUM || channel_num > CM_MES_MAX_CHANNEL_NUM) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "INTERCONNECT_CHANNEL_NUM");
@@ -230,10 +223,8 @@ static status_t dss_load_mes_work_thread_cnt(dss_config_t *inst_cfg)
 {
     uint32 work_thread_cnt;
     char *value = cm_get_config_value(&inst_cfg->config, "WORK_THREAD_COUNT");
-    if (cm_str2uint32(value, &work_thread_cnt) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid parameter value of 'WORK_THREAD_COUNT'");
-        return CM_ERROR;
-    }
+    status_t status = cm_str2uint32(value, &work_thread_cnt);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid parameter value of 'WORK_THREAD_COUNT'"));
 
     if (work_thread_cnt < DSS_MIN_WORK_THREAD_COUNT || work_thread_cnt > DSS_MAX_WORK_THREAD_COUNT) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "WORK_THREAD_COUNT");
@@ -290,10 +281,8 @@ int32 dss_decrypt_pwd_cb(const char *cipher_text, uint32 cipher_len, char *plain
         return CM_ERROR;
     }
     if (cipher.cipher_len > 0) {
-        if (cm_decrypt_pwd(&cipher, (uchar *)plain_text, &plain_len) != CM_SUCCESS) {
-            LOG_DEBUG_ERR("[DSS] failed to decrypt ssl pwd.");
-            return CM_ERROR;
-        }
+        status_t status = cm_decrypt_pwd(&cipher, (uchar *)plain_text, &plain_len);
+        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[DSS] failed to decrypt ssl pwd."));
     } else {
         CM_THROW_ERROR(ERR_INVALID_PARAM, "SSL_PWD_CIPHERTEXT");
         LOG_DEBUG_ERR("[DSS] failed to decrypt ssl pwd for the cipher len is invalid.");
@@ -305,40 +294,33 @@ int32 dss_decrypt_pwd_cb(const char *cipher_text, uint32 cipher_len, char *plain
 status_t dss_load_mes_ssl(dss_config_t *inst_cfg)
 {
     char *value = cm_get_config_value(&inst_cfg->config, "SSL_CA");
-    if (dss_set_ssl_param("SSL_CA", value) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CA");
-        return CM_ERROR;
-    }
+    status_t status = dss_set_ssl_param("SSL_CA", value);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CA"));
+
     value = cm_get_config_value(&inst_cfg->config, "SSL_KEY");
-    if (dss_set_ssl_param("SSL_KEY", value) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_KEY");
-        return CM_ERROR;
-    }
+    status = dss_set_ssl_param("SSL_KEY", value);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_KEY"));
+
     value = cm_get_config_value(&inst_cfg->config, "SSL_CRL");
-    if (dss_set_ssl_param("SSL_CRL", value) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CRL");
-        return CM_ERROR;
-    }
+    status = dss_set_ssl_param("SSL_CRL", value);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CRL"));
+
     value = cm_get_config_value(&inst_cfg->config, "SSL_CERT");
-    if (dss_set_ssl_param("SSL_CERT", value) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CERT");
-        return CM_ERROR;
-    }
+    status = dss_set_ssl_param("SSL_CERT", value);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CERT"));
+
     value = cm_get_config_value(&inst_cfg->config, "SSL_CIPHER");
-    if (dss_set_ssl_param("SSL_CIPHER", value) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CIPHER");
-        return CM_ERROR;
-    }
+    status = dss_set_ssl_param("SSL_CIPHER", value);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CIPHER"));
+
     value = cm_get_config_value(&inst_cfg->config, "SSL_CERT_NOTIFY_TIME");
-    if (dss_set_ssl_param("SSL_CERT_NOTIFY_TIME", value) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CERT_NOTIFY_TIME");
-        return CM_ERROR;
-    }
+    status = dss_set_ssl_param("SSL_CERT_NOTIFY_TIME", value);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CERT_NOTIFY_TIME"));
+
     value = cm_get_config_value(&inst_cfg->config, "SSL_PWD_CIPHERTEXT");
-    if (dss_set_ssl_param("SSL_PWD_CIPHERTEXT", value) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_PWD_CIPHERTEXT");
-        return CM_ERROR;
-    }
+    status = dss_set_ssl_param("SSL_PWD_CIPHERTEXT", value);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_PWD_CIPHERTEXT"));
+
     if (!CM_IS_EMPTY_STR(value)) {
         return mes_register_decrypt_pwd(dss_decrypt_pwd_cb);
     }
@@ -362,10 +344,8 @@ static status_t dss_load_disk_lock_interval(dss_config_t *inst_cfg)
     char *value = cm_get_config_value(&inst_cfg->config, "DISK_LOCK_INTERVAL");
     int32 lock_interval;
 
-    if (cm_str2int(value, &lock_interval) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DISK_LOCK_INTERVAL");
-        return CM_ERROR;
-    }
+    status_t status = cm_str2int(value, &lock_interval);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DISK_LOCK_INTERVAL"));
 
     if (lock_interval < DSS_MIN_LOCK_INTERVAL || lock_interval > DSS_MAX_LOCK_INTERVAL) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DISK_LOCK_INTERVAL");
@@ -381,10 +361,8 @@ static status_t dss_load_dlock_retry_count(dss_config_t *inst_cfg)
     char *value = cm_get_config_value(&inst_cfg->config, "DLOCK_RETRY_COUNT");
     uint32 dlock_retry_count;
 
-    if (cm_str2uint32(value, &dlock_retry_count) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DLOCK_RETRY_COUNT");
-        return CM_ERROR;
-    }
+    status_t status = cm_str2uint32(value, &dlock_retry_count);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DLOCK_RETRY_COUNT"));
 
     if (dlock_retry_count < DSS_MIN_DLOCK_RETRY_COUNT || dlock_retry_count > DSS_MAX_DLOCK_RETRY_COUNT) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DLOCK_RETRY_COUNT");
@@ -399,10 +377,8 @@ static status_t dss_load_path(dss_config_t *inst_cfg)
 {
     int32 ret;
     char *value = cm_get_config_value(&inst_cfg->config, "LSNR_PATH");
-    if (dss_verify_lsnr_path(value) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid LSNR_PATH");
-        return CM_ERROR;
-    }
+    status_t status = dss_verify_lsnr_path(value);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid LSNR_PATH"));
     ret = snprintf_s(inst_cfg->params.lsnr_path, DSS_UNIX_PATH_MAX, DSS_UNIX_PATH_MAX - 1, "%s/%s", value,
         DSS_UNIX_DOMAIN_SOCKET_NAME);
     if (ret == -1) {
@@ -417,10 +393,9 @@ static status_t dss_load_disk_lock_file_path(dss_config_t *inst_cfg)
 {
     int32 ret;
     char *value = cm_get_config_value(&inst_cfg->config, "DISK_LOCK_FILE_PATH");
-    if (dss_verify_lock_file_path(value) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid DISK_LOCK_FILE_PATH");
-        return CM_ERROR;
-    }
+    status_t status = dss_verify_lock_file_path(value);
+    DSS_RETURN_IFERR2(
+        status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid DISK_LOCK_FILE_PATH"));
     ret = snprintf_s(inst_cfg->params.disk_lock_file_path, DSS_UNIX_PATH_MAX, DSS_UNIX_PATH_MAX - 1, "%s", value);
     if (ret == -1) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid DISK_LOCK_FILE_PATH");
@@ -440,10 +415,8 @@ status_t dss_set_cfg_dir(const char *home, dss_config_t *inst_cfg)
             DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid cfg dir");
             return CM_ERROR;
         }
-        if (realpath_file(home_env, home_realpath, DSS_MAX_PATH_BUFFER_SIZE) != CM_SUCCESS) {
-            DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid cfg dir");
-            return CM_ERROR;
-        }
+        status_t status = realpath_file(home_env, home_realpath, DSS_MAX_PATH_BUFFER_SIZE);
+        DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid cfg dir"));
     } else {
         uint32 len = (uint32)strlen(home);
         if (len >= DSS_MAX_PATH_BUFFER_SIZE) {
@@ -461,10 +434,8 @@ status_t dss_set_cfg_dir(const char *home, dss_config_t *inst_cfg)
 static status_t dss_load_instance_id(dss_config_t *inst_cfg)
 {
     char *value = cm_get_config_value(&inst_cfg->config, "INST_ID");
-    if (cm_str2bigint(value, &inst_cfg->params.inst_id) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "the value of 'INST_ID' is invalid");
-        return CM_ERROR;
-    }
+    status_t status = cm_str2bigint(value, &inst_cfg->params.inst_id);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "the value of 'INST_ID' is invalid"));
 
     if (inst_cfg->params.inst_id < DSS_MIN_INST_ID || inst_cfg->params.inst_id >= DSS_MAX_INST_ID) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "the value of 'INST_ID' is invalid");
@@ -481,10 +452,8 @@ static status_t dss_load_shm_key(dss_config_t *inst_cfg)
     // 单个机器上最多允许(1<<DSS_MAX_SHM_KEY_BITS)这么多个用户并发使用dss的范围的ipc key，这样是为了防止重叠
     // key组成为: (((基础_SHM_KEY << DSS_MAX_SHM_KEY_BITS)      + inst_id) << 16) | 实际的业务id，
     // 实际的业务id具体范围现在分为[1,2][3,18],[19,20496]
-    if (cm_str2uint32(value, &inst_cfg->params.shm_key) != CM_SUCCESS) {
-        LOG_DEBUG_ERR("invalid parameter value of '_SHM_KEY', value:%s.", value);
-        return CM_ERROR;
-    }
+    status_t status = cm_str2uint32(value, &inst_cfg->params.shm_key);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("invalid parameter value of '_SHM_KEY', value:%s.", value));
 
     if (inst_cfg->params.shm_key < DSS_MIN_SHM_KEY || inst_cfg->params.shm_key > DSS_MAX_SHM_KEY) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "the value of '_SHM_KEY' is invalid");
@@ -510,10 +479,8 @@ status_t dss_load_config(dss_config_t *inst_cfg)
         return CM_ERROR;
     }
 
-    if (cm_load_config(g_dss_params, DSS_PARAM_COUNT, file_name, &inst_cfg->config, CM_FALSE) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load config");
-        return CM_ERROR;
-    }
+    status_t status = cm_load_config(g_dss_params, DSS_PARAM_COUNT, file_name, &inst_cfg->config, CM_FALSE);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load config"));
 
     CM_RETURN_IFERR(dss_load_path(inst_cfg));
     CM_RETURN_IFERR(dss_load_disk_lock_file_path(inst_cfg));
@@ -545,10 +512,8 @@ status_t dss_set_ssl_param(const char *param_name, const char *param_value)
     cbb_param_t param_type;
     param_value_t out_value;
     CM_RETURN_IFERR(mes_chk_md_param(param_name, param_value, &param_type, &out_value));
-    if (mes_set_md_param(param_type, &out_value) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, param_name);
-        return CM_ERROR;
-    }
+    status_t status = mes_set_md_param(param_type, &out_value);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, param_name));
     return CM_SUCCESS;
 }
 

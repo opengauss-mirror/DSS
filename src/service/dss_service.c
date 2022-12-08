@@ -77,10 +77,7 @@ static status_t dss_diag_proto_type(dss_session_t *session)
     int32 size;
     errno_t rc_memzero;
     status_t ret = cs_read_bytes(&session->pipe, (char *)&proto_code, sizeof(proto_code), &size);
-    if (ret != CM_SUCCESS) {
-        LOG_RUN_ERR("Instance recieve protocol failed, errno:%d.", errno);
-        return ret;
-    }
+    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("Instance recieve protocol failed, errno:%d.", errno));
 
     if (size != (int32)sizeof(proto_code) || proto_code != DSS_PROTO_CODE) {
         DSS_THROW_ERROR(ERR_INVALID_PROTOCOL);
@@ -141,6 +138,7 @@ void dss_session_entry(thread_t *thread)
     }
     LOG_RUN_INF("Session:%u end to do service.", session->id);
 
+    session->is_closed = CM_TRUE;
     dss_clean_session_latch(dss_get_session_ctrl(), session);
     dss_clean_open_files(session);
     dss_destroy_session(session);
@@ -164,6 +162,7 @@ static void dss_return_error(dss_session_t *session)
     // volume open/seek/read write fail for I/O, just abort
     if (code == ERR_DSS_VOLUME_SYSTEM_IO) {
         LOG_RUN_ERR("[DSS] ABORT INFO: volume operate failed for I/O ERROR, errcode:%d.", code);
+        cm_fync_logfile();
         _exit(1);
     }
     (void)dss_put_int32(send_pack, (uint32)code);
@@ -250,14 +249,11 @@ static status_t dss_process_create_file(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", file_ptr));
 
     cm_str2text(file_ptr, &text);
-    if (!cm_fetch_rtext(&text, '/', '\0', &sub)) {
-        LOG_DEBUG_ERR("not a complete absolute path name(%s %s)", T2S(&sub), T2S(&text));
-        return CM_ERROR;
-    }
-    if (text.len >= DSS_MAX_NAME_LEN) {
-        DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, text.str, "name length should less than 64.");
-        return CM_ERROR;
-    }
+    bool32 result = cm_fetch_rtext(&text, '/', '\0', &sub);
+    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("not a complete absolute path name(%s %s)", T2S(&sub), T2S(&text)));
+
+    result = (bool32)(text.len < DSS_MAX_NAME_LEN);
+    DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, text.str, "name length should less than 64."));
 
     char parent_str[DSS_FILE_PATH_MAX_LENGTH];
     char name_str[DSS_MAX_NAME_LEN];
@@ -271,10 +267,8 @@ static status_t dss_process_delete_file(dss_session_t *session)
 {
     char *name = NULL;
     dss_init_get(&session->recv_pack);
-    if (dss_get_str(&session->recv_pack, &name) != CM_SUCCESS) {
-        LOG_DEBUG_ERR("delete file get file name failed.");
-        return CM_ERROR;
-    }
+    status_t status = dss_get_str(&session->recv_pack, &name);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("delete file get file name failed."));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", name));
     return dss_remove_file(session, (const char *)name);
 }
@@ -351,10 +345,9 @@ static status_t dss_process_close_file(dss_session_t *session)
         "vg_name:%s, fid:%llu, ftid:%llu", vg_name, fid, *(uint64 *)&ftid));
 
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
-    if (vg_item == NULL) {
-        LOG_DEBUG_ERR("Failed to find vg, %s.", vg_name);
-        return CM_ERROR;
-    }
+    bool32 result = (bool32)(vg_item != NULL);
+    DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name));
+
     DSS_RETURN_IF_ERROR(dss_close_file(session, vg_item, *(uint64 *)&ftid));
     DSS_LOG_DEBUG_OP(
         "Succeed to close file, ftid:%llu, fid:%llu, vg: %s, session pid:%llu, v:%u, au:%llu, block:%u, item:%u.",
@@ -373,10 +366,7 @@ static status_t dss_process_close_file(dss_session_t *session)
         }
 #endif
         status_t status = dss_remove_dir_file_by_node(session, vg_item, node);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_INF("Failed to remove delay file when close file, fid: %llu", fid);
-            return CM_SUCCESS;
-        }
+        DSS_RETURN_IFERR2(status, LOG_DEBUG_INF("Failed to remove delay file when close file, fid: %llu", fid));
         DSS_LOG_DEBUG_OP("Succeed to remove file when close file, ftid%llu, fid:%llu, vg: %s, session pid:%llu, v:%u, "
                          "au:%llu, block:%u, item:%u.",
             *(int64 *)&ftid, fid, vg_item->vg_name, session->cli_info.cli_pid, ftid.volume, (uint64)ftid.au, ftid.block,
@@ -486,40 +476,6 @@ static status_t dss_process_remove_volume(dss_session_t *session)
     return dss_remove_volume(session, vg_name, volume_name);
 }
 
-static status_t dss_process_register_host(dss_session_t *session)
-{
-    status_t status = CM_SUCCESS;
-    dss_init_get(&session->recv_pack);
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
-        session->audit_info.resource, DSS_AUDIT_MODIFY, "%lld", ZFS_INST->inst_cfg.params.inst_id));
-
-    status = dss_iof_register_all(ZFS_INST->inst_cfg.params.inst_id, CM_TRUE);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR(
-            "Failed to register to array, hostid %lld, status %d.", ZFS_INST->inst_cfg.params.inst_id, status);
-        return status;
-    }
-
-    return CM_SUCCESS;
-}
-
-static status_t dss_process_unregister_host(dss_session_t *session)
-{
-    status_t status = CM_SUCCESS;
-    dss_init_get(&session->recv_pack);
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
-        session->audit_info.resource, DSS_AUDIT_MODIFY, "%lld", ZFS_INST->inst_cfg.params.inst_id));
-
-    status = dss_iof_unregister_all(ZFS_INST->inst_cfg.params.inst_id, CM_TRUE);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR(
-            "Failed to unregister from array, hostid %lld, status %d.", ZFS_INST->inst_cfg.params.inst_id, status);
-        return status;
-    }
-
-    return CM_SUCCESS;
-}
-
 static status_t dss_process_kick_host(dss_session_t *session)
 {
     int64 kick_hostid = 0;
@@ -530,10 +486,7 @@ static status_t dss_process_kick_host(dss_session_t *session)
         session->audit_info.resource, DSS_AUDIT_MODIFY, "%lld, %lld", ZFS_INST->inst_cfg.params.inst_id, kick_hostid));
 
     status = dss_iof_sync_all_vginfo(session, VGS_INFO);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Sync all vginfo failed, status %d.", status);
-        return status;
-    }
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Sync all vginfo failed, status %d.", status));
 
     status = dss_iof_kick_all(ZFS_INST->inst_cfg.params.inst_id, kick_hostid, CM_TRUE);
     if (status != CM_SUCCESS) {
@@ -681,10 +634,8 @@ static status_t dss_process_symlink(dss_session_t *session)
         dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s, %s", dst_path, new_path));
 
     cm_str2text(new_path, &text);
-    if (!cm_fetch_rtext(&text, '/', '\0', &sub)) {
-        LOG_DEBUG_ERR("not a complete absolute path name(%s %s)", T2S(&sub), T2S(&text));
-        return CM_ERROR;
-    }
+    bool32 result = cm_fetch_rtext(&text, '/', '\0', &sub);
+    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("not a complete absolute path name(%s %s)", T2S(&sub), T2S(&text)));
 
     char parent_str[DSS_FILE_PATH_MAX_LENGTH];
     char name_str[DSS_MAX_NAME_LEN];
@@ -755,15 +706,12 @@ static status_t dss_process_get_ftid_by_path(dss_session_t *session)
     dss_find_node_t find_node;
     find_node.ftid = ftid;
     errno_t err = strncpy_sp(find_node.vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name, DSS_MAX_NAME_LEN);
-    if (err != EOK) {
-        DSS_THROW_ERROR(ERR_SYSTEM_CALL, err);
-        return CM_ERROR;
-    }
+    bool32 result = (bool32)(err == EOK);
+    DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_SYSTEM_CALL, err));
+
     err = memcpy_sp(session->send_info.str, sizeof(dss_find_node_t), (char *)&find_node, sizeof(dss_find_node_t));
-    if (err != EOK) {
-        DSS_THROW_ERROR(ERR_SYSTEM_CALL, err);
-        return CM_ERROR;
-    }
+    result = (bool32)(err == EOK);
+    DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_SYSTEM_CALL, err));
     return CM_SUCCESS;
 }
 
@@ -772,16 +720,14 @@ static status_t dss_process_set_status(dss_session_t *session)
     int32 dss_status;
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &dss_status));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%u", session->id));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%d", dss_status));
     LOG_DEBUG_INF("dss server current status(%d), set status(%d).", dss_get_server_status_flag(), dss_status);
     if ((dss_status == DSS_STATUS_READWRITE) && !dss_is_readwrite()) {
         status_t status = dss_refresh_meta_info(session);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("dss server set status(%d) refresh meta fialed, result(%d).", dss_status, status);
-            return status;
-        }
+        DSS_RETURN_IFERR2(
+            status, LOG_DEBUG_ERR("dss server set status(%d) refresh meta fialed, result(%d).", dss_status, status));
     }
-    LOG_DEBUG_INF("Dss set server status %d.", dss_status);
+    LOG_RUN_INF("Dss set server status %d.", dss_status);
     dss_set_server_status_flag(dss_status);
     return CM_SUCCESS;
 }
@@ -843,15 +789,13 @@ static dss_cmd_hdl_t g_dss_cmd_handle[] = {
     { DSS_CMD_DETACH_FILE, NULL, NULL, CM_FALSE },
     { DSS_CMD_RENAME_FILE, dss_process_rename, NULL, CM_TRUE },
     { DSS_CMD_REFRESH_FILE, dss_process_refresh_file, NULL, CM_FALSE },
-    { DSS_CMD_TRUNCATE_FILE, dss_process_truncate_file, NULL, CM_FALSE },
+    { DSS_CMD_TRUNCATE_FILE, dss_process_truncate_file, NULL, CM_TRUE },
     { DSS_CMD_REFRESH_FILE_TABLE, dss_process_refresh_file_table, NULL, CM_FALSE },
     { DSS_CMD_CONSOLE, NULL, NULL, CM_FALSE },
     { DSS_CMD_ADD_VOLUME, dss_process_add_volume, NULL, CM_TRUE },
     { DSS_CMD_REMOVE_VOLUME, dss_process_remove_volume, NULL, CM_TRUE },
     { DSS_CMD_REFRESH_VOLUME, dss_process_refresh_volume, NULL, CM_FALSE },
-    { DSS_CMD_REGH, dss_process_register_host, NULL, CM_FALSE },
     { DSS_CMD_KICKH, dss_process_kick_host, NULL, CM_FALSE },
-    { DSS_CMD_UNREGH, dss_process_unregister_host, NULL, CM_FALSE },
     { DSS_CMD_LOAD_CTRL, dss_process_loadctrl, NULL, CM_FALSE },
     { DSS_CMD_SET_SESSIONID, dss_process_set_sessionid, NULL, CM_FALSE },
     { DSS_CMD_UPDATE_WRITTEN_SIZE, dss_process_update_file_written_size, NULL, CM_TRUE },

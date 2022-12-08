@@ -39,10 +39,8 @@ status_t dss_verify_log_level(void *lex, void *def)
     uint32 num;
     text_t text = {.str = value, .len = (uint32)strlen(value)};
     cm_trim_text(&text);
-    if (cm_text2uint32(&text, &num) != CM_SUCCESS) {
-        CM_THROW_ERROR(ERR_INVALID_PARAM, "_LOG_LEVEL");
-        return CM_ERROR;
-    }
+    status_t status = cm_text2uint32(&text, &num);
+    DSS_RETURN_IFERR2(status, CM_THROW_ERROR(ERR_INVALID_PARAM, "_LOG_LEVEL"));
 
     if (num > MAX_LOG_LEVEL) {
         CM_THROW_ERROR(ERR_INVALID_PARAM, "_LOG_LEVEL");
@@ -193,10 +191,8 @@ status_t dss_verify_log_file_size(void *lex, void *def)
     uint64 num;
     text_t text = {.str = value, .len = (uint32)strlen(value)};
     cm_trim_text(&text);
-    if (cm_text2size(&text, (int64 *)&num) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_LOG_MAX_FILE_SIZE");
-        return CM_ERROR;
-    }
+    status_t status = cm_text2size(&text, (int64 *)&num);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_LOG_MAX_FILE_SIZE"));
     if (num < CM_MIN_LOG_FILE_SIZE || num > CM_MAX_LOG_FILE_SIZE) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_LOG_MAX_FILE_SIZE");
         return CM_ERROR;
@@ -247,10 +243,8 @@ status_t dss_verify_audit_backup_file_count(void *lex, void *def)
     uint32 num;
     text_t text = {.str = value, .len = (uint32)strlen(value)};
     cm_trim_text(&text);
-    if (cm_text2uint32(&text, &num) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_AUDIT_BACKUP_FILE_COUNT");
-        return CM_ERROR;
-    }
+    status_t status = cm_text2uint32(&text, &num);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_AUDIT_BACKUP_FILE_COUNT"));
     if (num > CM_MAX_LOG_FILE_COUNT) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_AUDIT_BACKUP_FILE_COUNT");
         return CM_ERROR;
@@ -274,10 +268,8 @@ status_t dss_verify_audit_file_size(void *lex, void *def)
     uint64 num;
     text_t text = {.str = value, .len = (uint32)strlen(value)};
     cm_trim_text(&text);
-    if (cm_text2size(&text, (int64 *)&num) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_AUDIT_MAX_FILE_SIZE");
-        return CM_ERROR;
-    }
+    status_t status = cm_text2size(&text, (int64 *)&num);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_AUDIT_MAX_FILE_SIZE"));
     if (num < CM_MIN_LOG_FILE_SIZE || num > CM_MAX_LOG_FILE_SIZE) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_AUDIT_MAX_FILE_SIZE");
         return CM_ERROR;

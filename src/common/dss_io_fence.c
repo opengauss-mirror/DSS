@@ -212,35 +212,25 @@ status_t dss_iof_kick_all(int64 rk, int64 rk_kick, bool32 is_server)
         inst_cfg = &dss_env->inst_cfg;
     }
 
-    if (dss_vg_info == NULL) {
-        LOG_DEBUG_ERR("Can't get vgs info, is_server %u.", (uint32)is_server);
-        return CM_ERROR;
-    }
+    bool32 result = (bool32)(dss_vg_info != NULL);
+    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Can't get vgs info, is_server %u.", (uint32)is_server));
 
     if (rk_kick == inst_cfg->params.inst_id) {
         LOG_DEBUG_ERR("Can't kick current node, rk_kick %lld, inst id %lld.", rk_kick, inst_cfg->params.inst_id);
         return CM_ERROR;
     }
 
-    if (rk != inst_cfg->params.inst_id) {
-        LOG_DEBUG_ERR(
-            "Must use the inst id of current node as rk, rk %lld, inst id %lld.", rk, inst_cfg->params.inst_id);
-        return CM_ERROR;
-    }
+    result = (bool32)(rk == inst_cfg->params.inst_id);
+    DSS_RETURN_IF_FALSE2(result,
+        LOG_DEBUG_ERR("Must use inst id of current node as rk, rk %lld, inst id %lld.", rk, inst_cfg->params.inst_id));
 
     cm_ptlist_init(&reg_list);
     status = dss_iof_inql_regs(&reg_list, is_server);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Inquiry regs info failed, is_server %u.", (uint32)is_server);
-        cm_destroy_ptlist(&reg_list);
-        return status;
-    }
+    DSS_RETURN_IFERR3(status, cm_destroy_ptlist(&reg_list),
+        LOG_DEBUG_ERR("Inquiry regs info failed, is_server %u.", (uint32)is_server));
 
     status = dss_iof_kick_all_volumes(dss_vg_info, rk, rk_kick, &reg_list);
-    if (status != CM_SUCCESS) {
-        cm_destroy_ptlist(&reg_list);
-        return status;
-    }
+    DSS_RETURN_IFERR2(status, cm_destroy_ptlist(&reg_list));
 
     cm_destroy_ptlist(&reg_list);
 #endif
@@ -307,10 +297,7 @@ status_t dss_iof_register_core(int64 rk, dss_vg_info_t *dss_vg_info)
             if (item->dss_ctrl->core.volume_attrs[j].flag == VOLUME_FREE) {
                 continue;
             }
-            ret = dss_iof_register_single(rk, item->dss_ctrl->volume.defs[j].name);
-            if (ret != CM_SUCCESS) {
-                return ret;
-            }
+            DSS_RETURN_IF_ERROR(dss_iof_register_single(rk, item->dss_ctrl->volume.defs[j].name));
         }
     }
     return CM_SUCCESS;
@@ -324,10 +311,8 @@ status_t dss_iof_register_all(int64 rk, bool32 is_server)
 
     LOG_DEBUG_INF("Begin register all, rk %lld, is server %u.", rk + 1, (uint32)is_server);
     dss_get_vg_info_is_server(is_server, &dss_vg_info);
-    if (dss_vg_info == NULL) {
-        LOG_DEBUG_ERR("Can't get vgs info, is_server %u.", (uint32)is_server);
-        return CM_ERROR;
-    }
+    bool32 result = (bool32)(dss_vg_info != NULL);
+    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Can't get vgs info, is_server %u.", (uint32)is_server));
     status_t ret = dss_iof_register_core(rk, dss_vg_info);
     if (ret != CM_SUCCESS) {
         return ret;
@@ -351,10 +336,7 @@ status_t dss_iof_unregister_core(int64 rk, dss_vg_info_t *dss_vg_info)
             if (item->dss_ctrl->core.volume_attrs[j].flag == VOLUME_FREE) {
                 continue;
             }
-            ret = dss_iof_unregister_single(rk, item->dss_ctrl->volume.defs[j].name);
-            if (ret != CM_SUCCESS) {
-                return ret;
-            }
+            DSS_RETURN_IF_ERROR(dss_iof_unregister_single(rk, item->dss_ctrl->volume.defs[j].name));
         }
     }
     LOG_DEBUG_INF("Unregister all succ.");
@@ -369,10 +351,8 @@ status_t dss_iof_unregister_all(int64 rk, bool32 is_server)
 
     LOG_DEBUG_INF("Begin Unregister all, rk %lld, is server %u.", rk + 1, (uint32)is_server);
     dss_get_vg_info_is_server(is_server, &dss_vg_info);
-    if (dss_vg_info == NULL) {
-        LOG_DEBUG_ERR("Can't get vgs info, is_server %u.", (uint32)is_server);
-        return CM_ERROR;
-    }
+    bool32 result = (bool32)(dss_vg_info != NULL);
+    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Can't get vgs info, is_server %u.", (uint32)is_server));
     status_t ret = dss_iof_unregister_core(rk, dss_vg_info);
     if (ret != CM_SUCCESS) {
         return ret;
@@ -412,30 +392,20 @@ status_t dss_inquiry_luns_from_ctrl(dss_vg_info_item_t *item, ptlist_t *lunlist)
         }
 
         dev_info_t *dev_info = (dev_info_t *)malloc(sizeof(dev_info_t));
-        if (dev_info == NULL) {
-            LOG_DEBUG_ERR("Malloc failed.");
-            return CM_ERROR;
-        }
+        bool32 result = (bool32)(dev_info != NULL);
+        DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Malloc failed."));
 
         errno_t ret = memset_sp(dev_info, sizeof(dev_info_t), 0, sizeof(dev_info_t));
-        if (ret != EOK) {
-            DSS_FREE_POINT(dev_info);
-            DSS_THROW_ERROR(ERR_SYSTEM_CALL, ret);
-            return CM_ERROR;
-        }
+        result = (bool32)(ret == EOK);
+        DSS_RETURN_IF_FALSE3(result, DSS_FREE_POINT(dev_info), DSS_THROW_ERROR(ERR_SYSTEM_CALL, ret));
 
         dev_info->dev = item->dss_ctrl->volume.defs[j].name;
         status = dss_inquiry_lun(dev_info);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Inquiry dev failed, dev %s.", item->dss_ctrl->volume.defs[j].name);
-            DSS_FREE_POINT(dev_info);
-            return CM_ERROR;
-        }
+        DSS_RETURN_IFERR3(status, DSS_FREE_POINT(dev_info),
+            LOG_DEBUG_ERR("Inquiry dev failed, dev %s.", item->dss_ctrl->volume.defs[j].name));
 
-        if (cm_ptlist_add(lunlist, dev_info) != CM_SUCCESS) {
-            DSS_FREE_POINT(dev_info);
-            return CM_ERROR;
-        }
+        status = cm_ptlist_add(lunlist, dev_info);
+        DSS_RETURN_IFERR2(status, DSS_FREE_POINT(dev_info));
     }
     return CM_SUCCESS;
 }
@@ -460,17 +430,12 @@ status_t dss_inquiry_luns(ptlist_t *lunlist, bool32 is_server)
         dss_vg_info_item_t *item = &dss_vg_info->volume_group[i];
 
         dev_info = (dev_info_t *)malloc(sizeof(dev_info_t));
-        if (dev_info == NULL) {
-            LOG_DEBUG_ERR("Malloc failed.");
-            return CM_ERROR;
-        }
+        bool32 result = (bool32)(dev_info != NULL);
+        DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Malloc failed."));
 
         ret = memset_sp(dev_info, sizeof(dev_info_t), 0, sizeof(dev_info_t));
-        if (ret != EOK) {
-            DSS_FREE_POINT(dev_info);
-            DSS_THROW_ERROR(ERR_SYSTEM_CALL, ret);
-            return CM_ERROR;
-        }
+        result = (bool32)(ret == EOK);
+        DSS_RETURN_IF_FALSE3(result, DSS_FREE_POINT(dev_info), DSS_THROW_ERROR(ERR_SYSTEM_CALL, ret));
 
         dev_info->dev = item->entry_path;
         status = dss_inquiry_lun(dev_info);
@@ -480,16 +445,11 @@ status_t dss_inquiry_luns(ptlist_t *lunlist, bool32 is_server)
             return CM_ERROR;
         }
 
-        if (cm_ptlist_add(lunlist, dev_info) != CM_SUCCESS) {
-            DSS_FREE_POINT(dev_info);
-            return CM_ERROR;
-        }
+        status = cm_ptlist_add(lunlist, dev_info);
+        DSS_RETURN_IFERR2(status, DSS_FREE_POINT(dev_info));
 
         // volume_attrs[0] is the sys dev
-        status = dss_inquiry_luns_from_ctrl(item, lunlist);
-        if (status != CM_SUCCESS) {
-            return status;
-        }
+        DSS_RETURN_IF_ERROR(dss_inquiry_luns_from_ctrl(item, lunlist));
     }
 #endif
 
@@ -509,17 +469,12 @@ status_t dss_iof_inql_regs_core(ptlist_t *reglist, dss_vg_info_item_t *item)
         }
 
         reg_info = (iof_reg_in_t *)malloc(sizeof(iof_reg_in_t));
-        if (reg_info == NULL) {
-            LOG_DEBUG_ERR("Malloc failed.");
-            return CM_ERROR;
-        }
+        bool32 result = (bool32)(reg_info != NULL);
+        DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Malloc failed."));
 
         ret = memset_sp(reg_info, sizeof(iof_reg_in_t), 0, sizeof(iof_reg_in_t));
-        if (ret != EOK) {
-            DSS_THROW_ERROR(ERR_SYSTEM_CALL, ret);
-            DSS_FREE_POINT(reg_info);
-            return CM_ERROR;
-        }
+        result = (bool32)(ret == EOK);
+        DSS_RETURN_IF_FALSE3(result, DSS_FREE_POINT(reg_info), DSS_THROW_ERROR(ERR_SYSTEM_CALL, ret));
 
         reg_info->dev = item->dss_ctrl->volume.defs[j].name;
         status = cm_iof_inql(reg_info);
@@ -529,10 +484,8 @@ status_t dss_iof_inql_regs_core(ptlist_t *reglist, dss_vg_info_item_t *item)
             return CM_ERROR;
         }
 
-        if (cm_ptlist_add(reglist, reg_info) != CM_SUCCESS) {
-            DSS_FREE_POINT(reg_info);
-            return CM_ERROR;
-        }
+        status = cm_ptlist_add(reglist, reg_info);
+        DSS_RETURN_IFERR2(status, DSS_FREE_POINT(reg_info));
     }
     return CM_SUCCESS;
 }
@@ -555,16 +508,12 @@ status_t dss_iof_inql_regs(ptlist_t *reglist, bool32 is_server)
     for (uint32 i = 0; i < (uint32)dss_vg_info->group_num; i++) {
         dss_vg_info_item_t *item = &dss_vg_info->volume_group[i];
         reg_info = (iof_reg_in_t *)malloc(sizeof(iof_reg_in_t));
-        if (reg_info == NULL) {
-            LOG_DEBUG_ERR("Malloc failed.");
-            return CM_ERROR;
-        }
+        bool32 result = (bool32)(reg_info != NULL);
+        DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Malloc failed."));
+
         ret = memset_sp(reg_info, sizeof(iof_reg_in_t), 0, sizeof(iof_reg_in_t));
-        if (ret != EOK) {
-            DSS_FREE_POINT(reg_info);
-            DSS_THROW_ERROR(ERR_SYSTEM_CALL, ret);
-            return CM_ERROR;
-        }
+        result = (bool32)(ret == EOK);
+        DSS_RETURN_IF_FALSE3(result, DSS_FREE_POINT(reg_info), DSS_THROW_ERROR(ERR_SYSTEM_CALL, ret));
 
         reg_info->dev = item->entry_path;
         status = cm_iof_inql(reg_info);
@@ -573,10 +522,9 @@ status_t dss_iof_inql_regs(ptlist_t *reglist, bool32 is_server)
             DSS_FREE_POINT(reg_info);
             return CM_ERROR;
         }
-        if (cm_ptlist_add(reglist, reg_info) != CM_SUCCESS) {
-            DSS_FREE_POINT(reg_info);
-            return CM_ERROR;
-        }
+
+        status = cm_ptlist_add(reglist, reg_info);
+        DSS_RETURN_IFERR2(status, DSS_FREE_POINT(reg_info));
         // volume_attrs[0] is the sys dev
         DSS_RETURN_IF_ERROR(dss_iof_inql_regs_core(reglist, item));
     }

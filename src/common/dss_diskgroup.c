@@ -127,28 +127,17 @@ status_t dss_read_vg_config_file(const char *file_name, char *buf, uint32 *buf_l
         return CM_ERROR;
     }
 
-    if (cm_open_file(file_name, mode, &file_fd) != CM_SUCCESS) {
-        return CM_ERROR;
-    }
+    DSS_RETURN_IF_ERROR(cm_open_file(file_name, mode, &file_fd));
 
     int64 size = cm_file_size(file_fd);
-    if (size == -1) {
-        cm_close_file(file_fd);
-        DSS_THROW_ERROR(ERR_SEEK_FILE, 0, SEEK_END, errno);
-        return CM_ERROR;
-    }
+    bool32 result = (bool32)(size != -1);
+    DSS_RETURN_IF_FALSE3(result, cm_close_file(file_fd), DSS_THROW_ERROR(ERR_SEEK_FILE, 0, SEEK_END, errno));
 
-    if (size > (int64)(*buf_len)) {
-        cm_close_file(file_fd);
-        DSS_THROW_ERROR(ERR_DSS_CONFIG_FILE_OVERSIZED, file_name);
-        return CM_ERROR;
-    }
+    result = (bool32)(size <= (int64)(*buf_len));
+    DSS_RETURN_IF_FALSE3(result, cm_close_file(file_fd), DSS_THROW_ERROR(ERR_DSS_CONFIG_FILE_OVERSIZED, file_name));
 
-    if (cm_seek_file(file_fd, 0, SEEK_SET) != 0) {
-        cm_close_file(file_fd);
-        DSS_THROW_ERROR(ERR_SEEK_FILE, 0, SEEK_SET, errno);
-        return CM_ERROR;
-    }
+    result = (bool32)(cm_seek_file(file_fd, 0, SEEK_SET) == 0);
+    DSS_RETURN_IF_FALSE3(result, cm_close_file(file_fd), DSS_THROW_ERROR(ERR_SEEK_FILE, 0, SEEK_SET, errno));
 
     status = cm_read_file(file_fd, buf, (int32)size, (int32 *)buf_len);
     cm_close_file(file_fd);
@@ -163,10 +152,9 @@ status_t dss_load_vg_conf_inner(dss_vg_info_t *vgs_info, const dss_config_t *ins
     status_t status;
 
     int32 errcode = sprintf_s(vg_config_path, DSS_FILE_PATH_MAX_LENGTH, "%s/cfg/%s", inst_cfg->home, DSS_VG_CONF_NAME);
-    if (errcode == -1) {
-        CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
-        return CM_ERROR;
-    }
+    bool32 result = (bool32)(errcode != -1);
+    DSS_RETURN_IF_FALSE2(result, CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode));
+
     uint32_t len = DSS_MAX_CONFIG_FILE_SIZE;
     status = dss_read_vg_config_file(vg_config_path, file_buf, &len, DSS_TRUE);
     if (status != CM_SUCCESS) {
@@ -174,27 +162,20 @@ status_t dss_load_vg_conf_inner(dss_vg_info_t *vgs_info, const dss_config_t *ins
     }
 
     status = dss_parse_vg_config(vgs_info, file_buf, len);
-    if (status != CM_SUCCESS) {
-        return status;
-    }
-
-    return CM_SUCCESS;
+    return status;
 }
 
 status_t dss_load_vg_conf_info(dss_vg_info_t **vgs, const dss_config_t *inst_cfg)
 {
     status_t status;
     dss_vg_info_t *vgs_info = (dss_vg_info_t *)cm_malloc(sizeof(dss_vg_info_t));
-    if (vgs_info == NULL) {
-        DSS_THROW_ERROR(ERR_ALLOC_MEMORY, sizeof(dss_vg_info_t), "dss_load_vg_conf_info");
-        return CM_ERROR;
-    }
+    bool32 result = (bool32)(vgs_info != NULL);
+    DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, sizeof(dss_vg_info_t), "dss_load_vg_conf_info"));
+
     errno_t errcode = memset_s(vgs_info, sizeof(dss_vg_info_t), 0, sizeof(dss_vg_info_t));
-    if (errcode != EOK) {
-        CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
-        DSS_FREE_POINT(vgs_info);
-        return CM_ERROR;
-    }
+    result = (bool32)(errcode == EOK);
+    DSS_RETURN_IF_FALSE3(result, DSS_FREE_POINT(vgs_info), CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode));
+
     status = dss_load_vg_conf_inner(vgs_info, inst_cfg);
     if (status != CM_SUCCESS) {
         DSS_FREE_POINT(vgs_info);
@@ -369,11 +350,9 @@ status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **inf
             continue;
         }
         g_vgs_info->volume_group[i].stack.buff = (char *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_MAX_STACK_BUF_SIZE);
-        if (!g_vgs_info->volume_group[i].stack.buff) {
-            LOG_DEBUG_ERR(
-                "cm_malloc_align stack failed, align size:%u, size:%u.", DSS_ALIGN_SIZE, DSS_MAX_STACK_BUF_SIZE);
-            return CM_ERROR;
-        }
+        bool32 result = (bool32)(g_vgs_info->volume_group[i].stack.buff != NULL);
+        DSS_RETURN_IF_FALSE2(result,
+            LOG_DEBUG_ERR("malloc stack failed, align size:%u, size:%u.", DSS_ALIGN_SIZE, DSS_MAX_STACK_BUF_SIZE));
 
         g_vgs_info->volume_group[i].stack.size = DSS_MAX_STACK_BUF_SIZE;
         int32 ret = shm_hashmap_init(
@@ -698,11 +677,7 @@ status_t dss_lock_disk_vg(const char *entry_path, dss_config_t *inst_cfg)
     // if get the timeout(ERR_SCSI_LOCK_OCCUPIED) error from scsi lock, we'll try lock vg again
     for (;;) {
         status = cm_init_dlock(&lock, DSS_CTRL_VG_LOCK_OFFSET, inst_cfg->params.inst_id);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to init lock.");
-            cm_destory_dlock(&lock);
-            return CM_ERROR;
-        }
+        DSS_RETURN_IFERR3(status, cm_destory_dlock(&lock), LOG_DEBUG_ERR("Failed to init lock."));
 
         status = cm_disk_timed_lock_s(
             &lock, entry_path, DSS_LOCK_VG_TIMEOUT, inst_cfg->params.lock_interval, inst_cfg->params.dlock_retry_count);
@@ -715,11 +690,9 @@ status_t dss_lock_disk_vg(const char *entry_path, dss_config_t *inst_cfg)
             LOG_DEBUG_INF("Lock vg timeout, get current lock info, entry_path %s.", entry_path);
             // get old lock info from disk
             status = cm_get_dlock_info_s(&lock, entry_path);
-            if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("Failed to get old lock info, entry path %s.", entry_path);
-                cm_destory_dlock(&lock);
-                return status;
-            }
+            DSS_RETURN_IFERR3(status, cm_destory_dlock(&lock),
+                LOG_DEBUG_ERR("Failed to get old lock info, entry path %s.", entry_path));
+
             // Get the status of the instance that owns the lock
             LOG_DEBUG_INF("The node that owns the lock is online, contine to get vg lock, entry path %s.", entry_path);
             continue;
@@ -870,13 +843,8 @@ status_t dss_update_volume_ctrl(dss_vg_info_item_t *vg_item)
 
 status_t dss_update_volume_id_info(dss_vg_info_item_t *vg_item, uint32 id)
 {
-    if (dss_update_core_ctrl_disk(vg_item) != CM_SUCCESS) {
-        return CM_ERROR;
-    }
-
-    if (dss_update_volume_ctrl(vg_item) != CM_SUCCESS) {
-        return CM_ERROR;
-    }
+    DSS_RETURN_IF_ERROR(dss_update_core_ctrl_disk(vg_item));
+    DSS_RETURN_IF_ERROR(dss_update_volume_ctrl(vg_item) != CM_SUCCESS);
 
     uint64 attr_offset = id * sizeof(dss_volume_attr_t);
     char *align_buf =
@@ -886,21 +854,14 @@ status_t dss_update_volume_id_info(dss_vg_info_item_t *vg_item, uint32 id)
         return CM_ERROR;
     }
     // write to backup area
-    if (dss_write_ctrl_to_disk(vg_item, DSS_CTRL_BAK_ADDR + offset, align_buf, DSS_DISK_UNIT_SIZE) != CM_SUCCESS) {
-        return CM_ERROR;
-    }
+    DSS_RETURN_IF_ERROR(dss_write_ctrl_to_disk(vg_item, DSS_CTRL_BAK_ADDR + offset, align_buf, DSS_DISK_UNIT_SIZE));
 
     attr_offset = id * sizeof(dss_volume_def_t);
     align_buf = (char *)vg_item->dss_ctrl->volume.defs + (attr_offset / DSS_DISK_UNIT_SIZE) * DSS_DISK_UNIT_SIZE;
     offset = align_buf - (char *)vg_item->dss_ctrl;
-    if (dss_write_ctrl_to_disk(vg_item, offset, align_buf, DSS_DISK_UNIT_SIZE) != CM_SUCCESS) {
-        return CM_ERROR;
-    }
+    DSS_RETURN_IF_ERROR(dss_write_ctrl_to_disk(vg_item, offset, align_buf, DSS_DISK_UNIT_SIZE));
     // write to backup area
-    if (dss_write_ctrl_to_disk(vg_item, DSS_CTRL_BAK_ADDR + offset, align_buf, DSS_DISK_UNIT_SIZE) != CM_SUCCESS) {
-        return CM_ERROR;
-    }
-    return CM_SUCCESS;
+    return dss_write_ctrl_to_disk(vg_item, DSS_CTRL_BAK_ADDR + offset, align_buf, DSS_DISK_UNIT_SIZE);
 }
 
 status_t dss_write_volume_inst(
@@ -1028,10 +989,8 @@ static status_t dss_add_volume_impl_generate_redo(
     CM_RETURN_IFERR(dss_gen_volume_head(vol_head, vg_item, volume_name, id));
 
     int32 ret = snprintf_s(redo.name, DSS_MAX_NAME_LEN, strlen(volume_name), "%s", volume_name);
-    if (ret == -1) {
-        DSS_THROW_ERROR(ERR_SYSTEM_CALL, ret);
-        return CM_ERROR;
-    }
+    bool32 result = (bool32)(ret != -1);
+    DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_SYSTEM_CALL, ret));
     dss_put_log(session, vg_item, DSS_RT_UPDATE_VOLHEAD, &redo, sizeof(redo));
     return CM_SUCCESS;
 }
@@ -1039,11 +998,9 @@ static status_t dss_add_volume_impl_generate_redo(
 static status_t dss_add_volume_impl(dss_session_t *session, dss_vg_info_item_t *vg_item, const char *volume_name)
 {
     uint32 id = dss_find_free_volume_id(vg_item);
-    if (id >= DSS_MAX_VOLUMES) {
-        // EXCEED MAX_VOLUMES
-        LOG_DEBUG_ERR("Failed to add volume, exceed max volumes %d.", DSS_MAX_VOLUMES);
-        return CM_ERROR;
-    }
+    bool32 result = (bool32)(id < DSS_MAX_VOLUMES);
+    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Failed to add volume, exceed max volumes %d.", DSS_MAX_VOLUMES));
+
     CM_RETURN_IFERR(dss_open_volume(volume_name, NULL, DSS_INSTANCE_OPEN_FLAG, &vg_item->volume_handle[id]));
     status_t status = dss_add_volume_impl_generate_redo(session, vg_item, volume_name, id);
     uint64 vol_size = dss_get_volume_size(&vg_item->volume_handle[id]);
@@ -1051,10 +1008,9 @@ static status_t dss_add_volume_impl(dss_session_t *session, dss_vg_info_item_t *
     if (status != CM_SUCCESS) {
         return CM_ERROR;
     }
-    if (vol_size == DSS_INVALID_64) {
-        LOG_DEBUG_ERR("Failed to get volume size when add volume:%s.", volume_name);
-        return CM_ERROR;
-    }
+
+    result = (bool32)(vol_size != DSS_INVALID_64);
+    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Failed to get volume size when add volume:%s.", volume_name));
     return dss_add_volume_vg_ctrl(session, id, vol_size, vg_item, volume_name);
 }
 
@@ -1094,6 +1050,7 @@ status_t dss_add_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item
         dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
+        cm_fync_logfile();
         _exit(1);
     }
     return CM_SUCCESS;
@@ -1220,6 +1177,7 @@ status_t dss_remove_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_i
         dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
+        cm_fync_logfile();
         _exit(1);
     }
     return CM_SUCCESS;
@@ -1495,10 +1453,8 @@ static status_t dss_check_free_volume(dss_vg_info_item_t *vg_item, uint32 volume
     }
 
     dss_volume_ctrl_t *volume = (dss_volume_ctrl_t *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_VOLUME_CTRL_SIZE);
-    if (volume == NULL) {
-        LOG_DEBUG_ERR("Can not allocate memory in stack.");
-        return CM_ERROR;
-    }
+    bool32 result = (bool32)(volume != NULL);
+    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Can not allocate memory in stack."));
 
     status_t status = dss_load_volume_ctrl(vg_item, volume);
     if (status != CM_SUCCESS) {
@@ -1533,10 +1489,8 @@ status_t dss_check_volume(dss_vg_info_item_t *vg_item, uint32 volumeid)
 
     if (volumeid == CM_INVALID_ID32) {
         volume = (dss_volume_ctrl_t *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_VOLUME_CTRL_SIZE);
-        if (volume == NULL) {
-            LOG_DEBUG_ERR("Can not allocate memory in stack.");
-            return CM_ERROR;
-        }
+        bool32 result = (bool32)(volume != NULL);
+        DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Can not allocate memory in stack."));
 
         status = dss_load_volume_ctrl(vg_item, volume);
         if (status != CM_SUCCESS) {
@@ -1560,11 +1514,7 @@ status_t dss_check_volume(dss_vg_info_item_t *vg_item, uint32 volumeid)
 status_t dss_check_write_volume(dss_vg_info_item_t *vg_item, uint32 volumeid, int64 offset, void *buf, uint32 size)
 {
     dss_volume_t *volume;
-    status_t status;
-    status = dss_check_volume(vg_item, volumeid);
-    if (status != CM_SUCCESS) {
-        return status;
-    }
+    DSS_RETURN_IF_ERROR(dss_check_volume(vg_item, volumeid));
     volume = &vg_item->volume_handle[volumeid];
     return dss_write_volume_inst(vg_item, volume, offset, buf, size);
 }
@@ -1573,11 +1523,7 @@ status_t dss_check_write_volume(dss_vg_info_item_t *vg_item, uint32 volumeid, in
 status_t dss_check_read_volume(dss_vg_info_item_t *vg_item, uint32 volumeid, int64 offset, void *buf, int32 size)
 {
     dss_volume_t *volume;
-    status_t status;
-    status = dss_check_volume(vg_item, volumeid);
-    if (status != CM_SUCCESS) {
-        return status;
-    }
+    DSS_RETURN_IF_ERROR(dss_check_volume(vg_item, volumeid));
     volume = &vg_item->volume_handle[volumeid];
     return dss_read_volume_inst(vg_item, volume, offset, buf, size);
 }

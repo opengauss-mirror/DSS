@@ -40,6 +40,7 @@ extern "C" {
 #define DSS_INVALID_SESSIONID CM_INVALID_ID32
 #define DSS_MAX_LATCH_STACK_BOTTON 0
 #define DSS_MAX_LATCH_STACK_DEPTH 8
+#define DSS_LOCK_CLEAN_SLEEP_TIME 500
 
 typedef struct tagdss_cli_info {
     uint64 cli_pid;
