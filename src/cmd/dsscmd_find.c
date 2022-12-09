@@ -67,7 +67,7 @@ static void find_traverse_node(gft_node_t *node, dss_vg_info_item_t *vg_item, co
     }
 }
 
-static status_t find_try_match_link(dss_conn_t *conn, char *path, const char *name)
+static status_t find_try_match_link(char *path, const char *name)
 {
     size_t len = strlen(path);
     if (len > 0 && path[len - 1] != '/') {
@@ -91,7 +91,7 @@ status_t find_traverse_path(dss_conn_t *conn, char *path, size_t path_size, char
     gft_node_t *node = NULL;
     size_t len = strlen(path);
 
-    DSS_RETURN_IF_SUCCESS(find_try_match_link(conn, path, name));
+    DSS_RETURN_IF_SUCCESS(find_try_match_link(path, name));
 
     dss_exist_file_impl(conn, path, &exist);
     if (exist) {

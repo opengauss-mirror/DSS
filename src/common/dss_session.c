@@ -27,6 +27,7 @@
 #include "dss_malloc.h"
 #include "dss_file.h"
 #include "dss_redo.h"
+#include "dss_system.h"
 #include "dss_session.h"
 
 #ifdef __cplusplus
@@ -200,12 +201,19 @@ void dss_clean_session_latch(dss_session_ctrl_t *session_ctrl, dss_session_t *se
 
     stack_top = (int32)session->latch_stack.stack_top;
 
-    for (i = stack_top; i >= DSS_MAX_LATCH_STACK_BOTTON; i--) {
+    for (i = stack_top; i >= DSS_MAX_LATCH_STACK_BOTTON;) {
         dss_latch_offset_type_e offset_type = session->latch_stack.latch_offset_stack[i].type;
         if ((i == stack_top) && (offset_type == DSS_LATCH_OFFSET_INVALID)) {
+            i--;
             continue;
         }
 
+        if (cm_sys_process_alived(session->cli_info.cli_pid, session->cli_info.start_time)) {
+            cm_usleep(DSS_LOCK_CLEAN_SLEEP_TIME);
+            stack_top = (int32)session->latch_stack.stack_top;
+            i = stack_top;
+            continue;
+        }
         if (offset_type == DSS_LATCH_OFFSET_SHMOFFSET) {
             offset = session->latch_stack.latch_offset_stack[i].offset.shm_offset;
             CM_ASSERT(offset != SHM_INVALID_ADDR);
@@ -213,6 +221,7 @@ void dss_clean_session_latch(dss_session_ctrl_t *session_ctrl, dss_session_t *se
             LOG_DEBUG_INF("Clean session latch,i:%d, offset:%llu.", i, (uint64)offset);
         } else {
             LOG_DEBUG_ERR("latch offset type is invalid %u,i:%d.", session->latch_stack.latch_offset_stack[i].type, i);
+            i--;
             continue;
         }
 
@@ -225,6 +234,7 @@ void dss_clean_session_latch(dss_session_ctrl_t *session_ctrl, dss_session_t *se
         latch->shared_count = (uint16)count;
         session->latch_stack.latch_offset_stack[i].type = DSS_LATCH_OFFSET_INVALID;
         cm_spin_unlock(&latch->lock);
+        i--;
     }
 
     session->latch_stack.stack_top = DSS_MAX_LATCH_STACK_BOTTON;
@@ -283,6 +293,12 @@ status_t dss_lock_shm_meta_s(dss_session_t *session, const dss_latch_offset_t *o
             SPIN_STAT_INC(stat, s_sleeps);
             cm_usleep(SPIN_SLEEP_TIME);
             sleep_times++;
+            if (session->is_closed) {
+                DSS_THROW_ERROR(ERR_DSS_SHM_LOCK, "uds connection is closed.");
+                LOG_RUN_ERR("Failed to lock vg share memery because uds connection is closed.");
+                session->latch_stack.latch_offset_stack[session->latch_stack.stack_top].type = DSS_LATCH_OFFSET_INVALID;
+                return CM_ERROR;
+            }
             if (dss_is_timeout(timeout, sleep_times, SPIN_SLEEP_TIME)) {
                 session->latch_stack.latch_offset_stack[session->latch_stack.stack_top].type = DSS_LATCH_OFFSET_INVALID;
                 return CM_ERROR;
@@ -297,6 +313,11 @@ status_t dss_cli_lock_shm_meta_s(
     dss_session_t *session, dss_latch_offset_t *offset, latch_t *latch, latch_should_exit should_exit)
 {
     for (int i = 0; i < DSS_CLIENT_TIMEOUT_COUNT; i++) {
+        if (session->is_closed) {
+            DSS_THROW_ERROR(ERR_DSS_SHM_LOCK, "uds connection is closed.");
+            LOG_RUN_ERR("Failed to lock vg share memery because uds connection is closed.");
+            return CM_ERROR;
+        }
         if (dss_lock_shm_meta_s(session, offset, latch, DSS_CLIENT_TIMEOUT) == CM_SUCCESS) {
             return CM_SUCCESS;
         }

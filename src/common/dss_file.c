@@ -25,6 +25,7 @@
 #include "cm_date.h"
 #include "dss_ga.h"
 #include "cm_hash.h"
+#include "dss_defs.h"
 #include "dss_hashmap.h"
 #include "dss_shm.h"
 #include "dss_alloc_unit.h"
@@ -430,14 +431,19 @@ status_t dss_read_link(dss_session_t *session, char *link_path, char *out_filepa
     status = dss_read_link_file(vg_item, node, dst_path, sizeof(dst_path) - 1);
     dss_unlock_vg_mem_and_shm(session, vg_item);
     if (status != CM_SUCCESS) {
-        CM_RETURN_IFERR(dss_delete_open_file_index(vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid));
+        status = dss_delete_open_file_index(
+            vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
+        if (status == CM_SUCCESS) {
+            LOG_RUN_INF("Success to delete open file index, ftid:%llu.", *(uint64 *)&node->id);
+        }
         return CM_ERROR;
     }
     *out_len = (uint32)strlen(dst_path);
     errno_t errcode = strcpy_s(out_filepath, DSS_FILE_PATH_MAX_LENGTH, dst_path);
     securec_check_ret(errcode);
 
-    status = dss_delete_open_file_index(vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid);
+    status = dss_delete_open_file_index(
+        vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to delete open file index.");
         return CM_ERROR;
@@ -488,26 +494,41 @@ status_t dss_write_link_file(dss_session_t *session, char *link_path, char *dst_
     dss_vg_info_item_t *vg_item;
     gft_node_t *node = NULL;
     status_t status = CM_ERROR;
-    CM_RETURN_IFERR(dss_open_link(session, link_path, &vg_item, &node));
+    char name[DSS_MAX_NAME_LEN];
+    CM_RETURN_IFERR(dss_find_vg_by_dir(link_path, name, &vg_item));
+    dss_lock_vg_mem_and_shm_s(session, vg_item);
+    status = dss_open_link(session, link_path, &vg_item, &node);
+    dss_unlock_vg_mem_and_shm(session, vg_item);
+    CM_RETURN_IFERR(status);
     CM_RETURN_IF_FALSE(node->type == GFT_LINK);
     status = dss_extend(session, node->fid, node->id, 0, vg_item->vg_name, vg_item->id, DSS_FALSE);
     if (status != CM_SUCCESS) {
-        CM_RETURN_IFERR(dss_delete_open_file_index(vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid));
+        status = dss_delete_open_file_index(
+            vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
+        if (status == CM_SUCCESS) {
+            LOG_RUN_INF("Success to delete open file index, ftid:%llu.", *(uint64 *)&node->id);
+        }
         return CM_ERROR;
     }
     auid_t auid;
     status = dss_get_link_auid(vg_item, node, &auid, DSS_FALSE);
     if (status != CM_SUCCESS) {
-        CM_RETURN_IFERR(dss_delete_open_file_index(vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid));
+        CM_RETURN_IFERR(dss_delete_open_file_index(
+            vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time));
         return CM_ERROR;
     }
     status = dss_write_link_file_content(session, vg_item, auid, dst_path);
     if (status != CM_SUCCESS) {
-        CM_RETURN_IFERR(dss_delete_open_file_index(vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid));
+        CM_RETURN_IFERR(dss_delete_open_file_index(
+            vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time));
+        if (status == CM_SUCCESS) {
+            LOG_RUN_INF("Success to delete open file index, ftid:%llu.", *(uint64 *)&node->id);
+        }
         return CM_ERROR;
     }
 
-    status = dss_delete_open_file_index(vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid);
+    status = dss_delete_open_file_index(
+        vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to delete open file index.");
         return CM_ERROR;
@@ -564,6 +585,7 @@ static status_t dss_check_dir_core(
     status_t status;
     output_param->vg_item = dss_find_vg_item(name);
     if (output_param->vg_item == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, name);
         LOG_DEBUG_ERR("Failed to find vg, %s.", name);
         return CM_ERROR;
     }
@@ -753,7 +775,8 @@ status_t dss_open_dir(dss_session_t *session, const char *dir_path, bool32 is_re
                 break;
             }
         }
-        status = dss_insert_open_file_index(vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid);
+        status = dss_insert_open_file_index(
+            vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to insert open file index vg:%s, ftid:%llu, pid:%llu.", vg_item->vg_name,
                 *(uint64 *)&node->id, session->cli_info.cli_pid);
@@ -774,7 +797,8 @@ void dss_close_dir(dss_session_t *session, char *vg_name, uint64 ftid)
         return;
     }
 
-    status_t status = dss_delete_open_file_index(vg_item, ftid, session->cli_info.cli_pid);
+    status_t status =
+        dss_delete_open_file_index(vg_item, ftid, session->cli_info.cli_pid, session->cli_info.start_time);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to delete open file index.");
         return;
@@ -1153,7 +1177,8 @@ static status_t dss_open_file_find_block_and_insert_index(
         return CM_ERROR;
     }
 
-    status = dss_insert_open_file_index(vg_item, *(uint64 *)&out_node->id, session->cli_info.cli_pid);
+    status = dss_insert_open_file_index(
+        vg_item, *(uint64 *)&out_node->id, session->cli_info.cli_pid, session->cli_info.start_time);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to insert open file index.");
         return CM_ERROR;
@@ -1196,6 +1221,7 @@ status_t dss_open_file_core(dss_session_t *session, const char *path, uint32 typ
         dss_unlock_vg_mem_and_shm(session, vg_item);
         LOG_RUN_ERR("[DSS API] ABORT INFO : redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
+        cm_fync_logfile();
         _exit(1);
     }
     dss_unlock_vg_mem_and_shm(session, vg_item);
@@ -1299,7 +1325,8 @@ gft_node_t *dss_find_parent_node_by_node(dss_vg_info_item_t *vg_item, gft_node_t
 
 status_t dss_close_file(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid)
 {
-    status_t status = dss_delete_open_file_index(vg_item, ftid, session->cli_info.cli_pid);
+    status_t status =
+        dss_delete_open_file_index(vg_item, ftid, session->cli_info.cli_pid, session->cli_info.start_time);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to delete open file index.");
         return CM_ERROR;
@@ -1906,7 +1933,7 @@ gft_node_t *dss_alloc_ft_node_when_create_vg(
         /* file or link */
         dss_set_blockid(&node->entry, CM_INVALID_ID64);
     }
-    if (strcpy_s(node->name, sizeof(node->name) - 1, name) != EOK) {
+    if (strcpy_s(node->name, sizeof(node->name), name) != EOK) {
         cm_panic(0);
     }
     dss_init_alloc_ft_node(gft, node, flags, parent_node);
@@ -1938,6 +1965,19 @@ status_t dss_init_ft_node_entry(dss_session_t *session, dss_vg_info_item_t *vg_i
     return CM_SUCCESS;
 }
 
+status_t dss_alloc_ft_au_when_no_free(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_root_t *gft, bool32 *check_version)
+{
+    if (gft->free_list.count == 0) {
+        ftid_t id;
+        status_t status = dss_alloc_ft_au(session, vg_item, &id);
+        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to allocate au when allocating file table node."));
+        *check_version = CM_FALSE;
+        DSS_LOG_DEBUG_OP("Succeed to allocate au:%llu when allocating file table node.", DSS_ID_TO_U64(id));
+    }
+    return CM_SUCCESS;
+}
+
 gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node,
     const char *name, gft_item_type_t type)
 {
@@ -1952,14 +1992,9 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     gft_root_t *gft = &ft_block->ft_root;
     bool32 check_version = CM_TRUE;
 
-    if (gft->free_list.count == 0) {
-        status = dss_alloc_ft_au(session, vg_item, &id);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to allocate au when allocating file table node.");
-            return NULL;
-        }
-        check_version = CM_FALSE;
-        DSS_LOG_DEBUG_OP("Succeed to allocate au:%llu when allocating file table node.", DSS_ID_TO_U64(id));
+    status = dss_alloc_ft_au_when_no_free(session, vg_item, gft, &check_version);
+    if (status != CM_SUCCESS) {
+        return NULL;
     }
     id = gft->free_list.first;
     gft_node_t *node = dss_get_ft_node_by_ftid(vg_item, id, check_version, CM_FALSE);
@@ -2646,6 +2681,7 @@ status_t dss_extend(
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (!vg_item) {
         LOG_DEBUG_ERR("Failed to find vg,vg name %s.", vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
         return CM_ERROR;
     }
 
@@ -2662,6 +2698,7 @@ status_t dss_extend_inner(
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     if (vg_item == NULL) {
         LOG_DEBUG_ERR("Failed to find vg,vg name %s.", vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
         return CM_ERROR;
     }
 
@@ -2776,6 +2813,7 @@ status_t dss_extend_inner(
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
+        cm_fync_logfile();
         _exit(1);
     }
 
@@ -2999,6 +3037,7 @@ static status_t dss_prepare_truncate(dss_session_t *session, char *vg_name, uint
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item == NULL) {
         LOG_DEBUG_ERR("Failed to find vg with name %s.", vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
         return CM_ERROR;
     }
     dss_lock_vg_mem_and_shm_x(session, vg_item);
@@ -3029,6 +3068,7 @@ static status_t dss_init_trunc_ftn(dss_session_t *session, dss_vg_info_item_t *v
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
+        cm_fync_logfile();
         _exit(1);
     }
     if (*truncated_ftn == NULL) {
@@ -3147,6 +3187,7 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
         dss_unlock_vg_mem_and_shm(session, vg_item);
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
+        cm_fync_logfile();
         _exit(1);
     }
 
@@ -3192,6 +3233,7 @@ status_t dss_refresh_file(dss_session_t *session, uint64 fid, ftid_t ftid, char 
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item == NULL) {
         LOG_DEBUG_ERR("Failed to find vg,vg name %s.", vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
         return CM_ERROR;
     }
 
@@ -3220,6 +3262,7 @@ status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32
 #endif
     dss_vg_info_item_t *vg_item = dss_find_vg_item(name_str);
     if (!vg_item) {
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, name_str);
         return CM_ERROR;
     }
     status_t status;
@@ -3321,6 +3364,7 @@ status_t dss_refresh_ft_block(dss_session_t *session, char *vg_name, uint32 vgid
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (!vg_item) {
         LOG_DEBUG_ERR("Failed to find vg,vg name %s.", vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
         return CM_ERROR;
     }
     dss_lock_vg_mem_and_shm_x(session, vg_item);
@@ -3350,6 +3394,7 @@ status_t dss_update_file_written_size(
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (!vg_item) {
         LOG_DEBUG_ERR("Failed to find vg,vg name %s.", vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
         return CM_ERROR;
     }
     dss_lock_vg_mem_x(vg_item);

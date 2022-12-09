@@ -63,6 +63,8 @@ status_t dss_update_file_written_size(
     dss_session_t *session, char *vg_name, uint64 written_size, dss_block_id_t blockid);
 status_t dss_get_ftid_by_path(dss_session_t *session, const char *path, ftid_t *ftid, dss_vg_info_item_t **dir_vg_item);
 // for dss internal call
+status_t dss_alloc_ft_au_when_no_free(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_root_t *gft, bool32 *check_version);
 gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node,
     const char *name, gft_item_type_t type);
 gft_node_t *dss_alloc_ft_node_when_create_vg(

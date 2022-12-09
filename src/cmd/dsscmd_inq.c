@@ -149,6 +149,8 @@ static bool32 is_register(iof_reg_in_t *reg, int64 host_id, int64 *iofence_key)
 {
     for (int32 i = 0; i < reg->key_count; i++) {
         iofence_key[reg->reg_keys[i] - 1]++;
+    }
+    for (int32 i = 0; i < reg->key_count; i++) {
         if (reg->reg_keys[i] == host_id + 1) {
             return DSS_TRUE;
         }

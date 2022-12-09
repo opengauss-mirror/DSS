@@ -130,6 +130,7 @@ status_t dss_rename_file_put_redo_log(dss_session_t *session, gft_node_t *out_no
         dss_unlock_vg_mem_and_shm(session, vg_item);
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
+        cm_fync_logfile();
         _exit(1);
     }
     return CM_SUCCESS;
@@ -170,7 +171,6 @@ status_t dss_rename_file(dss_session_t *session, const char *file, const char *d
         DSS_BREAK_IF_ERROR(dss_rename_file_check(session, file, dst, &vg_item, &out_node));
         if (out_node == NULL) {
             LOG_DEBUG_ERR("Failed to rename file %s.", file);
-            ret = CM_ERROR;
             break;
         }
         bool32 is_open = CM_FALSE;
@@ -178,8 +178,7 @@ status_t dss_rename_file(dss_session_t *session, const char *file, const char *d
             dss_notify_check_file_open(vg_item, session, BCAST_REQ_RENAME, *(uint64 *)&out_node->id, &is_open));
         if (is_open) {
             // logic same as before
-            LOG_DEBUG_ERR(
-                "Rename file failed, beacuse file is opened by other instance src path: %s, dst path %s.", file, dst);
+            DSS_THROW_ERROR(ERR_DSS_FILE_RENAME_OPENING_REMOTE, file, dst);
             break;
         }
         DSS_BREAK_IF_ERROR(dss_rename_file_put_redo_log(session, out_node, dst_name, vg_item, inst_cfg));
@@ -408,6 +407,7 @@ static status_t dss_rm_dir_file(dss_session_t *session, const char *dir_name, gf
 
     dss_unlock_vg_mem_and_shm(session, vg_item);
     if (need_abort) {
+        cm_fync_logfile();
         _exit(1);
     }
     return status;
@@ -460,6 +460,7 @@ static status_t dss_remove_dir_file_by_node_inner(
     if (dss_process_redo_log(session, vg_item) != CM_SUCCESS) {
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
+        cm_fync_logfile();
         _exit(1);
     }
     DSS_LOG_DEBUG_OP("Succeed to rm %s in vg:%s.", node->name, vg_item->vg_name);
@@ -545,6 +546,7 @@ static status_t dss_make_dir_file_core(dss_session_t *session, const char *paren
         dss_unlock_vg_mem_and_shm(session, *vg_item);
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
+        cm_fync_logfile();
         _exit(1);
     }
     return CM_SUCCESS;

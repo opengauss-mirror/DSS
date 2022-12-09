@@ -27,6 +27,10 @@
 #include "dss_latch.h"
 #include "dss_session.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef status_t (*dss_srv_proc)(dss_session_t *session);
 typedef status_t (*dss_srv_proc_err)(dss_session_t *session);
 
@@ -36,8 +40,15 @@ typedef struct st_dss_cmd_hdl {
     dss_srv_proc_err proc_err;
     bool32 exec_on_active;
 } dss_cmd_hdl_t;
+#ifndef WIN32
+status_t dss_signal_proc(void);
+status_t dss_signal_proc_with_graceful_exit(void);
+#endif
 
 status_t dss_process_command(dss_session_t *session);
 void dss_session_entry(thread_t *thread);
 status_t dss_proc_standby_req(dss_session_t *session);
+#ifdef __cplusplus
+}
+#endif
 #endif

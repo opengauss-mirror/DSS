@@ -68,7 +68,6 @@
 
 // cmd format : cmd subcmd [-f val]
 #define CMD_ARGS_AT_LEAST 2
-#define DSS_TEMP_OPEN_FILES 100
 #define DSS_DEFAULT_MEASURE "B"
 #define DSS_SUBSTR_UDS_PATH "UDS:"
 #define DSS_DEFAULT_VG_TYPE 't' /* show vg information in table format by default */
@@ -297,9 +296,7 @@ void cmd_clean_check_convert(char *convert_result, int convert_size)
 {
     if (convert_result != NULL) {
         free(convert_result);
-        return;
     }
-    return;
 }
 
 static status_t cmd_check_struct_name(const char *struct_name)
@@ -1337,13 +1334,13 @@ static status_t ls_proc(void)
         }
         char type = node->type == GFT_PATH ? 'd' : node->type == GFT_FILE ? '-' : 'l';
 #ifndef OPENGAUSS
-        (void)printf("%-5c%-20s%-14.0lf%-64s\n", type, time, size, node->name);
+        (void)printf("%-5c%-20s%-14.05f%-64s\n", type, time, size, node->name);
 #else
         double written_size = (double)node->written_size;
         if (node->written_size != 0) {
             written_size = dss_convert_size(written_size, measure);
         }
-        (void)printf("%-5c%-20s%-14.0lf%-14.0lf%-64s\n", type, time, size, written_size, node->name);
+        (void)printf("%-5c%-20s%-14.05f%-14.05f%-64s\n", type, time, size, written_size, node->name);
 #endif
     }
 
@@ -1631,79 +1628,6 @@ static status_t lscli_proc(void)
     return CM_SUCCESS;
 }
 
-static dss_args_t cmd_regh_args[] = {
-    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
-        0},
-};
-static dss_args_set_t cmd_regh_args_set = {
-    cmd_regh_args,
-    sizeof(cmd_regh_args) / sizeof(dss_args_t),
-    NULL,
-};
-
-static void regh_help(char *prog_name)
-{
-    (void)printf("\nUsage:%s regh [-U UDS:socket_domain]\n", prog_name);
-    (void)printf("[client command] register host to array\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
-}
-
-static status_t regh_proc(void)
-{
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_regh_args[DSS_ARG_IDX_0].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
-    }
-
-    status = dss_register_host_sync(&connection);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to register host to array.\n");
-    } else {
-        DSS_PRINT_INF("Succeed to register host to array.\n");
-    }
-    dss_disconnect_ex(&connection);
-    return status;
-}
-
-static dss_args_t cmd_unregh_args[] = {
-    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
-        0},
-};
-static dss_args_set_t cmd_unregh_args_set = {
-    cmd_unregh_args,
-    sizeof(cmd_unregh_args) / sizeof(dss_args_t),
-    NULL,
-};
-
-static void unregh_help(char *prog_name)
-{
-    (void)printf("\nUsage:%s unregh [-U UDS:socket_domain]\n", prog_name);
-    (void)printf("[client command] unregister host from array\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
-}
-
-static status_t unregh_proc(void)
-{
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_unregh_args[DSS_ARG_IDX_0].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
-    }
-
-    status = dss_unregister_host_sync(&connection);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to unregister host from array.\n");
-    } else {
-        DSS_PRINT_INF("Succeed to unregister host from array.\n");
-    }
-
-    dss_disconnect_ex(&connection);
-    return status;
-}
-
 static dss_args_t cmd_kickh_args[] = {
     {'i', "inst_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
@@ -1815,153 +1739,6 @@ static status_t unreghl_proc(void)
     return status;
 }
 
-static dss_args_t cmd_reg_args[] = {
-    {'i', "inst_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
-};
-static dss_args_set_t cmd_reg_args_set = {
-    cmd_reg_args,
-    sizeof(cmd_reg_args) / sizeof(dss_args_t),
-    NULL,
-};
-
-static void reg_help(char *prog_name)
-{
-    (void)printf("\nUsage:%s reg <-i inst_id> <-v vol_name>\n", prog_name);
-    (void)printf("[raid command] register a reservation key and create a persistent reservation\n");
-    (void)printf("-i/--inst_id <inst_id>, <required>, the id of the host need to register\n");
-    (void)printf("-v/--vol_name <vol_name>, <required>, the volume name need to register\n");
-}
-
-static status_t reg_proc(void)
-{
-    int32 ret = 0;
-    iof_reg_out_t reg_info;
-
-    reg_info.rk = atoll(cmd_reg_args[DSS_ARG_IDX_0].input_args);
-    reg_info.dev = cmd_reg_args[DSS_ARG_IDX_1].input_args;
-    ret = cm_iof_register(&reg_info);
-    reg_info.dev = cmd_reg_args[DSS_ARG_IDX_1].input_args;
-    if (ret != CM_SUCCESS) {
-        if (ret == CM_IOF_ERR_DUP_OP) {
-            DSS_PRINT_ERROR("The current host has been registered for dev %s.\n", reg_info.dev);
-        } else {
-            DSS_PRINT_ERROR("Failed to register to array.\n");
-        }
-        return -1;
-    }
-    DSS_PRINT_INF("Succeed to register to array.\n");
-    return CM_SUCCESS;
-}
-
-static dss_args_t cmd_unreg_args[] = {
-    {'i', "inst_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
-};
-static dss_args_set_t cmd_unreg_args_set = {
-    cmd_unreg_args,
-    sizeof(cmd_unreg_args) / sizeof(dss_args_t),
-    NULL,
-};
-
-static void unreg_help(char *prog_name)
-{
-    (void)printf("\nUsage:%s unreg <-i inst_id> <-v vol_name>\n", prog_name);
-    (void)printf("[raid command] unregister and release the specified persistent reservation\n");
-    (void)printf("-i/--inst_id <inst_id>, <required>, the id of the host need to unregister\n");
-    (void)printf("-v/--vol_name <vol_name>, <required>, the volume name need to unregister\n");
-}
-
-static status_t unreg_proc(void)
-{
-    int32 ret = 0;
-    iof_reg_out_t reg_info;
-    reg_info.rk = atoll(cmd_unreg_args[DSS_ARG_IDX_0].input_args);
-    reg_info.dev = cmd_unreg_args[DSS_ARG_IDX_1].input_args;
-    ret = cm_iof_unregister(&reg_info);
-    if (ret != CM_SUCCESS) {
-        if (ret == CM_IOF_ERR_DUP_OP) {
-            DSS_PRINT_ERROR(
-                "The current host has been unregistered for dev %s, or the hostid is wrong.\n", reg_info.dev);
-        } else {
-            DSS_PRINT_ERROR("Failed to unregister to array.\n");
-        }
-        return CM_ERROR;
-    }
-    DSS_PRINT_INF("Succeed to unregister to array.\n");
-    return CM_SUCCESS;
-}
-
-static dss_args_t cmd_clrreg_args[] = {
-    {'i', "inst_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
-};
-static dss_args_set_t cmd_clrreg_args_set = {
-    cmd_clrreg_args,
-    sizeof(cmd_clrreg_args) / sizeof(dss_args_t),
-    NULL,
-};
-
-static void clrreg_help(char *prog_name)
-{
-    (void)printf("\nUsage:%s clrreg <-i inst_id> <-v vol_name>\n", prog_name);
-    (void)printf("[raid command] clears all reservation keys\n");
-    (void)printf("-i/--inst_id <inst_id>, <required>, the id of the host need to unregister\n");
-    (void)printf("-v/--vol_name <vol_name>, <required>, the volume name need to unregister\n");
-}
-
-static status_t clrreg_proc(void)
-{
-    status_t status;
-    iof_reg_out_t reg_info;
-    reg_info.rk = atoll(cmd_clrreg_args[DSS_ARG_IDX_0].input_args);
-    reg_info.dev = cmd_clrreg_args[DSS_ARG_IDX_1].input_args;
-    status = cm_iof_clear(&reg_info);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to clear to array.\n");
-        return status;
-    }
-
-    DSS_PRINT_INF("Succeed to clear registrations.\n");
-    return CM_SUCCESS;
-}
-
-static dss_args_t cmd_kick_args[] = {
-    {'i', "inst_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'k', "kicked_inst_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
-};
-static dss_args_set_t cmd_kick_args_set = {
-    cmd_kick_args,
-    sizeof(cmd_kick_args) / sizeof(dss_args_t),
-    NULL,
-};
-
-static void kick_help(char *prog_name)
-{
-    (void)printf("\nUsage:%s kick <-i inst_id> <-k kicked_inst_id> <-v vol_name>\n", prog_name);
-    (void)printf("[raid command] preempts persistent reservations and remove registrations\n");
-    (void)printf("-i/--inst_id <inst_id>, <required>, the id of the host need to kill other\n");
-    (void)printf("-k/--kicked_inst_id <kicked_inst_id>, <required>, the id of the host need to kick off\n");
-    (void)printf("-v/--vol_name <vol_name>, <required>, the volume name need to unregister\n");
-}
-
-static status_t kick_proc(void)
-{
-    status_t status;
-    iof_reg_out_t reg_info;
-    reg_info.rk = atoll(cmd_kick_args[DSS_ARG_IDX_0].input_args);
-    reg_info.rk_kick = atoll(cmd_kick_args[DSS_ARG_IDX_1].input_args);
-    reg_info.dev = cmd_kick_args[DSS_ARG_IDX_2].input_args;
-    status = cm_iof_kick(&reg_info);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to preempt reservations.\n");
-        return status;
-    }
-    DSS_PRINT_INF("Succeed to preempt reservations.\n");
-    return CM_SUCCESS;
-}
-
 static dss_args_t cmd_auid_args[] = {
     {'a', "auid", CM_TRUE, CM_TRUE, cmd_check_disk_id, NULL, NULL, 0, NULL, NULL, 0},
 };
@@ -1987,48 +1764,6 @@ static status_t auid_proc(void)
     (void)printf("  auid:%llu\n", (uint64)auid->au);
     (void)printf("  blockid:%llu\n", (uint64)auid->block);
     (void)printf("  item:%llu\n", (uint64)auid->item);
-    return CM_SUCCESS;
-}
-
-static dss_args_t cmd_kickhl_args[] = {
-    {'i', "inst_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'k', "kicked_inst_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
-        NULL, NULL, 0},
-};
-static dss_args_set_t cmd_kickhl_args_set = {
-    cmd_kickhl_args,
-    sizeof(cmd_kickhl_args) / sizeof(dss_args_t),
-    NULL,
-};
-
-static void kickhl_help(char *prog_name)
-{
-    (void)printf("\nUsage:%s kickhl <-i inst_id> <-k kicked_inst_id> [-D DSS_HOME]\n", prog_name);
-    (void)printf("[raid command] preempts persistent reservations and remove registrations\n");
-    (void)printf("-i/--inst_id <inst_id>, <required>, the id of the host need to kill other\n");
-    (void)printf("-k/--kicked_inst_id <kicked_inst_id>, <required>, the id of the host need to kick off\n");
-    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
-}
-
-static status_t kickhl_proc(void)
-{
-    int64 curr_hostid = atoll(cmd_kickhl_args[DSS_ARG_IDX_0].input_args);
-    int64 kick_hostid = atoll(cmd_kickhl_args[DSS_ARG_IDX_1].input_args);
-    char *home = cmd_kickhl_args[DSS_ARG_IDX_2].input_args;
-    status_t status = dss_init(DSS_TEMP_OPEN_FILES, home);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to initialize, errcode is %d.\n", status);
-        return status;
-    }
-    status = dss_iof_kick_all(curr_hostid, kick_hostid, CM_FALSE);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to kick host.\n");
-        return status;
-    }
-
-    DSS_PRINT_INF("Succeed to kick host %s.\n", cmd_kickhl_args[DSS_ARG_IDX_1].input_args);
-    dss_destroy();
     return CM_SUCCESS;
 }
 
@@ -2930,9 +2665,9 @@ static status_t getcfg_proc(void)
     char value[DSS_PARAM_BUFFER_SIZE] = {0};
     status = dss_getcfg_impl(&connection, name, value, DSS_PARAM_BUFFER_SIZE);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to get cfg, name is %s, value is %s.\n", name, value);
+        DSS_PRINT_ERROR("Failed to get cfg, name is %s, value is %s.\n", name, (strlen(value) == 0) ? NULL : value);
     } else {
-        DSS_PRINT_INF("Succeed to get cfg, name is %s, value is %s.\n", name, value);
+        DSS_PRINT_INF("Succeed to get cfg, name is %s, value is %s.\n", name, (strlen(value) == 0) ? NULL : value);
     }
 
     dss_disconnect_ex(&connection);
@@ -2975,34 +2710,6 @@ static status_t stopdss_proc(void)
     return status;
 }
 
-static dss_args_set_t cmd_version_args_set = {
-    NULL,
-    0,
-    NULL,
-};
-
-static void show_version_help(char *prog_name)
-{
-    (void)printf("\nUsage:%s show_version\n", prog_name);
-    (void)printf("[client command] show dss version\n");
-}
-
-static status_t show_version_proc(void)
-{
-    errno_t errcode;
-    char version[DSS_VERSION_MAX_LEN] = {0};
-    errcode =
-        snprintf_s((char *)version, DSS_VERSION_MAX_LEN, DSS_VERSION_MAX_LEN - 1, "dsscmd %s", (char *)DEF_DSS_VERSION);
-    if (errcode < 0) {
-        DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
-        DSS_PRINT_ERROR("Failed to show dss version.\n");
-        return CM_ERROR;
-    }
-    (void)printf("%s\n", version);
-
-    return CM_SUCCESS;
-}
-
 // clang-format off
 dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set},
                                       {"lsvg", lsvg_help, lsvg_proc, &cmd_lsvg_args_set},
@@ -3017,17 +2724,10 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set}
                                       {"inq", inq_help, inq_proc, &cmd_inq_args_set},
                                       {"inq_reg", inq_reg_help, inq_reg_proc, &cmd_inq_req_args_set},
                                       {"lscli", lscli_help, lscli_proc, &cmd_lscli_args_set},
-                                      {"regh", regh_help, regh_proc, &cmd_regh_args_set},
-                                      {"unregh", unregh_help, unregh_proc, &cmd_unregh_args_set},
                                       {"kickh", kickh_help, kickh_proc, &cmd_kickh_args_set},
                                       {"reghl", reghl_help, reghl_proc, &cmd_reghl_args_set},
                                       {"unreghl", unreghl_help, unreghl_proc, &cmd_unreghl_args_set},
-                                      {"reg", reg_help, reg_proc, &cmd_reg_args_set},
-                                      {"unreg", unreg_help, unreg_proc, &cmd_unreg_args_set},
-                                      {"clrreg", clrreg_help, clrreg_proc, &cmd_clrreg_args_set},
-                                      {"kick", kick_help, kick_proc, &cmd_kick_args_set},
                                       {"auid", auid_help, auid_proc, &cmd_auid_args_set},
-                                      {"kickhl", kickhl_help, kickhl_proc, &cmd_kickhl_args_set},
                                       {"examine", examine_help, examine_proc, &cmd_examine_args_set},
                                       {"dev", dev_help, dev_proc, &cmd_dev_args_set},
                                       {"showdisk", showdisk_help, showdisk_proc, &cmd_showdisk_args_set},
@@ -3041,13 +2741,13 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set}
                                       {"setcfg", setcfg_help, setcfg_proc, &cmd_setcfg_args_set},
                                       {"getcfg", getcfg_help, getcfg_proc, &cmd_getcfg_args_set},
                                       {"stopdss", stopdss_help, stopdss_proc, &cmd_stopdss_args_set},
-                                      {"show_version", show_version_help, show_version_proc, &cmd_version_args_set},
 };
 
 // clang-format on
 static void help(char *prog_name)
 {
-    (void)printf("%s help\n", prog_name);
+    (void)printf("Usage:%s -h/--help show help information of dsscmd\n", prog_name);
+    (void)printf("Usage:%s -v/--version show version information of dsscmd\n", prog_name);
     for (uint32 i = 0; i < sizeof(g_dss_admin_cmd) / sizeof(g_dss_admin_cmd[0]); ++i) {
         g_dss_admin_cmd[i].help(prog_name);
     }
@@ -3056,11 +2756,6 @@ static void help(char *prog_name)
 
 static status_t execute_one_cmd(int argc, char **argv, uint32 cmd_idx)
 {
-    if (argc > DSS_ARG_IDX_2 &&
-        (strcmp(argv[DSS_ARG_IDX_2], "-h") == 0 || strcmp(argv[DSS_ARG_IDX_2], "--help") == 0)) {
-        g_dss_admin_cmd[cmd_idx].help(argv[0]);
-        return CM_SUCCESS;
-    }
     cmd_parse_init(g_dss_admin_cmd[cmd_idx].args_set->cmd_args, g_dss_admin_cmd[cmd_idx].args_set->args_size);
     if (cmd_parse_args(argc, argv, g_dss_admin_cmd[cmd_idx].args_set) != CM_SUCCESS) {
         int32 code;
@@ -3132,23 +2827,36 @@ static bool32 get_cmd_idx(int argc, char **argv, uint32_t *idx)
     return CM_FALSE;
 }
 
-static status_t execute_cmd(int argc, char **argv)
+void execute_help_cmd(int argc, char **argv, uint32_t *idx)
 {
     if (argc < CMD_ARGS_AT_LEAST) {
-        help(argv[0]);
-        dss_cmd_oper_log(argc, argv, CM_ERROR);
-        return CM_ERROR;
+        (void)printf("dsscmd: no operation specified.\n");
+        (void)printf("dsscmd: Try \"dsscmd -h/--help\" for more information.\n");
+        exit(EXIT_FAILURE);
     }
-
-    uint32 idx;
-    status_t status = CM_ERROR;
-    if (get_cmd_idx(argc, argv, &idx)) {
-        status = execute_one_cmd(argc, argv, idx);
-    } else {
+    if (cm_str_equal(argv[1], "-v") || cm_str_equal(argv[1], "--version")) {
+        (void)printf("dsscmd %s\n", (char *)DEF_DSS_VERSION);
+        exit(EXIT_SUCCESS);
+    }
+    if (cm_str_equal(argv[1], "-h") || cm_str_equal(argv[1], "--help") || argc < CMD_ARGS_AT_LEAST) {
+        help(argv[0]);
+        exit(EXIT_SUCCESS);
+    }
+    if (!get_cmd_idx(argc, argv, idx)) {
         (void)printf("cmd:%s can not find.\n", argv[DSS_ARG_IDX_1]);
         help(argv[0]);
+        exit(EXIT_FAILURE);
     }
+    if (argc > DSS_ARG_IDX_2 &&
+        (strcmp(argv[DSS_ARG_IDX_2], "-h") == 0 || strcmp(argv[DSS_ARG_IDX_2], "--help") == 0)) {
+        g_dss_admin_cmd[*idx].help(argv[0]);
+        exit(EXIT_SUCCESS);
+    }
+}
 
+static status_t execute_cmd(int argc, char **argv, uint32 idx)
+{
+    status_t status = execute_one_cmd(argc, argv, idx);
     dss_cmd_oper_log(argc, argv, status);
     return status;
 }
@@ -3168,6 +2876,8 @@ int main(int argc, char **argv)
         return CM_ERROR;
     }
 #endif
+    uint32 idx;
+    execute_help_cmd(argc, argv, &idx);
     dss_config_t inst_cfg;
     if (dss_set_cfg_dir(NULL, &inst_cfg) != CM_SUCCESS) {
         (void)printf("Environment variant DSS_HOME not found!\n");
@@ -3191,5 +2901,5 @@ int main(int argc, char **argv)
         return ret;
     }
     cm_reset_error();
-    return execute_cmd(argc, argv);
+    return execute_cmd(argc, argv, idx);
 }

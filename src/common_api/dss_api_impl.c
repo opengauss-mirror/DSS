@@ -84,10 +84,8 @@ status_t dss_apply_extending_file(dss_conn_t *conn, int32 handle, int32 size, bo
 
     // send it and wait for ack
     ack_pack = &conn->pack;
-    if (dss_call_ex(&conn->pipe, send_pack, ack_pack) != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to send message when extend file.");
-        return CM_ERROR;
-    }
+    status_t ret = dss_call_ex(&conn->pipe, send_pack, ack_pack);
+    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("Failed to send message when extend file."));
 
     // check return state
     if (ack_pack->head->result != CM_SUCCESS) {
@@ -125,10 +123,7 @@ status_t dss_apply_refresh_file(dss_conn_t *conn, dss_file_context_t *context, d
     // send it and wait for ack
     dss_packet_t *ack_pack = &conn->pack;
     status_t status = dss_call_ex(&conn->pipe, send_pack, ack_pack);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to send message when refresh file.");
-        return CM_ERROR;
-    }
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to send message when refresh file."));
 
     // check return state
     if (ack_pack->head->result != CM_SUCCESS) {
@@ -483,7 +478,7 @@ status_t dss_set_session_sync(dss_conn_t *conn)
     LOG_DEBUG_INF("The process start time is:%lld.", cli_info.start_time);
 
     errno_t err;
-    err = strcpy_s(cli_info.process_name, sizeof(cli_info.process_name) - 1, cm_sys_program_name());
+    err = strcpy_s(cli_info.process_name, sizeof(cli_info.process_name), cm_sys_program_name());
     if (err != EOK) {
         LOG_DEBUG_ERR("System call strcpy_s error %d.", errcode);
         return CM_ERROR;
@@ -693,6 +688,7 @@ static dss_dir_t *dss_open_dir_impl_core(dss_conn_t *conn, const char *dir_path,
     dss_vg_info_item_t *vg_item = dss_find_vg_item(name);
     if (vg_item == NULL) {
         LOG_DEBUG_ERR("Failed to find vg, %s.", name);
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, name);
         return NULL;
     }
 
@@ -840,32 +836,21 @@ status_t dss_close_dir_impl(dss_conn_t *conn, dss_dir_t *dir)
     // 1. pftid
     uint64 pftid = dir->pftid;
     status = dss_put_int64(send_pack, pftid);
-    if (status != CM_SUCCESS) {
-        DSS_FREE_POINT(dir);
-        return CM_ERROR;
-    }
+    DSS_RETURN_IFERR2(status, DSS_FREE_POINT(dir));
 
     // 2. vg name
     status = dss_put_str(send_pack, dir->vg_item->vg_name);
-    if (status != CM_SUCCESS) {
-        DSS_FREE_POINT(dir);
-        return CM_ERROR;
-    }
+    DSS_RETURN_IFERR2(status, DSS_FREE_POINT(dir));
 
     // 3. vgid
     status = dss_put_int32(send_pack, dir->vg_item->id);
     DSS_FREE_POINT(dir);
-    if (status != CM_SUCCESS) {
-        return CM_ERROR;
-    }
+    DSS_RETURN_IF_ERROR(status);
 
     // send it and wait for ack
     ack_pack = &conn->pack;
     status = dss_call_ex(&conn->pipe, send_pack, ack_pack);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to send message when close path.");
-        return CM_ERROR;
-    }
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to send message when close path."));
     // check return state
     if (ack_pack->head->result != CM_SUCCESS) {
         dss_cli_get_err(ack_pack, &errcode, &errmsg);
@@ -957,14 +942,12 @@ status_t dss_find_vg_by_file_path(const char *path, dss_vg_info_item_t **vg_item
     uint32_t beg_pos = 0;
     char vg_name[DSS_MAX_NAME_LEN];
     status_t status = dss_get_name_from_path(path, &beg_pos, vg_name);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to get name from path:%s, status:%d.", path, status);
-        return status;
-    }
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to get name from path:%s, status:%d.", path, status));
 
     *vg_item = dss_find_vg_item(vg_name);
     if (*vg_item == NULL) {
         LOG_DEBUG_ERR("Failed to find VG:%s.", vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -1075,10 +1058,7 @@ status_t dss_open_file_inner(dss_vg_info_item_t *vg_item, gft_node_t *ft_node, i
     uint32 next = context->next;
 
     status_t ret = dss_init_file_context(context, ft_node, vg_item);
-    if (ret != CM_SUCCESS) {
-        dss_unlatch(&dss_env->latch);
-        return CM_ERROR;
-    }
+    DSS_RETURN_IFERR2(ret, dss_unlatch(&dss_env->latch));
     dss_env->file_free_first = next;
     dss_env->has_opened_files++;
     dss_unlatch(&dss_env->latch);
@@ -1170,24 +1150,6 @@ static status_t dss_check_file_env(dss_conn_t *conn, int32 handle, int32 size, d
     return CM_SUCCESS;
 }
 
-static status_t dss_check_fclose_skippable(dss_file_context_t *context)
-{
-#ifndef OPENGAUSS
-    /*
-     * file should be closed by self thread normally,
-     * but in openGauss, file handle will be transferred among different threads,
-     * opened by one thread, and closed by another thread,
-     * so we skip this in openGauss.
-     */
-    uint32 curr_tid = cm_get_current_thread_id();
-    if ((uint32)context->tid != curr_tid) {
-        LOG_DEBUG_ERR("Invalid fclose thread id, tid:%u, context tid:%u", curr_tid, context->tid);
-        return CM_ERROR;
-    }
-#endif
-    return CM_SUCCESS;
-}
-
 status_t dss_close_file_impl(dss_conn_t *conn, int handle)
 {
     char *fname = NULL;
@@ -1199,8 +1161,6 @@ status_t dss_close_file_impl(dss_conn_t *conn, int handle)
 
     dss_latch_x(&context->latch);
     fname = context->node->name;
-
-    DSS_RETURN_IFERR2(dss_check_fclose_skippable(context), dss_unlatch(&context->latch));
 
     status_t ret = dss_close_file_on_server(conn, context->vg_item, context->fid, context->node->id);
     if (ret != CM_SUCCESS) {
@@ -1332,10 +1292,7 @@ int64 dss_seek_file_impl_core(dss_rw_param_t *param, int64 offset, int origin)
         dss_block_id_t blockid;
         dss_set_blockid(&blockid, DSS_INVALID_ID64);
         status = dss_apply_refresh_file(conn, context, blockid);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to apply refresh file,fid:%llu.", context->fid);
-            return CM_ERROR;
-        }
+        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to apply refresh file,fid:%llu.", context->fid));
 
         DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session, NULL);
         size = (int64)context->node->size;
@@ -1424,10 +1381,7 @@ static status_t dss_alloc_block_core(
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
 
         status = dss_apply_extending_file(conn, handle, size, is_read, rw_ctx.offset);
-        if (status != CM_SUCCESS) {
-            LOG_RUN_ERR("Failed to extend file.");
-            return CM_ERROR;
-        }
+        DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to extend file."));
 
         DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session, NULL);
         second_block_id = entry_fs_block->bitmap[block_count];
@@ -1636,8 +1590,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         dss_fs_block_t *second_block = NULL;
         uint32 block_au_count = 0;
         uint32 au_offset = 0;
-        CM_RETURN_IFERR_EX(dss_alloc_block(rw_ctx, entry_fs_block, &second_block, &block_au_count, &au_offset),
-            DSS_UNLOCK_VG_META_S(context->vg_item, conn->session));
+        CM_RETURN_IFERR(dss_alloc_block(rw_ctx, entry_fs_block, &second_block, &block_au_count, &au_offset));
 
         auid_t auid = second_block->bitmap[block_au_count];
         if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
@@ -1648,10 +1601,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
             } else {
                 status = dss_apply_extending_file(conn, handle, size, is_read, rw_ctx.offset);
             }
-            if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("Failed to extend file or refresh second block.");
-                return CM_ERROR;
-            }
+            DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to extend file or refresh second block."));
 
             DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session, NULL);
             auid = second_block->bitmap[block_au_count];
@@ -1854,8 +1804,8 @@ status_t dss_pwrite_file_impl(dss_conn_t *conn, int handle, const void *buf, int
     dss_file_context_t *context = NULL;
     dss_rw_param_t param;
 
-    LOG_DEBUG_INF("dss pwrite file entry, handle:%d, offset:%lld", handle, offset);
     CM_RETURN_IFERR(dss_check_file_env(conn, handle, size, &context));
+    LOG_DEBUG_INF("dss pwrite file %s, handle:%d, offset:%lld", context->node->name, handle, offset);
 
     dss_latch_s(&context->latch);
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
@@ -1949,7 +1899,8 @@ status_t dss_truncate_impl(dss_conn_t *conn, int handle, uint64 length)
     dss_file_context_t *context = NULL;
     DSS_RETURN_IF_ERROR(dss_check_file_env(conn, handle, 0, &context));
 
-    LOG_DEBUG_INF("Truncating file via handle(%d).", handle);
+    LOG_DEBUG_INF("Truncating file via handle(%d), file name: %s, node size: %lld, length: %lld.", handle,
+        context->node->name, context->node->size, length);
 
     dss_latch_x(&context->latch);
 
@@ -2269,10 +2220,8 @@ status_t dss_islink_impl(dss_conn_t *conn, const char *path, bool *result)
 
     text_t extra_info = CM_NULL_TEXT;
     dss_init_get(ack_pack);
-    if (dss_get_text(ack_pack, &extra_info) != CM_SUCCESS) {
-        LOG_DEBUG_ERR("islink get result connect error");
-        return CM_ERROR;
-    }
+    status_t ret = dss_get_text(ack_pack, &extra_info);
+    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("islink get result connect error"));
     if (extra_info.len == 0 || extra_info.len > sizeof(bool32)) {
         LOG_DEBUG_ERR("islink get result length error");
         return CM_ERROR;
@@ -2407,10 +2356,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, bool32 is_read, int *f
             param->offset + size - 1, au_size, &end_block_count, &end_block_au_count, NULL);
     } while (0);
 
-    if (status != CM_SUCCESS) {
-        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-        return status;
-    }
+    DSS_RETURN_IFERR2(status, DSS_UNLOCK_VG_META_S(context->vg_item, conn->session));
 
     if (start_block_count != end_block_count || start_block_au_count != end_block_au_count) {
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
@@ -2429,8 +2375,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, bool32 is_read, int *f
     dss_fs_block_t *second_block = NULL;
     uint32 block_au_count = 0;
     uint32 au_offset = 0;
-    CM_RETURN_IFERR_EX(dss_alloc_block(rw_ctx, entry_fs_block, &second_block, &block_au_count, &au_offset),
-        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session));
+    CM_RETURN_IFERR(dss_alloc_block(rw_ctx, entry_fs_block, &second_block, &block_au_count, &au_offset));
 
     auid_t auid = second_block->bitmap[block_au_count];
     if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
@@ -2438,10 +2383,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, bool32 is_read, int *f
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
 
         status = dss_apply_extending_file(conn, handle, size, is_read, rw_ctx.offset);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to extend file.");
-            return CM_ERROR;
-        }
+        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to extend file."));
 
         DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session, NULL);
         auid = second_block->bitmap[block_au_count];
@@ -2522,11 +2464,8 @@ status_t dss_get_fd_by_offset(
 
     dss_latch_s(&context->latch);
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
-    if (dss_refresh_file_impl(&param) != CM_SUCCESS) {
-        dss_unlatch(&context->latch);
-        return CM_ERROR;
-    }
-
+    status_t ret = dss_refresh_file_impl(&param);
+    DSS_RETURN_IFERR2(ret, dss_unlatch(&context->latch));
     status = get_fd(&param, size, is_read, fd, vol_offset);
 
     dss_unlatch(&context->latch);
@@ -2612,10 +2551,9 @@ status_t dss_getcfg_impl(dss_conn_t *conn, const char *name, char *out_str, size
     uint32_t len = DSS_MAX_PACKET_SIZE - sizeof(dss_packet_head_t) - sizeof(int32);
     dss_init_get(ack_pack);
 
-    if (dss_get_text(ack_pack, &extra_info) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GETCFG), "get cfg connect error");
-        return CM_ERROR;
-    }
+    status_t ret = dss_get_text(ack_pack, &extra_info);
+    DSS_RETURN_IFERR2(
+        ret, DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GETCFG), "get cfg connect error"));
     if (extra_info.len < sizeof(uint32) || extra_info.len > len) {
         DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GETCFG), "get cfg length error");
         return CM_ERROR;
@@ -2641,6 +2579,7 @@ void dss_get_api_volume_error(void)
     // volume open/seek/read write fail for I/O, just exit
     if (code == ERR_DSS_VOLUME_SYSTEM_IO) {
         LOG_RUN_ERR("[DSS API] ABORT INFO : volume operate failed for I/O ERROR, errcode:%d.", code);
+        cm_fync_logfile();
         _exit(1);
     }
     return;

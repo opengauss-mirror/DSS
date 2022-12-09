@@ -83,7 +83,7 @@ check_dss_start()
     fi
 }
 
-function clear_script_log
+function clear_script_log()
 {
     local _log_dir=$1
     local _log_name=$2
@@ -113,7 +113,7 @@ check_log_file()
     log_file_size=$(ls -l ${log_file} |awk '{print $5}')
     if [ -f ${log_file} ];then
         if [ ${log_file_size} -ge ${MAX_LOG_SIZE} ];then
-            mv -f ${log_file} "${log_path}/${operation}-`date +%Y-%m-%d_%H%M%S`.log" 2>/dev/null
+            mv -f ${log_file} "${log_path}/${operation}-$(date +%Y-%m-%d_%H%M%S).log" 2>/dev/null
             clear_script_log "${log_path}" "${operation}-" $MAX_LOG_BACKUP
         fi
     fi
@@ -122,8 +122,8 @@ check_log_file()
 touch_logfile()
 {
     log_file=$1
-    if [ ! -f $log_file ]
+    if [ ! -f "$log_file" ]
     then
-        touch $log_file
+        touch "$log_file"
     fi
 }

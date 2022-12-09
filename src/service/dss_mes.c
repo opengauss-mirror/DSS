@@ -58,15 +58,17 @@ void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg)
     mes_notify_broadcast_msg_recv_and_cahce(msg);
 }
 
-static inline dss_bcast_ack_cmd_t dss_get_ack_cmd(dss_bcast_req_cmd_t bcast_op)
+static dss_bcast_ack_cmd_t dss_get_ack_cmd(dss_bcast_req_cmd_t bcast_op)
 {
     switch (bcast_op) {
         case BCAST_REQ_RENAME:
             return BCAST_ACK_RENAME;
         case BCAST_REQ_DEL_DIR_FILE:
             return BCAST_ACK_DEL_FILE;
+        case BCAST_REQ_TRUNCATE_FILE:
+            return BCAST_ACK_TRUNCATE_FILE;
         default:
-            CM_ASSERT(0);
+            LOG_RUN_ERR("Invalid broadcast request type");
             break;
     }
     return BCAST_ACK_END;
@@ -85,8 +87,10 @@ static void dss_ask_server_status(dss_session_t *se, mes_message_t *msg)
             (uint32)msg->head->src_inst, (uint32)msg->head->dst_inst, ret);
         return;
     }
-    DSS_LOG_DEBUG_OP("send ask server status ack success, src inst(%u), dst inst(%u)", (uint32)msg->head->src_inst,
-        (uint32)msg->head->dst_inst);
+    DSS_LOG_DEBUG_OP(
+        "send ask server status ack success. cmd=%hhu, rsn=%u, src_inst=%hhu, dst_inst=%hhu, src_sid=%hu, dst_sid=%hu.",
+        msg->head->cmd, msg->head->rsn, msg->head->src_inst, msg->head->dst_inst, msg->head->src_sid,
+        msg->head->dst_sid);
 }
 
 static void dss_check_file_open(dss_session_t *se, mes_message_t *msg)
@@ -133,8 +137,11 @@ static void dss_check_file_open(dss_session_t *se, mes_message_t *msg)
             (uint32)msg->head->dst_inst, ret);
         return;
     }
+    DSS_LOG_DEBUG_OP("send message succeed, check file %llu open result: %u. cmd=%hhu, rsn=%u, src_inst=%hhu, "
+                     "dst_inst=%hhu, src_sid=%hu, dst_sid=%hu.",
+        check->ftid, is_open, ack->head.cmd, ack->head.rsn, ack->head.src_inst, ack->head.dst_inst, ack->head.src_sid,
+        ack->head.dst_sid);
     DSS_FREE_POINT(send_msg);
-    DSS_LOG_DEBUG_OP("send message succeed, check file %llu open result: %d", check->ftid, status);
 }
 
 static int32 dss_process_broadcast_ack(
@@ -148,6 +155,7 @@ static int32 dss_process_broadcast_ack(
     switch (bcast_op) {
         case BCAST_ACK_RENAME:
         case BCAST_ACK_DEL_FILE:
+        case BCAST_ACK_TRUNCATE_FILE:
             ret = *(int32 *)(data + sizeof(dss_bcast_ack_cmd_t));
             recv_msg_output->open_flag = *(bool32 *)(data + sizeof(dss_bcast_ack_cmd_t) + sizeof(int32));
             break;
@@ -172,7 +180,8 @@ void dss_proc_broadcast_req(dss_session_t *session, mes_message_t *msg)
 {
     char *data = msg->buffer + sizeof(mes_message_head_t);
     dss_bcast_req_cmd_t bcast_op = *(dss_bcast_req_cmd_t *)data;
-
+    LOG_DEBUG_INF("Try proc broadcast req, head rsn is %u, head cmd is %u, req cmd is %u.", msg->head->rsn,
+        msg->head->cmd, bcast_op);
     switch (bcast_op) {
         case BCAST_REQ_RENAME:
         case BCAST_REQ_DEL_DIR_FILE:
@@ -266,10 +275,13 @@ static status_t dss_broadcast_msg_with_try(dss_session_t *session, mes_message_h
     uint64 new_added_inst_map = 0;
     uint64 vaild_inst = 0;
     uint64 vaild_inst_mask = 0;
+    dss_bcast_req_t *req = (dss_bcast_req_t *)buffer;
     do {
         // only send the last-send-failed and new added
         vaild_inst_mask = ((cur_work_inst_map & snd_err_inst_map) | new_added_inst_map);
         vaild_inst = (param->inst_map) & (~((uint64)0x1 << (uint64)(param->inst_id))) & vaild_inst_mask;
+        LOG_DEBUG_INF("Try broadcast num is %u, head rsn is %u, head cmd is %u, req cmd is %u.", i, head->rsn,
+            head->cmd, req->type);
         mes_broadcast2(session->id, vaild_inst, head, (const void *)buffer, &succ_req_inst);
         if (!recv_msg->handle_recv_msg && timeout > 0) {
             ret = mes_wait_acks(session->id, timeout);

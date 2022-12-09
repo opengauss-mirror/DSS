@@ -93,9 +93,7 @@ typedef enum {
     DSS_CMD_ADD_VOLUME,
     DSS_CMD_REMOVE_VOLUME,
     DSS_CMD_REFRESH_VOLUME,
-    DSS_CMD_REGH,  // 20
-    DSS_CMD_KICKH,
-    DSS_CMD_UNREGH,
+    DSS_CMD_KICKH,  // 20
     DSS_CMD_LOAD_CTRL,
     DSS_CMD_SET_SESSIONID,
     DSS_CMD_UPDATE_WRITTEN_SIZE,
@@ -103,11 +101,11 @@ typedef enum {
     DSS_CMD_SETCFG,
     DSS_CMD_SET_STATUS,
     DSS_CMD_SYMLINK,
-    DSS_CMD_UNLINK,  // 30
+    DSS_CMD_UNLINK,
     DSS_CMD_MODIFY_END,
     DSS_CMD_QUERY_BEGIN = DSS_CMD_MODIFY_END,
     DSS_CMD_GET_HOME = DSS_CMD_QUERY_BEGIN,
-    DSS_CMD_EXIST_FILE,
+    DSS_CMD_EXIST_FILE,  // 30
     DSS_CMD_EXIST_DIR,
     DSS_CMD_ISLINK,
     DSS_CMD_READLINK,
@@ -267,6 +265,17 @@ typedef enum {
         }                                         \
     } while (0)
 
+#define DSS_RETURN_IFERR4(func, hook1, hook2, hook3)    \
+    do {                                                \
+        int _status_ = (func);                          \
+        if (SECUREC_UNLIKELY(_status_ != CM_SUCCESS)) { \
+            hook1;                                      \
+            hook2;                                      \
+            hook3;                                      \
+            return _status_;                            \
+        }                                               \
+    } while (0)
+
 #define DSS_RETURN_IF_FALSE3(ret, hook1, hook2)   \
     do {                                          \
         if (SECUREC_UNLIKELY((ret) != CM_TRUE)) { \
@@ -300,6 +309,15 @@ typedef enum {
         }                                            \
     }
 
+#define DSS_SECUREC_RETURN_IF_ERROR2(err, hook, ret) \
+    {                                                \
+        if ((err) != EOK) {                          \
+            hook;                                    \
+            DSS_THROW_ERROR(ERR_SYSTEM_CALL, (err)); \
+            return ret;                              \
+        }                                            \
+    }
+
 #define DSS_SECUREC_SS_RETURN_IF_ERROR(err, ret)     \
     {                                                \
         if ((err) == -1) {                           \
@@ -320,24 +338,18 @@ typedef enum {
         break;                  \
     }
 
-#define DSS_BREAK_IFERR2(func, hook)                    \
-    do {                                                \
-        int _status_ = (func);                          \
-        if (SECUREC_UNLIKELY(_status_ != CM_SUCCESS)) { \
-            hook;                                       \
-            break;                                      \
-        }                                               \
-    } while (0)
+#define DSS_BREAK_IFERR2(func, hook)              \
+    if (SECUREC_UNLIKELY((func) != CM_SUCCESS)) { \
+        hook;                                     \
+        break;                                    \
+    }
 
-#define DSS_BREAK_IFERR3(func, hook1, hook2)            \
-    do {                                                \
-        int _status_ = (func);                          \
-        if (SECUREC_UNLIKELY(_status_ != CM_SUCCESS)) { \
-            hook1;                                      \
-            hook2;                                      \
-            break;                                      \
-        }                                               \
-    } while (0)
+#define DSS_BREAK_IFERR3(func, hook1, hook2)      \
+    if (SECUREC_UNLIKELY((func) != CM_SUCCESS)) { \
+        hook1;                                    \
+        hook2;                                    \
+        break;                                    \
+    }
 
 #define DSS_RETURN_DRIECT_IFERR(ret) \
     do {                             \

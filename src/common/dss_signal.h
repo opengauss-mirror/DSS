@@ -30,7 +30,8 @@
 extern "C" {
 #endif
 
-status_t dss_signal_proc(void);
+status_t dss_coredump_signal_proc(void);
+status_t dss_ignore_signal_proc(void);
 void dss_output_current_bt(void);
 
 #ifdef __cplusplus

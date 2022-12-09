@@ -133,10 +133,9 @@ status_t dss_write_packet(cs_pipe_t *pipe, dss_packet_t *pack)
         return CM_ERROR;
     }
 
-    if (VIO_SEND_TIMED(pipe, pack->buf, pack->head->size, DSS_DEFAULT_NULL_VALUE) != CM_SUCCESS) {
-        CM_THROW_ERROR(ERR_PACKET_SEND, "SEND PACKET FAILED");
-        return CM_ERROR;
-    }
+    status_t status = VIO_SEND_TIMED(pipe, pack->buf, pack->head->size, DSS_DEFAULT_NULL_VALUE);
+    DSS_RETURN_IFERR2(
+        status, CM_THROW_ERROR(ERR_PACKET_SEND, pack->buf_size, pack->head->size, DSS_DEFAULT_NULL_VALUE));
 
     return CM_SUCCESS;
 }
@@ -157,20 +156,17 @@ static status_t dss_read_packet(cs_pipe_t *pipe, dss_packet_t *pack, bool32 cs_c
     bool32 ready = CM_FALSE;
 
     offset = 0;
+    status_t status;
+    char *cs_mes = cs_client ? "read wait for server response" : "read wait for client request";
     for (;;) {
-        if (VIO_RECV(pipe, pack->buf + offset, (uint32)(pack->buf_size - offset), &recv_size) != CM_SUCCESS) {
-            DSS_THROW_ERROR(ERR_TCP_RECV, "Receive protocol failed.");
-            return CM_ERROR;
-        }
+        status = VIO_RECV(pipe, pack->buf + offset, (uint32)(pack->buf_size - offset), &recv_size);
+        DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_TCP_RECV, "Receive protocol failed."));
         offset += recv_size;
         if (offset >= (int32)sizeof(dss_packet_head_t)) {
             break;
         }
-        if (VIO_WAIT(pipe, CS_WAIT_FOR_READ, CM_NETWORK_IO_TIMEOUT, &ready) != CM_SUCCESS) {
-            DSS_THROW_ERROR(
-                ERR_TCP_TIMEOUT, cs_client ? "read wait for server response" : "read wait for client request");
-            return CM_ERROR;
-        }
+        status = VIO_WAIT(pipe, CS_WAIT_FOR_READ, CM_NETWORK_IO_TIMEOUT, &ready);
+        DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_TCP_TIMEOUT, cs_mes));
         if (!ready) {
             DSS_THROW_ERROR(ERR_DSS_TCP_TIMEOUT_REMAIN, (uint32)(sizeof(uint32) - offset));
             return CM_ERROR;
@@ -187,20 +183,16 @@ static status_t dss_read_packet(cs_pipe_t *pipe, dss_packet_t *pack, bool32 cs_c
         return CM_SUCCESS;
     }
 
-    if (VIO_WAIT(pipe, CS_WAIT_FOR_READ, CM_NETWORK_IO_TIMEOUT, &ready) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_TCP_TIMEOUT, cs_client ? "read wait for server response" : "read wait for client request");
-        return CM_ERROR;
-    }
+    status = VIO_WAIT(pipe, CS_WAIT_FOR_READ, CM_NETWORK_IO_TIMEOUT, &ready);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_TCP_TIMEOUT, cs_mes));
 
     if (!ready) {
-        DSS_THROW_ERROR(ERR_TCP_TIMEOUT, cs_client ? "read wait for server response" : "read wait for client request");
+        DSS_THROW_ERROR(ERR_TCP_TIMEOUT, cs_mes);
         return CM_ERROR;
     }
 
-    if (VIO_RECV_TIMED(pipe, pack->buf + offset, (uint32)remain_size, CM_NETWORK_IO_TIMEOUT) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_TCP_RECV, "Receive protocol failed.");
-        return CM_ERROR;
-    }
+    status = VIO_RECV_TIMED(pipe, pack->buf + offset, (uint32)remain_size, CM_NETWORK_IO_TIMEOUT);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_TCP_RECV, "Receive protocol failed."));
 
     return CM_SUCCESS;
 }
@@ -240,6 +232,7 @@ status_t dss_call_ex(cs_pipe_t *pipe, dss_packet_t *req, dss_packet_t *ack)
     if (ret != CM_SUCCESS) {
         LOG_RUN_ERR("[DSS] ABORT INFO: dss call server failed, ack command type:%d, application exit.", ack->head->cmd);
         cs_disconnect(pipe);
+        cm_fync_logfile();
         _exit(1);
     }
     return ret;
