@@ -68,6 +68,7 @@
 
 // cmd format : cmd subcmd [-f val]
 #define CMD_ARGS_AT_LEAST 2
+#define CMD_COMMAND_INJECTION_COUNT 22
 #define DSS_DEFAULT_MEASURE "B"
 #define DSS_SUBSTR_UDS_PATH "UDS:"
 #define DSS_DEFAULT_VG_TYPE 't' /* show vg information in table format by default */
@@ -2710,6 +2711,108 @@ static status_t stopdss_proc(void)
     return status;
 }
 
+static const char command_injection_check_list[] = {
+    '|', ';', '&', '$', '<', '>', '`', '\\', '\'', '\"', '{', '}', '(', ')', '[', ']', '~', '*', '?', ' ', '!', '\n'};
+
+static status_t cmd_check_command_injection(const char *param)
+{
+    if (param == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, "[null]", "param cannot be a null string.");
+        return CM_ERROR;
+    }
+    uint64 len = strlen(param);
+    for (uint64 i = 0; i < len; i++) {
+        for (uint32 j = 0; j < CMD_COMMAND_INJECTION_COUNT; j++) {   
+            if (param[i] == command_injection_check_list[j]) {
+                DSS_PRINT_ERROR(
+                    "Failed to check command injection, %s has %c.\n", param, command_injection_check_list[j]);
+                return CM_ERROR;
+            }
+        }
+    }
+    return CM_SUCCESS;
+}
+
+static status_t cmd_check_file_type(const char *type)
+{
+    if (strcmp(type, "block") == 0) {
+        return CM_SUCCESS;
+    }
+    DSS_PRINT_ERROR("Failed to check file type, only support block type.\n");
+    return CM_ERROR;
+}
+
+static dss_args_t cmd_scandisk_args[] = {
+    {'t', "type", CM_TRUE, CM_TRUE, cmd_check_file_type, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, cmd_check_command_injection, NULL, NULL, 0, NULL, NULL, 0},
+    {'u', "user_name", CM_TRUE, CM_TRUE, cmd_check_command_injection, NULL, NULL, 0, NULL, NULL, 0},
+    {'g', "group_name", CM_TRUE, CM_TRUE, cmd_check_command_injection, NULL, NULL, 0, NULL, NULL, 0},
+};
+
+static dss_args_set_t cmd_scandisk_args_set = {
+    cmd_scandisk_args,
+    sizeof(cmd_scandisk_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+static void scandisk_help(char *prog_name)
+{
+    (void)printf("\nUsage:%s scandisk <-t type> <-p path> <-u user_name> <-g group_name>\n", prog_name);
+    (void)printf("[client command] Scan disk to rebuild soft link\n");
+    (void)printf("-t/--type <type>, <required>, file type\n");
+    (void)printf("-p/--path <path>, <required>, find disk path\n");
+    (void)printf("-u/--user_name <user_name>, <required>, user name\n");
+    (void)printf("-g/--group_name <group_name>, <required>, group name\n");
+}
+
+static status_t scandisk_proc(void)
+{
+#ifdef WIN32
+    DSS_PRINT_ERROR("Windows does not support scan disk.\n");
+    return CM_ERROR;
+#else
+    char *path = cmd_scandisk_args[DSS_ARG_IDX_1].input_args;
+    char *user_name = cmd_scandisk_args[DSS_ARG_IDX_2].input_args;
+    char *group_name = cmd_scandisk_args[DSS_ARG_IDX_3].input_args;
+
+    char cmd[DSS_PARAM_BUFFER_SIZE] = {0};
+    int ret = snprintf_s(cmd, DSS_PARAM_BUFFER_SIZE, DSS_PARAM_BUFFER_SIZE - 1,
+        "ls -l %s* |grep '%s  %s'|grep '^b'|awk '{print $10}'", path, user_name, group_name);
+    if (ret < 0) {
+        DSS_PRINT_ERROR("snprintf_s query cmd failed.\n");
+        return CM_ERROR;
+    }
+    char reselt[DSS_PARAM_BUFFER_SIZE] = {0};
+    FILE *ptr = popen(cmd, "r");
+    if (ptr == NULL) {
+        DSS_PRINT_ERROR("Failed to scan disk when popen.\n");
+        return CM_ERROR;
+    }
+    int32 handle = -1;
+    while (fgets(reselt, DSS_PARAM_BUFFER_SIZE, ptr) != NULL) {
+        reselt[strlen(reselt) - 1] = '\0';
+        handle = open(reselt, O_RDWR, 0);
+        if (handle == -1) {
+            DSS_THROW_ERROR(ERR_DSS_VOLUME_OPEN, reselt, cm_get_os_error());
+            DSS_PRINT_ERROR("Failed to scan disk when open handle.\n");
+            return CM_ERROR;
+        }
+        ret = close(handle);
+        if (ret != 0) {
+            DSS_PRINT_ERROR("Failed to scan disk when close handle.\n");
+            return CM_ERROR;
+        }
+    }
+    ret = pclose(ptr);
+    if (ret != 0) {
+        DSS_PRINT_ERROR("Failed to scan disk when pclose.\n");
+        return CM_ERROR;
+    }
+    DSS_PRINT_INF("Succeed to scan disk.\n");
+    return CM_SUCCESS;
+#endif
+}
+
 // clang-format off
 dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set},
                                       {"lsvg", lsvg_help, lsvg_proc, &cmd_lsvg_args_set},
@@ -2741,6 +2844,7 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set}
                                       {"setcfg", setcfg_help, setcfg_proc, &cmd_setcfg_args_set},
                                       {"getcfg", getcfg_help, getcfg_proc, &cmd_getcfg_args_set},
                                       {"stopdss", stopdss_help, stopdss_proc, &cmd_stopdss_args_set},
+                                      {"scandisk", scandisk_help, scandisk_proc, &cmd_scandisk_args_set},
 };
 
 // clang-format on

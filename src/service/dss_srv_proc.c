@@ -485,20 +485,6 @@ status_t dss_remove_dir_file_by_node(dss_session_t *session, dss_vg_info_item_t 
     return CM_SUCCESS;
 }
 
-static status_t dss_remove_dir_file_by_node_in_create(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node)
-{
-    gft_node_t *parent_node;
-    status_t status = dss_remove_dir_file_by_node_inner(session, vg_item, node, &parent_node);
-    if (status != CM_SUCCESS) {
-        return CM_ERROR;
-    }
-    if (parent_node->flags & DSS_FT_NODE_FLAG_DEL) {
-        return dss_remove_dir_file_by_node_in_create(session, vg_item, parent_node);
-    }
-    return CM_SUCCESS;
-}
-
 static status_t dss_make_dir_file_core(dss_session_t *session, const char *parent, dss_vg_info_item_t **vg_item,
     const char *dir_name, gft_item_type_t type)
 {
@@ -512,23 +498,10 @@ static status_t dss_make_dir_file_core(dss_session_t *session, const char *paren
     gft_node_t *check_node = dss_find_ft_node(*vg_item, out_node, dir_name, CM_TRUE);
     if (check_node != NULL) {
         if (check_node->flags & DSS_FT_NODE_FLAG_DEL) {
-            bool32 is_open;
-            status = dss_check_open_file(*vg_item, *(uint64 *)&check_node->id, &is_open);
-            if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("Failed to check open file when delete file check, file: %s ftid:%llu.", check_node->name,
-                    *(uint64 *)&check_node->id);
-                return CM_ERROR;
-            }
-            if (is_open) {
-                LOG_DEBUG_ERR("Create file is delay file, and it is opened locally.");
-                return CM_ERROR;
-            }
-            DSS_LOG_DEBUG_OP("The file: %s has been deleted and is not opened locally.", check_node->name);
-            status = dss_remove_dir_file_by_node_in_create(session, *vg_item, check_node);
             LOG_DEBUG_INF(
-                "remove delay file when create file, status %d, ftid%llu, fid:%llu, vg: %s, session pid:%llu, v:%u, "
+                "Create file with same name file relay delete, ftid:%llu, fid:%llu, vg:%s, session pid:%llu, v:%u, "
                 "au:%llu, block:%u, item:%u.",
-                (int)status, *(int64 *)&check_node->id, check_node->fid, (*vg_item)->vg_name, session->cli_info.cli_pid,
+                *(int64 *)&check_node->id, check_node->fid, (*vg_item)->vg_name, session->cli_info.cli_pid,
                 check_node->id.volume, (uint64)check_node->id.au, check_node->id.block, check_node->id.item);
         } else {
             DSS_THROW_ERROR(ERR_DSS_DIR_CREATE_DUPLICATED, dir_name);
