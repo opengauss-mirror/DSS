@@ -29,9 +29,7 @@
 #include "dss_service.h"
 #include "dss_mes.h"
 
-void dss_proc_broadcast_req(dss_session_t *session, mes_message_t *receive_msg);
 void dss_proc_broadcast_ack(dss_session_t *session, mes_message_t *msg);
-void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg);
 void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg);
 void dss_proc_syb2active_ack(dss_session_t *session, mes_message_t *msg);
 dss_processor_t g_dss_processors[DSS_CMD_CEIL] = {
@@ -144,7 +142,7 @@ static void dss_check_file_open(dss_session_t *se, mes_message_t *msg)
     DSS_FREE_POINT(send_msg);
 }
 
-static int32 dss_process_broadcast_ack(
+int32 dss_process_broadcast_ack(
     dss_session_t *session, char *data, unsigned int len, dss_recv_msg_t *recv_msg_output)
 {
     int32 ret = ERR_DSS_MES_ILL;
@@ -278,6 +276,7 @@ static status_t dss_broadcast_msg_with_try(dss_session_t *session, mes_message_h
     dss_bcast_req_t *req = (dss_bcast_req_t *)buffer;
     do {
         // only send the last-send-failed and new added
+        cm_reset_error();
         vaild_inst_mask = ((cur_work_inst_map & snd_err_inst_map) | new_added_inst_map);
         vaild_inst = (param->inst_map) & (~((uint64)0x1 << (uint64)(param->inst_id))) & vaild_inst_mask;
         LOG_DEBUG_INF("Try broadcast num is %u, head rsn is %u, head cmd is %u, req cmd is %u.", i, head->rsn,

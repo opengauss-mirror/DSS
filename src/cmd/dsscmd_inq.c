@@ -37,24 +37,17 @@ static void print_dev_info(ptlist_t *devs)
     uint32 i;
     dev_info_t *dev_info = NULL;
     text_t text;
-    status_t ret;
     for (i = 0; i < devs->count; i++) {
         dev_info = (dev_info_t *)cm_ptlist_get(devs, i);
         if (dev_info != NULL) {
             // trim vendor
             cm_str2text(dev_info->data.vendor_info.vendor, &text);
             cm_trim_text(&text);
-            ret = cm_text2str(&text, dev_info->data.vendor_info.vendor, CM_MAX_VENDOR_LEN);
-            if (ret != CM_SUCCESS) {
-                return;
-            }
+            DSS_RETURN_DRIECT_IFERR(cm_text2str(&text, dev_info->data.vendor_info.vendor, CM_MAX_VENDOR_LEN));
             // trim product
             cm_str2text(dev_info->data.vendor_info.product, &text);
             cm_trim_text(&text);
-            ret = cm_text2str(&text, dev_info->data.vendor_info.product, CM_MAX_PRODUCT_LEN);
-            if (ret != CM_SUCCESS) {
-                return;
-            }
+            DSS_RETURN_DRIECT_IFERR(cm_text2str(&text, dev_info->data.vendor_info.product, CM_MAX_PRODUCT_LEN));
             printf("%-20s%-20s%-20s%-20s%-15d%-20s\n", dev_info->dev, dev_info->data.vendor_info.vendor,
                 dev_info->data.vendor_info.product, dev_info->data.array_info.array_sn, dev_info->data.lun_info.lun_id,
                 dev_info->data.lun_info.lun_wwn);
@@ -145,7 +138,7 @@ status_t inq_regs(void)
     return CM_SUCCESS;
 }
 
-static bool32 is_register(iof_reg_in_t *reg, int64 host_id, int64 *iofence_key)
+bool32 is_register(iof_reg_in_t *reg, int64 host_id, int64 *iofence_key)
 {
     for (int32 i = 0; i < reg->key_count; i++) {
         iofence_key[reg->reg_keys[i] - 1]++;
@@ -192,10 +185,10 @@ static status_t dss_init_vg_info(dss_vg_info_t *vg_info)
 {
     uint32 len = DSS_MAX_STACK_BUF_SIZE + DSS_MAX_STACK_BUF_SIZE + DSS_MAX_STACK_BUF_SIZE + sizeof(dss_ctrl_t);
     char *buf = (char *)cm_malloc_align(DSS_ALIGN_SIZE, vg_info->group_num * len);
-    if (buf == NULL) {
-        LOG_DEBUG_ERR("cm_malloc_align stack failed, align size:%u, size:%u.", DSS_ALIGN_SIZE, len);
-        return CM_ERROR;
-    }
+    bool32 result = (bool32)(buf != NULL);
+    DSS_RETURN_IF_FALSE2(
+        result, LOG_DEBUG_ERR("cm_malloc_align stack failed, align size:%u, size:%u.", DSS_ALIGN_SIZE, len));
+
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         vg_info->volume_group[i].buffer_cache = (shm_hashmap_t *)(buf + i * len);
         vg_info->volume_group[i].vg_latch = (latch_t *)(buf + i * len + DSS_MAX_STACK_BUF_SIZE);
@@ -215,16 +208,9 @@ static status_t dss_init_vg_info(dss_vg_info_t *vg_info)
 static status_t dss_get_vg_entry_info(const char *home, dss_config_t *inst_cfg, dss_vg_info_t *vg_info)
 {
     status_t status = dss_set_cfg_dir(home, inst_cfg);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Environment variant DSS_HOME not found.");
-        return status;
-    }
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Environment variant DSS_HOME not found."));
     status = dss_load_vg_conf_inner(vg_info, inst_cfg);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to load vg conf inner.");
-        return status;
-    }
-
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load vg conf inner."));
     return dss_init_vg_info(vg_info);
 }
 
@@ -250,15 +236,11 @@ status_t dss_check_volume_register(char *entry_path, int64 host_id, bool32 *is_r
 
 static status_t dss_reghl_inner(dss_vg_info_item_t *item, int64 host_id)
 {
-    status_t status;
     for (uint32 j = 1; j < DSS_MAX_VOLUMES; j++) {
         if (item->dss_ctrl->core.volume_attrs[j].flag == VOLUME_FREE) {
             continue;
         }
-        status = dss_iof_register_single(host_id, item->dss_ctrl->volume.defs[j].name);
-        if (status != CM_SUCCESS) {
-            return status;
-        }
+        CM_RETURN_IFERR(dss_iof_register_single(host_id, item->dss_ctrl->volume.defs[j].name));
     }
     return CM_SUCCESS;
 }
@@ -297,10 +279,8 @@ status_t dss_reghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_info)
 #ifndef WIN32
     dss_config_t inst_cfg;
     status_t status = dss_get_vg_entry_info(home, &inst_cfg, vg_info);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to get vg entry info when reghl, errcode is %d.\n", status);
-        return status;
-    }
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg entry info when reghl, errcode is %d.\n", status));
+
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         status = dss_iof_register_single(host_id, vg_info->volume_group[i].entry_path);
         if (status != CM_SUCCESS) {
@@ -328,22 +308,13 @@ status_t dss_reghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_info)
 
 static status_t dss_unreghl_inner(dss_vg_info_item_t *item, int64 host_id)
 {
-    status_t status;
     for (uint32 j = 1; j < DSS_MAX_VOLUMES; j++) {
         if (item->dss_ctrl->core.volume_attrs[j].flag == VOLUME_FREE) {
             continue;
         }
-        status = dss_iof_unregister_single(host_id, item->dss_ctrl->volume.defs[j].name);
-        if (status != CM_SUCCESS) {
-            return status;
-        }
+        CM_RETURN_IFERR(dss_iof_unregister_single(host_id, item->dss_ctrl->volume.defs[j].name));
     }
-    status = dss_iof_unregister_single(host_id, item->entry_path);
-    if (status != CM_SUCCESS) {
-        return status;
-    }
-
-    return CM_SUCCESS;
+    return dss_iof_unregister_single(host_id, item->entry_path);
 }
 
 /*
@@ -360,10 +331,8 @@ status_t dss_unreghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_inf
     dss_config_t inst_cfg;
     int64 iofence_key[DSS_MAX_INSTANCES] = {0};
     status_t status = dss_get_vg_entry_info(home, &inst_cfg, vg_info);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to get vg entry info, errcode is %d.\n", status);
-        return status;
-    }
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg entry info, errcode is %d.\n", status));
+
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         status = dss_check_volume_register(vg_info->volume_group[i].entry_path, host_id, &is_reg, iofence_key);
         if (status != CM_SUCCESS) {
@@ -395,22 +364,15 @@ status_t dss_unreghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_inf
 static status_t dss_inq_reg_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, int64 host_id, int64 *iofence_key)
 {
     bool32 is_reg;
-    status_t status;
     dss_vg_info_item_t *item = NULL;
     for (uint32 i = 0; i < vg_info->group_num; i++) {
-        status = dss_get_vg_non_entry_info(inst_cfg, &vg_info->volume_group[i]);
-        if (status != CM_SUCCESS) {
-            return status;
-        }
+        CM_RETURN_IFERR(dss_get_vg_non_entry_info(inst_cfg, &vg_info->volume_group[i]));
         item = &vg_info->volume_group[i];
         for (uint32 j = 1; j < DSS_MAX_VOLUMES; j++) {
             if (item->dss_ctrl->core.volume_attrs[j].flag == VOLUME_FREE) {
                 continue;
             }
-            status = dss_check_volume_register(item->dss_ctrl->volume.defs[j].name, host_id, &is_reg, iofence_key);
-            if (status != CM_SUCCESS) {
-                return CM_ERROR;
-            }
+            CM_RETURN_IFERR(dss_check_volume_register(item->dss_ctrl->volume.defs[j].name, host_id, &is_reg, iofence_key));
             if (!is_reg) {
                 DSS_PRINT_INF("The node %lld is registered partially, inq_result = 1.\n", host_id);
                 return CM_TIMEDOUT;
@@ -435,10 +397,8 @@ status_t dss_inq_reg_core(const char *home, int64 host_id, dss_vg_info_t *vg_inf
     dss_config_t inst_cfg;
     int64 iofence_key[DSS_MAX_INSTANCES] = {0};
     status_t status = dss_get_vg_entry_info(home, &inst_cfg, vg_info);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to get vg entry info when inq reg, errcode is %d.\n", status);
-        return status;
-    }
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg entry info when inq reg, errcode is %d.\n", status));
+
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         status = dss_check_volume_register(vg_info->volume_group[i].entry_path, host_id, &is_reg, iofence_key);
         if (status != CM_SUCCESS) {
