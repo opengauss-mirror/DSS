@@ -212,10 +212,7 @@ static int dss_handle_broadcast_msg(
             data = recv_msg[i] + sizeof(mes_message_head_t);
             len = head->size - sizeof(mes_message_head_t);
             ret = dss_process_broadcast_ack(session, data, len, recv_msg_output);
-            if (ret != DSS_SUCCESS) {
-                DSS_THROW_ERROR(ERR_DSS_FILE_OPENING_REMOTE, head->src_inst, head->cmd);
-                return ret;
-            }
+            DSS_RETURN_IFERR2(ret, DSS_THROW_ERROR(ERR_DSS_FILE_OPENING_REMOTE, head->src_inst, head->cmd));
         }
     }
     return DSS_SUCCESS;
@@ -411,8 +408,7 @@ static status_t dss_set_mes_profile(mes_profile_t *profile)
         errcode = strncpy_s(
             profile->inst_net_addr[i].ip, CM_MAX_IP_LEN, inst_cfg->params.nodes[i], strlen(inst_cfg->params.nodes[i]));
         if (errcode != EOK) {
-            DSS_THROW_ERROR(ERR_SYSTEM_CALL, (errcode));
-            return CM_ERROR;
+            DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_SYSTEM_CALL, (errcode)));
         }
         profile->inst_net_addr[i].port = inst_cfg->params.ports[i];
         inst_cnt++;
@@ -436,9 +432,9 @@ static status_t dss_create_mes_session(void)
     dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
     cm_spin_lock(&session_ctrl->lock, NULL);
     if (session_ctrl->used_count > 0) {
-        LOG_RUN_ERR("dss_create_mes_session failed, mes must occupy first %u sessions.", mes_sess_cnt);
-        cm_spin_unlock(&session_ctrl->lock);
-        return CM_ERROR;
+        DSS_RETURN_IFERR3(CM_ERROR,
+            LOG_RUN_ERR("dss_create_mes_session failed, mes must occupy first %u sessions.", mes_sess_cnt),
+            cm_spin_unlock(&session_ctrl->lock));
     }
 
     for (uint32 i = 0; i < mes_sess_cnt; i++) {
@@ -458,21 +454,15 @@ status_t dss_startup_mes(void)
         return CM_SUCCESS;
     }
 
-    if (dss_register_proc() != CM_SUCCESS) {
-        LOG_RUN_ERR("dss_register_proc failed.");
-        return CM_ERROR;
-    }
+    status_t status = dss_register_proc();
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("dss_register_proc failed."));
 
     mes_profile_t profile;
-    if (dss_set_mes_profile(&profile) != CM_SUCCESS) {
-        LOG_RUN_ERR("dss_set_mes_profile failed.");
-        return CM_ERROR;
-    }
+    status = dss_set_mes_profile(&profile);
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("dss_set_mes_profile failed."));
 
-    if (dss_create_mes_session() != CM_SUCCESS) {
-        LOG_RUN_ERR("dss_set_mes_profile failed.");
-        return CM_ERROR;
-    }
+    status = dss_create_mes_session();
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("dss_set_mes_profile failed."));
 
     return mes_init(&profile);
 }
@@ -496,16 +486,13 @@ status_t dss_notify_sync(
     uint32 req_size = sizeof(dss_bcast_req_t) + size + 1;
     char *tmp = cm_malloc(req_size);
     if (tmp == NULL) {
-        DSS_THROW_ERROR(ERR_ALLOC_MEMORY, req_size, "tmp");
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, req_size, "tmp"));
     }
     dss_bcast_req_t *bcast_req = (dss_bcast_req_t *)tmp;
     bcast_req->type = cmd;
     errno_t err = memcpy_sp(bcast_req->buffer, size, buffer, size);
     if (err != EOK) {
-        DSS_THROW_ERROR(ERR_SYSTEM_CALL, err);
-        DSS_FREE_POINT(tmp);
-        return CM_ERROR;
+        DSS_RETURN_IFERR3(CM_ERROR, DSS_THROW_ERROR(ERR_SYSTEM_CALL, err), DSS_FREE_POINT(tmp));
     }
     bcast_req->buffer[size] = '\0';
     status_t status = dss_broadcast_msg(session, (void *)bcast_req, req_size, recv_msg, DSS_MES_WAIT_TIMEOUT);
@@ -567,17 +554,12 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid)
     head.rsn = mes_get_rsn(session->id);
     // 2. send request to remote
     ret = mes_send_data2(&head, session->recv_pack.buf);
-    if (ret != CM_SUCCESS) {
-        LOG_RUN_ERR(
-            "The dss server fails to send messages to the remote node, src node(%u), dst node(%u).", currtid, remoteid);
-        return ret;
-    }
+    char *err_msg = "The dss server fails to send messages to the remote node";
+    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("%s, src node(%u), dst node(%u).", err_msg, currtid, remoteid));
     // 3. receive msg from remote
     ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, DSS_MES_WAIT_TIMEOUT);
-    if (ret != CM_SUCCESS) {
-        LOG_RUN_ERR("dss server receive msg from remote node failed, src node(%u), dst node(%u).", currtid, remoteid);
-        return ret;
-    }
+    DSS_RETURN_IFERR2(ret,
+        LOG_RUN_ERR("dss server receive msg from remote node failed, src node(%u), dst node(%u).", currtid, remoteid));
     // 4. attach remote execution result
     uint16 cpsize = msg.head->size - (sizeof(mes_message_head_t) + sizeof(int32));
     ret = *(int32 *)(msg.buffer + sizeof(mes_message_head_t));

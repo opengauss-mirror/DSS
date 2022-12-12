@@ -244,14 +244,12 @@ int32 ga_attach_area(uint32 attach_perm)
     uint32 i = 0;
 
     if (cm_get_shm_ctrl_flag() != CM_SHM_CTRL_FLAG_TRUE) {
-        LOG_RUN_ERR("Can not attach the global area because the server is not ready yet.");
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_RUN_ERR("Can not attach the global area because the server is not ready yet."));
     }
 
     g_app_area_addr = (char *)cm_attach_shm(SHM_TYPE_FIXED, (uint32)SHM_ID_APP_GA, 0, attach_perm);
     if (g_app_area_addr == NULL) {
-        LOG_RUN_ERR("can't attach the application area.");
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_RUN_ERR("can't attach the application area."));
     }
 
     for (i = 0; i < GA_APP_POOL_COUNT; i++) {
@@ -299,8 +297,8 @@ static status_t ga_extend_pool(ga_pool_id_e pool_id)
     uint32 pool_shm_id = GA_EXT_SHM_POOLID(pool_id) * GA_MAX_EXTENDED_POOLS + pool->ctrl->ex_count;
 
     if (pool->def.ex_max <= pool->ctrl->ex_count) {
-        LOG_RUN_ERR("the extended number of %s pool reach to limitation.", pool->pool_name);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(
+            CM_ERROR, LOG_RUN_ERR("the extended number of %s pool reach to limitation.", pool->pool_name));
     }
 
     object_cost = pool->def.object_size + (uint32)sizeof(ga_object_map_t);
@@ -308,8 +306,8 @@ static status_t ga_extend_pool(ga_pool_id_e pool_id)
 
     ex_addr = (char *)cm_get_shm(SHM_TYPE_GA, pool_shm_id, ex_pool_size, CM_SHM_ATTACH_RW, PERM_GRPRW);
     if (ex_addr == NULL) {
-        LOG_RUN_ERR("get shared memory in failure when extending the %s pool.", pool->pool_name);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(
+            CM_ERROR, LOG_RUN_ERR("get shared memory in failure when extending the %s pool.", pool->pool_name));
     }
 
     pool->ctrl->ex_shm_id[pool->ctrl->ex_count] = (int32)pool_shm_id;
@@ -406,11 +404,8 @@ int32 ga_alloc_object_list(ga_pool_id_e pool_id, uint32 count, ga_queue_t *list)
 
     while (pool->ctrl->free_objects.count < count) {
         status = ga_extend_pool(pool_id);
-        if (status != CM_SUCCESS) {
-            cm_spin_unlock(&pool->ctrl->mutex);
-            LOG_DEBUG_ERR("Failed to extend pool:%u.", pool_id);
-            return status;
-        }
+        DSS_RETURN_IFERR3(
+            status, cm_spin_unlock(&pool->ctrl->mutex), LOG_DEBUG_ERR("Failed to extend pool:%u.", pool_id));
         LOG_DEBUG_INF("Extend pool:%u, free_obj_count:%u, count:%u.", pool_id, pool->ctrl->free_objects.count, count);
     }
 

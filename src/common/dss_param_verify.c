@@ -43,8 +43,7 @@ status_t dss_verify_log_level(void *lex, void *def)
     DSS_RETURN_IFERR2(status, CM_THROW_ERROR(ERR_INVALID_PARAM, "_LOG_LEVEL"));
 
     if (num > MAX_LOG_LEVEL) {
-        CM_THROW_ERROR(ERR_INVALID_PARAM, "_LOG_LEVEL");
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, CM_THROW_ERROR(ERR_INVALID_PARAM, "_LOG_LEVEL"));
     }
 
     int32 iret_snprintf =
@@ -66,13 +65,11 @@ status_t dss_verify_lock_file_path(char *path)
     uint32 len;
     len = (uint32)strlen(path);
     if (len == 0 || len >= DSS_UNIX_PATH_MAX) {
-        DSS_THROW_ERROR(ERR_INVALID_FILE_NAME, path, DSS_UNIX_PATH_MAX);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_FILE_NAME, path, DSS_UNIX_PATH_MAX));
     }
 
     if (len == 1 && (path[0] == '.' || path[0] == '\t')) {
-        DSS_THROW_ERROR(ERR_INVALID_DIR, path);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, path));
     }
 
     input_path = input_path_buffer;
@@ -83,21 +80,18 @@ status_t dss_verify_lock_file_path(char *path)
     }
 
     if (len == 0 || input_path[0] == ' ') {
-        DSS_THROW_ERROR(ERR_INVALID_DIR, path);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, path));
     }
 
     input_path[len] = '\0';
     if (cm_check_exist_special_char(input_path, len)) {
-        DSS_THROW_ERROR(ERR_INVALID_DIR, input_path);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, input_path));
     }
 
     char buffer_path[DSS_UNIX_PATH_MAX];
     CM_RETURN_IFERR(realpath_file(input_path, buffer_path, CM_FILE_NAME_BUFFER_SIZE));
     if (!cm_dir_exist(input_path) || (access(buffer_path, W_OK | R_OK) != 0)) {
-        DSS_THROW_ERROR(ERR_INVALID_DIR, input_path);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, input_path));
     }
     return CM_SUCCESS;
 }
@@ -106,13 +100,11 @@ status_t dss_verify_lsnr_path(char *path)
 {
     uint32 len = (uint32)strlen(path);
     if (len == 1 && (path[0] == '.' || path[0] == '\t')) {
-        DSS_THROW_ERROR(ERR_INVALID_DIR, path);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, path));
     }
     uint32 max_len = DSS_UNIX_PATH_MAX - (uint32)strlen(DSS_UNIX_DOMAIN_SOCKET_NAME);
     if (len >= max_len) {
-        DSS_THROW_ERROR(ERR_INVALID_FILE_NAME, path, max_len);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_FILE_NAME, path, max_len));
     }
     char input_path_buffer[DSS_UNIX_PATH_MAX];
     char *input_path = input_path_buffer;
@@ -122,19 +114,16 @@ status_t dss_verify_lsnr_path(char *path)
         len -= CM_SINGLE_QUOTE_LEN;
     }
     if (len == 0 || input_path[0] == ' ') {
-        DSS_THROW_ERROR(ERR_INVALID_DIR, input_path);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, input_path));
     }
     input_path[len] = '\0';
     if (cm_check_uds_path_special_char(input_path, len)) {
-        DSS_THROW_ERROR(ERR_INVALID_DIR, input_path);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, input_path));
     }
     char realfile[DSS_UNIX_PATH_MAX];
     CM_RETURN_IFERR(realpath_file(input_path, realfile, DSS_UNIX_PATH_MAX));
     if (!cm_dir_exist((const char *)realfile)) {
-        DSS_THROW_ERROR(ERR_INVALID_DIR, input_path);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, input_path));
     }
     return CM_SUCCESS;
 }
@@ -145,13 +134,11 @@ status_t dss_verify_log_file_dir(char *path)
     uint32 len;
     len = (uint32)strlen(path);
     if (len == 0 || len >= CM_MAX_LOG_HOME_LEN) {
-        DSS_THROW_ERROR(ERR_INVALID_FILE_NAME, path, CM_MAX_LOG_HOME_LEN);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_FILE_NAME, path, CM_MAX_LOG_HOME_LEN));
     }
 
     if (len == 1 && (path[0] == '.' || path[0] == '\t')) {
-        DSS_THROW_ERROR(ERR_INVALID_DIR, path);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, path));
     }
 
     input_path = input_path_buffer;
@@ -162,25 +149,21 @@ status_t dss_verify_log_file_dir(char *path)
     }
 
     if (len == 0 || input_path[0] == ' ') {
-        DSS_THROW_ERROR(ERR_INVALID_DIR, path);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, path));
     }
 
     input_path[len] = '\0';
     if (cm_check_exist_special_char(input_path, len)) {
-        DSS_THROW_ERROR(ERR_INVALID_DIR, input_path);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, input_path));
     }
 
     char real_path[CM_MAX_LOG_HOME_LEN] = {0};
     CM_RETURN_IFERR(realpath_file(path, real_path, CM_MAX_LOG_HOME_LEN));
     if (!cm_dir_exist(path)) {
-        CM_THROW_ERROR(ERR_INVALID_DIR, path);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, CM_THROW_ERROR(ERR_INVALID_DIR, path));
     }
     if (access(path, W_OK | R_OK) != 0) {
-        CM_THROW_ERROR(ERR_INVALID_DIR, path);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, CM_THROW_ERROR(ERR_INVALID_DIR, path));
     }
     return CM_SUCCESS;
 }
@@ -216,10 +199,8 @@ status_t dss_verify_log_backup_file_count(void *lex, void *def)
     uint32 num;
     text_t text = {.str = value, .len = (uint32)strlen(value)};
     cm_trim_text(&text);
-    if (cm_text2uint32(&text, &num) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_LOG_BACKUP_FILE_COUNT");
-        return CM_ERROR;
-    }
+    status_t status = cm_text2uint32(&text, &num);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_LOG_BACKUP_FILE_COUNT"));
     if (num > CM_MAX_LOG_FILE_COUNT) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_LOG_BACKUP_FILE_COUNT");
         return CM_ERROR;
@@ -293,10 +274,8 @@ status_t dss_verify_audit_level(void *lex, void *def)
     uint32 num;
     text_t text = {.str = value, .len = (uint32)strlen(value)};
     cm_trim_text(&text);
-    if (cm_text2uint32(&text, &num) != CM_SUCCESS) {
-        CM_THROW_ERROR(ERR_INVALID_PARAM, "_AUDIT_LEVEL");
-        return CM_ERROR;
-    }
+    status_t status = cm_text2uint32(&text, &num);
+    DSS_RETURN_IFERR2(status, CM_THROW_ERROR(ERR_INVALID_PARAM, "_AUDIT_LEVEL"));
 
     if (num > DSS_AUDIT_ALL) {
         CM_THROW_ERROR(ERR_INVALID_PARAM, "_AUDIT_LEVEL");

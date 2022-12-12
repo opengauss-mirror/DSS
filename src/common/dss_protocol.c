@@ -129,8 +129,7 @@ status_t dss_put_str_with_cutoff(dss_packet_t *pack, const char *str)
 status_t dss_write_packet(cs_pipe_t *pipe, dss_packet_t *pack)
 {
     if (pack->head->size > DSS_MAX_PACKET_SIZE) {
-        CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, "PACKET BUFFER OVERFLOW");
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, "PACKET BUFFER OVERFLOW"));
     }
 
     status_t status = VIO_SEND_TIMED(pipe, pack->buf, pack->head->size, DSS_DEFAULT_NULL_VALUE);
@@ -168,14 +167,12 @@ static status_t dss_read_packet(cs_pipe_t *pipe, dss_packet_t *pack, bool32 cs_c
         status = VIO_WAIT(pipe, CS_WAIT_FOR_READ, CM_NETWORK_IO_TIMEOUT, &ready);
         DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_TCP_TIMEOUT, cs_mes));
         if (!ready) {
-            DSS_THROW_ERROR(ERR_DSS_TCP_TIMEOUT_REMAIN, (uint32)(sizeof(uint32) - offset));
-            return CM_ERROR;
+            DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_TCP_TIMEOUT_REMAIN, (uint32)(sizeof(uint32) - offset)));
         }
     }
 
     if (pack->head->size > pack->buf_size) {
-        DSS_THROW_ERROR(ERR_TCP_RECV, "Receive protocol failed.");
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_TCP_RECV, "Receive protocol failed."));
     }
 
     remain_size = (int32)pack->head->size - offset;
@@ -187,8 +184,7 @@ static status_t dss_read_packet(cs_pipe_t *pipe, dss_packet_t *pack, bool32 cs_c
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_TCP_TIMEOUT, cs_mes));
 
     if (!ready) {
-        DSS_THROW_ERROR(ERR_TCP_TIMEOUT, cs_mes);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_TCP_TIMEOUT, cs_mes));
     }
 
     status = VIO_RECV_TIMED(pipe, pack->buf + offset, (uint32)remain_size, CM_NETWORK_IO_TIMEOUT);
@@ -219,8 +215,8 @@ static status_t dss_call_base(cs_pipe_t *pipe, dss_packet_t *req, dss_packet_t *
     }
 
     if (!ready) {
-        DSS_THROW_ERROR(ERR_SOCKET_TIMEOUT, pipe->socket_timeout / (int32)CM_TIME_THOUSAND_UN);
-        return CM_ERROR;
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_SOCKET_TIMEOUT, pipe->socket_timeout / (int32)CM_TIME_THOUSAND_UN));
     }
 
     return dss_read(pipe, ack, CM_TRUE);
