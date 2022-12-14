@@ -39,6 +39,8 @@ typedef enum en_dss_mes_command {
     DSS_CMD_ACK_BROADCAST,
     DSS_CMD_REQ_SYB2ACTIVE, /* Request command from the standby node to the active node */
     DSS_CMD_ACK_SYB2ACTIVE,
+    DSS_CMD_REQ_LOAD_DISK,
+    DSS_CMD_ACK_LOAD_DISK,
     DSS_CMD_REQ_LOCKS, /* Request command from the standby node to the active node */
     DSS_CMD_ACK_LOCKS,
     DSS_CMD_CEIL,
@@ -135,6 +137,22 @@ typedef struct st_dss_distribute_locks_param {
     char vg_name[DSS_MAX_NAME_LEN];
 } dss_distribute_locks_param;
 
+typedef struct st_big_packets_ctrl {
+    uint32 offset;
+    uint32 cursize;
+    uint32 totalsize;
+    uint16 seq;
+    uint8 endflag;
+    uint8 reseved;
+} big_packets_ctrl_t;
+
+typedef struct st_loaddisk_req {
+    uint32 volumeid;
+    uint32 size;
+    uint64 offset;
+    char vg_name[DSS_MAX_NAME_LEN];
+} dss_loaddisk_req_t;
+
 status_t dss_notify_sync(
     dss_session_t *session, dss_bcast_req_cmd_t cmd, const char *buffer, uint32 size, dss_recv_msg_t *recv_msg);
 status_t dss_polling_master_id(dss_session_t *session);
@@ -146,6 +164,10 @@ int32 dss_process_broadcast_ack(
     dss_session_t *session, char *data, unsigned int len, dss_recv_msg_t *recv_msg_output);
 void dss_proc_broadcast_req(dss_session_t *session, mes_message_t *receive_msg);
 void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg);
+status_t dss_read_volume_remote(const char *vg_name, dss_volume_t *volume, int64 offset, void *buf, int32 size);
+status_t dss_send2standy(
+    dss_session_t *session, mes_message_head_t *reqhead, big_packets_ctrl_t *ctrl, const char *buf, uint16 size);
+status_t dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, mes_message_head_t *reqhead);
 
 #ifdef __cplusplus
 }

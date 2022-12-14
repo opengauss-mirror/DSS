@@ -102,7 +102,11 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
     securec_check_ret(errcode);
 
     g_dss_session_ctrl.sessions[id].is_direct = CM_TRUE;
-    g_dss_session_ctrl.sessions[id].pipe = *pipe;
+    g_dss_session_ctrl.sessions[id].connected = CM_FALSE;
+    if (pipe != NULL) {
+        g_dss_session_ctrl.sessions[id].pipe = *pipe;
+        g_dss_session_ctrl.sessions[id].connected = CM_TRUE;
+    }
     g_dss_session_ctrl.sessions[id].is_closed = CM_FALSE;
     *session = &g_dss_session_ctrl.sessions[id];
     return CM_SUCCESS;
@@ -111,7 +115,10 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
 void dss_destroy_session(dss_session_t *session)
 {
     uint32 id = session->id;
-    cs_disconnect(&session->pipe);
+    if ( g_dss_session_ctrl.sessions[id].connected == CM_TRUE) {
+        cs_disconnect(&session->pipe);
+        g_dss_session_ctrl.sessions[id].connected = CM_FALSE;
+    }
     cm_spin_lock(&g_dss_session_ctrl.lock, NULL);
     g_dss_session_ctrl.used_count--;
     g_dss_session_ctrl.sessions[id].is_closed = CM_TRUE;

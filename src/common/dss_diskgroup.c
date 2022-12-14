@@ -885,19 +885,6 @@ status_t dss_write_volume_inst(
     return dss_write_volume(volume, offset, temp_buf, (int32)size);
 }
 
-status_t dss_read_volume_inst(dss_vg_info_item_t *vg_item, dss_volume_t *volume, int64 offset, void *buf, int32 size)
-{
-    CM_ASSERT(offset % DSS_DISK_UNIT_SIZE == 0);
-    CM_ASSERT(size % DSS_DISK_UNIT_SIZE == 0);
-    CM_ASSERT(((uint64)buf) % DSS_DISK_UNIT_SIZE == 0);
-    status_t status = dss_read_volume(volume, offset, buf, size);
-    if (status != CM_SUCCESS) {
-        return status;
-    }
-
-    return CM_SUCCESS;
-}
-
 static uint32_t dss_find_free_volume_id(const dss_vg_info_item_t *vg_item)
 {
     for (uint32_t i = 0; i < DSS_MAX_VOLUMES; i++) {
@@ -1527,6 +1514,74 @@ status_t dss_check_read_volume(dss_vg_info_item_t *vg_item, uint32 volumeid, int
     volume = &vg_item->volume_handle[volumeid];
     return dss_read_volume_inst(vg_item, volume, offset, buf, size);
 }
+
+dss_remote_read_proc_t remote_read_proc = NULL;
+void regist_remote_read_proc(dss_remote_read_proc_t proc)
+{
+    remote_read_proc = proc;
+}
+
+static inline bool32 dss_need_load_remote(int size)
+{
+    return ((remote_read_proc != NULL) && (dss_is_readonly()) && (size <= (int32)DSS_LOADDISK_BUFFER_SIZE));
+}
+
+#define DSS_READ_VOLUME_TRY_MAX 3
+status_t dss_read_volume_inst(dss_vg_info_item_t *vg_item, dss_volume_t *volume, int64 offset, void *buf, int32 size)
+{
+    status_t status = CM_ERROR;
+    CM_ASSERT(offset % DSS_DISK_UNIT_SIZE == 0);
+    CM_ASSERT(size % DSS_DISK_UNIT_SIZE == 0);
+    CM_ASSERT(((uint64)buf) % DSS_DISK_UNIT_SIZE == 0);
+
+    uint8 i = 0;
+    while (dss_need_load_remote(size) == CM_TRUE && status != CM_SUCCESS) {
+        status = remote_read_proc(vg_item->vg_name, volume, offset, buf, size);
+        i++;
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to laod disk(%s) data from the active node, result:%d", volume->name_p, status);
+            if (i > DSS_READ_VOLUME_TRY_MAX) {
+                return status;
+            }
+            continue;
+        }
+
+        return status;
+    }
+    status = dss_read_volume(volume, offset, buf, size);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to laod disk(%s) data, result:%d", volume->name_p, status);
+        return status;
+    }
+
+    return CM_SUCCESS;
+}
+
+status_t dss_read_volume_4standby(const char *vg_name, uint32 volumeid, int64 offset, void *buf, int32 size)
+{
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
+    if (vg_item == NULL) {
+        LOG_RUN_ERR("Failed to find vg itme(%s).", vg_name);
+        return CM_ERROR;
+    }
+
+    dss_volume_t *volume = &vg_item->volume_handle[volumeid];
+    if (volume->handle == DSS_INVALID_HANDLE) {
+        if (dss_open_volume(volume->name_p, NULL, DSS_INSTANCE_OPEN_FLAG, volume) != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to open volume(%s).", volume->name_p);
+            return CM_ERROR;
+        } 
+    }
+
+    if (dss_read_volume(volume, offset, buf, size) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to load disk(%s) data.", volume->name_p);
+        return CM_ERROR;
+    }
+
+    LOG_DEBUG_INF("load disk(%s) data for standby success.", volume->name_p);
+    return CM_SUCCESS;
+}
+
 #ifdef __cplusplus
 }
 #endif

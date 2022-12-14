@@ -27,19 +27,32 @@
 #include "dss_session.h"
 #include "dss_file.h"
 #include "dss_service.h"
+#include "dss_instance.h"
 #include "dss_mes.h"
 
 void dss_proc_broadcast_ack(dss_session_t *session, mes_message_t *msg);
 void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg);
 void dss_proc_syb2active_ack(dss_session_t *session, mes_message_t *msg);
+void dss_proc_loaddisk_req(dss_session_t *session, mes_message_t *msg);
+void dss_proc_loaddisk_ack(dss_session_t *session, mes_message_t *msg);
 dss_processor_t g_dss_processors[DSS_CMD_CEIL] = {
     [DSS_CMD_REQ_BROADCAST] = {dss_proc_broadcast_req, CM_TRUE, "dss broadcast"},
     [DSS_CMD_ACK_BROADCAST] = {dss_proc_broadcast_ack, CM_FALSE, "dss broadcast ack"},
     [DSS_CMD_ACK_BROADCAST_WITH_MSG] = {dss_proc_broadcast_ack2, CM_FALSE, "dss broadcast ack with data"},
     [DSS_CMD_REQ_SYB2ACTIVE] = {dss_proc_syb2active_req, CM_TRUE, "dss standby to active req"},
-    [DSS_CMD_ACK_SYB2ACTIVE] = {dss_proc_syb2active_ack, CM_FALSE, "dss active to standby ack"}};
+    [DSS_CMD_ACK_SYB2ACTIVE] = {dss_proc_syb2active_ack, CM_FALSE, "dss active to standby ack"},
+    [DSS_CMD_REQ_LOAD_DISK] = {dss_proc_loaddisk_req, CM_TRUE, "dss standby load disk to active req"},
+    [DSS_CMD_ACK_LOAD_DISK] = {dss_proc_loaddisk_ack, CM_FALSE, "dss active load disk to standby ack"}};
+
 
 void dss_proc_syb2active_ack(dss_session_t *session, mes_message_t *msg)
+{
+    LOG_DEBUG_INF("receive ack(%u),src inst(%u), dst inst(%u).", (uint32)(msg->head->cmd),
+        (uint32)(msg->head->src_inst), (uint32)(msg->head->dst_inst));
+    mes_notify_msg_recv(msg);
+}
+
+void dss_proc_loaddisk_ack(dss_session_t *session, mes_message_t *msg)
 {
     LOG_DEBUG_INF("receive ack(%u),src inst(%u), dst inst(%u).", (uint32)(msg->head->cmd),
         (uint32)(msg->head->src_inst), (uint32)(msg->head->dst_inst));
@@ -464,6 +477,8 @@ status_t dss_startup_mes(void)
     status = dss_create_mes_session();
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("dss_set_mes_profile failed."));
 
+    regist_remote_read_proc(dss_read_volume_remote);
+
     return mes_init(&profile);
 }
 
@@ -616,4 +631,262 @@ void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg)
     }
     LOG_DEBUG_INF("The dss server send messages to the remote node success, src node(%u), dst node(%u).",
         (uint32)(head.src_inst), (uint32)(head.dst_inst));
+}
+
+status_t dss_send2standy(
+    dss_session_t *session, mes_message_head_t *reqhead, big_packets_ctrl_t *ctrl, const char *buf, uint16 size)
+{
+    mes_message_head_t ack;
+    ack.size = (uint16)(size + sizeof(mes_message_head_t) + sizeof(big_packets_ctrl_t));
+    mes_init_ack_head(reqhead, &ack, DSS_CMD_ACK_LOAD_DISK, ack.size, session->id);
+    status_t ret = mes_send_data4(&ack, sizeof(mes_message_head_t), ctrl, sizeof(big_packets_ctrl_t), buf, size);
+    if (ret != CM_SUCCESS) {
+        LOG_RUN_ERR("The dssserver fils to send messages to th remote node, src node(%u), dst node(%u).",
+            (uint32)(reqhead->src_inst), (uint32)(reqhead->dst_inst));
+        return ret;
+    }
+
+    LOG_DEBUG_INF("The dssserver send messages to th remote node success, src node(%u), dst node(%u).",
+        (uint32)(reqhead->src_inst), (uint32)(reqhead->dst_inst));
+    return ret;
+}
+
+static void dss_loaddisk_lock(char *vg_name)
+{
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
+    if (vg_item != NULL) {
+        dss_lock_vg_mem_s(vg_item);
+    }
+}
+
+static void dss_loaddisk_unlock(char *vg_name)
+{
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
+    if (vg_item != NULL) {
+        dss_unlock_vg_mem(vg_item);
+    }
+}
+
+status_t dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, mes_message_head_t *reqhead)
+{
+#ifndef WIN32
+    char readbuff[DSS_LOADDISK_BUFFER_SIZE] __attribute__((__aligned__(DSS_ALIGN_SIZE))) = {0};
+#else
+    char readbuff[DSS_LOADDISK_BUFFER_SIZE] = {0};
+#endif
+    int32 remain = (int32)req->size;
+    int32 readsize = 0;
+    int32 readtotal = 0;
+    big_packets_ctrl_t ctrl;
+    errno_t errcode = memset_s(&ctrl, sizeof(big_packets_ctrl_t), 0, sizeof(big_packets_ctrl_t));
+    securec_check_ret(errcode);
+    ctrl.totalsize = req->size;
+    dss_loaddisk_lock(req->vg_name);
+    while (remain > 0) {
+        int64 roffset = (int64)((int64)req->offset + (int64)readtotal);
+        readsize = (remain <= (int32)(DSS_LOADDISK_BUFFER_SIZE)) ? remain : (int32)(DSS_LOADDISK_BUFFER_SIZE);
+        if (dss_read_volume_4standby(req->vg_name, req->volumeid, roffset, readbuff, readsize) != CM_SUCCESS) {
+            LOG_RUN_ERR("read volume for standby failed, vg name[%s], volume id[%u].", req->vg_name, req->volumeid);
+            dss_loaddisk_unlock(req->vg_name);
+            return CM_ERROR;
+        }
+        readtotal += readsize;
+        remain -= readsize;
+
+        ctrl.cursize = (uint32)readsize;
+        ctrl.endflag = (remain == 0) ? CM_TRUE : CM_FALSE;
+        if (dss_send2standy(session, reqhead, &ctrl, readbuff, (uint16)readsize) != CM_SUCCESS) {
+            LOG_RUN_ERR("read volume for standby send msg failed, vg name[%s], volume id[%u].", req->vg_name, req->volumeid);
+            dss_loaddisk_unlock(req->vg_name);
+            return CM_ERROR;
+        }
+
+        LOG_DEBUG_INF("load disk from active info vg name(%s) volume id(%u) msg seq(%u) msg len(%u).", req->vg_name,
+            req->volumeid, (uint32)ctrl.seq, ctrl.cursize);
+        
+        ctrl.offset += (uint32)readsize;
+        ctrl.seq++;
+    }
+
+    dss_loaddisk_unlock(req->vg_name);
+    return CM_SUCCESS;
+}
+
+void dss_proc_loaddisk_req(dss_session_t *session, mes_message_t *msg)
+{
+    mes_message_head_t head = *(msg->head);
+    uint32 size = msg->head-size - sizeof(mes_message_head_t);
+    uint32 dstid = (uint32)(head.dst_inst);
+    status_t ret = CM_ERROR;
+    if (size != sizeof(dss_loaddisk_req_t)) {
+        LOG_RUN_ERR("The dssserver reveive msg from remote failed, src node(%u), dst node(%u).",
+            (uint32)(head.src_inst), dstid);
+        mes_release_message_buf(msg);
+        return;
+    }
+    dss_loaddisk_req_t req = *(dss_loaddisk_req_t *)(msg->buffer + sizeof(mes_message_head_t));
+    LOG_DEBUG_INF("Exec load disk req, src node(%u), volume id:%u, offset:%llu, size:%u.", (uint32)(head.src_inst),
+        req.volumeid, req.offset, req.size);
+    ret = dss_batch_load(session, &req, &head);
+    if (ret != CM_SUCCESS) {
+        LOG_DEBUG_INF("Exec load disk req failed, src node(%u), volume id:%u, offset:%llu, size:%u.", (uint32)(head.src_inst),
+            req.volumeid, req.offset, req.size);
+        mes_message_head_t ack;
+        ack.size = (uint16)(sizeof(mes_message_head_t) + sizeof(int32));
+        mes_init_ack_head(&head, &ack, DSS_CMD_ACK_LOAD_DISK, ack.size, session->id);
+        *(int32 *)(session->recv_pack.buf + sizeof(dss_packet_head_t)) = ret;
+        (void)mes_send_data2(&ack, &ret);
+    }
+    mes_release_message_buf(msg);
+    return;
+}
+
+static status_t dss_init_readvlm_remote_params(
+    dss_loaddisk_req_t *req, const char *entry, uint32 *currid, uint32 *remoteid, dss_session_t *session)
+{
+    error_t errcode = memset_s(req, sizeof(dss_loaddisk_req_t), 0, sizeof(dss_loaddisk_req_t));
+    securec_check_ret(errcode);
+    errcode = memcpy_s(req->vg_name, DSS_MAX_NAME_LEN, entry, DSS_MAX_NAME_LEN);
+    securec_check_ret(errcode);
+
+    if (dss_get_exec_nodeid(session, currid, remoteid) != CM_SUCCESS) {
+        LOG_RUN_ERR("read volume from active node get eec node id failed.");
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static bool32 dss_packets_verify(bool32 bfirst, big_packets_ctrl_t *lastctrl, big_packets_ctrl_t *ctrl)
+{
+    if ((ctrl->endflag == CM_TRUE) && (ctrl->cursize + ctrl->offset == ctrl->totalsize)) {
+        return CM_TRUE;
+    }
+
+    if (bfirst == CM_TRUE) {
+        *lastctrl = *ctrl;
+        return CM_TRUE;
+    }
+
+    if (ctrl->seq != (lastctrl->seq + 1)) {
+        LOG_RUN_ERR(
+            "msg verfy failed, seq error, cur seq(%u) last seq(%u).", (uint32)(ctrl->seq), (uint32)(lastctrl->seq));
+        return CM_FALSE;
+    }
+
+    if (ctrl->cursize > ctrl->totalsize) {
+        LOG_RUN_ERR(
+            "msg verfy failed, cursize error, cursize(%u) totalsize(%u).", (uint32)(ctrl->cursize), (uint32)(ctrl->totalsize));
+        return CM_FALSE;
+    }
+
+    if ((lastctrl->offset + lastctrl->cursize) != ctrl->offset) {
+        LOG_RUN_ERR("msg verfy failed, offset error， last cursize(%u) last offset(%u) cur offset(%u).",
+            lastctrl->cursize, lastctrl->offset, ctrl->offset);
+        return CM_FALSE;
+    }
+    
+    if ((ctrl->endflag == CM_TRUE) && (ctrl->cursize + ctrl->offset != ctrl->totalsize)) {
+        LOG_RUN_ERR("msg verfy failed, cursize error, cursize(%u) offset(%u) totalsize(%u).", ctrl->cursize,
+            ctrl->offset, ctrl->totalsize);
+        return CM_FALSE;
+    }
+
+    if (ctrl->totalsize != lastctrl->totalsize) {
+        LOG_RUN_ERR("msg verfy failed, totalsize error, cur totalsize(%u) last totalsize(%u).", ctrl->totalsize,
+            lastctrl->totalsize);
+        return CM_FALSE;
+    }
+
+    *lastctrl = *ctrl;
+    return CM_TRUE;
+}
+
+static status_t dss_rec_msgs(dss_session_t *session, void *buf, int32 size)
+{
+    bool32 bfirst = CM_TRUE;
+    mes_message_t msg;
+    big_packets_ctrl_t lastctrl;
+    lastctrl.offset = 0;
+    lastctrl.totalsize = 0;
+    lastctrl.seq = 0;
+    lastctrl.cursize = 0;
+    big_packets_ctrl_t ctrl;
+
+    do {
+        status_t ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, DSS_MES_WAIT_TIMEOUT);
+        if (ret != CM_SUCCESS) {
+            LOG_RUN_ERR("dss server receive msg from remote node failed, result:%d.", ret);
+            return ret;
+        }
+
+        if (msg.head->size < (sizeof(mes_message_head_t) + sizeof(big_packets_ctrl_t))) {
+            LOG_RUN_ERR("dss server load disk from remote node failed, msg len(%d) error.", msg.head->size);
+            mes_release_message_buf(&msg);
+            return CM_ERROR;
+        }
+
+        ctrl = *(big_packets_ctrl_t *)(msg.buffer + sizeof(mes_message_head_t));
+        if (dss_packets_verify(bfirst, &lastctrl, &ctrl) == CM_FALSE) {
+            mes_release_message_buf(&msg);
+            return CM_ERROR;
+        }
+
+        errno_t errcode = memcpy_s((char *)buf + ctrl.offset, ctrl.cursize,
+            msg.buffer + sizeof(mes_message_head_t) + sizeof(big_packets_ctrl_t), ctrl.cursize);
+        mes_release_message_buf(&msg);
+        securec_check_ret(errcode);
+        bfirst = CM_FALSE;
+    } while (ctrl.endflag != CM_TRUE);
+
+    return CM_SUCCESS;
+}
+
+status_t dss_read_volume_remote(const char *vg_name, dss_volume_t *volume, int64 offset, void *buf, int32 size)
+{
+    status_t ret = CM_ERROR;
+    mes_message_head_t head;
+    dss_loaddisk_req_t req;
+    dss_session_t *session = NULL;
+    uint32 remoteid = DSS_INVALID_ID32;
+    uint32 currid = DSS_INVALID_ID32;
+    uint32 volumeid = volume->id;
+
+    if (dss_create_session(NULL, &session) != CM_SUCCESS) {
+        LOG_RUN_ERR("read volume from active node create session failed.");
+        return CM_ERROR;
+    }
+
+    if (dss_init_readvlm_remote_params(&req, vg_name, &currid, &remoteid, session) != CM_SUCCESS) {
+        dss_destroy_session(session);
+        return CM_ERROR;
+    }
+
+    LOG_DEBUG_INF(
+        "instance %u start to load %d data of dist(%s) from th primary node:%u", currid, size, vg_name, remoteid);
+    req.volumeid = volumeid;
+    req.offset= (uint64)offset;
+    req.size = (uint32)size;
+    // 1. init msg head
+    MES_INIT_MESSAGE_HEAD(&head, DSS_CMD_REQ_LOAD_DISK, 0, currid, remoteid, session->id, CM_INVALID_ID16);
+    head.size = (uint16)(sizeof(dss_loaddisk_req_t) + sizeof(mes_message_head_t));
+    head.rsn = mes_get_rsn(session->id);
+    // 2. send request to remote
+    ret = mes_send_data2(&head, &req);
+    if (ret != CM_SUCCESS) {
+        LOG_RUN_ERR(
+            "The dssserver fails to send msssages to the remote node, src node (%u) dst node(%u).", currid, remoteid);
+        dss_destroy_session(session);
+        return ret;
+    }
+    // 3. receive msg from remote
+    ret = dss_rec_msgs(session, buf ,size);
+    dss_destroy_session(session);
+    if (ret != CM_SUCCESS) {
+        LOG_RUN_ERR(
+            "The dssserver receive msssages from remote node failed, src node (%u) dst node(%u).", currid, remoteid);
+        return ret;
+    }
+
+    LOG_DEBUG_INF("load disk(%s) data from the active node success.", vg_name);
+    return CM_SUCCESS;
 }

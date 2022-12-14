@@ -76,6 +76,7 @@ typedef struct st_dss_session {
     uint32 id;
     bool32 is_closed;
     bool32 is_used;
+    bool32 connected;
     cs_pipe_t pipe;
     dss_packet_t recv_pack;
     dss_packet_t send_pack;
