@@ -47,9 +47,11 @@ static status_t dss_notify_check_file_open(
     dss_recv_msg_t recv_msg = {CM_TRUE, CM_FALSE};
     status_t status = dss_notify_sync(session, cmd, (char *)&check, sizeof(dss_check_file_open_param), &recv_msg);
     if (status != CM_SUCCESS) {
-        DSS_THROW_ERROR_EX(ERR_DSS_MES_ILL, "Failed to notify other dss instance, cmd: %u, file: %llu, vg: %s", cmd,
-            ftid, vg_item->vg_name);
-        return status;
+        LOG_RUN_ERR("[DSS] ABORT INFO: Failed to notify other dss instance, cmd: %u, file: %llu, vg: %s, errcode:%d, "
+                    "OS errno:%d, OS errmsg:%s.",
+            cmd, ftid, vg_item->vg_name, cm_get_error_code(), errno, strerror(errno));
+        cm_fync_logfile();
+        _exit(1);
     }
     if (recv_msg.open_flag) {
         *is_open = CM_TRUE;
