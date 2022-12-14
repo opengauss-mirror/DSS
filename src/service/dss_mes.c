@@ -252,7 +252,8 @@ static int dss_handle_recv_broadcast_msg(dss_session_t *session, uint64 succ_req
     return ret;
 }
 
-#define DSS_BROADCAST_MSG_TRY_MAX 3
+#define DSS_BROADCAST_MSG_TRY_MAX 5
+#define DSS_BROADCAST_MSG_TRY_SLEEP_TIME 200
 static status_t dss_broadcast_msg_with_try(dss_session_t *session, mes_message_head_t *head, const char *buffer,
     dss_recv_msg_t *recv_msg, unsigned int timeout)
 {
@@ -296,8 +297,10 @@ static status_t dss_broadcast_msg_with_try(dss_session_t *session, mes_message_h
         new_added_inst_map = (~last_inst_inst_map & cur_work_inst_map);
         // re-snd with new rsn
         head->rsn = mes_get_rsn(session->id);
+        cm_sleep(DSS_BROADCAST_MSG_TRY_SLEEP_TIME);
         i++;
     } while (i < DSS_BROADCAST_MSG_TRY_MAX);
+    DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Failed to broadcast msg with try.");
     return CM_ERROR;
 }
 
