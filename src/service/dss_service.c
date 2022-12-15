@@ -38,7 +38,7 @@ static inline bool32 dss_need_exec_remote(bool32 exec_on_active, bool32 local_re
     return ((dss_is_readonly() == CM_TRUE) && (exec_on_active) && (local_req == CM_TRUE));
 }
 
-static status_t dss_process_remote(dss_session_t *session)
+status_t dss_get_exec_nodeid(dss_session_t *session, uint32 *srcid, uint32 *dstid)
 {
     dss_config_t *cfg = dss_get_inst_cfg();
     uint32 remoteid = dss_get_master_id();
@@ -56,6 +56,22 @@ static status_t dss_process_remote(dss_session_t *session)
             return CM_ERROR;
         }
     }
+
+    *dstid = remoteid;
+    *srcid = currid;
+    return CM_SUCCESS;
+}
+
+static status_t dss_process_remote(dss_session_t *session)
+{
+    uint32 remoteid = DSS_INVALID_ID32;
+    uint32 currid = DSS_INVALID_ID32;
+    status_t ret = CM_ERROR;
+
+    if (dss_get_exec_nodeid(session, &currid, &remoteid)) {
+        return CM_ERROR;
+    }
+   
     LOG_DEBUG_INF("Start processing remote requests(%d), remote node(%u),current node(%u).",
         session->recv_pack.head->cmd, remoteid, currid);
     ret = dss_exec_sync(session, remoteid, currid);

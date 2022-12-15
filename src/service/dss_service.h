@@ -48,6 +48,8 @@ status_t dss_signal_proc_with_graceful_exit(void);
 status_t dss_process_command(dss_session_t *session);
 void dss_session_entry(thread_t *thread);
 status_t dss_proc_standby_req(dss_session_t *session);
+status_t dss_get_exec_nodeid(dss_session_t *session, uint32 *currid, uint32 *remoteid);
+
 #ifdef __cplusplus
 }
 #endif
