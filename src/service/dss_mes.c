@@ -712,15 +712,25 @@ status_t dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, mes_mes
     return CM_SUCCESS;
 }
 
+static void dss_send_diskload_err_ack(dss_session_t *session, mes_message_head_t *head, status_t ret)
+{
+    mes_message_head_t ack;
+    ack.size = (uint16)(sizeof(mes_message_head_t) + sizeof(int32));
+    mes_init_ack_head(head, &ack, DSS_CMD_ACK_LOAD_DISK, ack.size, session->id);
+    *(int32 *)(session->recv_pack.buf + sizeof(dss_packet_head_t)) = ret;
+    (void)mes_send_data2(&ack, &ret);
+}
+
 void dss_proc_loaddisk_req(dss_session_t *session, mes_message_t *msg)
 {
     mes_message_head_t head = *(msg->head);
-    uint32 size = msg->head-size - sizeof(mes_message_head_t);
+    uint32 size = msg->head->size - sizeof(mes_message_head_t);
     uint32 dstid = (uint32)(head.dst_inst);
     status_t ret = CM_ERROR;
     if (size != sizeof(dss_loaddisk_req_t)) {
         LOG_RUN_ERR("The dssserver reveive msg from remote failed, src node(%u), dst node(%u).",
             (uint32)(head.src_inst), dstid);
+        dss_send_diskload_err_ack(session, &head, ret);
         mes_release_message_buf(msg);
         return;
     }
@@ -731,11 +741,7 @@ void dss_proc_loaddisk_req(dss_session_t *session, mes_message_t *msg)
     if (ret != CM_SUCCESS) {
         LOG_DEBUG_INF("Exec load disk req failed, src node(%u), volume id:%u, offset:%llu, size:%u.", (uint32)(head.src_inst),
             req.volumeid, req.offset, req.size);
-        mes_message_head_t ack;
-        ack.size = (uint16)(sizeof(mes_message_head_t) + sizeof(int32));
-        mes_init_ack_head(&head, &ack, DSS_CMD_ACK_LOAD_DISK, ack.size, session->id);
-        *(int32 *)(session->recv_pack.buf + sizeof(dss_packet_head_t)) = ret;
-        (void)mes_send_data2(&ack, &ret);
+        dss_send_diskload_err_ack(session, &head, ret);
     }
     mes_release_message_buf(msg);
     return;
