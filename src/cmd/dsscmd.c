@@ -2777,7 +2777,8 @@ static status_t scandisk_proc(void)
 
     char cmd[DSS_PARAM_BUFFER_SIZE] = {0};
     int ret = snprintf_s(cmd, DSS_PARAM_BUFFER_SIZE, DSS_PARAM_BUFFER_SIZE - 1,
-        "ls -l %s* |grep '%s  %s'|grep '^b'|awk '{print $10}'", path, user_name, group_name);
+        "ls -l %s* |grep ' %s \\+%s '|grep '^b'| awk -F\" %s\" '{print \"%s\" $2}' | awk '{print $1}'", path, user_name,
+        group_name, path, path);
     if (ret < 0) {
         DSS_PRINT_ERROR("snprintf_s query cmd failed.\n");
         return CM_ERROR;
