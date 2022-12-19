@@ -1539,7 +1539,13 @@ status_t dss_read_volume_inst(dss_vg_info_item_t *vg_item, dss_volume_t *volume,
         status = remote_read_proc(vg_item->vg_name, volume, offset, buf, size);
         i++;
         if (status != CM_SUCCESS) {
-            LOG_RUN_ERR("Failed to laod disk(%s) data from the active node, result:%d", volume->name_p, status);
+            int32 errcode = cm_get_error_code();
+            if (errcode == ERR_DSS_GET_MASTER_ID) {
+                LOG_DEBUG_INF("Read volume from local disk when dss get master id failed");
+                cm_reset_error();
+                break;
+            }
+            LOG_RUN_ERR("Failed to load disk(%s) data from the active node, result:%d", volume->name_p, status);
             if (i > DSS_READ_VOLUME_TRY_MAX) {
                 return status;
             }
@@ -1550,7 +1556,7 @@ status_t dss_read_volume_inst(dss_vg_info_item_t *vg_item, dss_volume_t *volume,
     }
     status = dss_read_volume(volume, offset, buf, size);
     if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to laod disk(%s) data, result:%d", volume->name_p, status);
+        LOG_RUN_ERR("Failed to load disk(%s) data, result:%d", volume->name_p, status);
         return status;
     }
 
