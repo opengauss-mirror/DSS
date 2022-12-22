@@ -760,6 +760,9 @@ static status_t dss_init_readvlm_remote_params(
 
     if (dss_get_exec_nodeid(session, currid, remoteid) != CM_SUCCESS) {
         LOG_RUN_ERR("read volume from active node get eec node id failed.");
+        if (*remoteid == DSS_INVALID_ID32) {
+            DSS_THROW_ERROR(ERR_DSS_GET_MASTER_ID);
+        }
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -865,9 +868,10 @@ status_t dss_read_volume_remote(const char *vg_name, dss_volume_t *volume, int64
         return CM_ERROR;
     }
 
-    if (dss_init_readvlm_remote_params(&req, vg_name, &currid, &remoteid, session) != CM_SUCCESS) {
+    ret = dss_init_readvlm_remote_params(&req, vg_name, &currid, &remoteid, session);
+    if (ret != CM_SUCCESS) {
         dss_destroy_session(session);
-        return CM_ERROR;
+        return ret;
     }
 
     LOG_DEBUG_INF(
