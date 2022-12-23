@@ -131,11 +131,9 @@ status_t dss_write_packet(cs_pipe_t *pipe, dss_packet_t *pack)
     if (pack->head->size > DSS_MAX_PACKET_SIZE) {
         DSS_RETURN_IFERR2(CM_ERROR, CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, "PACKET BUFFER OVERFLOW"));
     }
-
     status_t status = VIO_SEND_TIMED(pipe, pack->buf, pack->head->size, DSS_DEFAULT_NULL_VALUE);
     DSS_RETURN_IFERR2(
         status, CM_THROW_ERROR(ERR_PACKET_SEND, pack->buf_size, pack->head->size, DSS_DEFAULT_NULL_VALUE));
-
     return CM_SUCCESS;
 }
 
@@ -207,10 +205,12 @@ static status_t dss_call_base(cs_pipe_t *pipe, dss_packet_t *req, dss_packet_t *
     bool32 ready = CM_FALSE;
 
     if (dss_write(pipe, req) != CM_SUCCESS) {
+        LOG_RUN_ERR("dss write failed.");
         return CM_ERROR;
     }
 
     if (cs_wait(pipe, CS_WAIT_FOR_READ, pipe->socket_timeout, &ready) != CM_SUCCESS) {
+        LOG_RUN_ERR("cs wait failed.");
         return CM_ERROR;
     }
 

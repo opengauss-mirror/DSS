@@ -2678,6 +2678,43 @@ static status_t getcfg_proc(void)
     return status;
 }
 
+static dss_args_t cmd_getstatus_args[] = {
+    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
+        0},
+};
+
+static dss_args_set_t cmd_getstatus_args_set = {
+    cmd_getstatus_args,
+    sizeof(cmd_getstatus_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+static void getstatus_help(char *prog_name)
+{
+    (void)printf("\nUsage:%s getstatus <-n name> [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("[client command] get dss server status\n");
+    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
+                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+}
+
+static status_t getstatus_proc(void)
+{
+    dss_conn_t connection;
+    status_t status = get_connection_by_input_args(cmd_getstatus_args[DSS_ARG_IDX_1].input_args, &connection);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    int server_status = 0;
+    status = dss_get_inst_status_on_server(&connection, &server_status);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to get server status.\n");
+    } else {
+        DSS_PRINT_INF("Server status is %d.\n", server_status);
+    }
+    dss_disconnect_ex(&connection);
+    return status;
+}
+
 static dss_args_t cmd_stopdss_args[] = {
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -2847,6 +2884,7 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set}
                                       {"encrypt", encrypt_help, encrypt_proc, &cmd_encrypt_args_set},
                                       {"setcfg", setcfg_help, setcfg_proc, &cmd_setcfg_args_set},
                                       {"getcfg", getcfg_help, getcfg_proc, &cmd_getcfg_args_set},
+                                      {"getstatus", getstatus_help, getstatus_proc, &cmd_getstatus_args_set},
                                       {"stopdss", stopdss_help, stopdss_proc, &cmd_stopdss_args_set},
                                       {"scandisk", scandisk_help, scandisk_proc, &cmd_scandisk_args_set},
 };

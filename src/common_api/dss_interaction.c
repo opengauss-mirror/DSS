@@ -62,7 +62,7 @@ status_t dss_open_file_on_server(dss_conn_t *conn, const char *file_path, int fl
     return CM_SUCCESS;
 }
 
-status_t dss_set_status_on_server(dss_conn_t *conn, int status)
+status_t dss_get_inst_status_on_server(dss_conn_t *conn, int *status)
 {
     int32 errcode;
     char *errmsg = NULL;
@@ -70,9 +70,44 @@ status_t dss_set_status_on_server(dss_conn_t *conn, int status)
     dss_init_packet(&conn->pack, conn->pipe.options);
     dss_init_set(&conn->pack);
     dss_packet_t *send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_SET_STATUS;
+    send_pack->head->cmd = DSS_CMD_GET_INST_STATUS;
     send_pack->head->flags = 0;
-    DSS_RETURN_IF_ERROR(dss_put_int32(send_pack, (uint32)status));
+
+    dss_packet_t *ack_pack = &conn->pack;
+    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
+
+    if (ack_pack->head->result != CM_SUCCESS) {
+        dss_cli_get_err(ack_pack, &errcode, &errmsg);
+        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
+        return CM_ERROR;
+    }
+    text_t extra_info = CM_NULL_TEXT;
+    dss_init_get(ack_pack);
+    if (dss_get_text(ack_pack, &extra_info) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_INST_STATUS), "get inst status error");
+        LOG_DEBUG_ERR("get inst status error");
+        return CM_ERROR;
+    }
+    if (extra_info.len != sizeof(uint32)) {
+        DSS_THROW_ERROR(
+            ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_INST_STATUS), "get inst status length error");
+        LOG_DEBUG_ERR("get inst status length error");
+        return CM_ERROR;
+    }
+    *status = *(int *)extra_info.str;
+    return CM_SUCCESS;
+}
+
+status_t dss_set_main_inst_on_server(dss_conn_t *conn)
+{
+    int32 errcode;
+    char *errmsg = NULL;
+
+    dss_init_packet(&conn->pack, conn->pipe.options);
+    dss_init_set(&conn->pack);
+    dss_packet_t *send_pack = &conn->pack;
+    send_pack->head->cmd = DSS_CMD_SET_MAIN_INST;
+    send_pack->head->flags = 0;
 
     dss_packet_t *ack_pack = &conn->pack;
     DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));

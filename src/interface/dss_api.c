@@ -401,17 +401,20 @@ int dss_fopen(const char *file, int flag, int *handle)
     return (int)ret;
 }
 
-int dss_set_server_status(dss_server_status_t status)
+int dss_get_inst_status(int *status)
 {
-    if (status < DSS_STATUS_READONLY || status > DSS_STATUS_READWRITE) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "status");
-        return CM_ERROR;
-    }
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("set sever status get conn error"));
+    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when get inst status"));
+    return (int)dss_get_inst_status_on_server(conn, status);
+}
 
-    return (int)dss_set_status_on_server(conn, (int)status);
+int dss_set_main_inst()
+{
+    dss_conn_t *conn = NULL;
+    status_t ret = dss_get_conn(&conn);
+    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when set main inst"));
+    return (int)dss_set_main_inst_on_server(conn);
 }
 
 int dss_fclose(int handle)

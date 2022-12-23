@@ -56,11 +56,6 @@ typedef enum en_dss_redo_type {
     DSS_RT_SET_FILE_FS_BLOCK,
 } dss_redo_type_t;
 
-static inline bool32 dss_imediate_flush_redo_type(dss_redo_type_t type)
-{
-    return ((type >= DSS_RT_ALLOC_FILE_TABLE_NODE) && (type <= DSS_RT_RENAME_FILE));
-}
-
 typedef struct st_dss_redo_entry {
     dss_redo_type_t type;
     uint32 vg_id;  // exist operation multi vg
@@ -113,8 +108,6 @@ bool32 rp_check_block_addr(const dss_block_addr_his_t *addr_his, const void *blo
 status_t dss_write_redolog_to_disk(dss_vg_info_item_t *item, int64 offset, char *buf, uint32 size);
 void dss_put_log(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_type_t type, void *data, uint32 size);
 status_t dss_flush_log(int32_t log_split, dss_vg_info_item_t *vg_item, char *log_buf);
-status_t dss_reset_log(dss_vg_info_item_t *vg_item);
-status_t dss_recover(dss_vg_info_item_t *vg_item);
 status_t dss_recover_when_instance_start(dss_redo_batch_t *batch, bool32 need_check);
 status_t dss_recover_ctrlinfo(dss_vg_info_item_t *vg_item);
 status_t dss_apply_log(dss_vg_info_item_t *vg_item, char *log_buf);
@@ -124,13 +117,11 @@ bool32 dss_check_redo_log_available(dss_redo_batch_t *batch, dss_vg_info_item_t 
 void dss_rollback_mem_update(int32_t log_split, dss_vg_info_item_t *vg_item);
 void dss_free_log_slot(dss_session_t *session);
 void dss_reset_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item);
-status_t dss_check_redo_and_recover(dss_vg_info_item_t *vg_item);
 char *dss_get_log_buf_from_instance(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_type_t type);
 char *dss_get_total_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_type_t type);
 status_t dss_set_log_buf_for_first_vg(const char *vg_name, dss_vg_info_item_t *vg_item, dss_volume_t *volume);
 status_t dss_set_log_buf(const char *vg_name, dss_vg_info_item_t *vg_item, dss_volume_t *volume);
 char *dss_get_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item);
-status_t dss_flush_log_inner(int32_t log_split, dss_vg_info_item_t *vg_item, char *log_buf, uint32 flush_size);
 
 #ifdef __cplusplus
 }
