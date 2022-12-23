@@ -68,8 +68,8 @@ typedef enum en_dss_log_id {
 #define DSS_FILE_PATH_MAX_LENGTH (SIZE_K(1) + 1) /* Consistent with dss_defs.h */
 /* make the dss handle start from this value, to be distinguished from file system handle value */
 #define DSS_HANDLE_BASE 0x20000000
-#define DSS_CONN_NEVER_TIMEOUT (-1)
 #define DSS_VERSION_MAX_LEN 256
+#define DSS_CONN_RETRY_THRESHOLD 5
 
 typedef enum en_dss_item_type { DSS_PATH, DSS_FILE, DSS_LINK } dss_item_type_t;
 
@@ -146,7 +146,6 @@ DSS_DECLARE void dss_get_error(int *errcode, const char **errmsg);
 DSS_DECLARE void dss_register_log_callback(dss_log_output cb_log_output);
 // connection
 DSS_DECLARE int dss_set_svr_path(const char *conn_path);
-DSS_DECLARE int dss_set_conn_timeout(int timeout);
 // instance param
 DSS_DECLARE int dss_set_server_status(dss_server_status_t status);
 
