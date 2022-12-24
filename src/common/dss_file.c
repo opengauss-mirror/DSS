@@ -2950,8 +2950,9 @@ static status_t dss_init_trunc_ftn(dss_session_t *session, dss_vg_info_item_t *v
         _exit(1);
     }
     if (*truncated_ftn == NULL) {
-        LOG_DEBUG_ERR("Failed to alloc_ft_node.");
-        cm_panic(0);
+        LOG_RUN_ERR("Failed to alloc_ft_node, errcode:%d, OS errno:%d, OS errmsg:%s.", cm_get_error_code(), errno,
+            strerror(errno));
+        return CM_ERROR;
     }
     return CM_SUCCESS;
 }
