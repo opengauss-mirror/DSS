@@ -730,6 +730,15 @@ void dss_proc_loaddisk_req(dss_session_t *session, mes_message_t *msg)
     uint32 size = msg->head->size - sizeof(mes_message_head_t);
     uint32 dstid = (uint32)(head.dst_inst);
     status_t ret = CM_ERROR;
+
+    if (dss_is_readonly() == CM_TRUE) {
+        dss_config_t *cfg = dss_get_inst_cfg();
+        uint32 id = (uint32)(cfg->params.inst_id);
+        LOG_RUN_ERR("The local node(%u) is in readonly state and connot execute remote loaddisk request.", id);
+        mes_release_message_buf(msg);
+        return;
+    }
+    
     if (size != sizeof(dss_loaddisk_req_t)) {
         LOG_RUN_ERR("The dssserver reveive msg from remote failed, src node(%u), dst node(%u).",
             (uint32)(head.src_inst), dstid);
