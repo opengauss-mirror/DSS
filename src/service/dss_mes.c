@@ -90,7 +90,8 @@ static void dss_ask_server_status(dss_session_t *se, mes_message_t *msg)
     dss_mes_ack_with_data_t ack;
     unsigned short size = sizeof(dss_mes_ack_with_data_t);
     mes_init_ack_head(msg->head, &ack.head, DSS_CMD_ACK_BROADCAST_WITH_MSG, size, se->id);
-    *(uint32 *)(ack.data) = dss_get_master_id();
+    uint32 id = dss_get_master_id();
+    *(uint32 *)(ack.data) = id;
     ack.type = BCAST_ACK_ASK_STATUS;
     int ret = mes_send_data(&ack.head);
     if (ret != CM_SUCCESS) {
@@ -99,8 +100,8 @@ static void dss_ask_server_status(dss_session_t *se, mes_message_t *msg)
         return;
     }
     DSS_LOG_DEBUG_OP(
-        "send ask server status ack success. cmd=%hhu, rsn=%u, src_inst=%hhu, dst_inst=%hhu, src_sid=%hu, dst_sid=%hu.",
-        msg->head->cmd, msg->head->rsn, msg->head->src_inst, msg->head->dst_inst, msg->head->src_sid,
+        "send ask server status ack[%u] success. cmd=%hhu, rsn=%u, src_inst=%hhu, dst_inst=%hhu, src_sid=%hu, dst_sid=%hu.",
+        id, msg->head->cmd, msg->head->rsn, msg->head->src_inst, msg->head->dst_inst, msg->head->src_sid,
         msg->head->dst_sid);
 }
 
@@ -172,10 +173,10 @@ int32 dss_process_broadcast_ack(
             break;
         case BCAST_ACK_ASK_STATUS:
             id = *(uint32 *)(data + sizeof(dss_bcast_ack_cmd_t));
+            ret = DSS_SUCCESS;
             if (id < CM_MAX_INSTANCES) {
                 dss_set_master_id(id);
                 DSS_LOG_DEBUG_OP("Get master instance id success, master instance id(%u)", id);
-                ret = DSS_SUCCESS;
             } else {
                 LOG_RUN_ERR("Get master instance id error, master instance id(%u)", id);
             }
@@ -720,7 +721,6 @@ static void dss_send_diskload_err_ack(dss_session_t *session, mes_message_head_t
     mes_message_head_t ack;
     ack.size = (uint16)(sizeof(mes_message_head_t) + sizeof(int32));
     mes_init_ack_head(head, &ack, DSS_CMD_ACK_LOAD_DISK, ack.size, session->id);
-    *(int32 *)(session->recv_pack.buf + sizeof(dss_packet_head_t)) = ret;
     (void)mes_send_data2(&ack, &ret);
 }
 
@@ -735,6 +735,7 @@ void dss_proc_loaddisk_req(dss_session_t *session, mes_message_t *msg)
         dss_config_t *cfg = dss_get_inst_cfg();
         LOG_RUN_ERR("The local node(%u) is in readonly state and connot execute remote loaddisk request.",
             (uint32)(cfg->params.inst_id));
+        dss_send_diskload_err_ack(session, &head, ret);
         mes_release_message_buf(msg);
         return;
     }
@@ -770,10 +771,21 @@ static status_t dss_init_readvlm_remote_params(
     if (dss_get_exec_nodeid(session, currid, remoteid) != CM_SUCCESS) {
         LOG_RUN_ERR("read volume from active node get eec node id failed.");
         if (*remoteid == DSS_INVALID_ID32) {
+            cm_reset_error();
             DSS_THROW_ERROR(ERR_DSS_GET_MASTER_ID);
+            dss_set_master_id(DSS_INVALID_ID32);
         }
         return CM_ERROR;
     }
+
+    if (*currid == *remoteid) {
+        cm_reset_error();
+        DSS_THROW_ERROR(ERR_DSS_GET_MASTER_ID);
+        dss_set_master_id(DSS_INVALID_ID32);
+        return CM_ERROR;
+    }
+    
+
     return CM_SUCCESS;
 }
 
@@ -837,11 +849,13 @@ static status_t dss_rec_msgs(dss_session_t *session, void *buf, int32 size)
         status_t ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, DSS_MES_WAIT_TIMEOUT);
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("dss server receive msg from remote node failed, result:%d.", ret);
+            dss_set_master_id(DSS_INVALID_ID32);
             return ret;
         }
 
         if (msg.head->size < (sizeof(mes_message_head_t) + sizeof(big_packets_ctrl_t))) {
             LOG_RUN_ERR("dss server load disk from remote node failed, msg len(%d) error.", msg.head->size);
+            dss_set_master_id(DSS_INVALID_ID32);
             mes_release_message_buf(&msg);
             return CM_ERROR;
         }
