@@ -1232,7 +1232,7 @@ static void touch_help(char *prog_name)
 {
     (void)printf("\nUsage:%s touch <-p path> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]create file\n");
-    (void)printf("-n/--name <name>, <required>, file need to touch, name must begin with '+'\n");
+    (void)printf("-p/--path <path>, <required>, file need to touch, path must begin with '+'\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
                  "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
 }
@@ -1411,7 +1411,7 @@ static void rm_help(char *prog_name)
 {
     (void)printf("\nUsage:%s rm <-p path> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]remove device\n");
-    (void)printf("-n/--name <name>, <required>, device name, must begin with '+'\n");
+    (void)printf("-p/--path <path>, <required>, device path, must begin with '+'\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
                  "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
 }
@@ -1451,6 +1451,8 @@ static void rmv_help(char *prog_name)
 {
     (void)printf("\nUsage:%s rmv <-g vg_name> <-v vol_name> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]remove volume of volume group\n");
+    (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name need to remove volume\n");
+    (void)printf("-v/--vol_name <vol_name>, <required>, the volue name need to be removed from volume group\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
                  "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
 }
@@ -1576,7 +1578,7 @@ static dss_args_set_t cmd_inq_req_args_set = {
 static void inq_reg_help(char *prog_name)
 {
     (void)printf("Usage:%s inq_reg <-i inst_id> [-D DSS_HOME]\n", prog_name);
-    (void)printf("[raid command]check whether the node is registered.n");
+    (void)printf("[raid command]check whether the node is registered\n");
     (void)printf("-i/--inst_id <inst_id>, <required>, the id of the host need to reg\n");
     (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
 }
@@ -1794,8 +1796,8 @@ static void examine_help(char *prog_name)
                  "[-U UDS:socket_domain]\n",
         prog_name);
     (void)printf("[client command] display dss file content\n");
-    (void)printf("-n/--name <name>, <required>, the id of the host need to examine\n");
-    (void)printf("-o/--offset <offset>, <required>, the id of the host need to examine\n");
+    (void)printf("-p/--path <path>, <required>, device path, must begin with '+'\n");
+    (void)printf("-o/--offset <offset>, <required>, the offset of the file need to examine\n");
     (void)printf("-f/--format <format>, <required>, value is[c|h|u|l|s|x]\n"
                  "c char, h unsigned short, u unsigned int, l unsigned long, s string, x hex.\n");
     (void)printf("-s/--read_size <DSS_HOME>, [optional], size to show, default vaule is 512byte\n");
@@ -2162,7 +2164,7 @@ static void showdisk_help(char *prog_name)
     (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name\n");
     (void)printf("-s/--struct_name <struct_name>, <required>, the struct name of volume group, "
                  "the optional value(s):\n");
-    (void)printf("    [core_ctrl | vg_header | volume_ctrl | root_ft_block | gft_node]\n");
+    (void)printf("    [core_ctrl | vg_header | volume_ctrl | root_ft_block]\n");
     (void)printf("-b/--block_id <block_id>, <required>, block id\n");
     (void)printf("-n/--node_id <node_id>, <required>, node id\n");
     (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
