@@ -962,7 +962,7 @@ static status_t lsvg_operate_dir_impl(vg_vlm_space_info_t *vg_vlm_info, double *
         return CM_ERROR;
     }
 
-    while ((node = (gft_node_t *)dss_read_dir_impl(connection, dir)) != NULL) {
+    while ((node = (gft_node_t *)dss_read_dir_impl(connection, dir, CM_FALSE)) != NULL) {
         *dss_vg_recycle_size = *dss_vg_recycle_size + (double)node->size;
     }
     (void)dss_close_dir_impl(connection, dir);
@@ -1323,7 +1323,7 @@ static status_t ls_proc(void)
 #endif
     gft_node_t *node;
     char time[512];
-    while ((node = (dss_dir_item_handle)dss_read_dir_impl(&connection, dir)) != NULL) {
+    while ((node = (dss_dir_item_handle)dss_read_dir_impl(&connection, dir, CM_TRUE)) != NULL) {
         if (cm_time2str(node->create_time, "YYYY-MM-DD HH24:mi:ss", time, sizeof(time)) != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to get create time of node %s.", node->name);
             dss_disconnect_ex(&connection);
