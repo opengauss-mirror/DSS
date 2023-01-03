@@ -675,14 +675,12 @@ static status_t dss_refresh_dir_r(dss_vg_info_item_t *vg_item, gft_node_t *paren
     status_t status = CM_SUCCESS;
     ftid_t id = parent_node->items.first;
     for (uint32 i = 0; i < parent_node->items.count; i++) {
-#ifdef OPENGAUSS
         if (dss_cmp_blockid(id, CM_INVALID_ID64)) {
-            // openGauss may be find uncommitted node when standby
+            // may be find uncommitted node when standby
             LOG_DEBUG_INF("Get invalid id in parent name:%s, id:%llu, count:%u, when refresh dir, index:%u.",
                 parent_node->name, *(uint64 *)&parent_node->id, parent_node->items.count, i);
             break;
         }
-#endif
         gft_node_t *node = dss_get_ft_node_by_ftid(vg_item, id, CM_TRUE, CM_TRUE);
         if (node == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR,
@@ -1208,15 +1206,13 @@ gft_node_t *dss_find_parent_node_r(dss_vg_info_item_t *vg_item, gft_node_t *pare
     }
     LOG_DEBUG_INF("dir: %s has %u items", parent_node->name, parent_node->items.count);
     for (uint32 i = 0; i < parent_node->items.count; i++) {
-#ifdef OPENGAUSS
         if (dss_cmp_blockid(id, CM_INVALID_ID64)) {
-            // openGauss may be find uncommitted node when standby
+            // may be find uncommitted node when standby
             LOG_DEBUG_INF("Get invalid id in parent name:%s, id:%llu, count:%u, when find parent node, children "
                           "name:%s, index:%u.",
                 parent_node->name, *(uint64 *)&parent_node->id, parent_node->items.count, find_node->name, i);
             return NULL;
         }
-#endif
         gft_node_t *cur_node = dss_get_ft_node_by_ftid(vg_item, id, CM_FALSE, CM_FALSE);
         if (cur_node == NULL) {
             LOG_DEBUG_ERR("Can not get node:%llu.", *(uint64 *)&id);
@@ -2072,14 +2068,12 @@ gft_node_t *dss_find_ft_node_core(
     }
 
     for (uint32 i = 0; i < parent_node->items.count; i++) {
-#ifdef OPENGAUSS
         if (dss_cmp_blockid(id, CM_INVALID_ID64)) {
-            // openGauss may be find uncommitted node when standby
+            // may be find uncommitted node when standby
             LOG_DEBUG_INF("Get invalid id in parent name:%s, id:%llu, count:%u, when find node name:%s, index:%u.",
                 parent_node->name, *(uint64 *)&parent_node->id, parent_node->items.count, name, i);
             return NULL;
         }
-#endif
         gft_node_t *node = dss_get_ft_node_by_ftid(vg_item, id, check_version, CM_FALSE);
         if (node == NULL) {
             if (dss_is_server()) {
