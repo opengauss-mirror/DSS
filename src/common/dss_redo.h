@@ -127,7 +127,6 @@ void dss_reset_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item);
 status_t dss_check_redo_and_recover(dss_vg_info_item_t *vg_item);
 char *dss_get_log_buf_from_instance(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_type_t type);
 char *dss_get_total_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_type_t type);
-void dss_imediate_process_redo(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_type_t type);
 status_t dss_set_log_buf_for_first_vg(const char *vg_name, dss_vg_info_item_t *vg_item, dss_volume_t *volume);
 status_t dss_set_log_buf(const char *vg_name, dss_vg_info_item_t *vg_item, dss_volume_t *volume);
 char *dss_get_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item);

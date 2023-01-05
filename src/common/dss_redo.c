@@ -168,21 +168,6 @@ char *dss_get_total_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item,
     return log_buf;
 }
 
-void dss_imediate_process_redo(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_type_t type)
-{
-#ifdef OPENGAUSS
-    if (dss_imediate_flush_redo_type(type)) {
-        status_t status = dss_process_redo_log(session, vg_item);
-        if (status != CM_SUCCESS) {
-            LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
-                cm_get_error_code(), errno, strerror(errno));
-            cm_fync_logfile();
-            _exit(1);
-        }
-    }
-#endif
-}
-
 void dss_put_log(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_type_t type, void *data, uint32 size)
 {
     dss_redo_entry_t *entry = NULL;
@@ -217,7 +202,6 @@ void dss_put_log(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_t
     batch->count++;
     // 'dss_redo_batch_t' will be putted at batch tail also
     CM_ASSERT(batch->size + sizeof(dss_redo_batch_t) + DSS_DISK_UNIT_SIZE <= DSS_LOG_BUFFER_SIZE);
-    dss_imediate_process_redo(session, vg_item, type);
 }
 
 status_t dss_write_redolog_to_disk(dss_vg_info_item_t *item, int64 offset, char *buf, uint32 size)
