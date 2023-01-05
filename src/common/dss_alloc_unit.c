@@ -104,6 +104,14 @@ static status_t dss_alloc_au_from_recycle(
             CM_ASSERT(auid->volume < DSS_MAX_VOLUMES);
             block->head.used_num--;
             dss_set_blockid(&block->bitmap[sec_index], DSS_INVALID_64);
+            dss_redo_set_file_size_t redo_size;
+            uint64 old_size = node->size;
+            uint64 au_size = dss_get_vg_au_size(dss_ctrl);
+            node->size = node->size - au_size;
+            redo_size.ftid = node->id;
+            redo_size.size = node->size;
+            redo_size.oldsize = old_size;
+            dss_put_log(session, vg_item, DSS_RT_SET_FILE_SIZE, &redo_size, sizeof(redo_size));
             if (block->head.used_num == 0) {
                 dss_free_fs_block_addr(session, vg_item, (char *)block, sec_objid);
                 dss_set_blockid(&entry_fs_block->bitmap[index], DSS_INVALID_64);
