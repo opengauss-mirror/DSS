@@ -373,14 +373,12 @@ static status_t dss_process_close_file(dss_session_t *session)
     gft_node_t *node;
     (void)dss_check_rm_file(vg_item, ftid, &should_rm_file, &node);
     if (should_rm_file) {
-#ifdef OPENGAUSS
         if (!dss_is_readwrite()) {
             LOG_DEBUG_INF(
                 "Ignores to remove delay file when close file, because the instance is not in readwrite, fid: %llu",
                 fid);
             return CM_SUCCESS;
         }
-#endif
         status_t status = dss_remove_dir_file_by_node(session, vg_item, node);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_INF("Failed to remove delay file when close file, fid: %llu", fid));
         DSS_LOG_DEBUG_OP("Succeed to remove file when close file, ftid%llu, fid:%llu, vg: %s, session pid:%llu, v:%u, "

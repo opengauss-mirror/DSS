@@ -349,11 +349,7 @@ char *dss_find_block_in_shm(dss_vg_info_item_t *vg_item, dss_block_id_t block_id
     uint32 hash = cm_hash_int64(*(int64 *)&block_id);
     addr = dss_find_block_in_bucket(vg_item->buffer_cache, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
     if (addr != NULL) {
-#ifdef OPENGAUSS
         if (check_version && dss_is_server() && (!dss_is_readwrite() || active_refresh)) {
-#else
-        if (check_version && dss_is_server()) {
-#endif
             status = dss_check_block_version(vg_item, block_id, type, addr, NULL);
             if (status != CM_SUCCESS) {
                 return NULL;

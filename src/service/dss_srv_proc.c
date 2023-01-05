@@ -657,13 +657,9 @@ void dss_clean_open_files_in_vg(dss_session_t *session, dss_vg_info_item_t *vg_i
             count_fail++;
             LOG_DEBUG_INF("Failed to delete pid skiplist index, ftid:%llu, pid:%llu.", next_key->ftid, next_key->pid);
         }
-#ifdef OPENGAUSS
         if (dss_is_readwrite()) {
             dss_close_handle(session, vg_item, ftid);
         }
-#else
-        dss_close_handle(session, vg_item, ftid);
-#endif
         DSS_LOG_DEBUG_OP(
             "Succeed to close file, ftid:%llu, vg: %s, session pid:%llu, v:%u, au:%llu, block:%u, item:%u.",
             *(uint64 *)&ftid, vg_item->vg_name, session->cli_info.cli_pid, ftid.volume, (uint64)ftid.au, ftid.block,

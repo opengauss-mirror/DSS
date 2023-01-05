@@ -1347,11 +1347,9 @@ status_t dss_load_volume_ctrl(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *vo
 
 status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite()) {
         return CM_SUCCESS;
     }
-#endif
 #ifndef WIN32
     char buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_DISK_UNIT_SIZE)));
 #else

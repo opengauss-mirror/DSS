@@ -212,11 +212,9 @@ status_t dss_alloc_au_core(
 
 status_t dss_refresh_core_and_volume(dss_vg_info_item_t *vg_item)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite()) {
         return CM_SUCCESS;
     }
-#endif
     status_t status;
     char *entry_path = vg_item->entry_path;
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;

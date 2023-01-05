@@ -2157,11 +2157,9 @@ gft_node_t *dss_find_ft_node(dss_vg_info_item_t *vg_item, gft_node_t *parent_nod
 
 status_t dss_refresh_root_ft(dss_vg_info_item_t *vg_item, bool32 check_version, bool32 active_refresh)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite() && !active_refresh) {
         return CM_SUCCESS;
     }
-#endif
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
     char *root = dss_ctrl->root;
     dss_root_ft_block_t *ft_block = (dss_root_ft_block_t *)(root);
@@ -2186,17 +2184,6 @@ status_t dss_refresh_root_ft(dss_vg_info_item_t *vg_item, bool32 check_version, 
         }
     }
     return CM_SUCCESS;
-}
-
-char *dss_find_ft_block_latch(dss_vg_info_item_t *vg_item, ftid_t ftid, ga_obj_id_t *out_obj_id)
-{
-#ifndef OPENGAUSS
-    return (char *)1;
-#else
-    gft_node_t *node = (gft_node_t *)dss_get_ft_node_by_ftid(vg_item, ftid, CM_FALSE, CM_FALSE);
-    dss_ft_block_t *block = dss_get_ft_block_by_node(node);
-    return ((char *)block) + DSS_BLOCK_SIZE;
-#endif
 }
 
 gft_node_t *dss_get_ft_node_by_ftid(dss_vg_info_item_t *vg_item, ftid_t id, bool32 check_version, bool32 active_refresh)
@@ -2370,11 +2357,9 @@ status_t dss_update_ft_root(dss_vg_info_item_t *vg_item)
 status_t dss_check_refresh_fs_block(
     dss_vg_info_item_t *vg_item, dss_block_id_t blockid, char *block, bool32 *is_changed)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite()) {
         return CM_SUCCESS;
     }
-#endif
     status_t status = dss_check_refresh_core(vg_item);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check and refresh core, %s.", vg_item->entry_path));
 
@@ -2384,11 +2369,9 @@ status_t dss_check_refresh_fs_block(
 // refresh file table
 status_t dss_refresh_ft(dss_vg_info_item_t *vg_item)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite()) {
         return CM_SUCCESS;
     }
-#endif
     status_t status =
         dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_ROOT_OFFSET, vg_item->dss_ctrl->root, (int32)DSS_BLOCK_SIZE);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load vg core part %s.", vg_item->entry_path));
@@ -2435,11 +2418,9 @@ status_t dss_get_root_version(dss_vg_info_item_t *vg_item, uint64 *version)
 
 status_t dss_check_refresh_ft(dss_vg_info_item_t *vg_item)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite()) {
         return CM_SUCCESS;
     }
-#endif
     uint64 disk_version;
     status_t status = dss_get_root_version(vg_item, &disk_version);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to get root version %s.", vg_item->entry_path));
@@ -3126,11 +3107,9 @@ void dss_init_root_fs_block(dss_ctrl_t *dss_ctrl)
 
 status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32 vgid, uint32 volumeid)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite()) {
         return CM_SUCCESS;
     }
-#endif
     dss_vg_info_item_t *vg_item = dss_find_vg_item(name_str);
     if (!vg_item) {
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, name_str);
@@ -3145,11 +3124,9 @@ status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32
 
 status_t dss_refresh_vginfo(dss_vg_info_item_t *vg_item)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite()) {
         return CM_SUCCESS;
     }
-#endif
     uint64 version;
     if (dss_get_core_version(vg_item, &version) != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to get core version, vg %s.", vg_item->entry_path);
