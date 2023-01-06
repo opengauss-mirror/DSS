@@ -49,7 +49,7 @@ status_t du_get_params(const char *input, char *params, size_t params_size)
         } else if (c == 'S') {
             params[DSS_ARG_IDX_2] = (char)true;
         } else {
-            DSS_PRINT_ERROR("wrong params %c\n", c);
+            DSS_PRINT_ERROR("wrong params %c.\n", c);
             return CM_ERROR;
         }
     }
@@ -145,7 +145,7 @@ status_t du_traverse_path(char *path, size_t path_size, dss_conn_t *conn, const 
         dss_check_dir_output_t output_info = {&node, NULL, NULL};
         dss_check_dir(path, GFT_FILE, &output_info, CM_TRUE);
         if (!node) {
-            DSS_PRINT_ERROR("Failed to check file node\n");
+            DSS_PRINT_ERROR("Failed to check file node.\n");
             return CM_ERROR;
         }
         du_print(node->size, params, path + 1);
