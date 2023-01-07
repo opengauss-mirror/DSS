@@ -62,14 +62,12 @@ typedef struct st_dss_params {
 
     uint64 mes_pool_size;
     uint32 inst_cnt;
+    uint64 inst_map;
     char nodes[DSS_MAX_INSTANCES][CM_MAX_IP_LEN];
     uint16 ports[DSS_MAX_INSTANCES];
     uint32 channel_num;
     uint32 work_thread_cnt;
     cs_pipe_type_t pipe_type;
-    uint64 inst_map;
-    uint64 inst_work_status_map;  // one bit , on inst, if 1 inst be ok, 0 inst not ok
-    uint64 inst_out_of_work_cnt;  // count of inst, whose status is ok, if not the inst_cnt, the brocast will not send
     bool32 elapsed_switch;
     uint32 shm_key;
 #ifdef ENABLE_GLOBAL_CACHE
@@ -101,26 +99,6 @@ static inline int32 dss_storage_mode(dss_config_t *inst_cfg)
 static inline char *dss_get_cfg_dir(dss_config_t *inst_cfg)
 {
     return inst_cfg->home;
-}
-
-static inline uint64 dss_get_inst_work_status(void)
-{
-    return (uint64)cm_atomic_get((atomic_t *)&g_inst_cfg->params.inst_work_status_map);
-}
-
-static inline void dss_set_inst_work_status(uint64 cur_inst_map)
-{
-    (void)cm_atomic_set((atomic_t *)&g_inst_cfg->params.inst_work_status_map, (int64)cur_inst_map);
-}
-
-static inline uint64 dss_get_inst_out_of_work_cnt(void)
-{
-    return (uint64)cm_atomic_get((atomic_t *)&g_inst_cfg->params.inst_out_of_work_cnt);
-}
-
-static inline void dss_set_inst_out_of_work_cnt(uint64 inst_out_of_work_cnt)
-{
-    (void)cm_atomic_set((atomic_t *)&g_inst_cfg->params.inst_out_of_work_cnt, (int64)inst_out_of_work_cnt);
 }
 
 /*

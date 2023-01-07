@@ -373,7 +373,7 @@ status_t dss_start_lsnr(dss_instance_t *inst)
 status_t dss_init_cm(dss_instance_t *inst)
 {
     inst->cm_res.is_valid = CM_FALSE;
-    inst->inst_cfg.params.inst_work_status_map = 0;
+    inst->inst_work_status_map = 0;
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     char *value = cm_get_config_value(&inst_cfg->config, "DSS_CM_SO_NAME");
     if (value == NULL || strlen(value) == 0) {
@@ -406,6 +406,29 @@ void dss_free_log_ctrl(dss_instance_t *inst)
     }
 }
 
+void dss_check_peer_by_inst(dss_instance_t *inst, uint64 inst_id)
+{
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    // Can't be myself
+    if (inst_id == (uint64)inst_cfg->params.inst_id) {
+        return;
+    }
+
+    // Not cfg the inst
+    uint64 inst_mask = ((uint64)0x1 << inst_id);
+    if ((inst_cfg->params.inst_map & inst_mask) == 0) {
+        return;
+    }
+
+    uint64 cur_inst_map = dss_get_inst_work_status();
+    // Has connection
+    if ((cur_inst_map & inst_mask) != 0) {
+        return;
+    }
+
+    dss_check_peer_inst(inst, inst_id);
+}
+
 static void dss_check_peer_by_cm(dss_instance_t *inst)
 {
     cm_res_stat_ptr_t res = cm_res_get_stat(&inst->cm_res.mgr);
@@ -413,7 +436,6 @@ static void dss_check_peer_by_cm(dss_instance_t *inst)
         return;
     }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
-    uint32 inst_work_stats_ok_cnt = 0;
     uint64 cur_inst_map = 0;
     int instance_count = cm_res_get_instance_count(&inst->cm_res.mgr, res);
     for (int32_t idx = 0; idx < instance_count; idx++) {
@@ -437,22 +459,19 @@ static void dss_check_peer_by_cm(dss_instance_t *inst)
         }
 
         int stat = cm_res_get_inst_stat(&inst->cm_res.mgr, inst_res);
-        if (stat == CM_RES_STATUS_ONLINE) {
-            inst_work_stats_ok_cnt++;
-        } else {
+        if (stat != CM_RES_STATUS_ONLINE) {
             LOG_RUN_INF("dss instance [%d] work stat [%d] not online.", res_instance_id, stat);
         }
         cur_inst_map |= ((uint64)0x1 << res_instance_id);
     }
-    dss_set_inst_out_of_work_cnt(inst_cfg->params.inst_cnt - inst_work_stats_ok_cnt);
+
     dss_check_mes_conn(cur_inst_map);
     cm_res_free_stat(&inst->cm_res.mgr, res);
 }
 
 static void dss_check_peer_default(void)
 {
-    dss_set_inst_out_of_work_cnt(0);
-    dss_check_mes_conn(DSS_ULL_MAX);
+    dss_check_mes_conn(DSS_INVALID_64);
 }
 
 void dss_init_cm_res(dss_instance_t *inst)
@@ -471,12 +490,8 @@ void dss_init_cm_res(dss_instance_t *inst)
     return;
 }
 
-void dss_check_peer_inst(dss_instance_t *inst)
+static void dss_check_peer_inst_inner(dss_instance_t *inst)
 {
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    if (inst_cfg->params.inst_cnt <= 1) {
-        return;
-    }
     /**
      * During installation initialization, db_init depends on the DSS server. However, the CMS is not started.
      * Therefore, cm_init cannot be invoked during the DSS server startup.
@@ -490,4 +505,36 @@ void dss_check_peer_inst(dss_instance_t *inst)
         return;
     }
     dss_check_peer_default();
+}
+
+void dss_check_peer_inst(dss_instance_t *inst, uint64 inst_id)
+{
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    if (inst_cfg->params.inst_cnt <= 1) {
+        return;
+    }
+
+    uint64 inst_mask = ((uint64)0x1 << inst_id);
+    cm_spin_lock(&inst->inst_work_lock, NULL);
+
+    // after lock, check again, other thed may get the lock, and init the map before
+    uint64 cur_inst_map = dss_get_inst_work_status();
+    // has connection
+    if (inst_id != DSS_INVALID_64 && (cur_inst_map & inst_mask) != 0) {
+        cm_spin_unlock(&inst->inst_work_lock);
+        return;
+    }
+
+    dss_check_peer_inst_inner(inst);
+    cm_spin_unlock(&inst->inst_work_lock);
+}
+
+uint64 dss_get_inst_work_status(void)
+{
+    return (uint64)cm_atomic_get((atomic_t *)&g_dss_instance.inst_work_status_map);
+}
+
+void dss_set_inst_work_status(uint64 cur_inst_map)
+{
+    (void)cm_atomic_set((atomic_t *)&g_dss_instance.inst_work_status_map, (int64)cur_inst_map);
 }

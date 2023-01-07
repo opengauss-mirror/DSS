@@ -111,7 +111,7 @@ static void handle_main_wait(void)
         if (g_dss_instance.abort_status == CM_TRUE) {
             break;
         }
-        dss_check_peer_inst(&g_dss_instance);
+        dss_check_peer_inst(&g_dss_instance, DSS_INVALID_64);
         dss_ssl_ca_cert_expire();
         cm_sleep(500);
     } while (CM_TRUE);

@@ -343,11 +343,12 @@ static void dss_process_message(uint32 work_idx, mes_message_t *msg)
         LOG_DEBUG_ERR("Invalid request received,cmd is %c.", msg->head->cmd);
         return;
     }
+    // ready the ack connection
+    dss_check_peer_by_inst(&g_dss_instance, msg->head->src_inst);
     dss_processor_t *processor = &g_dss_processors[msg->head->cmd];
     dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
     dss_session_t *session = &session_ctrl->sessions[work_idx];
     processor->proc(session, msg);
-    return;
 }
 
 // add function
