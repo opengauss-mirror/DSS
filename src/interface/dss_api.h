@@ -144,6 +144,8 @@ DSS_DECLARE int dss_get_au_size(int handle, long long *au_size);
 // log
 DSS_DECLARE void dss_get_error(int *errcode, const char **errmsg);
 DSS_DECLARE void dss_register_log_callback(dss_log_output cb_log_output);
+DSS_DECLARE int dss_init_logger(char *log_home, unsigned int log_level, unsigned int log_backup_file_count, unsigned long long log_max_file_size);
+DSS_DECLARE void dss_refresh_logger(char *log_field, unsigned long long *value);
 // connection
 DSS_DECLARE int dss_set_svr_path(const char *conn_path);
 DSS_DECLARE int dss_set_conn_timeout(int timeout);
