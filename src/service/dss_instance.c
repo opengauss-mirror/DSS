@@ -429,6 +429,48 @@ void dss_check_peer_by_inst(dss_instance_t *inst, uint64 inst_id)
     dss_check_peer_inst(inst, inst_id);
 }
 
+bool32 dss_check_inst_workstatus(uint32 instid)
+{
+    dss_instance_t *inst = &g_dss_instance;
+    cm_spin_lock(&inst->inst_work_lock, NULL);
+    cm_res_stat_ptr_t res = cm_res_get_stat(&inst->cm_res.mgr);
+    if (res == NULL) {
+        cm_spin_unlock(&inst->inst_work_lock);
+        return CM_FALSE;
+    }
+    int insttotal = cm_res_get_instance_count(&inst->cm_res.mgr, res);
+    for (int idx = 0; idx < insttotal; idx++) {
+        const cm_res_inst_info_ptr_t inst_res = cm_res_get_instance_info(&inst->cm_res.mgr, res, (unsigned int)idx);
+        if (inst_res == NULL) {
+            cm_res_free_stat(&inst->cm_res.mgr, res);
+            cm_spin_unlock(&inst->inst_work_lock);
+            return CM_FALSE;
+        }
+
+        int resid = cm_res_get_inst_instance_id(&inst->cm_res.mgr, inst_res);
+        int workstatus = cm_res_get_inst_is_work_member(&inst->cm_res.mgr, inst_res);
+        if ((workstatus != 0) && ((uint32)resid == instid)) {
+            cm_res_free_stat(&inst->cm_res.mgr, res);
+            cm_spin_unlock(&inst->inst_work_lock);
+            return CM_TRUE;
+        }
+        
+        if (workstatus == 0) {
+            LOG_RUN_INF("dss instance [%d] is not work member. May be kicked off by cm.", resid);
+            if ((uint32)resid == instid) {
+                cm_res_free_stat(&inst->cm_res.mgr, res);
+                cm_spin_unlock(&inst->inst_work_lock);
+                return CM_FALSE;
+            }
+        }
+    }
+
+    LOG_RUN_INF("dss instance [%d] is not work member. May be kicked off by cm.", instid);
+    cm_res_free_stat(&inst->cm_res.mgr, res);
+    cm_spin_unlock(&inst->inst_work_lock);
+    return CM_FALSE;
+}
+
 static void dss_check_peer_by_cm(dss_instance_t *inst)
 {
     cm_res_stat_ptr_t res = cm_res_get_stat(&inst->cm_res.mgr);
@@ -437,8 +479,8 @@ static void dss_check_peer_by_cm(dss_instance_t *inst)
     }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint64 cur_inst_map = 0;
-    int instance_count = cm_res_get_instance_count(&inst->cm_res.mgr, res);
-    for (int32_t idx = 0; idx < instance_count; idx++) {
+    int insttotal = cm_res_get_instance_count(&inst->cm_res.mgr, res);
+    for (int32_t idx = 0; idx < insttotal; idx++) {
         const cm_res_inst_info_ptr_t inst_res = cm_res_get_instance_info(&inst->cm_res.mgr, res, (unsigned int)idx);
         if (inst_res == NULL) {
             cm_res_free_stat(&inst->cm_res.mgr, res);
