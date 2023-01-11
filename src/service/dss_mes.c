@@ -156,6 +156,15 @@ static void dss_check_file_open(dss_session_t *se, mes_message_t *msg)
     DSS_FREE_POINT(send_msg);
 }
 
+static bool32 dss_mes_check_masterid(uint32 instid)
+{
+    if (instid > CM_MAX_INSTANCES) {
+        return CM_FALSE;
+    }
+
+    return dss_check_inst_workstatus(instid);
+}
+
 int32 dss_process_broadcast_ack(
     dss_session_t *session, char *data, unsigned int len, dss_recv_msg_t *recv_msg_output)
 {
@@ -174,7 +183,7 @@ int32 dss_process_broadcast_ack(
         case BCAST_ACK_ASK_STATUS:
             id = *(uint32 *)(data + sizeof(dss_bcast_ack_cmd_t));
             ret = DSS_SUCCESS;
-            if (id < CM_MAX_INSTANCES) {
+            if (dss_mes_check_masterid(id) == CM_TRUE) {
                 dss_set_master_id(id);
                 DSS_LOG_DEBUG_OP("Get master instance id success, master instance id(%u)", id);
             } else {
@@ -913,6 +922,7 @@ status_t dss_read_volume_remote(const char *vg_name, dss_volume_t *volume, int64
         LOG_RUN_ERR(
             "The dssserver fails to send msssages to the remote node, src node (%u) dst node(%u).", currid, remoteid);
         dss_destroy_session(session);
+        dss_set_master_id(DSS_INVALID_ID32);
         return ret;
     }
     // 3. receive msg from remote
