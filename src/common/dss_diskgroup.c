@@ -483,6 +483,7 @@ void dss_checksum_vg_ctrl(dss_vg_info_item_t *vg_item)
 status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock)
 {
     CM_ASSERT(vg_item != NULL);
+    bool32 remote = CM_FALSE;
     dss_config_t *inst_cfg = dss_get_inst_cfg();
 
     if (vg_item->vg_name[0] == '0' || vg_item->entry_path[0] == '0') {
@@ -497,7 +498,7 @@ status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock)
             return CM_ERROR;
         }
     }
-    status = dss_load_vg_ctrl_part(vg_item, 0, vg_item->dss_ctrl, (int32)sizeof(dss_ctrl_t));
+    status = dss_load_vg_ctrl_part(vg_item, 0, vg_item->dss_ctrl, (int32)sizeof(dss_ctrl_t), &remote);
     if (status != CM_SUCCESS) {
         if (is_lock) {
             dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
@@ -525,7 +526,7 @@ status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock)
     return status;
 }
 
-status_t dss_load_vg_ctrl_part(dss_vg_info_item_t *vg_item, int64 offset, void *buf, int32 size)
+status_t dss_load_vg_ctrl_part(dss_vg_info_item_t *vg_item, int64 offset, void *buf, int32 size, bool32 *remote)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(buf != NULL);
@@ -538,7 +539,7 @@ status_t dss_load_vg_ctrl_part(dss_vg_info_item_t *vg_item, int64 offset, void *
         }
     }
     LOG_DEBUG_INF("Begin to read volume %s,offset:%lld,size:%d.", vg_item->entry_path, offset, size);
-    if (dss_read_volume_inst(vg_item, &vg_item->volume_handle[0], offset, buf, size) != CM_SUCCESS) {
+    if (dss_read_volume_inst(vg_item, &vg_item->volume_handle[0], offset, buf, size, remote) != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to read volume %s,offset:%lld,size:%d.", vg_item->entry_path, offset, size);
         return CM_ERROR;
     }
@@ -1225,6 +1226,7 @@ status_t dss_remove_volume(dss_session_t *session, const char *vg_name, const ch
 status_t dss_load_ctrl_core(dss_vg_info_item_t *vg_item, uint32 index)
 {
     status_t status;
+    bool32 remote = CM_FALSE;
     if (index == DSS_VG_INFO_CORE_CTRL) {
         uint64 disk_core_version;
         status = dss_get_core_version(vg_item, &disk_core_version);
@@ -1241,7 +1243,7 @@ status_t dss_load_ctrl_core(dss_vg_info_item_t *vg_item, uint32 index)
         }
     } else if (index == DSS_VG_INFO_VG_HEADER) {
         status = dss_load_vg_ctrl_part(
-            vg_item, (int64)DSS_CTRL_VG_DATA_OFFSET, vg_item->dss_ctrl->vg_data, DSS_VG_DATA_SIZE);
+            vg_item, (int64)DSS_CTRL_VG_DATA_OFFSET, vg_item->dss_ctrl->vg_data, DSS_VG_DATA_SIZE, &remote);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to load vg data from disk.");
             return status;
@@ -1332,15 +1334,18 @@ uint64 dss_get_vg_latch_shm_offset(dss_vg_info_item_t *vg_item)
 // shoud lock in caller
 status_t dss_load_volume_ctrl(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume_ctrl)
 {
-    status_t status =
-        dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_VOLUME_OFFSET, volume_ctrl, (int32)DSS_VOLUME_CTRL_SIZE);
+    bool32 remote = CM_FALSE;
+    status_t status = dss_load_vg_ctrl_part(
+        vg_item, (int64)DSS_CTRL_VOLUME_OFFSET, volume_ctrl, (int32)DSS_VOLUME_CTRL_SIZE, &remote);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load vg:%s volume ctrl.", vg_item->vg_name);
         return status;
     }
 
-    uint32 checksum = dss_get_checksum(volume_ctrl, DSS_VOLUME_CTRL_SIZE);
-    dss_check_checksum(checksum, volume_ctrl->checksum);
+    if (remote == CM_FALSE) {
+        uint32 checksum = dss_get_checksum(volume_ctrl, DSS_VOLUME_CTRL_SIZE);
+        dss_check_checksum(checksum, volume_ctrl->checksum);
+    }
 
     return CM_SUCCESS;
 }
@@ -1355,10 +1360,11 @@ status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item)
 #else
     char buf[DSS_DISK_UNIT_SIZE];
 #endif
+    bool32 remote = CM_FALSE;
     uint64 core_version = vg_item->dss_ctrl->core.version;
     dss_fs_block_root_t *fs_root = (dss_fs_block_root_t *)vg_item->dss_ctrl->core.fs_block_root;
     uint64 fs_version = fs_root->version;
-    status_t status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_CORE_OFFSET, buf, DSS_DISK_UNIT_SIZE);
+    status_t status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_CORE_OFFSET, buf, DSS_DISK_UNIT_SIZE, &remote);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load vg core version %s.", vg_item->entry_path);
         return status;
@@ -1368,7 +1374,7 @@ status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item)
     if (dss_compare_version(new_core->version, core_version)) {
         LOG_RUN_INF("Refresh core, old version:%llu, disk version:%llu.", core_version, new_core->version);
         status = dss_load_vg_ctrl_part(
-            vg_item, (int64)DSS_CTRL_CORE_OFFSET, &vg_item->dss_ctrl->core, (int32)DSS_CORE_CTRL_SIZE);
+            vg_item, (int64)DSS_CTRL_CORE_OFFSET, &vg_item->dss_ctrl->core, (int32)DSS_CORE_CTRL_SIZE, &remote);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to load vg core %s.", vg_item->entry_path);
             return status;
@@ -1505,12 +1511,13 @@ status_t dss_check_write_volume(dss_vg_info_item_t *vg_item, uint32 volumeid, in
 }
 
 // first check volume is valid.
-status_t dss_check_read_volume(dss_vg_info_item_t *vg_item, uint32 volumeid, int64 offset, void *buf, int32 size)
+status_t dss_check_read_volume(
+    dss_vg_info_item_t *vg_item, uint32 volumeid, int64 offset, void *buf, int32 size, bool32 *remote)
 {
     dss_volume_t *volume;
     DSS_RETURN_IF_ERROR(dss_check_volume(vg_item, volumeid));
     volume = &vg_item->volume_handle[volumeid];
-    return dss_read_volume_inst(vg_item, volume, offset, buf, size);
+    return dss_read_volume_inst(vg_item, volume, offset, buf, size, remote);
 }
 
 dss_remote_read_proc_t remote_read_proc = NULL;
@@ -1526,9 +1533,19 @@ static inline bool32 dss_need_load_remote(int size)
 
 #define DSS_READ_VOLUME_TRY_MAX 5
 #define DSS_READ_REMOTE_INTERVAL 50
-status_t dss_read_volume_inst(dss_vg_info_item_t *vg_item, dss_volume_t *volume, int64 offset, void *buf, int32 size)
+
+static bool32 dss_read_remote_checksum(void *buf, int32 size)
+{
+    uint32 sum1 = *(uint32 *)buf;
+    uint32 sum2 = dss_get_checksum(buf, (uint32)size);
+    return sum1 == sum2;
+}
+
+status_t dss_read_volume_inst(
+    dss_vg_info_item_t *vg_item, dss_volume_t *volume, int64 offset, void *buf, int32 size, bool32 *remote)
 {
     status_t status = CM_ERROR;
+    *remote = CM_FALSE;
     CM_ASSERT(offset % DSS_DISK_UNIT_SIZE == 0);
     CM_ASSERT(size % DSS_DISK_UNIT_SIZE == 0);
     CM_ASSERT(((uint64)buf) % DSS_DISK_UNIT_SIZE == 0);
@@ -1552,6 +1569,15 @@ status_t dss_read_volume_inst(dss_vg_info_item_t *vg_item, dss_volume_t *volume,
             continue;
         }
 
+        if (dss_read_remote_checksum(buf, size) != CM_TRUE) {
+            LOG_RUN_ERR("Failed to load disk(%s) data from the active node, checksum error", volume->name_p);
+            if (i > DSS_READ_VOLUME_TRY_MAX) {
+                break;
+            }
+            continue;
+        }
+        
+        *remote = CM_TRUE;
         return status;
     }
     status = dss_read_volume(volume, offset, buf, size);
@@ -1567,9 +1593,15 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volumeid, int64 of
 {
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item == NULL) {
-        LOG_RUN_ERR("Failed to find vg itme(%s).", vg_name);
+        LOG_RUN_ERR("Read volume for standby fialed, find vg(%s) error.", vg_name);
         return CM_ERROR;
     }
+
+    if (volumeid >= DSS_MAX_VOLUMES) {
+        LOG_RUN_ERR("Read volume for standby fialed, vg(%s) voiume id[%u] error.", vg_name, volumeid);
+        return CM_ERROR;
+    }
+    
 
     dss_volume_t *volume = &vg_item->volume_handle[volumeid];
     if (volume->handle == DSS_INVALID_HANDLE) {
@@ -1578,6 +1610,13 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volumeid, int64 of
             return CM_ERROR;
         } 
     }
+
+    if (((uint64)offset > volume->attr->size) || ((uint64)size > (volume->attr->size - (uint64)offset))) {
+        LOG_RUN_ERR("Read volume for standby fialed, params err, vg(%s) voiume id[%u] offset[%llu] size[%u] volume size[%llu].",
+            vg_name, volumeid, offset, size, volume->attr->size);
+        return CM_ERROR;
+    }
+    
 
     if (dss_read_volume(volume, offset, buf, size) != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to load disk(%s) data.", volume->name_p);

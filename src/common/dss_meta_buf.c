@@ -125,14 +125,15 @@ void dss_unregister_buffer_cache(dss_vg_info_item_t *vg_item, dss_block_id_t blo
 status_t dss_get_block_from_disk(
     dss_vg_info_item_t *vg_item, dss_block_id_t block_id, char *buf, int64_t offset, int32 size, bool32 calc_checksum)
 {
+    bool32 remote = CM_FALSE;
     CM_ASSERT(block_id.volume < DSS_MAX_VOLUMES);
-    status_t status = dss_check_read_volume(vg_item, (uint32)block_id.volume, offset, buf, size);
+    status_t status = dss_check_read_volume(vg_item, (uint32)block_id.volume, offset, buf, size, &remote);
     if (status != CM_SUCCESS) {
         return status;
     }
 
     // check the checksum when read the file table block and file space block.
-    if (calc_checksum) {
+    if ((calc_checksum) && (remote == CM_FALSE)) {
         cm_panic((uint32)size == DSS_BLOCK_SIZE || (uint32)size == DSS_FILE_SPACE_BLOCK_SIZE);
         uint32 checksum = dss_get_checksum(buf, (uint32)size);
         dss_common_block_t *block = (dss_common_block_t *)buf;

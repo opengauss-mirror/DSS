@@ -2154,6 +2154,7 @@ status_t dss_refresh_root_ft(dss_vg_info_item_t *vg_item, bool32 check_version, 
     if (dss_is_readwrite() && !active_refresh) {
         return CM_SUCCESS;
     }
+    bool32 remote = CM_FALSE;
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
     char *root = dss_ctrl->root;
     dss_root_ft_block_t *ft_block = (dss_root_ft_block_t *)(root);
@@ -2167,14 +2168,16 @@ status_t dss_refresh_root_ft(dss_vg_info_item_t *vg_item, bool32 check_version, 
         }
 
         if (dss_compare_version(disk_version, version)) {
-            status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_ROOT_OFFSET, root, (int32)DSS_BLOCK_SIZE);
+            status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_ROOT_OFFSET, root, (int32)DSS_BLOCK_SIZE, &remote);
             DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to get the whole root."));
             DSS_LOG_DEBUG_OP(
                 "The root version is changed, refresh it, version:%llu, new version:%llu.", version, disk_version);
-
-            uint32 checksum = dss_get_checksum(root, DSS_BLOCK_SIZE);
-            dss_common_block_t *block = (dss_common_block_t *)root;
-            dss_check_checksum(checksum, block->checksum);
+            
+            if (remote == CM_FALSE) {
+                uint32 checksum = dss_get_checksum(root, DSS_BLOCK_SIZE);
+                dss_common_block_t *block = (dss_common_block_t *)root;
+                dss_check_checksum(checksum, block->checksum);
+            }
         }
     }
     return CM_SUCCESS;
@@ -2366,8 +2369,9 @@ status_t dss_refresh_ft(dss_vg_info_item_t *vg_item)
     if (dss_is_readwrite()) {
         return CM_SUCCESS;
     }
-    status_t status =
-        dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_ROOT_OFFSET, vg_item->dss_ctrl->root, (int32)DSS_BLOCK_SIZE);
+    bool32 remote = CM_FALSE;
+    status_t status = dss_load_vg_ctrl_part(
+        vg_item, (int64)DSS_CTRL_ROOT_OFFSET, vg_item->dss_ctrl->root, (int32)DSS_BLOCK_SIZE, &remote);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load vg core part %s.", vg_item->entry_path));
 
     uint64 count = 0;
@@ -2400,8 +2404,8 @@ status_t dss_get_root_version(dss_vg_info_item_t *vg_item, uint64 *version)
 #else
     char temp[DSS_DISK_UNIT_SIZE];
 #endif
-
-    status_t status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_ROOT_OFFSET, temp, DSS_DISK_UNIT_SIZE);
+    bool32 remote = CM_FALSE;
+    status_t status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_ROOT_OFFSET, temp, DSS_DISK_UNIT_SIZE, &remote);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load vg core version %s.", vg_item->entry_path);
         return status;
@@ -2416,13 +2420,14 @@ status_t dss_check_refresh_ft(dss_vg_info_item_t *vg_item)
         return CM_SUCCESS;
     }
     uint64 disk_version;
+    bool32 remote = CM_FALSE;
     status_t status = dss_get_root_version(vg_item, &disk_version);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to get root version %s.", vg_item->entry_path));
 
     dss_root_ft_block_t *ft_block_m = DSS_GET_ROOT_BLOCK(vg_item->dss_ctrl);
     if (dss_compare_version(disk_version, ft_block_m->ft_block.common.version)) {
-        status =
-            dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_ROOT_OFFSET, vg_item->dss_ctrl->root, (int32)DSS_BLOCK_SIZE);
+        status = dss_load_vg_ctrl_part(
+            vg_item, (int64)DSS_CTRL_ROOT_OFFSET, vg_item->dss_ctrl->root, (int32)DSS_BLOCK_SIZE, &remote);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load vg core part %s.", vg_item->entry_path));
     }
     DSS_LOG_DEBUG_OP(

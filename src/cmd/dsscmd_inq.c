@@ -164,7 +164,8 @@ static status_t dss_get_vg_non_entry_info(dss_config_t *inst_cfg, dss_vg_info_it
         return CM_ERROR;
     }
 
-    status_t status = dss_load_vg_ctrl_part(vg_item, 0, vg_item->dss_ctrl, (int32)sizeof(dss_ctrl_t));
+    bool32 remote = CM_FALSE;
+    status_t status = dss_load_vg_ctrl_part(vg_item, 0, vg_item->dss_ctrl, (int32)sizeof(dss_ctrl_t), &remote);
     if (status != CM_SUCCESS) {
         dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
         LOG_DEBUG_ERR("Failed to load vg ctrl part %s.", vg_item->entry_path);

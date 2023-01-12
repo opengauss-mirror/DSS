@@ -118,11 +118,12 @@ static status_t dss_init_thread(dss_instance_t *inst)
 
 status_t dss_load_log_buffer_sort_and_recover_direct(dss_redo_batch_t *batch, dss_redo_batch_t *tmp_batch)
 {
+    bool32 remote = CM_FALSE;
     dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[0];
     int64 offset = (int64)dss_get_vg_au_size(vg_item->dss_ctrl);
     uint32 load_size = CM_CALC_ALIGN(tmp_batch->size + sizeof(dss_redo_batch_t), DSS_DISK_UNIT_SIZE);
     LOG_RUN_INF("Begin to load recovery log buf direct whose size is %u.", load_size);
-    status_t status = dss_load_vg_ctrl_part(vg_item, offset, batch, (int32)load_size);
+    status_t status = dss_load_vg_ctrl_part(vg_item, offset, batch, (int32)load_size, &remote);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to load recovery log buf."));
     return dss_recover_when_instance_start(batch, CM_TRUE);
 }
@@ -135,6 +136,7 @@ status_t dss_load_log_buffer(dss_redo_batch_t *batch)
     dss_redo_batch_t *tmp_batch = NULL;
     uint32 data_size;
     status_t status;
+    bool32 remote = CM_FALSE;
     char *tmp_log_buf = (char *)cm_malloc_align(DSS_DISK_UNIT_SIZE, DSS_INSTANCE_LOG_SPLIT_SIZE);
     if (tmp_log_buf == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_DISK_UNIT_SIZE, "log_buf"));
@@ -142,7 +144,7 @@ status_t dss_load_log_buffer(dss_redo_batch_t *batch)
     for (uint8 i = 0; i < DSS_LOG_BUF_SLOT_COUNT; i++) {
         offset = base_offset + i * DSS_INSTANCE_LOG_SPLIT_SIZE;
         LOG_RUN_INF("begin to load log buf, offset:%lld, size:%u.", offset, DSS_DISK_UNIT_SIZE);
-        status = dss_load_vg_ctrl_part(vg_item, offset, tmp_log_buf, DSS_DISK_UNIT_SIZE);
+        status = dss_load_vg_ctrl_part(vg_item, offset, tmp_log_buf, DSS_DISK_UNIT_SIZE, &remote);
         DSS_BREAK_IFERR2(status, LOG_RUN_ERR("Failed to load log_buf from first vg ctrl when recover."));
         tmp_batch = (dss_redo_batch_t *)tmp_log_buf;
         if (tmp_batch->size == 0) {
@@ -166,7 +168,7 @@ status_t dss_load_log_buffer(dss_redo_batch_t *batch)
             continue;
         }
         if (load_size > DSS_DISK_UNIT_SIZE) {
-            status = dss_load_vg_ctrl_part(vg_item, offset, tmp_batch, (int32)load_size);
+            status = dss_load_vg_ctrl_part(vg_item, offset, tmp_batch, (int32)load_size, &remote);
             DSS_BREAK_IFERR2(status, LOG_RUN_ERR("Failed to load redo log."));
         }
         if (!dss_check_redo_log_available(tmp_batch, vg_item, i)) {
