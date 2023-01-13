@@ -1347,11 +1347,9 @@ status_t dss_load_volume_ctrl(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *vo
 
 status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite()) {
         return CM_SUCCESS;
     }
-#endif
 #ifndef WIN32
     char buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_DISK_UNIT_SIZE)));
 #else
@@ -1526,7 +1524,8 @@ static inline bool32 dss_need_load_remote(int size)
     return ((remote_read_proc != NULL) && (dss_is_readonly()) && (size <= (int32)DSS_LOADDISK_BUFFER_SIZE));
 }
 
-#define DSS_READ_VOLUME_TRY_MAX 3
+#define DSS_READ_VOLUME_TRY_MAX 5
+#define DSS_READ_REMOTE_INTERVAL 50
 status_t dss_read_volume_inst(dss_vg_info_item_t *vg_item, dss_volume_t *volume, int64 offset, void *buf, int32 size)
 {
     status_t status = CM_ERROR;
@@ -1539,10 +1538,17 @@ status_t dss_read_volume_inst(dss_vg_info_item_t *vg_item, dss_volume_t *volume,
         status = remote_read_proc(vg_item->vg_name, volume, offset, buf, size);
         i++;
         if (status != CM_SUCCESS) {
-            LOG_RUN_ERR("Failed to laod disk(%s) data from the active node, result:%d", volume->name_p, status);
-            if (i > DSS_READ_VOLUME_TRY_MAX) {
-                return status;
+            int32 errcode = cm_get_error_code();
+            if (errcode == ERR_DSS_GET_MASTER_ID) {
+                LOG_DEBUG_INF("Read volume from local disk when dss get master id failed");
+                cm_reset_error();
+                break;
             }
+            LOG_RUN_ERR("Failed to load disk(%s) data from the active node, result:%d", volume->name_p, status);
+            if (i > DSS_READ_VOLUME_TRY_MAX) {
+                break;
+            }
+            cm_sleep(DSS_READ_REMOTE_INTERVAL);
             continue;
         }
 
@@ -1550,7 +1556,7 @@ status_t dss_read_volume_inst(dss_vg_info_item_t *vg_item, dss_volume_t *volume,
     }
     status = dss_read_volume(volume, offset, buf, size);
     if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to laod disk(%s) data, result:%d", volume->name_p, status);
+        LOG_RUN_ERR("Failed to load disk(%s) data, result:%d", volume->name_p, status);
         return status;
     }
 

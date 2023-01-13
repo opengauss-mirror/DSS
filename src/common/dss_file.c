@@ -675,14 +675,12 @@ static status_t dss_refresh_dir_r(dss_vg_info_item_t *vg_item, gft_node_t *paren
     status_t status = CM_SUCCESS;
     ftid_t id = parent_node->items.first;
     for (uint32 i = 0; i < parent_node->items.count; i++) {
-#ifdef OPENGAUSS
         if (dss_cmp_blockid(id, CM_INVALID_ID64)) {
-            // openGauss may be find uncommitted node when standby
+            // may be find uncommitted node when standby
             LOG_DEBUG_INF("Get invalid id in parent name:%s, id:%llu, count:%u, when refresh dir, index:%u.",
                 parent_node->name, *(uint64 *)&parent_node->id, parent_node->items.count, i);
             break;
         }
-#endif
         gft_node_t *node = dss_get_ft_node_by_ftid(vg_item, id, CM_TRUE, CM_TRUE);
         if (node == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR,
@@ -1208,15 +1206,13 @@ gft_node_t *dss_find_parent_node_r(dss_vg_info_item_t *vg_item, gft_node_t *pare
     }
     LOG_DEBUG_INF("dir: %s has %u items", parent_node->name, parent_node->items.count);
     for (uint32 i = 0; i < parent_node->items.count; i++) {
-#ifdef OPENGAUSS
         if (dss_cmp_blockid(id, CM_INVALID_ID64)) {
-            // openGauss may be find uncommitted node when standby
+            // may be find uncommitted node when standby
             LOG_DEBUG_INF("Get invalid id in parent name:%s, id:%llu, count:%u, when find parent node, children "
                           "name:%s, index:%u.",
                 parent_node->name, *(uint64 *)&parent_node->id, parent_node->items.count, find_node->name, i);
             return NULL;
         }
-#endif
         gft_node_t *cur_node = dss_get_ft_node_by_ftid(vg_item, id, CM_FALSE, CM_FALSE);
         if (cur_node == NULL) {
             LOG_DEBUG_ERR("Can not get node:%llu.", *(uint64 *)&id);
@@ -2072,14 +2068,12 @@ gft_node_t *dss_find_ft_node_core(
     }
 
     for (uint32 i = 0; i < parent_node->items.count; i++) {
-#ifdef OPENGAUSS
         if (dss_cmp_blockid(id, CM_INVALID_ID64)) {
-            // openGauss may be find uncommitted node when standby
+            // may be find uncommitted node when standby
             LOG_DEBUG_INF("Get invalid id in parent name:%s, id:%llu, count:%u, when find node name:%s, index:%u.",
                 parent_node->name, *(uint64 *)&parent_node->id, parent_node->items.count, name, i);
             return NULL;
         }
-#endif
         gft_node_t *node = dss_get_ft_node_by_ftid(vg_item, id, check_version, CM_FALSE);
         if (node == NULL) {
             if (dss_is_server()) {
@@ -2157,11 +2151,9 @@ gft_node_t *dss_find_ft_node(dss_vg_info_item_t *vg_item, gft_node_t *parent_nod
 
 status_t dss_refresh_root_ft(dss_vg_info_item_t *vg_item, bool32 check_version, bool32 active_refresh)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite() && !active_refresh) {
         return CM_SUCCESS;
     }
-#endif
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
     char *root = dss_ctrl->root;
     dss_root_ft_block_t *ft_block = (dss_root_ft_block_t *)(root);
@@ -2186,17 +2178,6 @@ status_t dss_refresh_root_ft(dss_vg_info_item_t *vg_item, bool32 check_version, 
         }
     }
     return CM_SUCCESS;
-}
-
-char *dss_find_ft_block_latch(dss_vg_info_item_t *vg_item, ftid_t ftid, ga_obj_id_t *out_obj_id)
-{
-#ifndef OPENGAUSS
-    return (char *)1;
-#else
-    gft_node_t *node = (gft_node_t *)dss_get_ft_node_by_ftid(vg_item, ftid, CM_FALSE, CM_FALSE);
-    dss_ft_block_t *block = dss_get_ft_block_by_node(node);
-    return ((char *)block) + DSS_BLOCK_SIZE;
-#endif
 }
 
 gft_node_t *dss_get_ft_node_by_ftid(dss_vg_info_item_t *vg_item, ftid_t id, bool32 check_version, bool32 active_refresh)
@@ -2370,11 +2351,9 @@ status_t dss_update_ft_root(dss_vg_info_item_t *vg_item)
 status_t dss_check_refresh_fs_block(
     dss_vg_info_item_t *vg_item, dss_block_id_t blockid, char *block, bool32 *is_changed)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite()) {
         return CM_SUCCESS;
     }
-#endif
     status_t status = dss_check_refresh_core(vg_item);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check and refresh core, %s.", vg_item->entry_path));
 
@@ -2384,11 +2363,9 @@ status_t dss_check_refresh_fs_block(
 // refresh file table
 status_t dss_refresh_ft(dss_vg_info_item_t *vg_item)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite()) {
         return CM_SUCCESS;
     }
-#endif
     status_t status =
         dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_ROOT_OFFSET, vg_item->dss_ctrl->root, (int32)DSS_BLOCK_SIZE);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load vg core part %s.", vg_item->entry_path));
@@ -2435,11 +2412,9 @@ status_t dss_get_root_version(dss_vg_info_item_t *vg_item, uint64 *version)
 
 status_t dss_check_refresh_ft(dss_vg_info_item_t *vg_item)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite()) {
         return CM_SUCCESS;
     }
-#endif
     uint64 disk_version;
     status_t status = dss_get_root_version(vg_item, &disk_version);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to get root version %s.", vg_item->entry_path));
@@ -2950,8 +2925,9 @@ static status_t dss_init_trunc_ftn(dss_session_t *session, dss_vg_info_item_t *v
         _exit(1);
     }
     if (*truncated_ftn == NULL) {
-        LOG_DEBUG_ERR("Failed to alloc_ft_node.");
-        cm_panic(0);
+        LOG_RUN_ERR("Failed to alloc_ft_node, errcode:%d, OS errno:%d, OS errmsg:%s.", cm_get_error_code(), errno,
+            strerror(errno));
+        return CM_ERROR;
     }
     return CM_SUCCESS;
 }
@@ -3125,11 +3101,9 @@ void dss_init_root_fs_block(dss_ctrl_t *dss_ctrl)
 
 status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32 vgid, uint32 volumeid)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite()) {
         return CM_SUCCESS;
     }
-#endif
     dss_vg_info_item_t *vg_item = dss_find_vg_item(name_str);
     if (!vg_item) {
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, name_str);
@@ -3144,11 +3118,9 @@ status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32
 
 status_t dss_refresh_vginfo(dss_vg_info_item_t *vg_item)
 {
-#ifdef OPENGAUSS
     if (dss_is_readwrite()) {
         return CM_SUCCESS;
     }
-#endif
     uint64 version;
     if (dss_get_core_version(vg_item, &version) != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to get core version, vg %s.", vg_item->entry_path);

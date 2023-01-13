@@ -97,7 +97,8 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_UDS_INVALID_URL] = "Invalid unix domain socket url:%s, length %d. \
                                 Eg:server_locator=\"UDS:UNIX_emserver.domain\"",
     [ERR_DSS_RECV_MSG_FAILED] = "Recv msg failed, errcode:%d, inst:%u.",
-    [ERR_DSS_LINK_NOT_EXIST] = "The link %s of %s does not exist",
+    [ERR_DSS_LINK_NOT_EXIST] = "The link %s of %s does not exist.",
+    [ERR_DSS_GET_MASTER_ID] = "DSS get master id failed",
 };
 
 static status_t dss_init_log_file(log_param_t *log_param, dss_config_t *inst_cfg)

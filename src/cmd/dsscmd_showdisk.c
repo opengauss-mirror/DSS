@@ -53,7 +53,7 @@ static status_t printf_dss_vg_header(const dss_vg_info_item_t *vg_item, dss_volu
 
     status = dss_read_volume(volume, offset, vg_header, (int32)DSS_ALIGN_SIZE);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to read file %s\n", vg_item->entry_path);
+        DSS_PRINT_ERROR("Failed to read file %s.\n", vg_item->entry_path);
         DSS_FREE_POINT(vg_header);
         return status;
     }
@@ -163,7 +163,7 @@ status_t printf_dss_core_ctrl(const dss_vg_info_item_t *vg_item, dss_volume_t *v
 
     status = dss_read_volume(volume, offset, core_ctrl, (int32)DSS_CORE_CTRL_SIZE);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to read file %s\n", vg_item->entry_path);
+        DSS_PRINT_ERROR("Failed to read file %s.\n", vg_item->entry_path);
         DSS_FREE_POINT(core_ctrl);
         return status;
     }
@@ -228,7 +228,7 @@ static status_t printf_dss_volume_ctrl(const dss_vg_info_item_t *vg_item, dss_vo
 
     status = dss_read_volume(volume, offset, volume_ctrl, (int32)DSS_VOLUME_CTRL_SIZE);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to read file %s\n", vg_item->entry_path);
+        DSS_PRINT_ERROR("Failed to read file %s.\n", vg_item->entry_path);
         DSS_FREE_POINT(volume_ctrl);
         return status;
     }
@@ -337,7 +337,7 @@ static status_t printf_root_ft_block(const dss_vg_info_item_t *vg_item, dss_volu
 
     status = dss_read_volume(volume, offset, root, (int32)DSS_BLOCK_SIZE);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to read file %s\n", vg_item->entry_path);
+        DSS_PRINT_ERROR("Failed to read file %s.\n", vg_item->entry_path);
         DSS_FREE_POINT(root);
         return status;
     }
@@ -364,24 +364,24 @@ status_t dss_read_meta_from_disk(dss_vg_info_item_t *vg_item, const char *struct
     dss_volume_t volume;
     status_t status;
     status = dss_open_volume(vg_item->entry_path, NULL, DSS_CLI_OPEN_FLAG, &volume);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to open file %s\n", vg_item->entry_path));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to open file %s.\n", vg_item->entry_path));
 
     if (strcmp("vg_header", struct_name) == 0) {
         status = printf_dss_vg_header(vg_item, &volume);
-        DSS_RETURN_IFERR3(status, DSS_PRINT_ERROR("Failed to printf metadata vg_header\n"), dss_close_volume(&volume));
+        DSS_RETURN_IFERR3(status, DSS_PRINT_ERROR("Failed to printf metadata vg_header.\n"), dss_close_volume(&volume));
     } else if (strcmp("core_ctrl", struct_name) == 0) {
         status = printf_dss_core_ctrl(vg_item, &volume);
-        DSS_RETURN_IFERR3(status, DSS_PRINT_ERROR("Failed to printf metadata core_ctrl\n"), dss_close_volume(&volume));
+        DSS_RETURN_IFERR3(status, DSS_PRINT_ERROR("Failed to printf metadata core_ctrl.\n"), dss_close_volume(&volume));
     } else if (strcmp("volume_ctrl", struct_name) == 0) {
         status = printf_dss_volume_ctrl(vg_item, &volume);
         DSS_RETURN_IFERR3(
-            status, DSS_PRINT_ERROR("Failed to printf metadata volume_ctrl\n"), dss_close_volume(&volume));
+            status, DSS_PRINT_ERROR("Failed to printf metadata volume_ctrl.\n"), dss_close_volume(&volume));
     } else if (strcmp("root_ft_block", struct_name) == 0) {
         status = printf_root_ft_block(vg_item, &volume);
         DSS_RETURN_IFERR3(
-            status, DSS_PRINT_ERROR("Failed to printf metadata root_ft_block\n"), dss_close_volume(&volume));
+            status, DSS_PRINT_ERROR("Failed to printf metadata root_ft_block.\n"), dss_close_volume(&volume));
     } else {
-        DSS_PRINT_ERROR("Incorrect input, %s is not in core_ctrl vg_header volume_ctrl root_ft_block\n", struct_name);
+        DSS_PRINT_ERROR("Incorrect input, %s is not in core_ctrl vg_header volume_ctrl root_ft_block.\n", struct_name);
         return CM_ERROR;
     }
 
@@ -484,7 +484,7 @@ status_t printf_dss_file_table_block(
 {
     if (id->volume >= DSS_MAX_VOLUMES) {
         LOG_DEBUG_ERR("block_id is invalid, volume:%u.", (uint32)id->volume);
-        DSS_PRINT_ERROR("block_id is invalid, volume:%u..\n", (uint32)id->volume);
+        DSS_PRINT_ERROR("block_id is invalid, volume:%u.\n", (uint32)id->volume);
         return CM_ERROR;
     }
 
@@ -492,7 +492,7 @@ status_t printf_dss_file_table_block(
     dss_volume_t volume;
     status_t status = dss_open_volume(volume_ctrl->defs[id->volume].name, NULL, DSS_CLI_OPEN_FLAG, &volume);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to open file with volume handle:%d\n", volume.handle);
+        DSS_PRINT_ERROR("Failed to open file with volume handle:%d.\n", volume.handle);
         return status;
     }
 
@@ -512,7 +512,7 @@ status_t printf_dss_file_table_block(
 
     status = dss_read_volume(&volume, offset, block, (int32)DSS_BLOCK_SIZE);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to read file %d\n", volume.handle);
+        DSS_PRINT_ERROR("Failed to read file %d.n", volume.handle);
         dss_close_volume(&volume);
         DSS_FREE_POINT(block);
         return status;
@@ -607,7 +607,7 @@ static status_t printf_dss_file_space_block(
     int64 offset;
     dss_volume_t volume;
     status = dss_open_volume(volume_ctrl->defs[id->volume].name, NULL, DSS_CLI_OPEN_FLAG, &volume);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to open file with volume handle:%d\n", volume.handle));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to open file with volume handle:%d.\n", volume.handle));
 
     offset = dss_get_fsb_offset(core_ctrl, id);
     bool32 result = (bool32)(offset % DSS_DISK_UNIT_SIZE == 0);
@@ -621,7 +621,7 @@ static status_t printf_dss_file_space_block(
 
     status = dss_read_volume(&volume, offset, block, (int32)DSS_FILE_SPACE_BLOCK_SIZE);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to read file %d\n", volume.handle);
+        DSS_PRINT_ERROR("Failed to read file %d.\n", volume.handle);
         dss_close_volume(&volume);
         DSS_FREE_POINT(block);
         return status;
@@ -649,7 +649,7 @@ static status_t dss_get_block_type(
     int64 offset;
     dss_volume_t volume;
     status = dss_open_volume(volume_ctrl->defs[id->volume].name, NULL, DSS_CLI_OPEN_FLAG, &volume);
-    DSS_RETURN_IFERR3(status, DSS_PRINT_ERROR("Failed to open file with volume handle:%d\n", volume.handle),
+    DSS_RETURN_IFERR3(status, DSS_PRINT_ERROR("Failed to open file with volume handle:%d.\n", volume.handle),
         dss_close_volume(&volume));
 
     offset = dss_get_type_offset(core_ctrl, id);
@@ -664,7 +664,7 @@ static status_t dss_get_block_type(
 
     status = dss_read_volume(&volume, offset, block_type, (int32)core_ctrl->au_size);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to read file %d\n", volume.handle);
+        DSS_PRINT_ERROR("Failed to read file %d.\n", volume.handle);
         dss_close_volume(&volume);
         DSS_FREE_POINT(block_type);
         return status;
@@ -683,7 +683,7 @@ static status_t print_block_by_type(
     printf("id = %llu : \n", block_id);
 
     if (volume_ctrl->defs[id->volume].flag != 1) {
-        DSS_PRINT_ERROR("volume doesn't exist,voleme_id:%llu \n", (uint64)id->volume);
+        DSS_PRINT_ERROR("volume doesn't exist,voleme_id:%llu.\n", (uint64)id->volume);
         return CM_ERROR;
     }
     uint32 block_type = 0;
@@ -700,13 +700,13 @@ static status_t print_block_by_type(
     if (block_type == DSS_BLOCK_TYPE_FT) {
         status = printf_dss_file_table_block(volume_ctrl, core_ctrl, id, node_id);
         if (status != CM_SUCCESS) {
-            DSS_PRINT_ERROR("Failed to printf file table block with block_id:%llu\n", block_id);
+            DSS_PRINT_ERROR("Failed to printf file table block with block_id:%llu.\n", block_id);
             return status;
         }
     } else {
         status = printf_dss_file_space_block(volume_ctrl, core_ctrl, id, node_id);
         if (status != CM_SUCCESS) {
-            DSS_PRINT_ERROR("Failed to printf file space block with block_id:%llu\n", block_id);
+            DSS_PRINT_ERROR("Failed to printf file space block with block_id:%llu.\n", block_id);
             return status;
         }
     }
@@ -717,7 +717,7 @@ static status_t print_block_by_type(
 static status_t get_volume_core_ctrl(dss_vg_info_item_t *vg_item, dss_volume_t *volume, dss_core_ctrl_t *core_ctrl)
 {
     status_t status = dss_open_volume(vg_item->entry_path, NULL, DSS_CLI_OPEN_FLAG, volume);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to open file %s\n", vg_item->entry_path));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to open file %s.\n", vg_item->entry_path));
 
     int64 offset = (int64)OFFSET_OF(dss_ctrl_t, core);
     bool32 result = (bool32)(offset % DSS_DISK_UNIT_SIZE == 0);
@@ -726,7 +726,7 @@ static status_t get_volume_core_ctrl(dss_vg_info_item_t *vg_item, dss_volume_t *
 
     status = dss_read_volume(volume, offset, core_ctrl, (int32)DSS_CORE_CTRL_SIZE);
     DSS_RETURN_IFERR3(
-        status, DSS_PRINT_ERROR("Failed to read file %s\n", vg_item->entry_path), dss_close_volume(volume));
+        status, DSS_PRINT_ERROR("Failed to read file %s.\n", vg_item->entry_path), dss_close_volume(volume));
     return CM_SUCCESS;
 }
 
@@ -739,7 +739,7 @@ status_t printf_dss_block_with_blockid(dss_vg_info_item_t *vg_item, uint64 block
 
     status_t status = get_volume_core_ctrl(vg_item, &volume, core_ctrl);
     DSS_RETURN_IFERR3(
-        status, DSS_PRINT_ERROR("Failed to get volume %s\n", vg_item->entry_path), DSS_FREE_POINT(core_ctrl));
+        status, DSS_PRINT_ERROR("Failed to get volume %s.\n", vg_item->entry_path), DSS_FREE_POINT(core_ctrl));
 
     int64 offset = (int64)OFFSET_OF(dss_ctrl_t, volume);
     if (offset % DSS_DISK_UNIT_SIZE != 0) {
@@ -759,7 +759,7 @@ status_t printf_dss_block_with_blockid(dss_vg_info_item_t *vg_item, uint64 block
 
     status = dss_read_volume(&volume, offset, volume_ctrl, (int32)DSS_VOLUME_CTRL_SIZE);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to read file %s\n", vg_item->entry_path);
+        DSS_PRINT_ERROR("Failed to read file %s.\n", vg_item->entry_path);
         DSS_FREE_POINT(core_ctrl);
         DSS_FREE_POINT(volume_ctrl);
         dss_close_volume(&volume);

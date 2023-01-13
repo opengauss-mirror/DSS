@@ -28,6 +28,8 @@
 #include "dss_malloc.h"
 #include "dss_api_impl.h"
 #include "dss_thv.h"
+#include "cm_log.h"
+#include "cm_timer.h"
 
 #ifdef _WIN64
 #if !defined(__x86_64__)
@@ -261,7 +263,7 @@ int dss_dread(dss_dir_handle dir, dss_dir_item_t item, dss_dir_item_t *result)
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("dread get conn error."));
 
-    gft_node_t *node = (dss_dir_item_handle)dss_read_dir_impl(conn, (dss_dir_t *)dir);
+    gft_node_t *node = (dss_dir_item_handle)dss_read_dir_impl(conn, (dss_dir_t *)dir, CM_TRUE);
     if (node == NULL) {
         *result = NULL;
         return DSS_SUCCESS;
@@ -691,6 +693,97 @@ void dss_register_log_callback(dss_log_output cb_log_output)
 {
     cm_log_param_instance()->log_write = (usr_cb_log_output_t)cb_log_output;
     cm_log_param_instance()->log_level = MAX_LOG_LEVEL;
+}
+
+static int32 init_single_logger_core(log_param_t *log_param, log_type_t log_id, char *file_name, uint32 file_name_len)
+{
+    int32 ret;
+    switch (log_id) {
+        case LOG_RUN:
+            ret = snprintf_s(file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/run/%s", log_param->log_home, "dss.rlog");
+            break;
+        case LOG_DEBUG:
+            ret = snprintf_s(file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/debug/%s", log_param->log_home, "dss.dlog");
+            break;
+        case LOG_ALARM:
+            ret = snprintf_s(file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/alarm/%s", log_param->log_home, "dss.alog");
+            break;
+        case LOG_AUDIT:
+            ret = snprintf_s(file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/audit/%s", log_param->log_home, "dss.aud");
+            break;
+        default:
+            ret = 0;
+            break;
+    }
+
+    return (ret != -1) ? DSS_SUCCESS : ERR_DSS_INIT_LOGGER_FAILED;
+}
+
+static int32 init_single_logger(log_param_t *log_param, log_type_t log_id)
+{
+    char file_name[CM_FILE_NAME_BUFFER_SIZE] = {'\0'};
+    CM_RETURN_IFERR(init_single_logger_core(log_param, log_id, file_name, CM_FILE_NAME_BUFFER_SIZE));
+    (void)cm_log_init(log_id, (const char *)file_name);
+    return DSS_SUCCESS;
+}
+
+void dss_refresh_logger(char *log_field, unsigned long long *value)
+{
+    if (log_field ==NULL) {
+        return;
+    }
+
+    if (strcmp(log_field, "LOG_LEVEL") == 0) {
+        cm_log_param_instance()->log_level = (uint32)(*value);
+    }
+    else if (strcmp(log_field, "LOG_MAX_FILE_SIZE") == 0) {
+        cm_log_param_instance()->max_log_file_size = (uint64)(*value);
+        cm_log_param_instance()->max_audit_file_size = (uint64)(*value);
+    }
+    else if (strcmp(log_field, "LOG_BACKUP_FILE_COUNT") == 0) {
+        cm_log_param_instance()->log_backup_file_count = (uint32)(*value);
+        cm_log_param_instance()->audit_backup_file_count = (uint32)(*value);
+    }
+}
+
+int32 dss_init_logger(char *log_home, unsigned int log_level, unsigned int log_backup_file_count, unsigned long long log_max_file_size)
+{
+    errno_t ret;
+    log_param_t *log_param = cm_log_param_instance();
+    ret = memset_s(log_param, sizeof(log_param_t), 0, sizeof(log_param_t));
+    if (ret != EOK) {
+        return ERR_DSS_INIT_LOGGER_FAILED;
+    }
+
+    log_param->log_level = log_level;
+    log_param->log_backup_file_count = log_backup_file_count;
+    log_param->audit_backup_file_count = log_backup_file_count;
+    log_param->max_log_file_size = log_max_file_size;
+    log_param->max_audit_file_size = log_max_file_size;
+    cm_log_set_file_permissions(600);
+    cm_log_set_path_permissions(700);
+    (void)cm_set_log_module_name("DSS", sizeof("DSS"));
+    ret = strcpy_sp(log_param->instance_name, CM_MAX_NAME_LEN, "DSS");
+    if (ret != EOK) {
+        return ERR_DSS_INIT_LOGGER_FAILED;
+    }
+
+    ret = strcpy_sp(log_param->log_home, CM_MAX_LOG_HOME_LEN, log_home);
+    if (ret != EOK) {
+        return ERR_DSS_INIT_LOGGER_FAILED;
+    }
+
+    CM_RETURN_IFERR(init_single_logger(log_param, LOG_RUN));
+    CM_RETURN_IFERR(init_single_logger(log_param, LOG_DEBUG));
+    CM_RETURN_IFERR(init_single_logger(log_param, LOG_ALARM));
+    CM_RETURN_IFERR(init_single_logger(log_param, LOG_AUDIT));
+
+    if (cm_start_timer(g_timer()) != CM_SUCCESS) {
+        return ERR_DSS_INIT_LOGGER_FAILED;
+    }
+    log_param->log_instance_startup = (bool32)CM_TRUE;
+
+    return DSS_SUCCESS;
 }
 
 int dss_aio_prep_pread(void *iocb, int handle, void *buf, size_t count, long long offset)

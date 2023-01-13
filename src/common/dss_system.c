@@ -283,10 +283,12 @@ int64 cm_sys_process_start_time(uint64 pid)
     }
     int32 fd = open(path, O_RDONLY);
     if (fd == -1) {
+        LOG_RUN_ERR("failed to open file with handle %d, error code %d", fd, errno);
         return 0;
     }
     size = (int32)read(fd, stat_buf, sizeof(stat_buf) - 1);
     if (size == -1) {
+        LOG_RUN_ERR("failed to read file with handle %d, error code %d", fd, errno);
         ret = close(fd);
         if (ret != 0) {
             LOG_RUN_ERR("failed to close file with handle %d, error code %d", fd, errno);

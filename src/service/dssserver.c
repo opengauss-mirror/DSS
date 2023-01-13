@@ -95,8 +95,8 @@ static void dss_close_thread(dss_instance_t *inst)
 
 static void dss_clean_server()
 {
-    dss_stop_mes();
     dss_close_thread(&g_dss_instance);
+    dss_stop_mes();
     dss_uninit_cm(&g_dss_instance);
     dss_free_log_ctrl(&g_dss_instance);
     if (g_dss_instance.lock_fd != CM_INVALID_INT32) {
@@ -111,7 +111,7 @@ static void handle_main_wait(void)
         if (g_dss_instance.abort_status == CM_TRUE) {
             break;
         }
-        dss_check_peer_inst(&g_dss_instance);
+        dss_check_peer_inst(&g_dss_instance, DSS_INVALID_64);
         dss_ssl_ca_cert_expire();
         cm_sleep(500);
     } while (CM_TRUE);

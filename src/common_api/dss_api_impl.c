@@ -771,7 +771,7 @@ dss_dir_t *dss_open_dir_impl(dss_conn_t *conn, const char *dir_path, bool32 refr
     return dss_open_dir_impl_core(conn, dir_path, dss_env);
 }
 
-dss_dir_item_handle dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir)
+dss_dir_item_handle dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 skip_delete)
 {
     if (!dir) {
         return NULL;
@@ -798,7 +798,7 @@ dss_dir_item_handle dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir)
     while (node != NULL) {
         dir->cur_ftid = node->next;
         dir->cur_node = *node;
-        if (node->flags != DSS_FT_NODE_FLAG_DEL) {
+        if (!skip_delete || node->flags != DSS_FT_NODE_FLAG_DEL) {
             DSS_UNLOCK_VG_META_S(dir->vg_item, conn->session);
             return (dss_dir_item_handle)&dir->cur_node;
         }

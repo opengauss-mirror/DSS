@@ -373,14 +373,12 @@ static status_t dss_process_close_file(dss_session_t *session)
     gft_node_t *node;
     (void)dss_check_rm_file(vg_item, ftid, &should_rm_file, &node);
     if (should_rm_file) {
-#ifdef OPENGAUSS
         if (!dss_is_readwrite()) {
             LOG_DEBUG_INF(
                 "Ignores to remove delay file when close file, because the instance is not in readwrite, fid: %llu",
                 fid);
             return CM_SUCCESS;
         }
-#endif
         status_t status = dss_remove_dir_file_by_node(session, vg_item, node);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_INF("Failed to remove delay file when close file, fid: %llu", fid));
         DSS_LOG_DEBUG_OP("Succeed to remove file when close file, ftid%llu, fid:%llu, vg: %s, session pid:%llu, v:%u, "
@@ -738,13 +736,14 @@ static status_t dss_process_set_status(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &dss_status));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%d", dss_status));
     LOG_DEBUG_INF("dss server current status(%d), set status(%d).", dss_get_server_status_flag(), dss_status);
-    if ((dss_status == DSS_STATUS_READWRITE) && !dss_is_readwrite()) {
+    bool32 need_refresh = (dss_status == DSS_STATUS_READWRITE) && (!dss_is_readwrite());
+    dss_set_server_status_flag(dss_status);
+    if (need_refresh == CM_TRUE) {
         status_t status = dss_refresh_meta_info(session);
         DSS_RETURN_IFERR2(
             status, LOG_DEBUG_ERR("dss server set status(%d) refresh meta fialed, result(%d).", dss_status, status));
     }
     LOG_RUN_INF("Dss set server status %d.", dss_status);
-    dss_set_server_status_flag(dss_status);
     return CM_SUCCESS;
 }
 
