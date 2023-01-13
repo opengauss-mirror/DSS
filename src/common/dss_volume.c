@@ -169,19 +169,31 @@ static status_t dss_try_write_volume(dss_volume_t *volume, char *buffer, int32 s
 }
 
 #else
+static inline void dss_open_fail(const char *name)
+{
+    if (cm_get_os_error() == DSS_IO_ERROR) {
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, name);
+        LOG_RUN_ERR("[DSS] ABORT INFO: OPEN VOLUME RAW I/O ERROR");
+        cm_fync_logfile();
+        _exit(1);
+    } else {
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_OPEN, name, cm_get_os_error());
+    }
+}
+
 status_t dss_open_volume_raw(const char *name, const char *code, int flags, dss_volume_t *volume)
 {
-    // O_RDWR | O_SYNC
+    // O_RDWR | O_SYNC | O_DIRECT
     volume->handle = open(name, flags, 0);
     if (volume->handle == -1) {
-        if (cm_get_os_error() == DSS_IO_ERROR) {
-            DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, name);
-            LOG_RUN_ERR("[DSS] ABORT INFO: OPEN VOLUME RAW I/O ERROR");
-            cm_fync_logfile();
-            _exit(1);
-        } else {
-            DSS_THROW_ERROR(ERR_DSS_VOLUME_OPEN, name, cm_get_os_error());
-        }
+        dss_open_fail(name);
+        return CM_ERROR;
+    }
+
+    // O_RDWR | O_SYNC
+    volume->unaligned_handle = open(name, DSS_NOD_OPEN_FLAG, 0);
+    if (volume->unaligned_handle == -1) {
+        dss_open_fail(name);
         return CM_ERROR;
     }
 
@@ -193,17 +205,17 @@ status_t dss_open_volume_raw(const char *name, const char *code, int flags, dss_
 
 status_t dss_open_simple_volume_raw(const char *name, int flags, dss_simple_volume_t *volume)
 {
-    // O_RDWR|O_SYNC
+    // O_RDWR | O_SYNC | O_DIRECT
     volume->handle = open(name, flags, 0);
     if (volume->handle == -1) {
-        if (cm_get_os_error() == DSS_IO_ERROR) {
-            DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, name);
-            LOG_RUN_ERR("[DSS] ABORT INFO: OPEN SIMPLE VOLUME RAW I/O ERROR");
-            cm_fync_logfile();
-            _exit(1);
-        } else {
-            DSS_THROW_ERROR(ERR_DSS_VOLUME_OPEN, name, cm_get_os_error());
-        }
+        dss_open_fail(name);
+        return CM_ERROR;
+    }
+
+    // O_RDWR | O_SYNC
+    volume->unaligned_handle = open(name, DSS_NOD_OPEN_FLAG, 0);
+    if (volume->unaligned_handle == -1) {
+        dss_open_fail(name);
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -215,17 +227,24 @@ void dss_close_volume_raw(dss_volume_t *volume)
     if (ret != 0) {
         LOG_RUN_ERR("failed to close file with handle %d, error code %d", volume->handle, errno);
     }
+    ret = close(volume->unaligned_handle);
+    if (ret != 0) {
+        LOG_RUN_ERR("failed to close file with unaligned_handle %d, error code %d", volume->unaligned_handle, errno);
+    }
 
     if (memset_s(volume, sizeof(dss_volume_t), 0, sizeof(dss_volume_t)) != EOK) {
         cm_panic(0);
     }
     volume->handle = DSS_INVALID_HANDLE;
+    volume->unaligned_handle = DSS_INVALID_HANDLE;
 }
 
 void dss_close_simple_volume_raw(dss_simple_volume_t *simple_volume)
 {
     close(simple_volume->handle);
     simple_volume->handle = DSS_INVALID_HANDLE;
+    close(simple_volume->unaligned_handle);
+    simple_volume->unaligned_handle = DSS_INVALID_HANDLE;
 }
 
 uint64 dss_get_volume_size_raw(dss_volume_t *volume)
@@ -267,17 +286,34 @@ static status_t dss_try_pread_volume_raw(dss_volume_t *volume, int64 offset, cha
 static int32 dss_try_pwrite_volume_raw(
     dss_volume_t *volume, int64 offset, char *buffer, int32 size, int32 *written_size)
 {
-    *written_size = (int32)pwrite(volume->handle, buffer, size, (off_t)offset);
-    if (*written_size == -1) {
-        if (cm_get_os_error() == DSS_IO_ERROR) {
-            DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
-            LOG_RUN_ERR("[DSS] ABORT INFO: PWRITE VOLUME I/O ERROR");
-            cm_fync_logfile();
-            _exit(1);
-        } else {
-            DSS_THROW_ERROR(ERR_DSS_VOLUME_WRITE, volume->name_p, volume->id, cm_get_os_error());
+    bool8 aligned_pwrite =
+        offset % DSS_DISK_UNIT_SIZE == 0 && size % DSS_DISK_UNIT_SIZE == 0 && (uint64)buffer % DSS_DISK_UNIT_SIZE == 0;
+    if (aligned_pwrite) {
+        *written_size = (int32)pwrite(volume->handle, buffer, size, (off_t)offset);
+        if (*written_size == -1) {
+            if (cm_get_os_error() == DSS_IO_ERROR) {
+                DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
+                LOG_RUN_ERR("[DSS] ABORT INFO: ALIGNED PWRITE VOLUME I/O ERROR");
+                cm_fync_logfile();
+                _exit(1);
+            } else {
+                DSS_THROW_ERROR(ERR_DSS_VOLUME_WRITE, volume->name_p, volume->id, cm_get_os_error());
+            }
+            return CM_ERROR;
         }
-        return CM_ERROR;
+    } else {
+        *written_size = (int32)pwrite(volume->unaligned_handle, buffer, size, (off_t)offset);
+        if (*written_size == -1) {
+            if (cm_get_os_error() == DSS_IO_ERROR) {
+                DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
+                LOG_RUN_ERR("[DSS] ABORT INFO: UNALIGNED PWRITE VOLUME I/O ERROR");
+                cm_fync_logfile();
+                _exit(1);
+            } else {
+                DSS_THROW_ERROR(ERR_DSS_VOLUME_WRITE, volume->name_p, volume->id, cm_get_os_error());
+            }
+            return CM_ERROR;
+        }
     }
 
     return CM_SUCCESS;

@@ -95,6 +95,7 @@ typedef int32 volume_handle_t;
 #else
 #define DSS_INSTANCE_OPEN_FLAG (O_RDWR | O_SYNC | O_DIRECT)
 #define DSS_CLI_OPEN_FLAG (O_RDWR | O_SYNC | O_DIRECT)
+#define DSS_NOD_OPEN_FLAG (O_RDWR | O_SYNC)
 #endif
 
 #define DSS_VOLUME_DEF_RESVS 112
@@ -134,6 +135,7 @@ typedef struct st_dss_volume {
     dss_volume_attr_t *attr;
     uint32 id;
     volume_handle_t handle;
+    volume_handle_t unaligned_handle;
     dss_vg_device_Type_e vg_type;
 #ifdef ENABLE_GLOBAL_CACHE
     image_handle image;
@@ -176,6 +178,7 @@ typedef dss_vg_header_t dss_volume_header_t;
 typedef struct st_dss_simple_handle_t {
     uint32 id;
     volume_handle_t handle;
+    volume_handle_t unaligned_handle;
     uint64 version;
     dss_vg_device_Type_e vg_type;
 #ifdef ENABLE_GLOBAL_CACHE

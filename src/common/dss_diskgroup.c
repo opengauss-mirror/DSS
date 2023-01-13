@@ -186,6 +186,7 @@ status_t dss_load_vg_conf_info(dss_vg_info_t **vgs, const dss_config_t *inst_cfg
         for (size_t j = 0; j < DSS_MAX_VOLUMES; j++) {
             vgs_info->volume_group[i].id = i;
             vgs_info->volume_group[i].volume_handle[j].handle = DSS_INVALID_HANDLE;
+            vgs_info->volume_group[i].volume_handle[j].unaligned_handle = DSS_INVALID_HANDLE;
         }
     }
     *vgs = vgs_info;
@@ -243,14 +244,16 @@ status_t dss_init_vol_handle(dss_vg_info_item_t *vg_item, int32 flags, dss_vol_h
         if (vg_item->dss_ctrl->volume.defs[vid].flag == VOLUME_FREE) {
             continue;
         }
-        if (vg_item->volume_handle[vid].handle != DSS_INVALID_HANDLE && !vol_handles) {
+        if ((vg_item->volume_handle[vid].handle != DSS_INVALID_HANDLE && !vol_handles) &&
+            (vg_item->volume_handle[vid].unaligned_handle != DSS_INVALID_HANDLE && !vol_handles)) {
             continue;
         }
         if (vol_handles) {
             if (!dss_check_volume_is_used(vg_item, vid)) {
                 continue;
             }
-            if (vol_handles->volume_handle[vid].handle != DSS_INVALID_HANDLE) {
+            if (vol_handles->volume_handle[vid].handle != DSS_INVALID_HANDLE &&
+                vol_handles->volume_handle[vid].unaligned_handle != DSS_INVALID_HANDLE) {
                 continue;
             }
             vol = &volume;
@@ -262,6 +265,7 @@ status_t dss_init_vol_handle(dss_vg_info_item_t *vg_item, int32 flags, dss_vol_h
         if (status == CM_SUCCESS) {
             if (vol_handles != NULL) {
                 vol_handles->volume_handle[vid].handle = vol->handle;
+                vol_handles->volume_handle[vid].unaligned_handle = vol->unaligned_handle;
                 vol_handles->volume_handle[vid].id = vol->id;
 #ifdef ENABLE_GLOBAL_CACHE
                 vol_handles->volume_handle[vid].image = vol->image;
@@ -285,12 +289,14 @@ void dss_destroy_vol_handle(dss_vg_info_item_t *vg_item, dss_vol_handles_t *vol_
 
     for (uint32 vid = 0; vid < size; vid++) {
         if (vol_handles != NULL) {
-            if (vol_handles->volume_handle[vid].handle == DSS_INVALID_HANDLE) {
+            if (vol_handles->volume_handle[vid].handle == DSS_INVALID_HANDLE &&
+                vol_handles->volume_handle[vid].unaligned_handle == DSS_INVALID_HANDLE) {
                 continue;
             }
             dss_close_simple_volume(&vol_handles->volume_handle[vid]);
         } else {
-            if (vg_item->volume_handle[vid].handle == DSS_INVALID_HANDLE) {
+            if (vg_item->volume_handle[vid].handle == DSS_INVALID_HANDLE &&
+                vg_item->volume_handle[vid].unaligned_handle == DSS_INVALID_HANDLE) {
                 continue;
             }
             vol = &vg_item->volume_handle[vid];

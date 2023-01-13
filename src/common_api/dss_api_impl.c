@@ -392,6 +392,7 @@ status_t dss_init_vol_handle_sync(dss_conn_t *conn)
     for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
         for (uint32 vid = 0; vid < DSS_MAX_VOLUMES; ++vid) {
             cli_vg_handles->vg_vols[i].volume_handle[vid].handle = DSS_INVALID_HANDLE;
+            cli_vg_handles->vg_vols[i].volume_handle[vid].unaligned_handle = DSS_INVALID_HANDLE;
             cli_vg_handles->vg_vols[i].volume_handle[vid].id = vid;
         }
 
@@ -1682,6 +1683,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
 
         dss_volume_t volume;
         volume.handle = vol->handle;
+        volume.unaligned_handle = vol->unaligned_handle;
         volume.id = vol->id;
         volume.name_p = vg_item->dss_ctrl->volume.defs[auid.volume].name;
 #ifdef ENABLE_GLOBAL_CACHE
@@ -1696,8 +1698,8 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         }
         if (status != CM_SUCCESS) {
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-            LOG_DEBUG_ERR("Failed to read write file:(id:%u, handle:%d),offset:%llu,size:%d.", volume.id, volume.handle,
-                vol_offset, real_size);
+            LOG_DEBUG_ERR("Failed to read write file:(id:%u, handle:%d, unaligned_handle:%d), offset:%llu, size:%d.",
+                 volume.id, volume.handle, volume.unaligned_handle, vol_offset, real_size);
             return status;
         }
         read_cnt += real_size;
