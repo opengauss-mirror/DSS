@@ -70,6 +70,7 @@ typedef struct st_dss_params {
     cs_pipe_type_t pipe_type;
     bool32 elapsed_switch;
     uint32 shm_key;
+    uint32 ssl_detect_day;
 #ifdef ENABLE_GLOBAL_CACHE
     rbd_config_params_t rbd_config_params;
     char ceph_config[DSS_FILE_NAME_BUFFER_SIZE];
@@ -85,8 +86,9 @@ typedef struct st_dss_config {
 } dss_config_t;
 
 extern dss_config_t *g_inst_cfg;
-
 #define DSS_UNIX_DOMAIN_SOCKET_NAME ".dss_unix_d_socket"
+#define DSS_MAX_SSL_PERIOD_DETECTION 180
+#define DSS_MIN_SSL_PERIOD_DETECTION 1
 
 status_t dss_load_config(dss_config_t *inst_cfg);
 status_t dss_set_cfg_dir(const char *home, dss_config_t *inst_cfg);
