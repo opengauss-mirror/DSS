@@ -334,10 +334,11 @@ static status_t rb_redo_update_volhead(dss_vg_info_item_t *vg_item, dss_redo_ent
 }
 static status_t rb_redo_add_or_remove_volume(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
+    bool32 remote = CM_FALSE;
     dss_redo_volop_t *redo = (dss_redo_volop_t *)entry->data;
     DSS_LOG_DEBUG_OP("rollback %s volume operate", (redo->is_add) ? "add" : "remove");
     return dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_CORE_OFFSET, vg_item->dss_ctrl->core_data,
-        (int32)(DSS_CORE_CTRL_SIZE + DSS_VOLUME_CTRL_SIZE));
+        (int32)(DSS_CORE_CTRL_SIZE + DSS_VOLUME_CTRL_SIZE), &remote);
 }
 
 static status_t rp_update_core_ctrl(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
@@ -358,9 +359,10 @@ static status_t rp_update_core_ctrl(dss_vg_info_item_t *vg_item, dss_redo_entry_
 
 static status_t rb_update_core_ctrl(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
+    bool32 remote = CM_FALSE;
     DSS_LOG_DEBUG_OP("rollback update core ctrl, hwm:%llu.", vg_item->dss_ctrl->core.volume_attrs[0].hwm);
     return dss_load_vg_ctrl_part(
-        vg_item, (int64)DSS_CTRL_CORE_OFFSET, vg_item->dss_ctrl->core_data, (int32)DSS_CORE_CTRL_SIZE);
+        vg_item, (int64)DSS_CTRL_CORE_OFFSET, vg_item->dss_ctrl->core_data, (int32)DSS_CORE_CTRL_SIZE, &remote);
 }
 
 void rp_init_block_addr_history(dss_block_addr_his_t *addr_his)
@@ -464,9 +466,10 @@ static status_t rb_rollback_ft_block(dss_vg_info_item_t *vg_item, gft_node_t *no
     CM_ASSERT(node != NULL);
     status_t status;
     bool32 check_version = CM_FALSE;
+    bool32 remote = CM_FALSE;
 
-    status =
-        dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_ROOT_OFFSET, vg_item->dss_ctrl->root, (int32)DSS_BLOCK_SIZE);
+    status = dss_load_vg_ctrl_part(
+            vg_item, (int64)DSS_CTRL_ROOT_OFFSET, vg_item->dss_ctrl->root, (int32)DSS_BLOCK_SIZE, &remote);
     if (status != CM_SUCCESS) {
         return status;
     }
@@ -658,6 +661,7 @@ static status_t rb_redo_alloc_fs_block(dss_vg_info_item_t *vg_item, dss_redo_ent
     CM_ASSERT(entry != NULL);
 
     status_t status;
+    bool32 remote = CM_FALSE;
     dss_redo_alloc_fs_block_t *data = (dss_redo_alloc_fs_block_t *)entry->data;
 
     ga_obj_id_t obj_id;
@@ -666,8 +670,8 @@ static status_t rb_redo_alloc_fs_block(dss_vg_info_item_t *vg_item, dss_redo_ent
     CM_ASSERT(block != NULL);
     dss_unregister_buffer_cache(vg_item, block->head.id);
     ga_free_object(obj_id.pool_id, obj_id.obj_id);
-    status =
-        dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_CORE_OFFSET, vg_item->dss_ctrl->core_data, DSS_DISK_UNIT_SIZE);
+    status = dss_load_vg_ctrl_part(
+        vg_item, (int64)DSS_CTRL_CORE_OFFSET, vg_item->dss_ctrl->core_data, DSS_DISK_UNIT_SIZE, &remote);
     CM_ASSERT(status == CM_SUCCESS);
     return status;
 }
@@ -1141,6 +1145,7 @@ status_t rb_redo_format_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *
     CM_ASSERT(entry != NULL);
 
     status_t status;
+    bool32 remote = CM_FALSE;
     dss_redo_format_fs_t *data = (dss_redo_format_fs_t *)entry->data;
 
     dss_block_id_t first = data->auid;
@@ -1148,8 +1153,8 @@ status_t rb_redo_format_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *
     status = dss_find_block_objid_in_shm(vg_item, first, DSS_BLOCK_TYPE_FS, &obj_id);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to find block:%llu.", DSS_ID_TO_U64(first)));
     rb_redo_clean_resource(vg_item, data->auid, GA_16K_POOL, obj_id.obj_id, data->count);
-    status =
-        dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_CORE_OFFSET, vg_item->dss_ctrl->core_data, DSS_DISK_UNIT_SIZE);
+    status = dss_load_vg_ctrl_part(
+        vg_item, (int64)DSS_CTRL_CORE_OFFSET, vg_item->dss_ctrl->core_data, DSS_DISK_UNIT_SIZE, &remote);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load vg:%s.", vg_item->vg_name));
     return CM_SUCCESS;
 }
@@ -1217,14 +1222,15 @@ static status_t dss_recover_core_ctrlinfo(dss_vg_info_item_t *vg_item)
 {
     status_t status;
     uint32 checksum;
+    bool32 remote = CM_FALSE;
     status = dss_load_vg_ctrl_part(
-        vg_item, (int64)DSS_CTRL_CORE_OFFSET, &vg_item->dss_ctrl->core, (int32)DSS_CORE_CTRL_SIZE);
+        vg_item, (int64)DSS_CTRL_CORE_OFFSET, &vg_item->dss_ctrl->core, (int32)DSS_CORE_CTRL_SIZE, &remote);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Load dss ctrl core failed."));
     checksum = dss_get_checksum(&vg_item->dss_ctrl->core, DSS_CORE_CTRL_SIZE);
     if (checksum != vg_item->dss_ctrl->core.checksum) {
         LOG_RUN_INF("Try recover dss ctrl core.");
         status = dss_load_vg_ctrl_part(
-            vg_item, (int64)DSS_CTRL_BAK_CORE_OFFSET, &vg_item->dss_ctrl->core, (int32)DSS_CORE_CTRL_SIZE);
+            vg_item, (int64)DSS_CTRL_BAK_CORE_OFFSET, &vg_item->dss_ctrl->core, (int32)DSS_CORE_CTRL_SIZE, &remote);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Load dss ctrl core failed."));
         checksum = dss_get_checksum(&vg_item->dss_ctrl->core, DSS_CORE_CTRL_SIZE);
         dss_check_checksum(checksum, vg_item->dss_ctrl->core.checksum);
@@ -1242,16 +1248,19 @@ static status_t dss_recover_volume_ctrlinfo(dss_vg_info_item_t *vg_item)
 {
     status_t status;
     uint32 checksum;
+    bool32 remote = CM_FALSE;
     dss_volume_ctrl_t *volume = (dss_volume_ctrl_t *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_VOLUME_CTRL_SIZE);
     if (volume == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Can not allocate memory in stack."));
     }
-    status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_VOLUME_OFFSET, volume, (int32)DSS_VOLUME_CTRL_SIZE);
+    status = 
+        dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_VOLUME_OFFSET, volume, (int32)DSS_VOLUME_CTRL_SIZE, &remote);
     DSS_RETURN_IFERR3(status, DSS_FREE_POINT(volume), LOG_DEBUG_ERR("Load dss ctrl volume failed."));
     checksum = dss_get_checksum(volume, DSS_VOLUME_CTRL_SIZE);
     if (checksum != volume->checksum) {
         LOG_RUN_INF("Try recover dss ctrl volume.");
-        status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_BAK_VOLUME_OFFSET, volume, (int32)DSS_VOLUME_CTRL_SIZE);
+        status = dss_load_vg_ctrl_part(
+            vg_item, (int64)DSS_CTRL_BAK_VOLUME_OFFSET, volume, (int32)DSS_VOLUME_CTRL_SIZE, &remote);
         DSS_RETURN_IFERR3(status, DSS_FREE_POINT(volume), LOG_DEBUG_ERR("Load dss ctrl volume failed."));
         checksum = dss_get_checksum(volume, DSS_VOLUME_CTRL_SIZE);
         dss_check_checksum(checksum, volume->checksum);
@@ -1272,13 +1281,14 @@ static status_t dss_recover_root_ft_ctrlinfo(dss_vg_info_item_t *vg_item)
 {
     status_t status;
     uint32 checksum;
+    bool32 remote = CM_FALSE;
     dss_common_block_t *block = (dss_common_block_t *)vg_item->dss_ctrl->root;
-    status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_ROOT_OFFSET, block, (int32)DSS_BLOCK_SIZE);
+    status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_ROOT_OFFSET, block, (int32)DSS_BLOCK_SIZE, &remote);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Load dss ctrl root failed."));
     checksum = dss_get_checksum(block, DSS_BLOCK_SIZE);
     if (checksum != block->checksum) {
         LOG_RUN_INF("Try recover dss ctrl root.");
-        status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_BAK_ROOT_OFFSET, block, (int32)DSS_BLOCK_SIZE);
+        status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_BAK_ROOT_OFFSET, block, (int32)DSS_BLOCK_SIZE, &remote);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Load dss ctrl root failed."));
         checksum = dss_get_checksum(block, DSS_BLOCK_SIZE);
         dss_check_checksum(checksum, block->checksum);
@@ -1526,10 +1536,11 @@ status_t dss_check_redo_and_recover(dss_vg_info_item_t *vg_item)
 #ifdef OPENGAUSS
     return CM_SUCCESS;
 #else
+    bool32 remote = CM_FALSE;
     CM_ASSERT(dss_is_server());
     LOG_DEBUG_INF("Begin to check redo and recover");
     status_t status =
-        dss_load_vg_ctrl_part(vg_item, (int64)DSS_LOG_OFFSET, vg_item->dss_ctrl->log_buf, DSS_DISK_UNIT_SIZE);
+        dss_load_vg_ctrl_part(vg_item, (int64)DSS_LOG_OFFSET, vg_item->dss_ctrl->log_buf, DSS_DISK_UNIT_SIZE, &remote);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load redo log."));
 
     dss_redo_batch_t *batch = (dss_redo_batch_t *)vg_item->dss_ctrl->log_buf;
@@ -1551,7 +1562,8 @@ status_t dss_check_redo_and_recover(dss_vg_info_item_t *vg_item)
     }
 
     if (load_size > DSS_DISK_UNIT_SIZE) {
-        status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_LOG_OFFSET, vg_item->dss_ctrl->log_buf, (int32)load_size);
+        status = dss_load_vg_ctrl_part(
+            vg_item, (int64)DSS_LOG_OFFSET, vg_item->dss_ctrl->log_buf, (int32)load_size, &remote);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load redo log."));
     }
 

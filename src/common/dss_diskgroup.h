@@ -80,7 +80,7 @@ dss_vg_info_item_t *dss_find_vg_item(const char *vg_name);
 status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **info);
 status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock);
 
-status_t dss_load_vg_ctrl_part(dss_vg_info_item_t *vg_item, int64 offset, void *buf, int32 size);
+status_t dss_load_vg_ctrl_part(dss_vg_info_item_t *vg_item, int64 offset, void *buf, int32 size, bool32 *remote);
 status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item);
 
 void dss_lock_vg_mem_x(dss_vg_info_item_t *vg_item);
@@ -105,7 +105,8 @@ status_t dss_update_volume_id_info(dss_vg_info_item_t *vg_item, uint32 id);
 
 status_t dss_write_volume_inst(
     dss_vg_info_item_t *vg_item, dss_volume_t *volume, int64 offset, const void *buf, uint32 size);
-status_t dss_read_volume_inst(dss_vg_info_item_t *vg_item, dss_volume_t *volume, int64 offset, void *buf, int32 size);
+status_t dss_read_volume_inst(
+    dss_vg_info_item_t *vg_item, dss_volume_t *volume, int64 offset, void *buf, int32 size, bool32 *remote);
 
 status_t dss_init_vol_handle(dss_vg_info_item_t *vg_item, int32 flags, dss_vol_handles_t *vol_handles);
 void dss_destroy_vol_handle(dss_vg_info_item_t *vg_item, dss_vol_handles_t *vol_handles, uint32 size);
@@ -170,7 +171,8 @@ int32 dss_get_server_status_flag();
 
 status_t dss_init_volume(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume);
 status_t dss_check_write_volume(dss_vg_info_item_t *vg_item, uint32 volumeid, int64 offset, void *buf, uint32 size);
-status_t dss_check_read_volume(dss_vg_info_item_t *vg_item, uint32 volumeid, int64 offset, void *buf, int32 size);
+status_t dss_check_read_volume(
+    dss_vg_info_item_t *vg_item, uint32 volumeid, int64 offset, void *buf, int32 size, bool32 *remote);
 status_t dss_load_vg_conf_inner(dss_vg_info_t *vgs_info, const dss_config_t *inst_cfg);
 typedef status_t (*dss_remote_read_proc_t)(
     const char *vg_name, dss_volume_t *volume, int64 offset, void *buf, int size);

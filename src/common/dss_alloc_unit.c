@@ -287,7 +287,9 @@ status_t dss_get_core_version(dss_vg_info_item_t *item, uint64 *version)
 #else
     char temp[DSS_DISK_UNIT_SIZE];
 #endif
-    status_t status = dss_load_vg_ctrl_part(item, (int64)DSS_CTRL_CORE_OFFSET, temp, (int32)DSS_DISK_UNIT_SIZE);
+    bool32 remote = CM_FALSE;
+    status_t status =
+        dss_load_vg_ctrl_part(item, (int64)DSS_CTRL_CORE_OFFSET, temp, (int32)DSS_DISK_UNIT_SIZE, &remote);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load vg core version %s.", item->entry_path);
         return status;
@@ -299,13 +301,18 @@ status_t dss_get_core_version(dss_vg_info_item_t *item, uint64 *version)
 // shoud lock in caller
 status_t dss_load_core_ctrl(dss_vg_info_item_t *item, dss_core_ctrl_t *core)
 {
-    status_t status = dss_load_vg_ctrl_part(item, (int64)DSS_CTRL_CORE_OFFSET, core, (int32)DSS_CORE_CTRL_SIZE);
+    bool32 remote = CM_FALSE;
+    status_t status =
+    dss_load_vg_ctrl_part(item, (int64)DSS_CTRL_CORE_OFFSET, core, (int32)DSS_CORE_CTRL_SIZE, &remote);
     if (status != CM_SUCCESS) {
         return status;
     }
 
-    uint32 checksum = dss_get_checksum(core, DSS_CORE_CTRL_SIZE);
-    dss_check_checksum(checksum, core->checksum);
+    if (remote == CM_FALSE) {
+        uint32 checksum = dss_get_checksum(core, DSS_CORE_CTRL_SIZE);
+        dss_check_checksum(checksum, core->checksum);
+    }
+    
     return CM_SUCCESS;
 }
 
@@ -341,8 +348,9 @@ status_t dss_get_au(dss_vg_info_item_t *item, auid_t auid, char *buf, int32 size
         return CM_ERROR;
     }
 
+    bool32 remote = CM_FALSE;
     int64_t offset = dss_get_au_offset(item, auid);
-    return dss_check_read_volume(item, (uint32)auid.volume, offset, buf, size);
+    return dss_check_read_volume(item, (uint32)auid.volume, offset, buf, size, &remote);
 }
 
 status_t dss_get_au_head(dss_vg_info_item_t *item, auid_t auid, dss_au_head_t *au_head)
@@ -391,7 +399,9 @@ status_t dss_get_volume_version(dss_vg_info_item_t *item, uint64 *version)
 #else
     char temp[DSS_DISK_UNIT_SIZE];
 #endif
-    status_t status = dss_load_vg_ctrl_part(item, (int64)DSS_CTRL_VOLUME_OFFSET, temp, (int32)DSS_DISK_UNIT_SIZE);
+    bool32 remote = CM_FALSE;
+    status_t status =
+        dss_load_vg_ctrl_part(item, (int64)DSS_CTRL_VOLUME_OFFSET, temp, (int32)DSS_DISK_UNIT_SIZE, &remote);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load vg core version %s.", item->entry_path);
         return status;
