@@ -340,7 +340,7 @@ status_t dss_connect(const char *server_locator, dss_conn_opt_t options, char *u
     }
     conn->cli_vg_handles = NULL;
     conn->pipe.options = 0;
-    conn->pipe.connect_timeout = DSS_UDS_IO_TIMEOUT;
+    conn->pipe.connect_timeout = DSS_UDS_CONNECT_TIMEOUT;
     conn->pipe.socket_timeout = DSS_UDS_SOCKET_TIMEOUT;
     conn->pipe.link.uds.sock = CS_INVALID_SOCKET;
     conn->pipe.link.uds.closed = CM_TRUE;
