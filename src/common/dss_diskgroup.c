@@ -1611,9 +1611,10 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volumeid, int64 of
         } 
     }
 
-    if (((uint64)offset > volume->attr->size) || ((uint64)size > (volume->attr->size - (uint64)offset))) {
+    uint64 volumesize = vg_item->dss_ctrl->core.volume_attrs[volumeid].size;
+    if (((uint64)offset > volumesize) || ((uint64)size > (volumesize - (uint64)offset))) {
         LOG_RUN_ERR("Read volume for standby fialed, params err, vg(%s) voiume id[%u] offset[%llu] size[%u] volume size[%llu].",
-            vg_name, volumeid, offset, size, volume->attr->size);
+            vg_name, volumeid, offset, size, volumesize);
         return CM_ERROR;
     }
     
