@@ -67,6 +67,16 @@ dss_session_ctrl_t *dss_get_session_ctrl(void)
     return &g_dss_session_ctrl;
 }
 
+uint32 dss_get_udssession_startid()
+{
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    uint32 start_sid = 0;
+    if (inst_cfg->params.inst_cnt > 1) {
+        start_sid = inst_cfg->params.channel_num + inst_cfg->params.work_thread_cnt;
+    }
+    return start_sid;
+}
+
 status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
 {
     uint32 i, id;
@@ -76,10 +86,7 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     cm_spin_lock(&g_dss_session_ctrl.lock, NULL);
 
-    uint32 start_sid = 0;
-    if (inst_cfg->params.inst_cnt > 1) {
-        start_sid = inst_cfg->params.channel_num + inst_cfg->params.work_thread_cnt;
-    }
+    uint32 start_sid = dss_get_udssession_startid();
     uint32 end_sid = start_sid + inst_cfg->params.cfg_session_num;
 
     for (i = start_sid; i < end_sid; i++) {
