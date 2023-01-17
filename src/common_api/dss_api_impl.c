@@ -1380,9 +1380,13 @@ static status_t dss_alloc_block_core(
         // allocate block
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
 
-        status = dss_apply_extending_file(conn, handle, size, is_read, rw_ctx.offset);
-        DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to extend file."));
+        if (!is_read) {
+            status = dss_apply_extending_file(conn, handle, size, is_read, rw_ctx.offset);
+            DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to extend file entry fs block."));
+        }
 
+        status = dss_apply_refresh_file(conn, context, entry_fs_block->head.id);
+        DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to refresh entry fs block."));
         DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session, NULL);
         second_block_id = entry_fs_block->bitmap[block_count];
         *second_block = (dss_fs_block_t *)dss_find_block_in_shm(
@@ -1596,13 +1600,15 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
             // allocate au or refresh second block
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-            if (is_read) {
-                status = dss_apply_refresh_file(conn, context, second_block->head.id);
-            } else {
+            if (!is_read) {
                 status = dss_apply_extending_file(conn, handle, size, is_read, rw_ctx.offset);
+                DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to extend file second block."));
             }
-            DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to extend file or refresh second block."));
-
+            auid = second_block->bitmap[block_au_count];
+            if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
+                status = dss_apply_refresh_file(conn, context, second_block->head.id);
+                DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to refresh second block."));
+            }
             DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session, NULL);
             auid = second_block->bitmap[block_au_count];
         }
@@ -2381,10 +2387,15 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, bool32 is_read, int *f
     if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
         // allocate au
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-
-        status = dss_apply_extending_file(conn, handle, size, is_read, rw_ctx.offset);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to extend file."));
-
+        if (!is_read) {
+            status = dss_apply_extending_file(conn, handle, size, is_read, rw_ctx.offset);
+            DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to extend file second block."));
+        }
+        auid = second_block->bitmap[block_au_count];
+        if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
+            status = dss_apply_refresh_file(conn, context, second_block->head.id);
+            DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to refresh second block."));
+        }
         DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session, NULL);
         auid = second_block->bitmap[block_au_count];
     }
