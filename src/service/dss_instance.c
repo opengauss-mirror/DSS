@@ -105,13 +105,13 @@ static status_t instance_init_ga(dss_instance_t *inst)
 
 static status_t dss_init_thread(dss_instance_t *inst)
 {
-    uint32 cfg_session_num = inst->inst_cfg.params.cfg_session_num;
-    inst->threads = (thread_t *)cm_malloc(cfg_session_num * (uint32)sizeof(thread_t));
+    uint32 size = inst->inst_cfg.params.cfg_session_num + dss_get_udssession_startid();
+    inst->threads = (thread_t *)cm_malloc(size * (uint32)sizeof(thread_t));
     if (inst->threads == NULL) {
         return CM_ERROR;
     }
-    errno_t errcode = memset_s(inst->threads, (cfg_session_num * (uint32)sizeof(thread_t)), 0x00,
-        (cfg_session_num * (uint32)sizeof(thread_t)));
+    errno_t errcode = 
+        memset_s(inst->threads, (size * (uint32)sizeof(thread_t)), 0x00, (size * (uint32)sizeof(thread_t)));
     securec_check_ret(errcode);
     return CM_SUCCESS;
 }
