@@ -107,13 +107,19 @@ static void dss_clean_server()
 
 static void handle_main_wait(void)
 {
+    int64 periods = 0;
+    uint32 interval = 500;
     do {
         if (g_dss_instance.abort_status == CM_TRUE) {
             break;
         }
         dss_check_peer_inst(&g_dss_instance, DSS_INVALID_64);
-        dss_ssl_ca_cert_expire();
-        cm_sleep(500);
+        if (periods == MILLISECS_PER_SECOND * SECONDS_PER_DAY / interval) {
+            periods = 0;
+            dss_ssl_ca_cert_expire();
+        }
+        cm_sleep(interval);
+        periods++;
     } while (CM_TRUE);
     dss_clean_server();
 }

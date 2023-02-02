@@ -36,7 +36,6 @@ extern "C" {
 #endif
 
 dss_config_t *g_inst_cfg = NULL;
-
 // clang-format off
 static config_item_t g_dss_params[] = {
     /* name, isdefault, attr, default_value, value, runtime_value, description, range, datatype, comment,
@@ -113,6 +112,8 @@ static config_item_t g_dss_params[] = {
 #endif
     { "_AUDIT_LEVEL",           CM_TRUE, CM_FALSE, "1",    NULL, NULL, "-", "[0,255]",  "GS_TYPE_INTEGER", NULL,
         34, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_audit_level, dss_notify_audit_level, NULL, NULL},
+    { "SSL_PERIOD_DETECTION", CM_TRUE, CM_FALSE, "7", NULL, NULL, "-", "[1,180]",
+        "GS_TYPE_INTEGER", NULL, 35, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 // clang-format on
@@ -304,6 +305,15 @@ status_t dss_load_mes_ssl(dss_config_t *inst_cfg)
     value = cm_get_config_value(&inst_cfg->config, "SSL_CERT_NOTIFY_TIME");
     status = dss_set_ssl_param("SSL_CERT_NOTIFY_TIME", value);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CERT_NOTIFY_TIME"));
+
+    value = cm_get_config_value(&inst_cfg->config, "SSL_PERIOD_DETECTION");
+    status = cm_str2uint32(value, &inst_cfg->params.ssl_detect_day);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_PERIOD_DETECTION"));
+    if (inst_cfg->params.ssl_detect_day > DSS_MAX_SSL_PERIOD_DETECTION ||
+        inst_cfg->params.ssl_detect_day < DSS_MIN_SSL_PERIOD_DETECTION) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_PERIOD_DETECTION");
+        return CM_ERROR;
+    }
 
     value = cm_get_config_value(&inst_cfg->config, "SSL_PWD_CIPHERTEXT");
     status = dss_set_ssl_param("SSL_PWD_CIPHERTEXT", value);
@@ -498,18 +508,10 @@ status_t dss_set_ssl_param(const char *param_name, const char *param_value)
     return CM_SUCCESS;
 }
 
-#define SSL_CERT_CHK_TIME 2  // check the ssl certificate at 2 o'clock every day
-static bool32 g_chk_ssl_first = CM_TRUE;
-
 void dss_ssl_ca_cert_expire(void)
 {
-    date_detail_t detail;
-    cm_now_detail(&detail);
-    if ((detail.hour == (uint8)SSL_CERT_CHK_TIME) && g_chk_ssl_first) {
-        g_chk_ssl_first = CM_FALSE;
+    if ((int32)(g_timer()->systime / SECONDS_PER_DAY) % g_inst_cfg->params.ssl_detect_day == 0) {
         (void)mes_chk_ssl_cert_expire();
-    } else if (detail.hour != (uint8)SSL_CERT_CHK_TIME && !g_chk_ssl_first) {
-        g_chk_ssl_first = CM_TRUE;
     }
 }
 
