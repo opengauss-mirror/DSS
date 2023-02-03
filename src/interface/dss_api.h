@@ -97,7 +97,7 @@ typedef struct st_dss_stat {
 #define DSS_LOCAL_MINOR_VER_WEIGHT 1000
 #define DSS_LOCAL_MAJOR_VERSION 0
 #define DSS_LOCAL_MINOR_VERSION 0
-#define DSS_LOCAL_VERSION 2
+#define DSS_LOCAL_VERSION 3
 
 typedef struct st_dss_dirent *dss_dir_item_t;
 typedef struct st_dss_stat *dss_stat_info_t;
@@ -149,7 +149,8 @@ DSS_DECLARE void dss_refresh_logger(char *log_field, unsigned long long *value);
 // connection
 DSS_DECLARE int dss_set_svr_path(const char *conn_path);
 // instance param
-DSS_DECLARE int dss_set_server_status(dss_server_status_t status);
+DSS_DECLARE int dss_set_main_inst();
+DSS_DECLARE int dss_get_inst_status();
 
 DSS_DECLARE int dss_stat(const char *path, dss_stat_info_t item);
 DSS_DECLARE int dss_lstat(const char *path, dss_stat_info_t item);

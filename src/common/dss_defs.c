@@ -55,9 +55,10 @@ static char *g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_UPDATE_WRITTEN_SIZE)] = "update written size",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_STOP_SERVER)] = "stopserver",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_SETCFG)] = "setcfg",
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SET_STATUS)] = "setstatus",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_SYMLINK)] = "symlink",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_UNLINK)] = "unlink",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SET_MAIN_INST)] = "set main inst",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SWITCH_LOCK)] = "switch cm lock",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_HOME)] = "get home",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST_FILE)] = "exist file",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST_DIR)] = "exist dir",
@@ -65,6 +66,7 @@ static char *g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_READLINK)] = "readlink",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_FTID_BY_PATH)] = "get ftid by path",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GETCFG)] = "getcfg",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_INST_STATUS)] = "get inst status",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXEC_REMOTE)] = "exec remote",
 };
 

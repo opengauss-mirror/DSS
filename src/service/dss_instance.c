@@ -28,6 +28,7 @@
 #include "cm_error.h"
 #include "dss_errno.h"
 #include "dss_defs.h"
+#include "dss_api.h"
 #include "dss_file.h"
 #include "dss_malloc.h"
 #include "dss_mes.h"
@@ -220,6 +221,7 @@ status_t dss_recover_from_instance(dss_instance_t *inst)
     char *log_buf = inst->kernel_instance->log_ctrl.log_buf;
     dss_redo_batch_t *batch = (dss_redo_batch_t *)log_buf;
     batch->size = sizeof(dss_redo_batch_t);
+    batch->count = 0;
     dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[0];
     if (dss_check_vg_ctrl_valid(vg_item) != CM_SUCCESS) {
         DSS_FREE_POINT(batch);
@@ -253,21 +255,91 @@ status_t dss_recover_from_instance(dss_instance_t *inst)
     return status;
 }
 
+status_t dss_recover_when_change_status(dss_instance_t *inst)
+{
+    return dss_recover_from_instance(inst);
+}
+
+bool32 dss_config_cm()
+{
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    char *value = cm_get_config_value(&inst_cfg->config, "DSS_CM_SO_NAME");
+    if (value == NULL || strlen(value) == 0) {
+        LOG_RUN_INF("dss cm config of DSS_CM_SO_NAME is empty.");
+        return CM_FALSE;
+    }
+    return CM_TRUE;
+}
+
+/* For startup:
+   (1) if master_id == cur_id and status is recovery,try to recover, then set status open;
+   (2) if master_id != cur_id and status is recovery, just set status open. When metadata needs to be modified,
+       just send messages to master_id, if master_id is in recovery, just reject;
+*/
+status_t dss_change_instance_status_to_open(dss_instance_t *cur_inst, uint32 curr_id, uint32 master_id)
+{
+    status_t ret;
+    if (curr_id == master_id) {
+        LOG_RUN_INF("instance [%u] begin to recover.", master_id);
+        ret = dss_recover_when_change_status(cur_inst);
+        if (ret != CM_SUCCESS) {
+            return ret;
+        }
+    }
+    cur_inst->status = ZFS_STATUS_OPEN;
+    return CM_SUCCESS;
+}
+
+/*
+    1、NO CM:every node can do readwrite
+    2、CM:get cm lock to be master
+    3、ENABLE_DSSTEST: for test, select min id as master
+*/
+status_t dss_get_instance_log_buf_no_cm(dss_instance_t *inst)
+{
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    uint32 curr_id = (uint32)inst_cfg->params.inst_id;
+    if (inst_cfg->params.inst_cnt <= 1) {
+        dss_set_master_id(curr_id);
+        dss_set_server_status_flag(DSS_STATUS_READWRITE);
+        return dss_change_instance_status_to_open(inst, curr_id, curr_id);
+    }
+#ifdef ENABLE_DSSTEST
+    uint32 i;
+    for (i = 0; i < DSS_MAX_INSTANCES; i++) {
+        if (inst_cfg->params.ports[i] != 0) {
+            dss_set_master_id(i);
+            LOG_RUN_INF("Set min id %u as master id.", i);
+            break;
+        }
+    }
+    if (i == curr_id) {
+        dss_set_server_status_flag(DSS_STATUS_READWRITE);
+        return dss_change_instance_status_to_open(inst, curr_id, curr_id);
+    } else {
+        dss_set_server_status_flag(DSS_STATUS_READONLY);
+        inst->status = ZFS_STATUS_OPEN;
+    }
+#else
+    if (!dss_config_cm()) {
+        dss_set_master_id(curr_id);
+        dss_set_server_status_flag(DSS_STATUS_READWRITE);
+        return dss_change_instance_status_to_open(inst, curr_id, curr_id);
+    }
+#endif
+    return CM_SUCCESS;
+}
 /*
    1、when create first vg, init global log buffer;
-   2、when dss_server start up, load log_buf, if nouse, ignore; if inuse, sort by lsn and recover;
-   3、when session execute, allocate log split and record redo log;
+   2、when dss_server start up, init memory log buf;
 */
-status_t dss_get_instance_log_buf_and_recover(dss_instance_t *inst)
+status_t dss_get_instance_log_buf(dss_instance_t *inst)
 {
-#ifndef OPENGAUSS
-    return CM_SUCCESS;
-#endif
     status_t ret = dss_alloc_instance_log_buf(inst);
     if (ret != CM_SUCCESS) {
         return ret;
     }
-    return dss_recover_from_instance(inst);
+    return dss_get_instance_log_buf_no_cm(inst);
 }
 
 static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
@@ -283,7 +355,7 @@ static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
     errno_t errcode = memset_s(&g_dss_kernel_instance, sizeof(g_dss_kernel_instance), 0, sizeof(g_dss_kernel_instance));
     securec_check_ret(errcode);
     inst->kernel_instance = &g_dss_kernel_instance;
-    status = dss_get_instance_log_buf_and_recover(inst);
+    status = dss_get_instance_log_buf(inst);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to get log buf"));
     uint32 sess_cnt = inst->inst_cfg.params.cfg_session_num + inst->inst_cfg.params.work_thread_cnt +
                       inst->inst_cfg.params.channel_num;
@@ -431,48 +503,6 @@ void dss_check_peer_by_inst(dss_instance_t *inst, uint64 inst_id)
     dss_check_peer_inst(inst, inst_id);
 }
 
-bool32 dss_check_inst_workstatus(uint32 instid)
-{
-    dss_instance_t *inst = &g_dss_instance;
-    cm_spin_lock(&inst->inst_work_lock, NULL);
-    cm_res_stat_ptr_t res = cm_res_get_stat(&inst->cm_res.mgr);
-    if (res == NULL) {
-        cm_spin_unlock(&inst->inst_work_lock);
-        return CM_FALSE;
-    }
-    int insttotal = cm_res_get_instance_count(&inst->cm_res.mgr, res);
-    for (int idx = 0; idx < insttotal; idx++) {
-        const cm_res_inst_info_ptr_t inst_res = cm_res_get_instance_info(&inst->cm_res.mgr, res, (unsigned int)idx);
-        if (inst_res == NULL) {
-            cm_res_free_stat(&inst->cm_res.mgr, res);
-            cm_spin_unlock(&inst->inst_work_lock);
-            return CM_FALSE;
-        }
-
-        int resid = cm_res_get_inst_instance_id(&inst->cm_res.mgr, inst_res);
-        int workstatus = cm_res_get_inst_is_work_member(&inst->cm_res.mgr, inst_res);
-        if ((workstatus != 0) && ((uint32)resid == instid)) {
-            cm_res_free_stat(&inst->cm_res.mgr, res);
-            cm_spin_unlock(&inst->inst_work_lock);
-            return CM_TRUE;
-        }
-        
-        if (workstatus == 0) {
-            LOG_RUN_INF("dss instance [%d] is not work member. May be kicked off by cm.", resid);
-            if ((uint32)resid == instid) {
-                cm_res_free_stat(&inst->cm_res.mgr, res);
-                cm_spin_unlock(&inst->inst_work_lock);
-                return CM_FALSE;
-            }
-        }
-    }
-
-    LOG_RUN_INF("dss instance [%d] is not work member. May be kicked off by cm.", instid);
-    cm_res_free_stat(&inst->cm_res.mgr, res);
-    cm_spin_unlock(&inst->inst_work_lock);
-    return CM_FALSE;
-}
-
 static void dss_check_peer_by_cm(dss_instance_t *inst)
 {
     cm_res_stat_ptr_t res = cm_res_get_stat(&inst->cm_res.mgr);
@@ -532,6 +562,116 @@ void dss_init_cm_res(dss_instance_t *inst)
     }
     cm_spin_unlock(&cm_res->init_lock);
     return;
+}
+
+#ifdef ENABLE_DSSTEST
+status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
+{
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    for (int i = 0; i < DSS_MAX_INSTANCES; i++) {
+        if (inst_cfg->params.ports[i] != 0) {
+            *master_id = i;
+            LOG_RUN_INF("Set min id %u as master id.", i);
+            break;
+        }
+    }
+    LOG_RUN_INF("master id is %u when get cm lock.", *master_id);
+    return CM_SUCCESS;
+}
+#else
+status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
+{
+    int ret = cm_res_get_lock_owner(&cm_res->mgr, DSS_CM_LOCK, master_id);
+    if (ret == CM_RES_TIMEOUT) {
+        return CM_ERROR;
+    } else if (ret == CM_RES_SUCCESS) {
+        return CM_SUCCESS;
+    } else {
+        *master_id = CM_INVALID_ID32;
+    }
+    return CM_SUCCESS;
+}
+#endif
+
+// get cm lock owner, if no owner, try to become.master_id can not be DSS_INVALID_ID32.
+uint32 dss_get_cm_lock_owner(dss_instance_t *inst)
+{
+    dss_cm_res *cm_res = &inst->cm_res;
+    uint32 master_id = DSS_INVALID_ID32;
+    status_t ret = CM_SUCCESS;
+    date_t time_start = g_timer()->now;
+    date_t time_now = 0;
+    while (CM_TRUE) {
+        time_now = g_timer()->now;
+        if (time_now - time_start > DSS_MAX_FAIL_TIME_WITH_CM * MICROSECS_PER_SECOND) {
+            LOG_RUN_ERR("[DSS] ABORT INFO: Fail to get lock owner for %d seconds, exit.", DSS_MAX_FAIL_TIME_WITH_CM);
+            cm_fync_logfile();
+            _exit(1);
+        }
+        ret = dss_get_cm_res_lock_owner(cm_res, &master_id);
+        if (ret != CM_SUCCESS) {
+            DSS_GET_CM_LOCK_LONG_SLEEP;
+            continue;
+        }
+        if (master_id == DSS_INVALID_ID32) {
+            (void)cm_res_lock(&cm_res->mgr, DSS_CM_LOCK);
+            continue;
+        }
+        break;
+    }
+    return master_id;
+}
+
+/*
+    1、old_master_id == master_id, just return;
+    2、old_master_id ！= master_id, just indicates that the master has been reselected.so to juge whether recover.
+*/
+void dss_get_cm_lock_and_recover(dss_instance_t *inst) 
+{
+    uint32 old_master_id = dss_get_master_id();
+    uint32 master_id = dss_get_cm_lock_owner(inst);
+    if (old_master_id == master_id) {
+        return;
+    }
+    dss_set_master_id(master_id);
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    uint32 curr_id = (uint32)inst_cfg->params.inst_id;
+    if (master_id != curr_id) {
+        dss_set_server_status_flag(DSS_STATUS_READONLY);
+        inst->status = ZFS_STATUS_OPEN;
+        return;
+    }
+    if (inst->status == ZFS_STATUS_SWITCH) {
+        return;
+    }
+    dss_wait_session_pause(inst);
+    cm_spin_lock(&inst->switch_lock, NULL);
+    inst->status = ZFS_STATUS_RECOVERY;
+    LOG_RUN_INF("master_id is %u when get cm lock to do recovery.", master_id);
+    status_t ret = dss_change_instance_status_to_open(inst, curr_id, master_id);
+    if (ret != CM_SUCCESS) {
+        cm_spin_unlock(&inst->switch_lock);
+        LOG_RUN_ERR("[DSS] ABORT INFO: Recover failed when get cm lock.");
+        cm_fync_logfile();
+        _exit(1);
+    }
+    dss_session_t *session = NULL;
+    if (dss_create_session(NULL, &session) != CM_SUCCESS) {
+        cm_spin_unlock(&inst->switch_lock);
+        LOG_RUN_ERR("[DSS] ABORT INFO: Refresh meta info failed when create session.");
+        cm_fync_logfile();
+        _exit(1);
+    }
+    if (dss_refresh_meta_info(session) != CM_SUCCESS) {
+        cm_spin_unlock(&inst->switch_lock);
+        LOG_RUN_ERR("[DSS] ABORT INFO: Refresh meta info failed after recovery.");
+        cm_fync_logfile();
+        _exit(1);
+    }
+    dss_destroy_session(session);
+    dss_set_session_running(inst);
+    dss_set_server_status_flag(DSS_STATUS_READWRITE);
+    cm_spin_unlock(&inst->switch_lock);
 }
 
 static void dss_check_peer_inst_inner(dss_instance_t *inst)

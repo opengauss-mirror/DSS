@@ -33,57 +33,60 @@
 #include "dss_api.h"
 #include "dss_service.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 static inline bool32 dss_need_exec_remote(bool32 exec_on_active, bool32 local_req)
 {
-    return ((dss_is_readonly() == CM_TRUE) && (exec_on_active) && (local_req == CM_TRUE));
+    dss_config_t *cfg = dss_get_inst_cfg();
+    uint32 master_id = dss_get_master_id();
+    uint32 curr_id = (uint32)(cfg->params.inst_id);
+    return ((curr_id != master_id) && (exec_on_active) && (local_req == CM_TRUE));
 }
 
-status_t dss_get_exec_nodeid(dss_session_t *session, uint32 *srcid, uint32 *dstid)
+#define DSS_PROCESS_GET_MASTER_ID 50
+void dss_get_exec_nodeid(dss_session_t *session, uint32 *currid, uint32 *remoteid)
 {
     dss_config_t *cfg = dss_get_inst_cfg();
-    uint32 remoteid = dss_get_master_id();
-    uint32 currid = (uint32)(cfg->params.inst_id);
-    status_t ret = CM_ERROR;
-    if (remoteid == DSS_INVALID_ID32) {
-        ret = dss_polling_master_id(session);
-        if (ret != CM_SUCCESS) {
-            LOG_RUN_ERR("dss server polling master dss server id failed, current dss node(%u).", currid);
-            return ret;
-        }
-        remoteid = dss_get_master_id();
-        if (remoteid == DSS_INVALID_ID32) {
-            LOG_RUN_ERR("dss server polling master dss server id error.");
-            return CM_ERROR;
-        }
+    *currid = (uint32)(cfg->params.inst_id);
+    *remoteid = dss_get_master_id();
+    while (*remoteid == DSS_INVALID_ID32) {
+        cm_sleep(DSS_PROCESS_GET_MASTER_ID);
+        *remoteid = dss_get_master_id();
     }
-
-    *dstid = remoteid;
-    *srcid = currid;
-    return CM_SUCCESS;
+    LOG_DEBUG_INF("Start processing remote requests(%d), remote node(%u),current node(%u).",
+        (session->recv_pack.head == NULL) ? -1 : session->recv_pack.head->cmd, *remoteid, *currid);
+    return;
 }
 
+#define DSS_PROCESS_REMOTE_INTERVAL 50
 static status_t dss_process_remote(dss_session_t *session)
 {
     uint32 remoteid = DSS_INVALID_ID32;
     uint32 currid = DSS_INVALID_ID32;
     status_t ret = CM_ERROR;
-
-    if (dss_get_exec_nodeid(session, &currid, &remoteid)) {
-        return CM_ERROR;
-    }
+    uint32 i = 0;
+    dss_get_exec_nodeid(session, &currid, &remoteid);
    
     LOG_DEBUG_INF("Start processing remote requests(%d), remote node(%u),current node(%u).",
         session->recv_pack.head->cmd, remoteid, currid);
-    ret = dss_exec_sync(session, remoteid, currid);
-    if (ret != CM_SUCCESS) {
-        LOG_DEBUG_ERR(
-            "End of processing the remote request(%d) failed, remote node(%u),current node(%u), result code(%d).",
-            session->recv_pack.head->cmd, remoteid, currid, ret);
-        return ret;
+    status_t remote_result = CM_ERROR;
+    while (CM_TRUE) {
+        ret = dss_exec_sync(session, remoteid, currid, &remote_result);
+        if (ret != CM_SUCCESS) {
+            LOG_DEBUG_ERR(
+                "End of processing the remote request(%d) failed, remote node(%u),current node(%u), result code(%d).",
+                session->recv_pack.head->cmd, remoteid, currid, ret);
+            cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
+            dss_get_exec_nodeid(session, &currid, &remoteid);
+            continue;
+        }
+        break;
     }
     LOG_DEBUG_INF("The remote request(%d) is processed successfully, remote node(%u),current node(%u).",
         session->recv_pack.head->cmd, remoteid, currid);
-    return ret;
+    return remote_result;
 }
 
 static status_t dss_diag_proto_type(dss_session_t *session)
@@ -125,6 +128,7 @@ static void dss_clean_open_files(dss_session_t *session)
     LOG_RUN_INF("Clean open files for pid:%llu.", session->cli_info.cli_pid);
 }
 
+#define DSS_SESSION_PAUSED_WAIT 50
 void dss_session_entry(thread_t *thread)
 {
     dss_session_t *session = (dss_session_t *)thread->argument;
@@ -134,7 +138,6 @@ void dss_session_entry(thread_t *thread)
     dss_init_packet(&session->send_pack, CM_FALSE);
 
     cm_set_thread_name("DSS_SERVER");
-
     session->pipe.socket_timeout = (int32)CM_SOCKET_TIMEOUT;
 
     /* fetch protocol type */
@@ -144,14 +147,24 @@ void dss_session_entry(thread_t *thread)
         LOG_RUN_ERR("Failed to get protocol type!");
         return;
     }
+    session->status = DSS_THREAD_STATUS_RUNNING;
     session->curr_lsn = cm_get_curr_lsn();
     (void)cm_atomic_inc(&g_dss_instance.thread_cnt);
     while (!thread->closed) {
+        if (session->status == DSS_THREAD_STATUS_PAUSED) {
+            cm_sleep(DSS_SESSION_PAUSED_WAIT);
+            continue;
+        }
         /* process request command */
         if ((dss_process_command(session) != CM_SUCCESS) && (session->is_closed == CM_TRUE)) {
             break;
         }
+        if (session->status == DSS_THREAD_STATUS_PAUSING) {
+            session->status = DSS_THREAD_STATUS_PAUSED;
+            LOG_DEBUG_INF("Set Session:%u paused.", session->id);
+        }
     }
+    session->status = DSS_THREAD_STATUS_IDLE;
     LOG_RUN_INF("Session:%u end to do service.", session->id);
 
     session->is_closed = CM_TRUE;
@@ -185,7 +198,7 @@ static void dss_return_error(dss_session_t *session)
     (void)dss_put_str_with_cutoff(send_pack, message);
     status_t status = dss_write(&session->pipe, send_pack);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to reply,size:%u.", send_pack->head->size);
+        LOG_DEBUG_ERR("Failed to reply,size:%u, cmd:%u.", send_pack->head->size, send_pack->head->cmd);
     }
     cm_reset_error();
 }
@@ -209,7 +222,7 @@ static void dss_return_success(dss_session_t *session)
     }
     status = dss_write(&session->pipe, send_pack);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to reply message,size:%u.", send_pack->head->size);
+        LOG_DEBUG_ERR("Failed to reply message,size:%u, cmd:%u.", send_pack->head->size, send_pack->head->cmd);
     }
 }
 
@@ -246,9 +259,7 @@ static status_t dss_process_rmdir(dss_session_t *session)
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &dir));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &recursive));
-    int32 ret =
-        snprintf_s(session->audit_info.resource, DSS_FILE_PATH_MAX_LENGTH, DSS_FILE_PATH_MAX_LENGTH - 1, "%s", dir);
-    DSS_SECUREC_SS_RETURN_IF_ERROR(ret, CM_ERROR);
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", dir));
     return dss_remove_dir(session, (const char *)dir, (bool)recursive);
 }
 
@@ -729,22 +740,63 @@ static status_t dss_process_get_ftid_by_path(dss_session_t *session)
     return CM_SUCCESS;
 }
 
-static status_t dss_process_set_status(dss_session_t *session)
+// get dssserver status:open, recovery or switch
+static status_t dss_process_get_inst_status(dss_session_t *session)
 {
-    int32 dss_status;
-    dss_init_get(&session->recv_pack);
-    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &dss_status));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%d", dss_status));
-    LOG_DEBUG_INF("dss server current status(%d), set status(%d).", dss_get_server_status_flag(), dss_status);
-    bool32 need_refresh = (dss_status == DSS_STATUS_READWRITE) && (!dss_is_readwrite());
-    dss_set_server_status_flag(dss_status);
-    if (need_refresh == CM_TRUE) {
-        status_t status = dss_refresh_meta_info(session);
-        DSS_RETURN_IFERR2(
-            status, LOG_DEBUG_ERR("dss server set status(%d) refresh meta fialed, result(%d).", dss_status, status));
-    }
-    LOG_RUN_INF("Dss set server status %d.", dss_status);
+    dss_instance_status_t status = g_dss_instance.status;
+    session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
+    *(uint32 *)session->send_info.str = (uint32)status;
+    session->send_info.len = sizeof(uint32);
+    DSS_RETURN_IF_ERROR(
+        dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "status:%u", (uint32)status));
+    DSS_LOG_DEBUG_OP("Server status is %u.", (uint32)status);
     return CM_SUCCESS;
+}
+
+static void dss_wait_session_pause_inner(dss_session_t *session)
+{
+    if (session != NULL && session->status == DSS_THREAD_STATUS_RUNNING) {
+        session->status = DSS_THREAD_STATUS_PAUSING;
+        LOG_DEBUG_INF("Succeed to pause session: %d.", session->id);
+        while (session->status != DSS_THREAD_STATUS_PAUSED && !session->is_closed) {
+            cm_sleep(1);
+        }
+    }
+}
+
+void dss_wait_session_pause(dss_instance_t *inst)
+{
+    uds_lsnr_t *lsnr = &inst->lsnr;
+    LOG_DEBUG_INF("Begin to set session paused.");
+    cs_pause_uds_lsnr(lsnr);
+    uint32 start_sid = dss_get_udssession_startid();
+    uint32 end_sid = start_sid + inst->inst_cfg.params.cfg_session_num;
+    if (inst->threads != NULL) {
+        for (uint32 i = start_sid; i < end_sid; i++) {
+            dss_session_t *session = (dss_session_t *)inst->threads[i].argument;
+            dss_wait_session_pause_inner(session);
+        }
+    }
+    LOG_DEBUG_INF("Succeed to pause all session.");
+}
+
+void dss_set_session_running(dss_instance_t *inst)
+{
+    LOG_DEBUG_INF("Begin to set session running.");
+    uds_lsnr_t *lsnr = &inst->lsnr;
+    uint32 start_sid = dss_get_udssession_startid();
+    uint32 end_sid = start_sid + inst->inst_cfg.params.cfg_session_num;
+    if (inst->threads != NULL) {
+        for (uint32 i = start_sid; i < end_sid; i++) {
+            dss_session_t *session = (dss_session_t *)inst->threads[i].argument;
+            if (session != NULL && session->status == DSS_THREAD_STATUS_PAUSED) {
+                session->status = DSS_THREAD_STATUS_RUNNING;
+                LOG_DEBUG_INF("Succeed to run session: %d.", session->id);
+            }
+        }
+    }
+    lsnr->status = LSNR_STATUS_RUNNING;
+    LOG_DEBUG_INF("Succeed to run all sessions.");
 }
 
 static status_t dss_process_setcfg(dss_session_t *session)
@@ -788,6 +840,96 @@ static status_t dss_process_stop_server(dss_session_t *session)
     return CM_SUCCESS;
 }
 
+// process switch lock,just master id can do
+static status_t dss_process_switch_lock(dss_session_t *session)
+{
+    uint32 master_id = dss_get_master_id();
+    dss_config_t *cfg = dss_get_inst_cfg();
+    uint32 curr_id = (uint32)(cfg->params.inst_id);
+    int32 switch_id;
+    dss_init_get(&session->recv_pack);
+    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &switch_id));
+    if ((uint32)switch_id == master_id) {
+        LOG_DEBUG_INF("switchid is equal to current master_id, which is %u.", master_id);
+        return CM_SUCCESS;
+    }
+    if (master_id != curr_id) {
+        LOG_DEBUG_ERR("current id is %u, just master id %u can do switch lock.", curr_id, master_id);
+        return CM_ERROR;
+    }
+    dss_wait_session_pause(&g_dss_instance);
+    g_dss_instance.status = ZFS_STATUS_SWITCH;
+    status_t ret = CM_SUCCESS;
+    // trans lock
+    if (g_dss_instance.cm_res.is_valid) {
+        dss_set_server_status_flag(DSS_STATUS_READONLY);
+        ret = cm_res_trans_lock(&g_dss_instance.cm_res.mgr, DSS_CM_LOCK, (uint32)switch_id);
+        if (ret != CM_SUCCESS) {
+            LOG_DEBUG_ERR("cm do switch lock failed from %u to %u.", curr_id, master_id);
+            return ret;
+        }
+        dss_set_master_id((uint32)switch_id);
+        dss_set_session_running(&g_dss_instance);
+        g_dss_instance.status = ZFS_STATUS_OPEN;
+    } else {
+        dss_set_session_running(&g_dss_instance);
+        g_dss_instance.status = ZFS_STATUS_OPEN;
+        LOG_DEBUG_ERR("Only with cm can switch lock.");
+        return CM_ERROR;
+    }
+    DSS_LOG_DEBUG_OP("Main server switch lock from %u to %u successfully.", curr_id, (uint32)switch_id);
+    return CM_SUCCESS;
+}
+/*
+    1 curr_id == master_id, just return success;
+    2 curr_id != master_id, just send message to master_id to do switch lock
+    then master_id to do:
+    (1) set status switch
+    (2) lsnr pause
+    (3) trans lock
+*/
+static status_t dss_process_set_main_inst(dss_session_t *session)
+{
+    uint32 master_id = dss_get_master_id();
+    dss_config_t *cfg = dss_get_inst_cfg();
+    uint32 curr_id = (uint32)(cfg->params.inst_id);
+    status_t status = CM_ERROR;
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+        session->audit_info.resource, DSS_AUDIT_MODIFY, "set %u as master", curr_id));
+    cm_spin_lock(&g_dss_instance.switch_lock, NULL);
+    if (master_id == curr_id) {
+        DSS_LOG_DEBUG_OP("Main server %u from %u set successfully.", curr_id, master_id);
+        cm_spin_unlock(&g_dss_instance.switch_lock);
+        return CM_SUCCESS;
+    }
+    while (CM_TRUE) {
+        dss_init_get(&session->recv_pack);
+        session->recv_pack.head->cmd = DSS_CMD_SWITCH_LOCK;
+        LOG_DEBUG_INF("Try to switch lock to %u by %u.", curr_id, master_id);
+        (void)dss_put_int32(&session->recv_pack, curr_id);
+        status = dss_process_remote(session);
+        if (status == CM_SUCCESS) {
+            break;
+        } else {
+            LOG_DEBUG_ERR("Failed to switch lock to %u by %u.", curr_id, master_id);
+            cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
+        }
+    }
+    g_dss_instance.status = ZFS_STATUS_SWITCH;
+    dss_set_master_id(curr_id);
+    dss_set_server_status_flag(DSS_STATUS_READWRITE);
+    status = dss_refresh_meta_info(session);
+    if (status != CM_SUCCESS) {
+        cm_spin_unlock(&g_dss_instance.switch_lock);
+        LOG_DEBUG_ERR("dss instance %u refresh meta failed, result(%d).", curr_id, status);
+        return CM_ERROR;
+    }
+    g_dss_instance.status = ZFS_STATUS_OPEN;
+    DSS_LOG_DEBUG_OP("Main server %u from %u set successfully.", curr_id, master_id);
+    cm_spin_unlock(&g_dss_instance.switch_lock);
+    return CM_SUCCESS;
+}
+
 // clang-format off
 static dss_cmd_hdl_t g_dss_cmd_handle[] = {
     // modify
@@ -816,9 +958,10 @@ static dss_cmd_hdl_t g_dss_cmd_handle[] = {
     { DSS_CMD_UPDATE_WRITTEN_SIZE, dss_process_update_file_written_size, NULL, CM_TRUE },
     { DSS_CMD_STOP_SERVER, dss_process_stop_server, NULL, CM_FALSE },
     { DSS_CMD_SETCFG, dss_process_setcfg, NULL, CM_FALSE },
-    { DSS_CMD_SET_STATUS, dss_process_set_status, NULL, CM_FALSE },
     { DSS_CMD_SYMLINK, dss_process_symlink, NULL, CM_TRUE },
     { DSS_CMD_UNLINK, dss_process_unlink, NULL, CM_TRUE },
+    { DSS_CMD_SET_MAIN_INST, dss_process_set_main_inst, NULL, CM_FALSE },
+    { DSS_CMD_SWITCH_LOCK, dss_process_switch_lock, NULL, CM_FALSE },
     // query
     { DSS_CMD_GET_HOME, dss_process_get_home, NULL, CM_FALSE },
     { DSS_CMD_EXIST_FILE, dss_process_exist, NULL, CM_FALSE },
@@ -827,6 +970,7 @@ static dss_cmd_hdl_t g_dss_cmd_handle[] = {
     { DSS_CMD_READLINK, dss_process_readlink, NULL, CM_FALSE },
     { DSS_CMD_GET_FTID_BY_PATH, dss_process_get_ftid_by_path, NULL, CM_FALSE },
     { DSS_CMD_GETCFG, dss_process_getcfg, NULL, CM_FALSE },
+    { DSS_CMD_GET_INST_STATUS, dss_process_get_inst_status, NULL, CM_FALSE },
 };
 
 dss_cmd_hdl_t g_dss_remote_handle = { DSS_CMD_EXEC_REMOTE, dss_process_remote, NULL, CM_FALSE };
@@ -862,7 +1006,8 @@ static dss_cmd_hdl_t *dss_get_cmd_handle(int32 cmd, bool32 local_req)
 static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
 {
     session->send_info.len = 0;
-    DSS_LOG_DEBUG_OP("Receive command:%d.", session->recv_pack.head->cmd);
+    DSS_LOG_DEBUG_OP(
+        "Receive command:%d, server status is %d.", session->recv_pack.head->cmd, (int32)g_dss_instance.status);
 
     dss_cmd_hdl_t *handle = NULL;
     if (session->recv_pack.head->cmd < DSS_CMD_END) {
@@ -880,13 +1025,14 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
     return status;
 }
 
+#define DSS_WAIT_TIMEOUT 5
 status_t dss_process_command(dss_session_t *session)
 {
     status_t status = CM_SUCCESS;
     bool32 ready = CM_FALSE;
 
     cm_reset_error();
-    if (cs_wait(&session->pipe, CS_WAIT_FOR_READ, session->pipe.socket_timeout, &ready) != CM_SUCCESS) {
+    if (cs_wait(&session->pipe, CS_WAIT_FOR_READ, DSS_WAIT_TIMEOUT, &ready) != CM_SUCCESS) {
         session->is_closed = CM_TRUE;
         return CM_ERROR;
     }
@@ -901,7 +1047,30 @@ status_t dss_process_command(dss_session_t *session)
         session->is_closed = CM_TRUE;
         return CM_ERROR;
     }
-
+    date_t time_start = g_timer()->now;
+    date_t time_now = 0;
+    while (g_dss_instance.status != ZFS_STATUS_OPEN) {
+        if (dss_can_cmd_type_no_open(session->recv_pack.head->cmd)) {
+            status = dss_exec_cmd(session, CM_TRUE);
+            if (status != CM_SUCCESS) {
+                LOG_DEBUG_ERR("Failed to execute command:%d.", session->recv_pack.head->cmd);
+                dss_return_error(session);
+                return CM_ERROR;
+            } else {
+                dss_return_success(session);
+                return CM_SUCCESS;
+            }
+        }
+        DSS_GET_CM_LOCK_LONG_SLEEP;
+        LOG_RUN_INF("The status %d of instance %lld is not open, just wait.\n", (int32)g_dss_instance.status,
+            dss_get_inst_cfg()->params.inst_id);
+        time_now = g_timer()->now;
+        if (time_now - time_start > DSS_MAX_FAIL_TIME_WITH_CM * MICROSECS_PER_SECOND) {
+            LOG_RUN_ERR("[DSS] ABORT INFO: Fail to change status open for %d seconds, exit.", DSS_MAX_FAIL_TIME_WITH_CM);
+            cm_fync_logfile();
+            _exit(1);
+        }
+    }
     status = dss_exec_cmd(session, CM_TRUE);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to execute command:%d.", session->recv_pack.head->cmd);
@@ -910,13 +1079,12 @@ status_t dss_process_command(dss_session_t *session)
     } else {
         dss_return_success(session);
     }
-
     return CM_SUCCESS;
 }
 
 status_t dss_proc_standby_req(dss_session_t *session)
 {
-    if (dss_is_readonly() == CM_TRUE) {
+    if (dss_is_readonly() == CM_TRUE && !dss_need_exec_local()) {
         dss_config_t *cfg = dss_get_inst_cfg();
         uint32 id = (uint32)(cfg->params.inst_id);
         LOG_RUN_ERR("The local node(%u) is in readonly state and cannot execute remote requests.", id);
@@ -925,3 +1093,7 @@ status_t dss_proc_standby_req(dss_session_t *session)
 
     return dss_exec_cmd(session, CM_FALSE);
 }
+
+#ifdef __cplusplus
+}
+#endif

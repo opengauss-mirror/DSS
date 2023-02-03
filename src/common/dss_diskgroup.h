@@ -107,7 +107,6 @@ status_t dss_write_volume_inst(
     dss_vg_info_item_t *vg_item, dss_volume_t *volume, int64 offset, const void *buf, uint32 size);
 status_t dss_read_volume_inst(
     dss_vg_info_item_t *vg_item, dss_volume_t *volume, int64 offset, void *buf, int32 size, bool32 *remote);
-
 status_t dss_init_vol_handle(dss_vg_info_item_t *vg_item, int32 flags, dss_vol_handles_t *vol_handles);
 void dss_destroy_vol_handle(dss_vg_info_item_t *vg_item, dss_vol_handles_t *vol_handles, uint32 size);
 extern dss_vg_info_t *g_vgs_info;
@@ -166,8 +165,10 @@ bool32 dss_is_server(void);
 bool32 dss_is_readwrite(void);
 bool32 dss_is_readonly(void);
 void dss_set_server_flag(void);
-void dss_set_server_status_flag(int32 dss_status);
+bool32 dss_need_exec_local();
 int32 dss_get_server_status_flag();
+void dss_set_server_status_flag(int32 dss_status);
+status_t dss_load_ctrlinfo(uint32 index);
 
 status_t dss_init_volume(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume);
 status_t dss_check_write_volume(dss_vg_info_item_t *vg_item, uint32 volumeid, int64 offset, void *buf, uint32 size);

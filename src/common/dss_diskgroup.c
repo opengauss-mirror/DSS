@@ -101,12 +101,6 @@ int32 dss_get_server_status_flag()
 void dss_set_server_status_flag(int32 dss_status)
 {
     g_is_dss_readwrite = dss_status;
-    if (dss_status == DSS_STATUS_READWRITE) {
-        dss_config_t *inst_cfg = dss_get_inst_cfg();
-        g_master_instance_id = (uint32)(inst_cfg->params.inst_id);
-    } else {
-        g_master_instance_id = DSS_INVALID_ID32;
-    }
 }
 
 void dss_checksum_vg_ctrl(dss_vg_info_item_t *vg_item);
@@ -210,7 +204,7 @@ dss_vg_info_item_t *dss_find_vg_item(const char *vg_name)
     return NULL;
 }
 
-status_t dg_check_and_recover(uint32 index)
+status_t dss_load_ctrlinfo(uint32 index)
 {
     dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[index];
     dss_config_t *inst_cfg = dss_get_inst_cfg();
@@ -219,18 +213,11 @@ status_t dg_check_and_recover(uint32 index)
         LOG_DEBUG_ERR("Failed to lock vg:%s.", vg_item->entry_path);
         return status;
     }
-#ifdef OPENGAUSS
     if (dss_recover_ctrlinfo(vg_item) != CM_SUCCESS) {
         dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
         LOG_DEBUG_ERR("dss ctrl of %s is invalid when instance init.", vg_item->vg_name);
         return CM_ERROR;
     }
-#endif
-    status = dss_check_redo_and_recover(vg_item);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to check redo and recover vg:%s.", vg_item->entry_path);
-    }
-
     dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
     return status;
 }
@@ -318,9 +305,9 @@ static status_t dss_get_vg_info_core(uint32 i, dss_share_vg_info_t *share_vg_inf
         return status;
     }
 
-    status = dg_check_and_recover(i);
+    status = dss_load_ctrlinfo(i);
     if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("DSS instance failed to recover vg:%s!", g_vgs_info->volume_group[i].vg_name);
+        LOG_RUN_ERR("DSS instance failed to load dss ctrl of vg:%s!", g_vgs_info->volume_group[i].vg_name);
         return status;
     }
 
@@ -1347,12 +1334,10 @@ status_t dss_load_volume_ctrl(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *vo
         LOG_DEBUG_ERR("Failed to load vg:%s volume ctrl.", vg_item->vg_name);
         return status;
     }
-
     if (remote == CM_FALSE) {
         uint32 checksum = dss_get_checksum(volume_ctrl, DSS_VOLUME_CTRL_SIZE);
         dss_check_checksum(checksum, volume_ctrl->checksum);
     }
-
     return CM_SUCCESS;
 }
 
@@ -1537,7 +1522,13 @@ static inline bool32 dss_need_load_remote(int size)
     return ((remote_read_proc != NULL) && (dss_is_readonly()) && (size <= (int32)DSS_LOADDISK_BUFFER_SIZE));
 }
 
-#define DSS_READ_VOLUME_TRY_MAX 5
+/*
+    1、when the node is standby, just send message to primary to read volume
+    2、if the primary is just in recovery or switch, may wait the read request
+    3、if read failed, just retry.
+    4、may be standby switch to primary, just read volume from self;
+    5、may be primary just change to standby, just read volume from new primary;
+*/
 #define DSS_READ_REMOTE_INTERVAL 50
 
 static bool32 dss_read_remote_checksum(void *buf, int32 size)
@@ -1545,6 +1536,14 @@ static bool32 dss_read_remote_checksum(void *buf, int32 size)
     uint32 sum1 = *(uint32 *)buf;
     uint32 sum2 = dss_get_checksum(buf, (uint32)size);
     return sum1 == sum2;
+}
+
+bool32 dss_need_exec_local()
+{
+    dss_config_t *cfg = dss_get_inst_cfg();
+    uint32 master_id = dss_get_master_id();
+    uint32 curr_id = (uint32)(cfg->params.inst_id);
+    return ((curr_id == master_id));
 }
 
 status_t dss_read_volume_inst(
@@ -1556,19 +1555,11 @@ status_t dss_read_volume_inst(
     CM_ASSERT(size % DSS_DISK_UNIT_SIZE == 0);
     CM_ASSERT(((uint64)buf) % DSS_DISK_UNIT_SIZE == 0);
 
-    uint8 i = 0;
     while (dss_need_load_remote(size) == CM_TRUE && status != CM_SUCCESS) {
         status = remote_read_proc(vg_item->vg_name, volume, offset, buf, size);
-        i++;
         if (status != CM_SUCCESS) {
-            int32 errcode = cm_get_error_code();
-            if (errcode == ERR_DSS_GET_MASTER_ID) {
-                LOG_DEBUG_INF("Read volume from local disk when dss get master id failed");
-                cm_reset_error();
-                break;
-            }
             LOG_RUN_ERR("Failed to load disk(%s) data from the active node, result:%d", volume->name_p, status);
-            if (i > DSS_READ_VOLUME_TRY_MAX) {
+            if (dss_need_exec_local()) {
                 break;
             }
             cm_sleep(DSS_READ_REMOTE_INTERVAL);
@@ -1577,9 +1568,6 @@ status_t dss_read_volume_inst(
 
         if (dss_read_remote_checksum(buf, size) != CM_TRUE) {
             LOG_RUN_ERR("Failed to load disk(%s) data from the active node, checksum error", volume->name_p);
-            if (i > DSS_READ_VOLUME_TRY_MAX) {
-                break;
-            }
             continue;
         }
         
@@ -1607,7 +1595,6 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volumeid, int64 of
         LOG_RUN_ERR("Read volume for standby fialed, vg(%s) voiume id[%u] error.", vg_name, volumeid);
         return CM_ERROR;
     }
-    
 
     dss_volume_t *volume = &vg_item->volume_handle[volumeid];
     if (volume->handle == DSS_INVALID_HANDLE) {

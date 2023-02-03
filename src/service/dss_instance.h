@@ -47,9 +47,24 @@ extern "C" {
 #define DSS_INS_SIZE (sizeof(dss_share_vg_info_t))
 
 typedef enum en_zfs_instance_status {
-    ZFS_STATUS_OPEN = 1,
-    ZFS_STATUS_RECOVERY,
+    ZFS_STATUS_RECOVERY = 0,
+    ZFS_STATUS_SWITCH,
+    ZFS_STATUS_OPEN,
 } dss_instance_status_t;
+
+typedef enum {
+    CM_RES_SUCCESS = 0,
+    CM_RES_CANNOT_DO = 1,
+    CM_RES_DDB_FAILED = 2,
+    CM_RES_VERSION_WRONG = 3,
+    CM_RES_CONNECT_ERROR = 4,
+    CM_RES_TIMEOUT = 5,
+    CM_RES_NO_LOCK_OWNER = 6,
+} cm_err_code;
+
+#define DSS_CM_LOCK "dss cm lock"
+#define DSS_MAX_FAIL_TIME_WITH_CM 30
+#define DSS_GET_CM_LOCK_LONG_SLEEP cm_sleep(500)
 
 typedef struct st_dss_cm_res {
     spinlock_t init_lock;
@@ -60,8 +75,8 @@ typedef struct st_dss_cm_res {
 
 typedef struct st_dss_instance {
     int32 lock_fd;
-    spinlock_t lock;
-    dss_config_t inst_cfg;  // instance config
+    spinlock_t switch_lock;
+    dss_config_t inst_cfg;  // instance config_
     dss_instance_status_t status;
     uds_lsnr_t lsnr;
     // HYJ: reform_ctx_t rf_ctx;
@@ -85,14 +100,18 @@ status_t dss_start_lsnr(dss_instance_t *inst);
 void dss_uninit_cm(dss_instance_t *inst);
 void dss_check_peer_inst(dss_instance_t *inst, uint64 inst_id);
 void dss_free_log_ctrl(dss_instance_t *inst);
-status_t dss_get_instance_log_buf_and_recover(dss_instance_t *inst);
+status_t dss_get_instance_log_buf(dss_instance_t *inst);
 status_t dss_load_log_buffer(dss_redo_batch_t *batch);
 status_t dss_alloc_instance_log_buf(dss_instance_t *inst);
 status_t dss_recover_from_instance(dss_instance_t *inst);
 void dss_check_peer_by_inst(dss_instance_t *inst, uint64 inst_id);
 uint64 dss_get_inst_work_status(void);
 void dss_set_inst_work_status(uint64 cur_inst_map);
-bool32 dss_check_inst_workstatus(uint32 instid);
+status_t dss_recover_when_change_status(dss_instance_t *inst);
+uint32 dss_get_cm_lock_owner(dss_instance_t *inst);
+status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id);
+void dss_get_cm_lock_and_recover(dss_instance_t *inst);
+
 #ifdef __cplusplus
 }
 #endif

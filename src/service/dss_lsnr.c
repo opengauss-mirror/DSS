@@ -86,7 +86,7 @@ static void cs_try_uds_accept(uds_lsnr_t *lsnr, cs_pipe_t *pipe)
         if (!cs_uds_create_link(sock_ready, pipe)) {
             continue;
         }
-        if (lsnr->status != LSNR_STATUS_RUNNING) {
+        if (lsnr->status != LSNR_STATUS_RUNNING && lsnr->status != LSNR_STATUS_PAUSING) {
             LOG_RUN_ERR("cs_try_uds_accept error :%u\n", lsnr->status);
             cs_uds_disconnect(&pipe->link.uds);
             continue;

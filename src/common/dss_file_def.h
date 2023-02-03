@@ -53,7 +53,7 @@
 #define DSS_VG_CONF_NAME "dss_vg_conf.ini"
 #define DSS_RECYLE_DIR_NAME ".recycle"
 
-#define DSS_CTRL_RESERVE_SIZE (SIZE_K(230) + 512)
+#define DSS_CTRL_RESERVE_SIZE (SIZE_K(742) + 512)
 
 #define DSS_CTRL_CORE_OFFSET OFFSET_OF(dss_ctrl_t, core_data)
 #define DSS_CTRL_VOLUME_OFFSET OFFSET_OF(dss_ctrl_t, volume_data)
@@ -230,7 +230,6 @@ typedef struct st_dss_ctrl {
     };
 
     char root[DSS_ROOT_FT_DISK_SIZE];  // dss_root_ft_block_t, 8KB
-    char log_buf[DSS_LOG_BUFFER_SIZE];
     char reserve[DSS_CTRL_RESERVE_SIZE];
 } dss_ctrl_t;
 

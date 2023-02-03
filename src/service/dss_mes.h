@@ -93,7 +93,6 @@ typedef enum st_dss_bcast_req_cmd {
     BCAST_REQ_RENAME = 0,
     BCAST_REQ_DEL_DIR_FILE,
     BCAST_REQ_TRUNCATE_FILE,
-    BCAST_REQ_ASK_STATUS,
     BCAST_REQ_END
 } dss_bcast_req_cmd_t;
 
@@ -101,7 +100,6 @@ typedef enum st_dss_bcast_ack_cmd {
     BCAST_ACK_RENAME = 0,
     BCAST_ACK_DEL_FILE,
     BCAST_ACK_TRUNCATE_FILE,
-    BCAST_ACK_ASK_STATUS,
     BCAST_ACK_END
 } dss_bcast_ack_cmd_t;
 
@@ -155,17 +153,16 @@ typedef struct st_loaddisk_req {
 
 status_t dss_notify_sync(
     dss_session_t *session, dss_bcast_req_cmd_t cmd, const char *buffer, uint32 size, dss_recv_msg_t *recv_msg);
-status_t dss_polling_master_id(dss_session_t *session);
-status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid);
+status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result);
 void dss_check_mes_conn(uint64 cur_inst_map);
 status_t dss_startup_mes(void);
 void dss_stop_mes(void);
 int32 dss_process_broadcast_ack(
     dss_session_t *session, char *data, unsigned int len, dss_recv_msg_t *recv_msg_output);
-void dss_proc_broadcast_req(dss_session_t *session, mes_message_t *receive_msg);
+void dss_proc_broadcast_req(dss_session_t *session, mes_message_t *msg);
 void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg);
 status_t dss_read_volume_remote(const char *vg_name, dss_volume_t *volume, int64 offset, void *buf, int32 size);
-status_t dss_send2standy(
+status_t dss_send2standby(
     dss_session_t *session, mes_message_head_t *reqhead, big_packets_ctrl_t *ctrl, const char *buf, uint16 size);
 status_t dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, mes_message_head_t *reqhead);
 status_t dss_notify_online(dss_session_t *session);

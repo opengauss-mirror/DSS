@@ -99,9 +99,10 @@ typedef enum {
     DSS_CMD_UPDATE_WRITTEN_SIZE,
     DSS_CMD_STOP_SERVER,
     DSS_CMD_SETCFG,
-    DSS_CMD_SET_STATUS,
     DSS_CMD_SYMLINK,
     DSS_CMD_UNLINK,
+    DSS_CMD_SET_MAIN_INST,
+    DSS_CMD_SWITCH_LOCK,
     DSS_CMD_MODIFY_END,
     DSS_CMD_QUERY_BEGIN = DSS_CMD_MODIFY_END,
     DSS_CMD_GET_HOME = DSS_CMD_QUERY_BEGIN,
@@ -111,10 +112,17 @@ typedef enum {
     DSS_CMD_READLINK,
     DSS_CMD_GET_FTID_BY_PATH,
     DSS_CMD_GETCFG,
+    DSS_CMD_GET_INST_STATUS,
     DSS_CMD_QUERY_END,
     DSS_CMD_EXEC_REMOTE = DSS_CMD_QUERY_END,
     DSS_CMD_END  // must be the last item
 } dss_cmd_type_e;
+
+static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
+{
+    return ((type == DSS_CMD_GET_INST_STATUS) || (type == DSS_CMD_GET_HOME) || (type == DSS_CMD_SET_SESSIONID) ||
+            (type == DSS_CMD_STOP_SERVER));
+}
 
 #define DSS_DEFAULT_AU_SIZE SIZE_M(8)
 #define DSS_MAX_AU_SIZE SIZE_M(64)

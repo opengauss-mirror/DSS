@@ -71,9 +71,6 @@ status_t dss_set_log_buf_for_first_vg(const char *vg_name, dss_vg_info_item_t *v
 
 status_t dss_set_log_buf(const char *vg_name, dss_vg_info_item_t *vg_item, dss_volume_t *volume)
 {
-#ifndef OPENGAUSS
-    return CM_SUCCESS;
-#endif
     if (!is_first_vg(vg_name)) {
         return CM_SUCCESS;
     }
@@ -159,12 +156,7 @@ char *dss_get_log_buf_from_instance(dss_session_t *session, dss_vg_info_item_t *
 
 char *dss_get_total_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_type_t type)
 {
-    char *log_buf = NULL;
-#ifdef OPENGAUSS
-    log_buf = dss_get_log_buf_from_instance(session, vg_item, type);
-#else
-    log_buf = vg_item->dss_ctrl->log_buf;
-#endif
+    char *log_buf = dss_get_log_buf_from_instance(session, vg_item, type);
     return log_buf;
 }
 
@@ -209,17 +201,12 @@ status_t dss_write_redolog_to_disk(dss_vg_info_item_t *item, int64 offset, char 
     return dss_write_ctrl_to_disk(item, offset, buf, size);
 }
 
-status_t dss_flush_log_inner(int32_t log_split, dss_vg_info_item_t *vg_item, char *log_buf, uint32 flush_size)
+status_t dss_flush_log_inner(int32_t log_split, char *log_buf, uint32 flush_size)
 {
-    int64 offset;
-#ifdef OPENGAUSS
-    vg_item = dss_get_first_vg_item();
+    dss_vg_info_item_t *vg_item = dss_get_first_vg_item();
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
     uint64 au_size = dss_get_vg_au_size(dss_ctrl);
-    offset = au_size + log_split * DSS_INSTANCE_LOG_SPLIT_SIZE;
-#else
-    offset = (int64)DSS_LOG_OFFSET;
-#endif
+    int64 offset = au_size + log_split * DSS_INSTANCE_LOG_SPLIT_SIZE;
     status_t status = dss_write_redolog_to_disk(vg_item, offset, log_buf, flush_size);
     return status;
 }
@@ -241,22 +228,8 @@ status_t dss_flush_log(int32_t log_split, dss_vg_info_item_t *vg_item, char *log
     // tail                                                                                         // tail
     errcode = memcpy_s(log_buf + batch->size, DSS_LOG_BUFFER_SIZE - batch->size, batch, sizeof(dss_redo_batch_t));
     securec_check_ret(errcode);
-    status_t status = dss_flush_log_inner(log_split, vg_item, log_buf, flush_size);
+    status_t status = dss_flush_log_inner(log_split, log_buf, flush_size);
     return status;
-}
-
-status_t dss_reset_log(dss_vg_info_item_t *vg_item)
-{
-    errno_t errcode = memset_s(vg_item->dss_ctrl->log_buf, DSS_LOG_BUFFER_SIZE, 0, DSS_DISK_UNIT_SIZE);
-    securec_check_ret(errcode);
-
-    status_t status =
-        dss_write_redolog_to_disk(vg_item, (int64)DSS_LOG_OFFSET, vg_item->dss_ctrl->log_buf, DSS_DISK_UNIT_SIZE);
-    if (status != CM_SUCCESS) {
-        return status;
-    }
-
-    return CM_SUCCESS;
 }
 
 static status_t rp_redo_update_volhead(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
@@ -1363,47 +1336,14 @@ bool32 dss_check_redo_log_available(dss_redo_batch_t *batch, dss_vg_info_item_t 
         }
     } while (0);
     if (!is_complete) {
-#ifdef OPENGAUSS
         if (slot == DSS_LOG_BUF_SLOT_COUNT) {
             dss_reset_all_log_slot();
         } else {
             (void)dss_reset_log_slot_head(slot);
         }
-#else
-        (void)dss_reset_log(vg_item);
-#endif
         return CM_FALSE;
     }
     return CM_TRUE;
-}
-
-status_t dss_recover(dss_vg_info_item_t *vg_item)
-{
-    dss_redo_entry_t *entry = NULL;
-    dss_redo_batch_t *batch = NULL;
-    uint32 data_size, offset;
-    batch = (dss_redo_batch_t *)vg_item->dss_ctrl->log_buf;
-    if (!dss_check_redo_log_available(batch, vg_item, DSS_LOG_BUF_SLOT_COUNT)) {
-        LOG_RUN_INF("Reset log when find uncompleted redo data.");
-        return CM_SUCCESS;
-    }
-    data_size = batch->size - DSS_REDO_BATCH_HEAD_SIZE;
-    LOG_RUN_INF("Begin recovering.");
-    vg_item->status = DSS_STATUS_RECOVERY;
-    if (dss_recover_ctrlinfo(vg_item) != CM_SUCCESS) {
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("dss ctrl is invalid."));
-    }
-    offset = 0;
-    while (offset < data_size) {
-        entry = (dss_redo_entry_t *)(batch->data + offset);
-        status_t status = dss_replay(vg_item, entry);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to replay redo log."));
-        offset += entry->size;
-    }
-    (void)dss_reset_log(vg_item);
-    vg_item->status = DSS_STATUS_OPEN;
-    LOG_RUN_INF("Complete recovering.");
-    return CM_SUCCESS;
 }
 
 static int32 lsn_compare(const void *pa, const void *pb)
@@ -1477,26 +1417,18 @@ status_t dss_recover_when_instance_start(dss_redo_batch_t *batch, bool32 need_ch
 
 char *dss_get_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-#ifdef OPENGAUSS
     if (session->log_split == DSS_INVALID_SLOT) {
         return NULL;
     }
     dss_log_file_ctrl_t *log_ctrl = dss_get_kernel_instance_log_ctrl();
     char *log_buf = (char *)(log_ctrl->log_buf + session->log_split * DSS_LOG_BUFFER_SIZE);
-#else
-    char *log_buf = vg_item->dss_ctrl->log_buf;
-#endif
     return log_buf;
 }
 
 void dss_reset_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-#ifdef OPENGAUSS
     (void)dss_reset_log_slot_head(session->log_split);
     dss_free_log_slot(session);
-#else
-    (void)dss_reset_log(vg_item);
-#endif
 }
 
 status_t dss_process_redo_log(dss_session_t *session, dss_vg_info_item_t *vg_item)
@@ -1514,8 +1446,7 @@ status_t dss_process_redo_log(dss_session_t *session, dss_vg_info_item_t *vg_ite
         return CM_SUCCESS;
     }
 
-    status_t status;
-    status = dss_flush_log(session->log_split, vg_item, log_buf);
+    status_t status = dss_flush_log(session->log_split, vg_item, log_buf);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to flush log,errcode:%d.", cm_get_error_code()));
 
     // #ifndef WIN32
@@ -1529,46 +1460,6 @@ status_t dss_process_redo_log(dss_session_t *session, dss_vg_info_item_t *vg_ite
     }
     dss_reset_log_buf(session, vg_item);
     return CM_SUCCESS;
-}
-
-status_t dss_check_redo_and_recover(dss_vg_info_item_t *vg_item)
-{
-#ifdef OPENGAUSS
-    return CM_SUCCESS;
-#else
-    bool32 remote = CM_FALSE;
-    CM_ASSERT(dss_is_server());
-    LOG_DEBUG_INF("Begin to check redo and recover");
-    status_t status =
-        dss_load_vg_ctrl_part(vg_item, (int64)DSS_LOG_OFFSET, vg_item->dss_ctrl->log_buf, DSS_DISK_UNIT_SIZE, &remote);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load redo log."));
-
-    dss_redo_batch_t *batch = (dss_redo_batch_t *)vg_item->dss_ctrl->log_buf;
-    if (batch->size == 0) {
-        LOG_DEBUG_INF("Redo log batch is empty, check dssctrl before check_redo_and_recover ends.");
-        if (dss_recover_ctrlinfo(vg_item) != CM_SUCCESS) {
-            DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("dss ctrl is invalid."));
-        }
-        return CM_SUCCESS;
-    }
-
-    DSS_LOG_DEBUG_OP("There are redo logs, size:%u.", batch->size);
-    uint32 load_size = CM_CALC_ALIGN(batch->size + sizeof(dss_redo_batch_t), DSS_DISK_UNIT_SIZE);
-    if (load_size > DSS_LOG_BUFFER_SIZE) {
-        // invalid log ,ignored it.
-        (void)dss_reset_log(vg_item);
-        LOG_DEBUG_INF("Redo log is invalid, ignored it.");
-        return CM_SUCCESS;
-    }
-
-    if (load_size > DSS_DISK_UNIT_SIZE) {
-        status = dss_load_vg_ctrl_part(
-            vg_item, (int64)DSS_LOG_OFFSET, vg_item->dss_ctrl->log_buf, (int32)load_size, &remote);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load redo log."));
-    }
-
-    return dss_recover(vg_item);
-#endif
 }
 
 static status_t dss_rollback(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
@@ -1616,15 +1507,11 @@ status_t dss_rollback_log(dss_vg_info_item_t *vg_item, char *log_buf)
 void dss_rollback_mem_update(int32_t log_split, dss_vg_info_item_t *vg_item)
 {
     char *log_buf = NULL;
-#ifdef OPENGAUSS
     if (log_split == DSS_INVALID_SLOT) {
         return;
     }
     dss_log_file_ctrl_t *log_ctrl = dss_get_kernel_instance_log_ctrl();
     log_buf = (char *)(log_ctrl->log_buf + log_split * DSS_INSTANCE_LOG_SPLIT_SIZE);
-#else
-    log_buf = vg_item->dss_ctrl->log_buf;
-#endif
     dss_redo_batch_t *batch = (dss_redo_batch_t *)log_buf;
     if (batch->size == 0) {
         return;
@@ -1634,16 +1521,11 @@ void dss_rollback_mem_update(int32_t log_split, dss_vg_info_item_t *vg_item)
         return;
     }
     LOG_RUN_INF("Try to rollback!!!");
-
     status_t status;
     vg_item->status = DSS_STATUS_ROLLBACK;
     status = dss_rollback_log(vg_item, log_buf);
     CM_ASSERT(status == CM_SUCCESS);
-#ifdef OPENGAUSS
     (void)dss_reset_log_slot_head(log_split);
-#else
-    (void)dss_reset_log(vg_item);
-#endif
     vg_item->status = DSS_STATUS_OPEN;
     return;
 }
