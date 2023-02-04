@@ -807,6 +807,13 @@ dss_dir_item_handle dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 s
             DSS_UNLOCK_VG_META_S(dir->vg_item, conn->session);
             return NULL;
         }
+        DSS_UNLOCK_VG_META_S(dir->vg_item, conn->session);
+        status = dss_apply_refresh_file_table(conn, dir);
+        if (status != CM_SUCCESS) {
+            LOG_DEBUG_ERR("Failed to apply to refresh file table.");
+            return NULL;
+        }
+        DSS_LOCK_VG_META_S_RETURN_NULL(dir->vg_item, conn->session, NULL);
         node = dss_get_ft_node_by_ftid(dir->vg_item, dir->cur_ftid, CM_FALSE, CM_FALSE);
     }
     DSS_UNLOCK_VG_META_S(dir->vg_item, conn->session);

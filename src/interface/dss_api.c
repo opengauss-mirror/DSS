@@ -252,7 +252,7 @@ dss_dir_handle dss_dopen(const char *dir_path)
         LOG_RUN_ERR("dopen get conn error.");
         return NULL;
     }
-    dss_dir_t *dir = dss_open_dir_impl(conn, dir_path, CM_FALSE);
+    dss_dir_t *dir = dss_open_dir_impl(conn, dir_path, CM_TRUE);
     dss_get_api_volume_error();
     return (dss_dir_handle)dir;
 }
