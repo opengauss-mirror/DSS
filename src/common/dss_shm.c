@@ -320,7 +320,7 @@ static void *cm_do_attach_shm(cm_shm_key_t key, uint64 size, uint32 flag, bool32
 
 static status_t cm_create_shm_ctrl(void)
 {
-    if (cm_create_shm(CM_SHM_CTRL_KEY, CM_SHM_SIZE_OF_CTRL, CM_SHM_ATTACH_RW, 0660) == NULL) {
+    if (cm_create_shm(CM_SHM_CTRL_KEY, CM_SHM_SIZE_OF_CTRL, CM_SHM_ATTACH_RW, CM_SHM_PERMISSION) == NULL) {
         return ERR_DSS_SHM_CREATE;
     }
 

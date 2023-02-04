@@ -203,6 +203,11 @@ static status_t cmd_check_au_size(const char *au_size_str)
 
 static status_t cmd_realpath_home(const char *input_args, char **convert_result, int *convert_size)
 {
+    uint32 len = (uint32)strlen(input_args);
+    if (len == 0 ||len >= CM_FILE_NAME_BUFFER_SIZE) {
+        DSS_PRINT_ERROR("the len of path is invalid.\n");
+        return CM_ERROR;
+    }
     *convert_result = (char *)malloc(CM_FILE_NAME_BUFFER_SIZE);
     if (*convert_result == NULL) {
         DSS_PRINT_ERROR("Malloc failed.\n");
@@ -2823,23 +2828,25 @@ static status_t scandisk_proc(void)
         DSS_PRINT_ERROR("snprintf_s query cmd failed.\n");
         return CM_ERROR;
     }
-    char reselt[DSS_PARAM_BUFFER_SIZE] = {0};
+    char result[DSS_PARAM_BUFFER_SIZE] = {0};
     FILE *ptr = popen(cmd, "r");
     if (ptr == NULL) {
         DSS_PRINT_ERROR("Failed to scan disk when popen.\n");
         return CM_ERROR;
     }
     int32 handle = -1;
-    while (fgets(reselt, DSS_PARAM_BUFFER_SIZE, ptr) != NULL) {
-        reselt[strlen(reselt) - 1] = '\0';
-        handle = open(reselt, O_RDWR, 0);
+    while (fgets(result, DSS_PARAM_BUFFER_SIZE, ptr) != NULL) {
+        result[strlen(result) - 1] = '\0';
+        handle = open(result, O_RDWR, 0);
         if (handle == -1) {
-            DSS_THROW_ERROR(ERR_DSS_VOLUME_OPEN, reselt, cm_get_os_error());
+            (void)pclose(ptr);
+            DSS_THROW_ERROR(ERR_DSS_VOLUME_OPEN, result, cm_get_os_error());
             DSS_PRINT_ERROR("Failed to scan disk when open handle.\n");
             return CM_ERROR;
         }
         ret = close(handle);
         if (ret != 0) {
+            (void)pclose(ptr);
             DSS_PRINT_ERROR("Failed to scan disk when close handle.\n");
             return CM_ERROR;
         }

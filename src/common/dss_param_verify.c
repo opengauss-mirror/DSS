@@ -89,7 +89,7 @@ status_t dss_verify_lock_file_path(char *path)
     }
 
     char buffer_path[DSS_UNIX_PATH_MAX];
-    CM_RETURN_IFERR(realpath_file(input_path, buffer_path, CM_FILE_NAME_BUFFER_SIZE));
+    CM_RETURN_IFERR(realpath_file(input_path, buffer_path, DSS_UNIX_PATH_MAX));
     if (!cm_dir_exist(input_path) || (access(buffer_path, W_OK | R_OK) != 0)) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, input_path));
     }
