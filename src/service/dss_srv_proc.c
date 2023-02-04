@@ -585,10 +585,10 @@ static void dss_close_handle(dss_session_t *session, dss_vg_info_item_t *vg_item
     if (node == NULL || node->type != GFT_FILE) {
         return;
     }
-    bool32 should_rm_file = DSS_FALSE;
-    status_t status = dss_check_rm_file(vg_item, ftid, &should_rm_file, &node);
-    if (should_rm_file) {
-        status = dss_remove_dir_file_by_node(session, vg_item, node);
+    if ((node->flags & DSS_FT_NODE_FLAG_DEL) != 0) {
+        dss_unlatch(&vg_item->open_file_latch);
+        status_t status = dss_remove_dir_file_by_node(session, vg_item, node);
+        dss_latch_x(&vg_item->open_file_latch);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_INF(
                 "Failed to remove delay file when close file, ftid%llu, fid:%llu, vg: %s, session pid:%llu, v:%u, "
@@ -602,9 +602,9 @@ static void dss_close_handle(dss_session_t *session, dss_vg_info_item_t *vg_item
             "au:%llu, block:%u, item:%u.",
             *(uint64 *)&ftid, node->fid, vg_item->vg_name, session->cli_info.cli_pid, ftid.volume, (uint64)ftid.au,
             ftid.block, ftid.item);
-    }
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_INF("Failed to check remove delay file when session disconn close file, vg: %s.", vg_item->vg_name);
+        if (status != CM_SUCCESS) {
+            LOG_DEBUG_INF("Failed to check remove delay file when session disconn close file, vg: %s.", vg_item->vg_name);
+        }
     }
 }
 
