@@ -61,6 +61,8 @@ dss_share_vg_info_t *g_dss_share_vg_info = NULL;
 bool32 g_is_dss_server = DSS_FALSE;
 static dss_server_status_t g_is_dss_readwrite = DSS_STATUS_NORMAL;
 static uint32 g_master_instance_id = DSS_INVALID_ID32;
+static const char *const g_dss_lock_vg_file = "dss_vg.lck";
+static int32 g_dss_lock_vg_fd = CM_INVALID_INT32;
 
 // CAUTION: dss_admin manager command just like dss_create_vg,cannot call it,
 bool32 dss_is_server(void)
@@ -556,6 +558,14 @@ void dss_unlock_vg_mem(dss_vg_info_item_t *vg_item)
 }
 
 #ifdef WIN32
+status_t dss_file_lock_vg_w(dss_config_t *inst_cfg)
+{
+    return CM_SUCCESS;
+}
+
+void dss_file_unlock_vg(void)
+{}
+
 status_t dss_lock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {
     return CM_SUCCESS;
@@ -566,8 +576,16 @@ status_t dss_lock_disk_vg(const char *entry_path, dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
+void dss_unlock_vg_raid(dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id)
+{}
+
 void dss_unlock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {}
+
+status_t dss_check_lock_instid(dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id, bool32 *is_lock)
+{
+    return CM_SUCCESS;
+}
 #else
 
 static void dss_free_vglock_fp(const char *lock_file, FILE *fp)
@@ -657,6 +675,66 @@ static status_t dss_pre_lockfile_name(const char *entry_path, char *lock_file, d
     return CM_SUCCESS;
 }
 
+status_t dss_file_lock_vg(dss_config_t *inst_cfg, struct flock *lk)
+{
+    char file_name[CM_FILE_NAME_BUFFER_SIZE];
+    int iret_snprintf;
+
+    iret_snprintf = snprintf_s(
+        file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/%s",  inst_cfg->home, g_dss_lock_vg_file);
+    DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
+
+    if (cm_open_file(file_name, O_CREAT | O_RDWR | O_BINARY, &g_dss_lock_vg_fd) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+
+    if (fcntl(g_dss_lock_vg_fd, F_SETLK, lk) != 0) {
+        cm_close_file(g_dss_lock_vg_fd);
+        g_dss_lock_vg_fd = CM_INVALID_INT32;
+        CM_THROW_ERROR(ERR_LOCK_FILE, errno);
+        return CM_ERROR;
+    }
+
+    return CM_SUCCESS;
+}
+
+status_t dss_file_lock_vg_w(dss_config_t *inst_cfg)
+{
+    struct flock lk;
+    lk.l_type = F_WRLCK;
+    lk.l_whence = SEEK_SET;
+    lk.l_start = lk.l_len = 0;
+    if (dss_file_lock_vg(inst_cfg, &lk) != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to file write lock vg.");
+        return CM_ERROR;
+    }
+
+    return CM_SUCCESS;
+}
+
+status_t dss_file_lock_vg_r(dss_config_t *inst_cfg)
+{
+    struct flock lk;
+    lk.l_type = F_RDLCK;
+    lk.l_whence = SEEK_SET;
+    lk.l_start = lk.l_len = 0;
+    if (dss_file_lock_vg(inst_cfg, &lk) != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to file read lock vg.");
+        return CM_ERROR;
+    }
+
+    return CM_SUCCESS;
+}
+
+void dss_file_unlock_vg(void)
+{
+    if (g_dss_lock_vg_fd != CM_INVALID_INT32) {
+        (void)cm_unlock_fd(g_dss_lock_vg_fd);
+        cm_close_file(g_dss_lock_vg_fd);
+        g_dss_lock_vg_fd = CM_INVALID_INT32;
+    }
+}
+
 status_t dss_lock_disk_vg(const char *entry_path, dss_config_t *inst_cfg)
 {
     dlock_t lock;
@@ -697,7 +775,7 @@ status_t dss_lock_disk_vg(const char *entry_path, dss_config_t *inst_cfg)
     }
 }
 
-status_t dss_lock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
+status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {
     LOG_DEBUG_INF("Lock vg storage, lock vg:%s.", entry_path);
     int32 dss_mode = dss_storage_mode(inst_cfg);
@@ -729,7 +807,39 @@ status_t dss_lock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path
     return CM_SUCCESS;
 }
 
-void dss_unlock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
+status_t dss_lock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
+{
+    if (dss_file_lock_vg_r(inst_cfg) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+    if (dss_lock_vg_storage_core(vg_item, entry_path, inst_cfg) != CM_SUCCESS) {
+        dss_file_unlock_vg();
+        return CM_ERROR;
+    }
+
+    return CM_SUCCESS;
+}
+
+void dss_unlock_vg_raid(dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id)
+{
+    dlock_t lock;
+    status_t status;
+
+    status = cm_alloc_dlock(&lock, DSS_CTRL_VG_LOCK_OFFSET, inst_id);
+    if (status != CM_SUCCESS) {
+        return;
+    }
+    status = cm_disk_unlock_s(&lock, entry_path);
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to unlock %s.", entry_path);
+        cm_destory_dlock(&lock);
+        return;
+    }
+    LOG_DEBUG_INF("unLock vg succ, entry path %s.", entry_path);
+    cm_destory_dlock(&lock);
+}
+
+void dss_unlock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {
     LOG_DEBUG_INF("Unlock vg storage, lock vg:%s.", entry_path);
     int32 dss_mode = dss_storage_mode(inst_cfg);
@@ -756,26 +866,68 @@ void dss_unlock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, 
         dss_unlatch(&vg_item->disk_latch);
         LOG_DEBUG_INF("ulock vg:%s, lock file:%s.", entry_path, lock_file);
     } else {
-        dlock_t lock;
-        status_t status;
-
-        status = cm_alloc_dlock(&lock, DSS_CTRL_VG_LOCK_OFFSET, g_inst_cfg->params.inst_id);
-        if (status != CM_SUCCESS) {
-            dss_unlatch(&vg_item->disk_latch);
-            return;
-        }
-        status = cm_disk_unlock_s(&lock, entry_path);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to unlock %s.", entry_path);
-            cm_destory_dlock(&lock);
-            dss_unlatch(&vg_item->disk_latch);
-            return;
-        }
-        LOG_DEBUG_INF("unLock vg succ, entry path %s.", entry_path);
-        cm_destory_dlock(&lock);
+        dss_unlock_vg_raid(vg_item, entry_path, g_inst_cfg->params.inst_id);
         dss_unlatch(&vg_item->disk_latch);
     }
     return;
+}
+
+void dss_unlock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
+{
+    dss_unlock_vg_storage_core(vg_item, entry_path, inst_cfg);
+    dss_file_unlock_vg();
+}
+
+status_t dss_check_lock_instid(dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id, bool32 *is_lock)
+{
+    int32 fd = 0;
+    dlock_t lock;
+    *is_lock = CM_FALSE;
+
+    dss_latch_x(&vg_item->disk_latch);
+    status_t status = cm_alloc_dlock(&lock, DSS_CTRL_VG_LOCK_OFFSET, inst_id);
+    if (status != CM_SUCCESS) {
+        dss_unlatch(&vg_item->disk_latch);
+        return CM_ERROR;
+    }
+
+    fd = open(entry_path, O_RDWR | O_DIRECT | O_SYNC);
+    if (fd < 0) {
+        cm_destory_dlock(&lock);
+        dss_unlatch(&vg_item->disk_latch);
+        return CM_ERROR;
+
+    }
+
+    status = cm_get_dlock_info(&lock, fd);
+    if (status != CM_SUCCESS) {
+        (void)close(fd);
+        cm_destory_dlock(&lock);
+        dss_unlatch(&vg_item->disk_latch);
+        return CM_ERROR;
+    }
+
+    if (LOCKR_INST_ID(lock) == 0) {
+        (void)close(fd);
+        cm_destory_dlock(&lock);
+        dss_unlatch(&vg_item->disk_latch);
+        LOG_DEBUG_INF("there is no lock on disk.");
+        return CM_SUCCESS;
+    }
+
+    if (LOCKR_INST_ID(lock) != LOCKW_INST_ID(lock)) {
+        (void)close(fd);
+        cm_destory_dlock(&lock);
+        dss_unlatch(&vg_item->disk_latch);
+        LOG_DEBUG_INF("another inst_id(disk) %lld, curr inst_id(lock) %lld.", LOCKR_INST_ID(lock), LOCKW_INST_ID(lock));
+        return CM_SUCCESS;
+    }
+
+    *is_lock = CM_TRUE;
+    (void)close(fd);
+    cm_destory_dlock(&lock);
+    dss_unlatch(&vg_item->disk_latch);
+    return CM_SUCCESS;
 }
 #endif
 
