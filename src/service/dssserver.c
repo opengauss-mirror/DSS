@@ -128,7 +128,7 @@ static void handle_main_wait(void)
 }
 
 typedef struct st_dss_srv_args {
-    char dss_home[DSS_MAX_NAME_LEN];
+    char dss_home[DSS_MAX_PATH_BUFFER_SIZE];
 } dss_srv_args_t;
 typedef status_t (*dss_srv_arg_parser)(int argc, char **argv, int *argIdx, dss_srv_args_t *dss_args);
 typedef struct st_dss_srv_arg_handler {
@@ -143,6 +143,11 @@ status_t dss_srv_parse_home(int argc, char **argv, int *argIdx, dss_srv_args_t *
         return CM_ERROR;
     }
     char *home = (char *)argv[*argIdx + 1];
+    uint32 len = (uint32)strlen(home);
+    if (len == 0 || len >= DSS_MAX_PATH_BUFFER_SIZE) {
+        (void)printf("the len of path specified by -D is invalid.\n");
+        return CM_ERROR;
+    }
     if (realpath_file(home, dss_args->dss_home, DSS_MAX_PATH_BUFFER_SIZE) != CM_SUCCESS) {
         (void)printf("The path specified by -D is invalid.\n");
         return CM_ERROR;

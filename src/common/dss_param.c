@@ -409,6 +409,10 @@ status_t dss_set_cfg_dir(const char *home, dss_config_t *inst_cfg)
         if (home_env == NULL || home_env[0] == '\0') {
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid cfg dir"));
         }
+        uint32 len = (uint32)strlen(home_env);
+        if (len >= DSS_MAX_PATH_BUFFER_SIZE) {
+            DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid cfg dir len"));
+        }
         status_t status = realpath_file(home_env, home_realpath, DSS_MAX_PATH_BUFFER_SIZE);
         DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid cfg dir"));
     } else {

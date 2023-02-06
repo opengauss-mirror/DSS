@@ -79,7 +79,7 @@ typedef uint32 cm_shm_key_t;
 #else
 #define CM_SHM_ATTACH_RDONLY SHM_RDONLY
 #define CM_SHM_ATTACH_RW 0 /* the default attach mode is read write */
-#define CM_SHM_PERMISSION 0664
+#define CM_SHM_PERMISSION 0660
 #define PERM_GRPRW (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)
 #endif
 
