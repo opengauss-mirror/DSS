@@ -66,7 +66,6 @@ static status_t dss_process_remote(dss_session_t *session)
     uint32 remoteid = DSS_INVALID_ID32;
     uint32 currid = DSS_INVALID_ID32;
     status_t ret = CM_ERROR;
-    uint32 i = 0;
     dss_get_exec_nodeid(session, &currid, &remoteid);
    
     LOG_DEBUG_INF("Start processing remote requests(%d), remote node(%u),current node(%u).",

@@ -505,8 +505,13 @@ void dss_check_peer_by_inst(dss_instance_t *inst, uint64 inst_id)
 
 static void dss_check_peer_by_cm(dss_instance_t *inst)
 {
-    cm_res_stat_ptr_t res = cm_res_get_stat(&inst->cm_res.mgr);
+    cm_res_mem_ctx_t res_mem_ctx;
+    if (cm_res_init_memctx(&res_mem_ctx) != CM_SUCCESS) {
+        return;
+    }
+    cm_res_stat_ptr_t res = cm_res_get_stat(&inst->cm_res.mgr, &res_mem_ctx);
     if (res == NULL) {
+        cm_res_uninit_memctx(&res_mem_ctx);
         return;
     }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
@@ -516,6 +521,7 @@ static void dss_check_peer_by_cm(dss_instance_t *inst)
         const cm_res_inst_info_ptr_t inst_res = cm_res_get_instance_info(&inst->cm_res.mgr, res, (unsigned int)idx);
         if (inst_res == NULL) {
             cm_res_free_stat(&inst->cm_res.mgr, res);
+            cm_res_uninit_memctx(&res_mem_ctx);
             return;
         }
 
@@ -541,6 +547,7 @@ static void dss_check_peer_by_cm(dss_instance_t *inst)
 
     dss_check_mes_conn(cur_inst_map);
     cm_res_free_stat(&inst->cm_res.mgr, res);
+    cm_res_uninit_memctx(&res_mem_ctx);
 }
 
 static void dss_check_peer_default(void)
