@@ -594,6 +594,7 @@ void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg)
     if (size > DSS_MAX_PACKET_SIZE) {
         LOG_DEBUG_ERR("The dss server receive msg from remote failed, src node(%u), dst node(%u), size is %u.", srcid,
             dstid, size);
+        mes_release_message_buf(msg);
         return;
     }
     LOG_DEBUG_INF("The dss server receive msg from remote node, src node(%u), dst node(%u).", srcid, dstid);
