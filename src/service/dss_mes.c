@@ -132,7 +132,7 @@ static void dss_check_file_open(dss_session_t *se, mes_message_t *msg)
             (uint32)msg->head->dst_inst, ret);
         return;
     }
-    DSS_LOG_DEBUG_OP("send message succeed, check file %llu open result: %u. cmd=%hhu, rsn=%u, src_inst=%hhu, "
+    DSS_LOG_DEBUG_OP("send message succeed, check file %llu open result: %u. cmd=%hhu, rsn=%llu, src_inst=%hhu, "
                      "dst_inst=%hhu, src_sid=%hu, dst_sid=%hu.",
         check->ftid, is_open, ack->head.cmd, ack->head.rsn, ack->head.src_inst, ack->head.dst_inst, ack->head.src_sid,
         ack->head.dst_sid);
@@ -162,7 +162,7 @@ void dss_proc_broadcast_req(dss_session_t *session, mes_message_t *msg)
 {
     char *data = msg->buffer + sizeof(mes_message_head_t);
     dss_bcast_req_cmd_t bcast_op = *(dss_bcast_req_cmd_t *)data;
-    LOG_DEBUG_INF("Try proc broadcast req, head rsn is %u, head cmd is %u, req cmd is %u.", msg->head->rsn,
+    LOG_DEBUG_INF("Try proc broadcast req, head rsn is %llu, head cmd is %u, req cmd is %u.", msg->head->rsn,
         msg->head->cmd, bcast_op);
     switch (bcast_op) {
         case BCAST_REQ_RENAME:
@@ -258,7 +258,7 @@ static status_t dss_broadcast_msg_with_try(dss_session_t *session, mes_message_h
         cm_reset_error();
         vaild_inst_mask = ((cur_work_inst_map & snd_err_inst_map) | new_added_inst_map);
         vaild_inst = (param->inst_map) & (~((uint64)0x1 << (uint64)(param->inst_id))) & vaild_inst_mask;
-        LOG_DEBUG_INF("Try broadcast num is %u, head rsn is %u, head cmd is %u, req cmd is %u.", i, head->rsn,
+        LOG_DEBUG_INF("Try broadcast num is %u, head rsn is %llu, head cmd is %u, req cmd is %u.", i, head->rsn,
             head->cmd, req->type);
         mes_broadcast2(session->id, vaild_inst, head, (const void *)buffer, &succ_req_inst);
         if (!recv_msg->handle_recv_msg && timeout > 0) {
