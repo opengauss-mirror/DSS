@@ -75,12 +75,10 @@ typedef uint32 cm_shm_key_t;
 #define CM_SHM_ATTACH_RDONLY FILE_MAP_READ
 #define CM_SHM_ATTACH_RW FILE_MAP_ALL_ACCESS
 #define CM_SHM_PERMISSION 0
-#define PERM_GRPRW (_S_IREAD | _S_IWRITE)
 #else
 #define CM_SHM_ATTACH_RDONLY SHM_RDONLY
 #define CM_SHM_ATTACH_RW 0 /* the default attach mode is read write */
-#define CM_SHM_PERMISSION 0660
-#define PERM_GRPRW (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)
+#define CM_SHM_PERMISSION 0600
 #endif
 
 #define CM_SHM_CTRL_CURRENT_VERSION 6u
@@ -161,7 +159,7 @@ typedef uint64_t sh_mem_p;
 status_t cm_init_shm(uint32 shm_key);
 void cm_destroy_shm(void);
 
-void *cm_get_shm(cm_shm_type_e type, uint32 id, uint64 size, uint32 flag, uint32 permission);
+void *cm_get_shm(cm_shm_type_e type, uint32 id, uint64 size, uint32 flag);
 bool32 cm_del_shm(cm_shm_type_e type, uint32 id);
 void *cm_attach_shm(cm_shm_type_e type, uint32 id, uint64 size, uint32 flag);
 uint64 cm_get_shm_ctrl_flag(void);

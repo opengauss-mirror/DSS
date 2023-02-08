@@ -334,9 +334,9 @@ static status_t cm_create_shm_ctrl(void)
     return CM_SUCCESS;
 }
 
-static void *cm_create_shm_block(cm_shm_key_t key, uint64 size, uint32 flag, uint32 permission)
+static void *cm_create_shm_block(cm_shm_key_t key, uint64 size, uint32 flag)
 {
-    return cm_create_shm(key, size, flag, permission);
+    return cm_create_shm(key, size, flag, CM_SHM_PERMISSION);
 }
 
 static void init_entry(cm_shm_map_entry_t *entry)
@@ -446,21 +446,21 @@ status_t cm_init_shm(uint32 shm_key)
     }
 }
 
-static void *cm_do_get_shm(cm_shm_key_t key, uint64 size, uint32 flag, uint32 permission)
+static void *cm_do_get_shm(cm_shm_key_t key, uint64 size, uint32 flag)
 {
     void *result = cm_do_attach_shm(key, size, flag, CM_FALSE);
 
-    return result != NULL ? result : cm_create_shm_block(key, size, flag, permission);
+    return result != NULL ? result : cm_create_shm_block(key, size, flag);
 }
 
-void *cm_get_shm(cm_shm_type_e type, uint32 id, uint64 size, uint32 flag, uint32 permission)
+void *cm_get_shm(cm_shm_type_e type, uint32 id, uint64 size, uint32 flag)
 {
     cm_shm_key_t key = cm_shm_key_of(type, id);
     if (key == CM_INVALID_SHM_KEY) {
         return NULL;
     }
     cm_lock_shm_map();
-    void *result = cm_do_get_shm(key, size, flag, permission);
+    void *result = cm_do_get_shm(key, size, flag);
     cm_unlock_shm_map();
     return result;
 }

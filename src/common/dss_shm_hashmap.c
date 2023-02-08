@@ -83,8 +83,7 @@ static uint32 shm_oamap_get_near_prime(unsigned long n)
     }
 }
 
-int32 shm_hashmap_init(
-    shm_hashmap_t *map, uint32 init_bucket_capacity, uint32 id, int32 permission, cm_oamap_compare_t compare_func)
+int32 shm_hashmap_init(shm_hashmap_t *map, uint32 init_bucket_capacity, uint32 id, cm_oamap_compare_t compare_func)
 {
     uint64 size;
     void *addr = NULL;
@@ -102,7 +101,7 @@ int32 shm_hashmap_init(
 
     size = map->num * (uint32)sizeof(shm_hashmap_bucket_t);
     map->not_extend = 1;
-    addr = cm_get_shm(SHM_TYPE_HASH, id, size, CM_SHM_ATTACH_RW, (uint32)permission);
+    addr = cm_get_shm(SHM_TYPE_HASH, id, size, CM_SHM_ATTACH_RW);
     if (addr == NULL) {
         LOG_DEBUG_ERR("db_get_shm failed");
         return ERR_ALLOC_MEMORY;

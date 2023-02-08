@@ -350,8 +350,8 @@ status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **inf
             LOG_DEBUG_ERR("malloc stack failed, align size:%u, size:%u.", DSS_ALIGN_SIZE, DSS_MAX_STACK_BUF_SIZE));
 
         g_vgs_info->volume_group[i].stack.size = DSS_MAX_STACK_BUF_SIZE;
-        int32 ret = shm_hashmap_init(
-            &share_vg_info->vg[i].buffer_cache, DSS_BLOCK_HASH_SIZE, i, PERM_GRPRW, cm_oamap_uint64_compare);
+        int32 ret =
+            shm_hashmap_init(&share_vg_info->vg[i].buffer_cache, DSS_BLOCK_HASH_SIZE, i, cm_oamap_uint64_compare);
         if (ret != CM_SUCCESS) {
             DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
             LOG_RUN_ERR("DSS instance failed to initialize buffer cache, %d!", ret);
