@@ -189,7 +189,6 @@ static status_t dss_init_vg_info(dss_vg_info_t *vg_info)
     bool32 result = (bool32)(buf != NULL);
     DSS_RETURN_IF_FALSE2(
         result, LOG_DEBUG_ERR("cm_malloc_align stack failed, align size:%u, size:%u.", DSS_ALIGN_SIZE, len));
-
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         vg_info->volume_group[i].buffer_cache = (shm_hashmap_t *)(buf + i * len);
         vg_info->volume_group[i].vg_latch = (latch_t *)(buf + i * len + DSS_MAX_STACK_BUF_SIZE);
@@ -210,6 +209,8 @@ static status_t dss_get_vg_entry_info(const char *home, dss_config_t *inst_cfg, 
 {
     status_t status = dss_set_cfg_dir(home, inst_cfg);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Environment variant DSS_HOME not found."));
+    status = dss_load_config(inst_cfg);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load parameters."));
     status = dss_load_vg_conf_inner(vg_info, inst_cfg);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load vg conf inner."));
     return dss_init_vg_info(vg_info);
@@ -373,7 +374,8 @@ static status_t dss_inq_reg_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg
             if (item->dss_ctrl->core.volume_attrs[j].flag == VOLUME_FREE) {
                 continue;
             }
-            CM_RETURN_IFERR(dss_check_volume_register(item->dss_ctrl->volume.defs[j].name, host_id, &is_reg, iofence_key));
+            CM_RETURN_IFERR(
+                dss_check_volume_register(item->dss_ctrl->volume.defs[j].name, host_id, &is_reg, iofence_key));
             if (!is_reg) {
                 DSS_PRINT_INF("The node %lld is registered partially, inq_result = 1.\n", host_id);
                 return CM_TIMEDOUT;
@@ -433,6 +435,55 @@ status_t dss_inq_reg_core(const char *home, int64 host_id, dss_vg_info_t *vg_inf
     DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
 #endif
     return CM_PIPECLOSED;
+}
+
+static status_t dss_clean_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, int64 inst_id)
+{
+    bool32 is_lock = CM_FALSE;
+    dss_vg_info_item_t *vg_item;
+    int64 tmp_inst_id = (inst_id == DSS_MAX_INST_ID) ? inst_cfg->params.inst_id : inst_id;
+    for (uint32 i = 0; i < vg_info->group_num; i++) {
+        vg_item = &vg_info->volume_group[i];
+        if (vg_item->vg_name[0] == '0' || vg_item->entry_path[0] == '0') {
+            return CM_ERROR;
+        }
+        if (dss_check_lock_instid(vg_item, vg_item->entry_path, tmp_inst_id, &is_lock) != CM_SUCCESS) {
+            return CM_ERROR;
+        }
+        if (!is_lock) {
+            continue;
+        }
+        if (inst_id != DSS_MAX_INST_ID) {
+            dss_unlock_vg_raid(vg_item, vg_item->entry_path, tmp_inst_id);
+            continue;
+        }
+        if (dss_file_lock_vg_w(inst_cfg) != CM_SUCCESS) {
+            return CM_ERROR;
+        }
+        dss_unlock_vg_raid(vg_item, vg_item->entry_path, tmp_inst_id);
+        dss_file_unlock_vg();
+    }
+    return CM_SUCCESS;
+}
+
+status_t dss_clean_core(const char *home, int64 inst_id)
+{
+#ifndef WIN32
+    dss_config_t inst_cfg;
+    dss_vg_info_t vg_info;
+    status_t status = dss_get_vg_entry_info(home, &inst_cfg, &vg_info);
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg entry info, errcode is %d.\n", status));
+    int32 dss_mode = dss_storage_mode(&inst_cfg);
+    if (dss_mode == DSS_MODE_DISK) {
+        DSS_FREE_POINT(vg_info.volume_group[0].buffer_cache);
+        return CM_SUCCESS;
+    }
+
+    status = dss_clean_inner(&vg_info, &inst_cfg, inst_id);
+    DSS_FREE_POINT(vg_info.volume_group[0].buffer_cache);
+    return status;
+#endif
+    return CM_SUCCESS;
 }
 
 #ifdef __cplusplus

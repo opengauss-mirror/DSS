@@ -38,6 +38,7 @@ status_t dss_unreghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_inf
 status_t dss_reghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_info);
 status_t dss_inq_reg_core(const char *home, int64 host_id, dss_vg_info_t *vg_info);
 bool32 is_register(iof_reg_in_t *reg, int64 host_id, int64 *iofence_key);
+status_t dss_clean_core(const char *home, int64 inst_id);
 
 #ifdef __cplusplus
 }

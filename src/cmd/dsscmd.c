@@ -449,7 +449,7 @@ static status_t cmd_check_du_format(const char *du_format)
 static status_t cmd_check_cfg_name(const char *name)
 {
     for (uint32 i = 0; i < strlen(name); i++) {
-        if (!isalpha((int)name[i]) && isdigit((int)name[i]) && name[i] != '-' && name[i] != '_') {
+        if (!isalpha((int)name[i]) && !isdigit((int)name[i]) && name[i] != '-' && name[i] != '_') {
             DSS_PRINT_ERROR("The name's letter should be [aplha|digit|-|_].\n");
             return CM_ERROR;
         }
@@ -1639,6 +1639,8 @@ static status_t lscli_proc(void)
 
 static dss_args_t cmd_kickh_args[] = {
     {'i', "inst_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
+    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -1650,9 +1652,10 @@ static dss_args_set_t cmd_kickh_args_set = {
 
 static void kickh_help(char *prog_name)
 {
-    (void)printf("\nUsage:%s kickh <-i inst_id> [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("\nUsage:%s kickh <-i inst_id> [-D DSS_HOME] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command] kick off the host from the array\n");
     (void)printf("-i/--inst_id <inst_id>, <required>, the id of the host need to kick off\n");
+    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
                  "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
 }
@@ -1660,20 +1663,27 @@ static void kickh_help(char *prog_name)
 static status_t kickh_proc(void)
 {
     int64 kick_hostid = atoll(cmd_kickh_args[DSS_ARG_IDX_0].input_args);
+    char *home = cmd_kickh_args[DSS_ARG_IDX_1].input_args != NULL ? cmd_kickh_args[DSS_ARG_IDX_1].input_args : NULL;
     dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_kickh_args[DSS_ARG_IDX_1].input_args, &connection);
+    status_t status = get_connection_by_input_args(cmd_kickh_args[DSS_ARG_IDX_2].input_args, &connection);
     if (status != CM_SUCCESS) {
         return status;
     }
 
     status = dss_kick_host_sync(&connection, kick_hostid);
+    dss_disconnect_ex(&connection);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to kick host, kickid %lld.\n", kick_hostid);
-    } else {
-        DSS_PRINT_INF("Succeed to kick host, kickid %lld.\n", kick_hostid);
+        return CM_ERROR;
     }
-    dss_disconnect_ex(&connection);
-    return status;
+
+    status = dss_clean_core(home, kick_hostid);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to clean lock.\n");
+        return CM_ERROR;
+    }
+    DSS_PRINT_INF("Succeed to kick host, kickid %lld.\n", kick_hostid);
+    return CM_SUCCESS;
 }
 
 static dss_args_t cmd_reghl_args[] = {
@@ -2696,7 +2706,7 @@ static dss_args_set_t cmd_getstatus_args_set = {
 
 static void getstatus_help(char *prog_name)
 {
-    (void)printf("\nUsage:%s getstatus <-n name> [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("\nUsage:%s getstatus [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command] get dss server status\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
                  "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
@@ -2705,7 +2715,7 @@ static void getstatus_help(char *prog_name)
 static status_t getstatus_proc(void)
 {
     dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_getstatus_args[DSS_ARG_IDX_1].input_args, &connection);
+    status_t status = get_connection_by_input_args(cmd_getstatus_args[DSS_ARG_IDX_0].input_args, &connection);
     if (status != CM_SUCCESS) {
         return status;
     }
@@ -2861,6 +2871,36 @@ static status_t scandisk_proc(void)
 #endif
 }
 
+static dss_args_t cmd_clean_args[] = {
+    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
+};
+
+static dss_args_set_t cmd_clean_args_set = {
+    cmd_clean_args,
+    sizeof(cmd_clean_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+static void clean_help(char *prog_name)
+{
+    (void)printf("\nUsage:%s clean [-D DSS_HOME]\n", prog_name);
+    (void)printf("[manage command] clean resource\n");
+    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
+}
+
+static status_t clean_proc(void)
+{
+    char *home = cmd_clean_args[DSS_ARG_IDX_0].input_args != NULL ? cmd_clean_args[DSS_ARG_IDX_0].input_args : NULL;
+    status_t status = dss_clean_core(home, DSS_MAX_INST_ID);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to clean.\n");
+    } else {
+        DSS_PRINT_INF("Succeed to clean.\n");
+    }
+    return status;
+}
+
 // clang-format off
 dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set},
                                       {"lsvg", lsvg_help, lsvg_proc, &cmd_lsvg_args_set},
@@ -2894,6 +2934,7 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set}
                                       {"getstatus", getstatus_help, getstatus_proc, &cmd_getstatus_args_set},
                                       {"stopdss", stopdss_help, stopdss_proc, &cmd_stopdss_args_set},
                                       {"scandisk", scandisk_help, scandisk_proc, &cmd_scandisk_args_set},
+                                      {"clean", clean_help, clean_proc, &cmd_clean_args_set},
 };
 
 // clang-format on
