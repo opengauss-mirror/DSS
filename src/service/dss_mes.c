@@ -766,42 +766,7 @@ static status_t dss_init_readvlm_remote_params(
 
 static bool32 dss_packets_verify(bool32 bfirst, big_packets_ctrl_t *lastctrl, big_packets_ctrl_t *ctrl)
 {
-    if ((ctrl->endflag == CM_TRUE) && (ctrl->cursize + ctrl->offset == ctrl->totalsize)) {
-        return CM_TRUE;
-    }
-
-    if (bfirst == CM_TRUE) {
-        *lastctrl = *ctrl;
-        return CM_TRUE;
-    }
-
-    if (ctrl->seq != (lastctrl->seq + 1)) {
-        LOG_RUN_ERR(
-            "msg verfy failed, seq error, cur seq(%u) last seq(%u).", (uint32)(ctrl->seq), (uint32)(lastctrl->seq));
-        return CM_FALSE;
-    }
-
-    if (ctrl->cursize > ctrl->totalsize) {
-        LOG_RUN_ERR("msg verfy failed, cursize error, cursize(%u) totalsize(%u).",
-            (uint32)(ctrl->cursize), (uint32)(ctrl->totalsize));
-        return CM_FALSE;
-    }
-
-    if ((lastctrl->offset + lastctrl->cursize) != ctrl->offset) {
-        LOG_RUN_ERR("msg verfy failed, offset error, last cursize(%u) last offset(%u) cur offset(%u).",
-            lastctrl->cursize, lastctrl->offset, ctrl->offset);
-        return CM_FALSE;
-    }
-    
-    if ((ctrl->endflag == CM_TRUE) && (ctrl->cursize + ctrl->offset != ctrl->totalsize)) {
-        LOG_RUN_ERR("msg verfy failed, cursize error, cursize(%u) offset(%u) totalsize(%u).", ctrl->cursize,
-            ctrl->offset, ctrl->totalsize);
-        return CM_FALSE;
-    }
-
-    if (ctrl->totalsize != lastctrl->totalsize) {
-        LOG_RUN_ERR("msg verfy failed, totalsize error, cur totalsize(%u) last totalsize(%u).", ctrl->totalsize,
-            lastctrl->totalsize);
+    if ((ctrl->endflag != CM_TRUE) || (ctrl->cursize + ctrl->offset != ctrl->totalsize)) {
         return CM_FALSE;
     }
 
