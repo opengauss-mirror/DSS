@@ -128,7 +128,6 @@ set(DSS_COMMON_API_PATH ${PROJECT_SOURCE_DIR}/src/common_api)
 set(DSS_CMD_PATH ${PROJECT_SOURCE_DIR}/src/cmd)
 set(DSS_SER_PATH ${PROJECT_SOURCE_DIR}/src/service)
 set(DSS_INTERFACE_PATH ${PROJECT_SOURCE_DIR}/src/interface)
-set(DSS_DSSAIO_PATH ${PROJECT_SOURCE_DIR}/src/dssaio)
 set(DSS_GLOBAL_CACHE_PATH ${PROJECT_SOURCE_DIR}/src/gcache)
 
 ## other dependency include
