@@ -727,6 +727,7 @@ static int32 init_single_logger(log_param_t *log_param, log_type_t log_id)
     char file_name[CM_FILE_NAME_BUFFER_SIZE] = {'\0'};
     CM_RETURN_IFERR(init_single_logger_core(log_param, log_id, file_name, CM_FILE_NAME_BUFFER_SIZE));
     (void)cm_log_init(log_id, (const char *)file_name);
+    cm_log_open_compress(log_id, DSS_TRUE);
     return DSS_SUCCESS;
 }
 
@@ -763,6 +764,11 @@ int32 dss_init_logger(char *log_home, unsigned int log_level, unsigned int log_b
     log_param->audit_backup_file_count = log_backup_file_count;
     log_param->max_log_file_size = log_max_file_size;
     log_param->max_audit_file_size = log_max_file_size;
+    log_param->log_compressed = DSS_TRUE;
+    log_param->log_compress_buf = malloc(CM_LOG_COMPRESS_BUFSIZE);
+    if (log_param->log_compress_buf == NULL) {
+        return ERR_DSS_INIT_LOGGER_FAILED;
+    }
     cm_log_set_file_permissions(600);
     cm_log_set_path_permissions(700);
     (void)cm_set_log_module_name("DSS", sizeof("DSS"));
