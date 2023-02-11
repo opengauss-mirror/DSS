@@ -29,6 +29,7 @@
 #include "cm_types.h"
 #include "cm_defs.h"
 
+typedef void *rados_cluster;
 typedef void *ceph_client_ctx;
 typedef void *image_handle;
 #ifdef __cplusplus
@@ -44,6 +45,12 @@ typedef enum {
 /* client keepalive deadline, a client should be kicked of */
 #define CEPH_CLIENT_KEEPALIVE_TIMEOUT 30
 
+/* image rbd modify time update interval */
+#define RBD_MTIME_UPDATE_INTERVAL "10"
+
+/* image rbd access time update interval */
+#define RBD_ATIME_UPDATE_INTERVAL "10"
+
 /**
  * before pool operation should init operation context
  * ctx	handler of pool operation
@@ -52,7 +59,13 @@ typedef enum {
  * timeout client keepalive timeout
  * return 0 sucess, !0 failed;
  */
-int ceph_client_ctx_init(ceph_client_ctx *ctx, char *pool_name, char *conf, uint64_t timeout);
+int ceph_client_ctx_init(rados_cluster *cluster, ceph_client_ctx *ctx, char *pool_name, char *conf, uint64_t timeout);
+
+/**
+ * close rados cluster handle
+ * return void 
+ */
+void ceph_client_rados_shutdown(rados_cluster cluster);
 
 /**
  * finish pool operation should close context

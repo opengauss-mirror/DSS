@@ -324,6 +324,7 @@ status_t dss_open_volume_rbd(const char *name, const char *code, int flags, dss_
 {
     errno_t ret;
     dss_config_t *inst_cfg = g_inst_cfg;
+    rados_cluster cluster;
     ceph_client_ctx ctx;
     image_handle image;
     char *config = inst_cfg->params.ceph_config;
@@ -335,7 +336,7 @@ status_t dss_open_volume_rbd(const char *name, const char *code, int flags, dss_
         image_name = rbd_config->image_name;
     }
 
-    if (ceph_client_ctx_init(&ctx, pool_name, config, CEPH_CLIENT_KEEPALIVE_TIMEOUT) != CM_SUCCESS) {
+    if (ceph_client_ctx_init(&cluster, &ctx, pool_name, config, CEPH_CLIENT_KEEPALIVE_TIMEOUT) != CM_SUCCESS) {
         LOG_RUN_ERR("Init ceph client %s/%s ctx failed.\n", pool_name, image_name);
         return CM_ERROR;
     } else {
@@ -352,6 +353,7 @@ status_t dss_open_volume_rbd(const char *name, const char *code, int flags, dss_
     ret = snprintf_s(volume->name, DSS_MAX_NAME_LEN, DSS_MAX_NAME_LEN - 1, "%s", name);
     DSS_SECUREC_SS_RETURN_IF_ERROR(ret, CM_ERROR);
     volume->name_p = volume->name;
+    volume->rds_cluster = cluster;
     volume->image = image;
     volume->ctx = ctx;
     return CM_SUCCESS;
@@ -360,6 +362,7 @@ status_t dss_open_volume_rbd(const char *name, const char *code, int flags, dss_
 status_t dss_open_simple_volume_rbd(const char *name, int flags, dss_simple_volume_t *volume)
 {
     dss_config_t *inst_cfg = g_inst_cfg;
+    rados_cluster cluster;
     ceph_client_ctx ctx;
     image_handle image;
     char *config = inst_cfg->params.ceph_config;
@@ -371,7 +374,7 @@ status_t dss_open_simple_volume_rbd(const char *name, int flags, dss_simple_volu
         image_name = rbd_config->image_name;
     }
 
-    if (ceph_client_ctx_init(&ctx, pool_name, config, CEPH_CLIENT_KEEPALIVE_TIMEOUT) != CM_SUCCESS) {
+    if (ceph_client_ctx_init(&cluster, &ctx, pool_name, config, CEPH_CLIENT_KEEPALIVE_TIMEOUT) != CM_SUCCESS) {
         LOG_RUN_ERR("Init ceph client %s/%s ctx failed.\n", pool_name, image_name);
         return CM_ERROR;
     } else {
@@ -385,6 +388,7 @@ status_t dss_open_simple_volume_rbd(const char *name, int flags, dss_simple_volu
         LOG_RUN_INF("Ceph image %s/%s open success.\n", pool_name, image_name);
     }
 
+    volume->rds_cluster = cluster;
     volume->image = image;
     volume->ctx = ctx;
     return CM_SUCCESS;
@@ -395,8 +399,10 @@ void dss_close_volume_rbd(dss_volume_t *volume)
     if (volume->image != NULL) {
         ceph_client_create_close(volume->image);
         ceph_client_ctx_close(volume->ctx);
+        ceph_client_rados_shutdown(volume->rds_cluster);
         volume->image = NULL;
         volume->ctx = NULL;
+        volume->rds_cluster = NULL;
     }
 
     errno_t errcode = memset_s(volume, sizeof(dss_volume_t), 0, sizeof(dss_volume_t));
@@ -409,10 +415,12 @@ void dss_close_simple_volume_rbd(dss_simple_volume_t *simple_volume)
     if (simple_volume->image != NULL) {
         ceph_client_create_close(simple_volume->image);
         ceph_client_ctx_close(simple_volume->ctx);
+        ceph_client_rados_shutdown(simple_volume->rds_cluster);
     }
     simple_volume->handle = DSS_INVALID_HANDLE;
     simple_volume->image = NULL;
     simple_volume->ctx = NULL;
+    simple_volume->rds_cluster = NULL;
 }
 
 uint64 dss_get_volume_size_rbd(dss_volume_t *volume)

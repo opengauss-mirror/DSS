@@ -74,8 +74,6 @@ typedef struct st_dss_params {
 #ifdef ENABLE_GLOBAL_CACHE
     rbd_config_params_t rbd_config_params;
     char ceph_config[DSS_FILE_NAME_BUFFER_SIZE];
-    void *rados_handle;
-    void *rbd_handle;
 #endif
 } dss_params_t;
 

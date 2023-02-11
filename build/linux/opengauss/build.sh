@@ -26,6 +26,7 @@ function print_help()
     -3rd|--binarylib_dir   the directory of third party binarylibs.
     -m|--version_mode      this values of paramenter is Debug, Release, the default value is Release.
     -t|--build_tool          this values of parameter is cmake, make, the default value is cmake.
+    -s|--storage_mode      storage device type. values is disk, ceph. default is disk. 
 "
 }
 
@@ -57,6 +58,10 @@ while [ $# -gt 0 ]; do
               exit 1
           fi
           build_tool=$2
+          shift 2
+          ;;
+        -s|--storage_mode)
+          storage_mode=$2
           shift 2
           ;;
          *)
@@ -137,8 +142,12 @@ cp -r libcrypto_static.a libcrypto.a
 
 cd $PACKAGE
 if [ "$build_tool"x == "cmake"x ];then
-    cmake -DCMAKE_BUILD_TYPE=${version_mode} -DOPENGAUSS_FLAG=ON \
-    -DENABLE_EXPORT_API=${export_api} CMakeLists.txt
+    cmake_opts="-DCMAKE_BUILD_TYPE=${version_mode} -DOPENGAUSS_FLAG=ON \
+    -DENABLE_EXPORT_API=${export_api}"
+    if [ "${storage_mode}"x == "ceph"x ];then
+        cmake_opts="${cmake_opts} -DENABLE_GLOBAL_CACHE=ON"
+    fi
+    cmake ${cmake_opts} CMakeLists.txt
     make all -sj 8
 else
     make clean

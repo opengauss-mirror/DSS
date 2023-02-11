@@ -31,7 +31,7 @@
 extern "C" {
 #endif
 
-int ceph_client_ctx_init(ceph_client_ctx *ctx, char *pool_name, char *conf, uint64_t timeout)
+int ceph_client_ctx_init(rados_cluster *rds_cluster, ceph_client_ctx *ctx, char *pool_name, char *conf, uint64_t timeout)
 {
 #ifdef ENABLE_GLOBAL_CACHE
     rados_t cluster;
@@ -43,6 +43,8 @@ int ceph_client_ctx_init(ceph_client_ctx *ctx, char *pool_name, char *conf, uint
     if (dyn_rados_conf_read_file(cluster, conf) < 0) {
         goto out;
     }
+    dyn_rados_conf_set(cluster, "rbd_mtime_update_interval", RBD_MTIME_UPDATE_INTERVAL);
+    dyn_rados_conf_set(cluster, "rbd_atime_update_interval", RBD_ATIME_UPDATE_INTERVAL);
     if (dyn_rados_connect(cluster) < 0) {
         goto out;
     }
@@ -50,6 +52,7 @@ int ceph_client_ctx_init(ceph_client_ctx *ctx, char *pool_name, char *conf, uint
         goto out;
     }
     *ctx = (ceph_client_ctx *)iocxt;
+    *rds_cluster = (rados_cluster *)cluster;
     return CM_SUCCESS;
 
 out:
@@ -58,6 +61,13 @@ out:
     return CM_ERROR;
 #else
     return CM_ERROR;
+#endif
+}
+
+void ceph_client_rados_shutdown(rados_cluster cluster)
+{
+#ifdef ENABLE_GLOBAL_CACHE
+    dyn_rados_shutdown((rados_t *)cluster);
 #endif
 }
 
