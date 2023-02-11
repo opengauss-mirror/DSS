@@ -73,6 +73,8 @@ function unregister()
         exit 1
     fi
 
+    dsscmd clean -D ${DSS_HOME} >> /dev/null 2>&1
+
     result="$(dsscmd inq_reg -i ${LOCAL_INSTANCE_ID} -D ${DSS_HOME})"
     if [[ $? == 255 ]]
     then

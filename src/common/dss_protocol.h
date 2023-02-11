@@ -132,6 +132,10 @@ static inline status_t dss_put_str(dss_packet_t *pack, const char *str)
     CM_ASSERT(str != NULL);
     size = (uint32)strlen(str);
     addr = DSS_WRITE_ADDR(pack);
+    if (size >= DSS_REMAIN_SIZE(pack)) {
+        CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, "PACKET OVERFLOW");
+        return CM_ERROR;
+    }
     if (size != 0) {
         errcode = memcpy_s(addr, DSS_REMAIN_SIZE(pack), str, size);
         DSS_SECUREC_RETURN_IF_ERROR(errcode, CM_ERROR);
