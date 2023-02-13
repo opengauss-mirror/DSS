@@ -77,6 +77,8 @@ int32_t dyn_rbd_read(rbd_image_t image, uint64_t ofs, int32_t len, char *buf);
 
 status_t dyn_rbd_get_size(rbd_image_t image, int64_t *size);
 
+void dyn_rados_conf_set(rados_t cluster, const char *option, const char *value);
+
 #ifdef __cplusplus
 }
 #endif

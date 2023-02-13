@@ -185,6 +185,12 @@ status_t dyn_rbd_get_size(rbd_image_t image, int64_t *size)
     return (*func)(image, size);
 }
 
+void dyn_rados_conf_set(rados_t cluster, const char *option, const char *value)
+{
+    status_t (*func)() = dss_dlsym(g_rbd_handle, "rados_conf_set");
+    (void)(*func)(cluster, option, value);
+}
+
 #ifdef __cplusplus
 }
 #endif

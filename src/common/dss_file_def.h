@@ -140,6 +140,7 @@ typedef struct st_dss_volume {
 #ifdef ENABLE_GLOBAL_CACHE
     image_handle image;
     ceph_client_ctx ctx;
+    rados_cluster rds_cluster;
 #endif
 } dss_volume_t;
 
@@ -184,6 +185,7 @@ typedef struct st_dss_simple_handle_t {
 #ifdef ENABLE_GLOBAL_CACHE
     image_handle image;
     ceph_client_ctx ctx;
+    rados_cluster rds_cluster;
 #endif
 } dss_simple_volume_t;
 
