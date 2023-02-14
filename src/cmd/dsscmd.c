@@ -2925,7 +2925,7 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set}
                                       {"getstatus", getstatus_help, getstatus_proc, &cmd_getstatus_args_set},
                                       {"stopdss", stopdss_help, stopdss_proc, &cmd_stopdss_args_set},
                                       {"scandisk", scandisk_help, scandisk_proc, &cmd_scandisk_args_set},
-                                      {"clean", clean_vglock_help, clean_vglock_proc, &cmd_clean_vglock_args_set},
+                                      {"clean_vglock", clean_vglock_help, clean_vglock_proc, &cmd_clean_vglock_args_set},
 };
 
 // clang-format on
