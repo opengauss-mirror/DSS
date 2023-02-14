@@ -74,8 +74,7 @@ typedef struct tag_shm_oamap_param {
     cm_oamap_compare_t compare_func;
 } shm_oamap_param_t;
 
-int32 shm_hashmap_init(
-    shm_hashmap_t *map, uint32 init_bucket_capacity, uint32 id, int32 permission, cm_oamap_compare_t compare_func);
+int32 shm_hashmap_init(shm_hashmap_t *map, uint32 init_bucket_capacity, uint32 id, cm_oamap_compare_t compare_func);
 void shm_hashmap_destroy(shm_hashmap_t *map, uint32 id);
 
 #define SHM_HASH_BUCKET_INSERT(bucket, item, item_ctrl, first_ctrl) \

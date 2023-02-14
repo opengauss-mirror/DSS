@@ -182,8 +182,7 @@ status_t ga_create_global_area(void)
         app_area_size += g_app_pools[i].capacity;
     }
 
-    g_app_area_addr =
-        (char *)cm_get_shm(SHM_TYPE_FIXED, (uint32)SHM_ID_APP_GA, app_area_size, CM_SHM_ATTACH_RW, PERM_GRPRW);
+    g_app_area_addr = (char *)cm_get_shm(SHM_TYPE_FIXED, (uint32)SHM_ID_APP_GA, app_area_size, CM_SHM_ATTACH_RW);
     if (g_app_area_addr == NULL) {
         LOG_RUN_ERR("Can't create the application area because of failed to get shm, area size = %llu.", app_area_size);
         return ERR_DSS_GA_INIT;
@@ -304,7 +303,7 @@ static status_t ga_extend_pool(ga_pool_id_e pool_id)
     object_cost = pool->def.object_size + (uint32)sizeof(ga_object_map_t);
     ex_pool_size = (ulong)object_cost * pool->def.object_count;
 
-    ex_addr = (char *)cm_get_shm(SHM_TYPE_GA, pool_shm_id, ex_pool_size, CM_SHM_ATTACH_RW, PERM_GRPRW);
+    ex_addr = (char *)cm_get_shm(SHM_TYPE_GA, pool_shm_id, ex_pool_size, CM_SHM_ATTACH_RW);
     if (ex_addr == NULL) {
         DSS_RETURN_IFERR2(
             CM_ERROR, LOG_RUN_ERR("get shared memory in failure when extending the %s pool.", pool->pool_name));

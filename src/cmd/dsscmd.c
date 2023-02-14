@@ -2326,10 +2326,6 @@ static status_t du_proc(void)
     const char *path = cmd_du_args[DSS_ARG_IDX_0].input_args;
     const char *input_param = cmd_du_args[DSS_ARG_IDX_1].input_args;
     dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_du_args[DSS_ARG_IDX_2].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
-    }
 
     char path_buf[DSS_FILE_PATH_MAX_LENGTH];
     errno_t errcode = strcpy_s(path_buf, sizeof(path_buf), path);
@@ -2340,7 +2336,12 @@ static status_t du_proc(void)
     }
 
     char params[DSS_DU_PARAM_LEN] = {0};
-    status = du_get_params(input_param, params, sizeof(params));
+    status_t status = du_get_params(input_param, params, sizeof(params));
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+
+    status = get_connection_by_input_args(cmd_du_args[DSS_ARG_IDX_2].input_args, &connection);
     if (status != CM_SUCCESS) {
         return status;
     }
