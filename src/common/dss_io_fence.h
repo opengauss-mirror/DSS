@@ -43,7 +43,7 @@ typedef struct st_dev_info {
 // kick/reg host with all devs
 status_t dss_iof_kick_all_volumes(dss_vg_info_t *dss_vg_info, int64 rk, int64 rk_kick, ptlist_t *reg_list);
 status_t dss_iof_sync_all_vginfo(dss_session_t *session, dss_vg_info_t *dss_vg_info);
-status_t dss_iof_kick_all(int64 rk, int64 rk_kick, bool32 is_server);
+status_t dss_iof_kick_all(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, int64 rk, int64 rk_kick);
 status_t dss_iof_register_core(int64 rk, dss_vg_info_t *dss_vg_info);
 status_t dss_iof_unregister_core(int64 rk, dss_vg_info_t *dss_vg_info);
 status_t dss_iof_register_all(int64 rk, bool32 is_server);
@@ -56,7 +56,7 @@ status_t dss_inquiry_lun(dev_info_t *dev_info);
 
 // read keys and reservations
 status_t dss_iof_inql_regs_core(ptlist_t *reglist, dss_vg_info_item_t *item);
-status_t dss_iof_inql_regs(ptlist_t *reglist, bool32 is_server);
+status_t dss_iof_inql_regs(dss_vg_info_t *vg_info, ptlist_t *reglist);
 
 status_t dss_iof_unregister_single(int64 rk, char *dev);
 status_t dss_iof_register_single(int64 rk, char *dev);

@@ -194,42 +194,27 @@ status_t dss_iof_sync_all_vginfo(dss_session_t *session, dss_vg_info_t *dss_vg_i
     return CM_SUCCESS;
 }
 
-status_t dss_iof_kick_all(int64 rk, int64 rk_kick, bool32 is_server)
+status_t dss_iof_kick_all(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, int64 rk, int64 rk_kick)
 {
 #ifdef WIN32
 #else
-    status_t status = CM_SUCCESS;
-    dss_vg_info_t *dss_vg_info = NULL;
+    status_t status;
     ptlist_t reg_list;
-    dss_config_t *inst_cfg = NULL;
-
-    if (is_server) {
-        dss_vg_info = VGS_INFO;
-        inst_cfg = dss_get_inst_cfg();
-    } else {
-        dss_env_t *dss_env = dss_get_env();
-        dss_vg_info = dss_env->dss_vg_info;
-        inst_cfg = &dss_env->inst_cfg;
-    }
-
-    bool32 result = (bool32)(dss_vg_info != NULL);
-    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Can't get vgs info, is_server %u.", (uint32)is_server));
 
     if (rk_kick == inst_cfg->params.inst_id) {
         LOG_DEBUG_ERR("Can't kick current node, rk_kick %lld, inst id %lld.", rk_kick, inst_cfg->params.inst_id);
         return CM_ERROR;
     }
 
-    result = (bool32)(rk == inst_cfg->params.inst_id);
+    bool32 result = (bool32)(rk == inst_cfg->params.inst_id);
     DSS_RETURN_IF_FALSE2(result,
         LOG_DEBUG_ERR("Must use inst id of current node as rk, rk %lld, inst id %lld.", rk, inst_cfg->params.inst_id));
 
     cm_ptlist_init(&reg_list);
-    status = dss_iof_inql_regs(&reg_list, is_server);
-    DSS_RETURN_IFERR3(status, cm_destroy_ptlist(&reg_list),
-        LOG_DEBUG_ERR("Inquiry regs info failed, is_server %u.", (uint32)is_server));
+    status = dss_iof_inql_regs(vg_info, &reg_list);
+    DSS_RETURN_IFERR3(status, cm_destroy_ptlist(&reg_list), LOG_DEBUG_ERR("Inquiry regs info failed."));
 
-    status = dss_iof_kick_all_volumes(dss_vg_info, rk, rk_kick, &reg_list);
+    status = dss_iof_kick_all_volumes(vg_info, rk, rk_kick, &reg_list);
     DSS_RETURN_IFERR2(status, cm_destroy_ptlist(&reg_list));
 
     cm_destroy_ptlist(&reg_list);
@@ -490,23 +475,16 @@ status_t dss_iof_inql_regs_core(ptlist_t *reglist, dss_vg_info_item_t *item)
     return CM_SUCCESS;
 }
 
-status_t dss_iof_inql_regs(ptlist_t *reglist, bool32 is_server)
+status_t dss_iof_inql_regs(dss_vg_info_t *vg_info, ptlist_t *reglist)
 {
 #ifdef WIN32
 #else
     status_t status = CM_SUCCESS;
-    dss_vg_info_t *dss_vg_info = NULL;
     iof_reg_in_t *reg_info = NULL;
     errno_t ret;
 
-    LOG_DEBUG_INF("Begin inquiry reg infos, is server %d.", is_server);
-    dss_get_vg_info_is_server(is_server, &dss_vg_info);
-    if (dss_vg_info == NULL) {
-        return CM_SUCCESS;
-    }
-
-    for (uint32 i = 0; i < (uint32)dss_vg_info->group_num; i++) {
-        dss_vg_info_item_t *item = &dss_vg_info->volume_group[i];
+    for (uint32 i = 0; i < (uint32)vg_info->group_num; i++) {
+        dss_vg_info_item_t *item = &vg_info->volume_group[i];
         reg_info = (iof_reg_in_t *)malloc(sizeof(iof_reg_in_t));
         bool32 result = (bool32)(reg_info != NULL);
         DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Malloc failed."));

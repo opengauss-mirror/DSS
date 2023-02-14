@@ -73,30 +73,9 @@ function unregister()
         exit 1
     fi
 
-    dsscmd clean -D ${DSS_HOME} >> /dev/null 2>&1
-
-    result="$(dsscmd inq_reg -i ${LOCAL_INSTANCE_ID} -D ${DSS_HOME})"
-    if [[ $? == 255 ]]
-    then
-        log "dsscmd inq_reg -i ${LOCAL_INSTANCE_ID} -D ${DSS_HOME} fail."
-        exit 1
-    fi
-
-    key=$(echo "${result}" | awk '/iofence_key/{print}' | awk -F= '{print $2}' | xargs)
-    if [[ -z ${key} ]]
-    then
-        log "[UNREG]can't find iofence_key. Aborting."
-        exit 1
-    fi
-    if [[ ${key} == -1 ]]
-    then
-        exit 0
-    fi
-    for j in $(echo ${key} | sed "s/,/ /g")
-    do
-        dsscmd unreghl -i ${j} -D ${DSS_HOME} >> /dev/null 2>&1  
-    done
-    log "[UNREG] success."
+    log "[UNREG] Start unreg."
+        dsscmd unreghl -i ${LOCAL_INSTANCE_ID} -t 0 -D ${DSS_HOME} >> /dev/null 2>&1  
+    log "[UNREG] Unreg success."
 }
 
 check_dss_config
