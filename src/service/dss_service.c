@@ -500,28 +500,6 @@ static status_t dss_process_remove_volume(dss_session_t *session)
     return dss_remove_volume(session, vg_name, volume_name);
 }
 
-static status_t dss_process_kick_host(dss_session_t *session)
-{
-    int64 kick_hostid = 0;
-    status_t status = CM_SUCCESS;
-    dss_init_get(&session->recv_pack);
-    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, &kick_hostid));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
-        session->audit_info.resource, DSS_AUDIT_MODIFY, "%lld, %lld", ZFS_INST->inst_cfg.params.inst_id, kick_hostid));
-
-    status = dss_iof_sync_all_vginfo(session, VGS_INFO);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Sync all vginfo failed, status %d.", status));
-
-    status = dss_iof_kick_all(ZFS_INST->inst_cfg.params.inst_id, kick_hostid, CM_TRUE);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to kick host, curr hostid %lld, kick hostid %lld, status %d.",
-            ZFS_INST->inst_cfg.params.inst_id, kick_hostid, status);
-        return status;
-    }
-
-    return CM_SUCCESS;
-}
-
 static status_t dss_process_refresh_file(dss_session_t *session)
 {
     uint64 fid;
@@ -951,7 +929,6 @@ static dss_cmd_hdl_t g_dss_cmd_handle[] = {
     { DSS_CMD_ADD_VOLUME, dss_process_add_volume, NULL, CM_TRUE },
     { DSS_CMD_REMOVE_VOLUME, dss_process_remove_volume, NULL, CM_TRUE },
     { DSS_CMD_REFRESH_VOLUME, dss_process_refresh_volume, NULL, CM_FALSE },
-    { DSS_CMD_KICKH, dss_process_kick_host, NULL, CM_FALSE },
     { DSS_CMD_LOAD_CTRL, dss_process_loadctrl, NULL, CM_FALSE },
     { DSS_CMD_SET_SESSIONID, dss_process_set_sessionid, NULL, CM_FALSE },
     { DSS_CMD_UPDATE_WRITTEN_SIZE, dss_process_update_file_written_size, NULL, CM_TRUE },

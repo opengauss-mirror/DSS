@@ -34,11 +34,12 @@ extern "C" {
 status_t inq_lun(void);
 status_t inq_regs(void);
 status_t dss_check_volume_register(char *entry_path, int64 host_id, bool32 *is_reg, int64 *iofence_key);
-status_t dss_unreghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_info);
+status_t dss_unreghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_info, bool32 is_lock);
 status_t dss_reghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_info);
 status_t dss_inq_reg_core(const char *home, int64 host_id, dss_vg_info_t *vg_info);
 bool32 is_register(iof_reg_in_t *reg, int64 host_id, int64 *iofence_key);
-status_t dss_clean_core(const char *home, int64 inst_id);
+status_t dss_clean_vg_lock(const char *home, int64 inst_id);
+status_t dss_kickh_core(const char *home, int64 host_id);
 
 #ifdef __cplusplus
 }
