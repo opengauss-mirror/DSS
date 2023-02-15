@@ -24,7 +24,7 @@ function print_help()
     echo "Usage: $0 [OPTION]
     -h|--help              show help information.
     -3rd|--binarylib_dir   the directory of third party binarylibs.
-    -m|--version_mode      this values of paramenter is Debug, Release, the default value is Release.
+    -m|--version_mode      this values of paramenter is Debug, Release, DebugDssTest, ReleaseDssTest, the default value is Release.
     -t|--build_tool          this values of parameter is cmake, make, the default value is cmake.
     -s|--storage_mode      storage device type. values is disk, ceph. default is disk. 
 "
@@ -72,6 +72,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+enable_dsstest=OFF
 if [ -z "${version_mode}" ] || [ "$version_mode"x == ""x ]; then
     version_mode=Release
 fi
@@ -82,9 +83,17 @@ fi
 if [ -z "${build_tool}" ] || [ "$build_tool"x == ""x ]; then
     build_tool=cmake
 fi
-if [ ! "$version_mode"x == "Debug"x ] && [ ! "$version_mode"x == "Release"x ]; then
+if [ ! "$version_mode"x == "Debug"x ] && [ ! "$version_mode"x == "Release"x ] && [ ! "$version_mode"x == "DebugDsstest"x ] && [ ! "$version_mode"x == "ReleaseDsstest"x ]; then
     echo "ERROR: version_mode param is error"
     exit 1
+fi
+if [ "$version_mode"x == "DebugDsstest"x ]; then
+    version_mode=Debug
+    enable_dsstest=ON
+fi
+if [ "$version_mode"x == "ReleaseDsstest"x ]; then
+    version_mode=Release
+    enable_dsstest=ON
 fi
 if [ ! "$build_tool"x == "make"x ] && [ ! "$build_tool"x == "cmake"x ]; then
     echo "ERROR: build_tool param is error"
@@ -142,7 +151,7 @@ cp -r libcrypto_static.a libcrypto.a
 
 cd $PACKAGE
 if [ "$build_tool"x == "cmake"x ];then
-    cmake_opts="-DCMAKE_BUILD_TYPE=${version_mode} -DOPENGAUSS_FLAG=ON \
+    cmake_opts="-DCMAKE_BUILD_TYPE=${version_mode} -DENABLE_DSSTEST=${enable_dsstest} -DOPENGAUSS_FLAG=ON \
     -DENABLE_EXPORT_API=${export_api}"
     if [ "${storage_mode}"x == "ceph"x ];then
         cmake_opts="${cmake_opts} -DENABLE_GLOBAL_CACHE=ON"
