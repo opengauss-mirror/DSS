@@ -390,7 +390,7 @@ static status_t dss_inq_reg_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg
         }
     }
     DSS_PRINT_INF("The node %lld is registered, inq_result = 2.\n", host_id);
-    return CM_SUCCESS;
+    return CM_PIPECLOSED;
 }
 
 /*
@@ -433,13 +433,13 @@ status_t dss_inq_reg_core(const char *home, int64 host_id, dss_vg_info_t *vg_inf
         return CM_TIMEDOUT;
     }
     status = dss_inq_reg_inner(vg_info, &inst_cfg, host_id, iofence_key);
-    if (status != CM_SUCCESS) {
-        DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+    DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+    if (status == CM_ERROR) {
         DSS_PRINT_ERROR("Failed to check vg entry info when inq reg, errcode is %d.\n", status);
         return CM_ERROR;
     }
     dss_printf_iofence_key(iofence_key);
-    DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+    return status;
 #endif
     return CM_PIPECLOSED;
 }
