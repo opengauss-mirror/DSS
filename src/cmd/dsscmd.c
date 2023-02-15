@@ -934,13 +934,13 @@ static void lsvg_printf_vg_info(
     dss_vg_used_percent = (dss_vg_used / dss_vg_size) * 100;
     if (detail) {
         (void)printf("   .recycle:\n");
-        (void)printf("      recycle_size:%.0lf\n", dss_vg_recycle_size);
-        (void)printf("   vg_size:%.0lf\n", dss_vg_size);
-        (void)printf("   vg_free:%.0lf\n", dss_vg_free);
-        (void)printf("   vg_used:%.0lf\n", dss_vg_used);
+        (void)printf("      recycle_size:%.05f\n", dss_vg_recycle_size);
+        (void)printf("   vg_size:%.05f\n", dss_vg_size);
+        (void)printf("   vg_free:%.05f\n", dss_vg_free);
+        (void)printf("   vg_used:%.05f\n", dss_vg_used);
         (void)printf("   vg_used_percent:%.2lf\n", dss_vg_used_percent);
     } else {
-        (void)printf("%-14s%-20u%-20.0lf%-20.0lf%-20.0lf%-20.2lf\n", vg_vlm_info->vg_name, vg_vlm_info->volume_count,
+        (void)printf("%-14s%-20u%-20.05f %-20.05f %-20.05f %-20.2lf\n", vg_vlm_info->vg_name, vg_vlm_info->volume_count,
             dss_vg_size, dss_vg_free, dss_vg_used, dss_vg_used_percent);
     }
 }
@@ -994,7 +994,7 @@ static status_t lsvg_info(dss_conn_t *connection, const char *measure, bool32 de
 
     if (!detail) {
         (void)printf(
-            "%-14s%-20s%-20s%-20s%-20s%-20s\n", "vg_name", "volume_count", "size", "free", "used", "percent(%)");
+            "%-14s%-20s%-20s %-20s %-20s %-20s\n", "vg_name", "volume_count", "size", "free", "used", "percent(%)");
     }
 
     for (uint32 vg_id = 0; vg_id < (uint32)allvg_vlm_space_info->group_num; vg_id++) {
@@ -2925,7 +2925,8 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set}
                                       {"getstatus", getstatus_help, getstatus_proc, &cmd_getstatus_args_set},
                                       {"stopdss", stopdss_help, stopdss_proc, &cmd_stopdss_args_set},
                                       {"scandisk", scandisk_help, scandisk_proc, &cmd_scandisk_args_set},
-                                      {"clean_vglock", clean_vglock_help, clean_vglock_proc, &cmd_clean_vglock_args_set},
+                                      {"clean_vglock", clean_vglock_help, clean_vglock_proc,
+                                          &cmd_clean_vglock_args_set},
 };
 
 // clang-format on
