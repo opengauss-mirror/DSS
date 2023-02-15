@@ -428,7 +428,7 @@ static status_t dss_get_home_core(dss_packet_t *send_pack, dss_packet_t *ack_pac
         DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_HOME), "get home info connect error");
         return CM_ERROR;
     }
-    if (extra_info.len == 0 || extra_info.len > DSS_MAX_PATH_BUFFER_SIZE) {
+    if (extra_info.len == 0 || extra_info.len >= DSS_MAX_PATH_BUFFER_SIZE) {
         DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_HOME), "get home info length error");
         return CM_ERROR;
     }
@@ -2281,7 +2281,7 @@ status_t dss_readlink_impl(dss_conn_t *conn, const char *dir_path, char *out_str
         LOG_DEBUG_ERR("readlink get result connect error");
         return CM_ERROR;
     }
-    if (extra_info.len == 0 || extra_info.len > DSS_FILE_PATH_MAX_LENGTH) {
+    if (extra_info.len == 0 || extra_info.len >= DSS_FILE_PATH_MAX_LENGTH) {
         DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_READLINK), "readlink get length error");
         LOG_DEBUG_ERR("readlink get result length error");
         return CM_ERROR;
@@ -2574,7 +2574,7 @@ status_t dss_getcfg_impl(dss_conn_t *conn, const char *name, char *out_str, size
     status_t ret = dss_get_text(ack_pack, &extra_info);
     DSS_RETURN_IFERR2(
         ret, DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GETCFG), "get cfg connect error"));
-    if (extra_info.len < sizeof(uint32) || extra_info.len > len) {
+    if (extra_info.len < sizeof(uint32) || extra_info.len >= len) {
         DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GETCFG), "get cfg length error");
         return CM_ERROR;
     }
