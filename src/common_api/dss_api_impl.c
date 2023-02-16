@@ -1475,15 +1475,9 @@ static status_t dss_check_refresh_file(
             return CM_ERROR;
         }
         DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session, NULL);
-#ifdef OPENGAUSS
-        if (tmp_total_size > context->node->written_size) {
-            *total_size = (int32)context->node->written_size;
-        }
-#else
         if (tmp_total_size > context->node->size) {
             *total_size = (int32)context->node->size;
         }
-#endif
     }
 
     return CM_SUCCESS;
@@ -1552,9 +1546,6 @@ static status_t dss_check_file_written_size(dss_env_t *dss_env, dss_conn_t *conn
             LOG_DEBUG_INF("Success to refresh file:\"%s\", written_size:%llu, size:%llu.", context->node->name,
                 context->node->written_size, context->node->size);
         }
-        /* restrict read to at most maxwr offset to prevent returning incorrect read_size for openGauss */
-        uint64 remaining_len = context->node->written_size - start_offset;
-        *total_size = remaining_len < *total_size ? (int32)remaining_len : *total_size;
     }
     return CM_SUCCESS;
 }
