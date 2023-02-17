@@ -32,7 +32,7 @@ extern "C" {
 
 static void print_dev_info(ptlist_t *devs)
 {
-    printf("%-20s%-20s%-20s%-20s%-15s%-20s\n", "Dev", "Vendor", "Model", "ArraySN", "LUNID", "LUNWWN");
+    printf("%-20s %-20s %-20s %-20s %-15s %-20s\n", "Dev", "Vendor", "Model", "ArraySN", "LUNID", "LUNWWN");
 
     uint32 i;
     dev_info_t *dev_info = NULL;
@@ -48,7 +48,7 @@ static void print_dev_info(ptlist_t *devs)
             cm_str2text(dev_info->data.vendor_info.product, &text);
             cm_trim_text(&text);
             DSS_RETURN_DRIECT_IFERR(cm_text2str(&text, dev_info->data.vendor_info.product, CM_MAX_PRODUCT_LEN));
-            printf("%-20s%-20s%-20s%-20s%-15d%-20s\n", dev_info->dev, dev_info->data.vendor_info.vendor,
+            printf("%-20s %-20s %-20s %-20s %-15d %-20s\n", dev_info->dev, dev_info->data.vendor_info.vendor,
                 dev_info->data.vendor_info.product, dev_info->data.array_info.array_sn, dev_info->data.lun_info.lun_id,
                 dev_info->data.lun_info.lun_wwn);
         }
@@ -59,9 +59,9 @@ static void print_dev_info(ptlist_t *devs)
 static void print_reg_info_rely_resk(int64 resk)
 {
     if (resk > 0) {
-        printf("%-20lld", resk - 1);
+        printf("%-20lld ", resk - 1);
     } else {
-        printf("%-20c", '-');
+        printf("%-20c ", '-');
     }
 }
 
@@ -75,7 +75,7 @@ static void print_reg_info_rely_key_count(iof_reg_in_t *reg_info)
         (void)memset_s(buff, sizeof(buff), 0, sizeof(buff));
         text.len = 0;
         for (int32 j = 0; j < reg_info->key_count; j++) {
-            cm_concat_int32(&text, DSS_MAX_REKEY_BUFF, (uint32)(reg_info->reg_keys[j] - 1));
+            cm_concat_int32(&text, DSS_MAX_REKEY_BUFF, (int32)(reg_info->reg_keys[j] - 1));
             if (j + 1 < reg_info->key_count) {
                 (void)cm_concat_string(&text, DSS_MAX_REKEY_BUFF, ",");
             }
@@ -88,7 +88,7 @@ static void print_reg_info_rely_key_count(iof_reg_in_t *reg_info)
 
 static void print_reg_info(ptlist_t *regs)
 {
-    printf("%-20s%-20s%-20s%-20s\n", "Dev", "Generation", "RESKEY", "REGKEY");
+    printf("%-20s %-20s %-20s %-20s\n", "Dev", "Generation", "RESKEY", "REGKEY");
 
     uint32 i;
     iof_reg_in_t *reg_info = NULL;
@@ -96,7 +96,7 @@ static void print_reg_info(ptlist_t *regs)
     for (i = 0; i < regs->count; i++) {
         reg_info = (iof_reg_in_t *)cm_ptlist_get(regs, i);
         if (reg_info != NULL) {
-            printf("%-20s%-20u", reg_info->dev, reg_info->generation);
+            printf("%-20s %-20u ", reg_info->dev, reg_info->generation);
             print_reg_info_rely_resk(reg_info->resk);
             print_reg_info_rely_key_count(reg_info);
         }
@@ -142,6 +142,9 @@ status_t inq_regs(void)
 bool32 is_register(iof_reg_in_t *reg, int64 host_id, int64 *iofence_key)
 {
     for (int32 i = 0; i < reg->key_count; i++) {
+        if (reg->reg_keys[i] < 1 || reg->reg_keys[i] > CM_MAX_INSTANCES) {
+            continue;
+        }
         iofence_key[reg->reg_keys[i] - 1]++;
     }
     for (int32 i = 0; i < reg->key_count; i++) {
