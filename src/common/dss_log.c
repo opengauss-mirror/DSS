@@ -228,6 +228,7 @@ status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32
     char file_name[CM_MAX_PATH_LEN];
     log_param_t *log_param = cm_log_param_instance();
     log_param->log_level = 0;
+    log_param->log_compressed = DSS_TRUE;
 
     if (dss_init_log_home(inst_cfg, log_param) != CM_SUCCESS) {
         return CM_ERROR;
@@ -249,6 +250,7 @@ status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32
         if (cm_log_init(log_def[i].log_id, file_name) != CM_SUCCESS) {
             return CM_ERROR;
         }
+        cm_log_open_compress(log_def[i].log_id, DSS_TRUE);
     }
     log_param->log_instance_startup = CM_TRUE;
     cm_init_error_handler(cm_set_log_error);

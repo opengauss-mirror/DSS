@@ -118,6 +118,7 @@ export DSS_LIBRARYS=$(pwd)/../../../library
 [ -d "${DSS_LIBRARYS}" ] && rm -rf ${DSS_LIBRARYS}
 mkdir -p $DSS_LIBRARYS/huawei_security
 mkdir -p $DSS_LIBRARYS/openssl
+mkdir -p $DSS_LIBRARYS/zlib
 mkdir -p $DSS_LIBRARYS/libaio/include
 mkdir -p $DSS_LIBRARYS/cbb
 
@@ -127,9 +128,11 @@ COPT_LIB_PATH=${binarylib_dir}/kernel/component
 
 cp -r $P_LIB_PATH/Huawei_Secure_C/comm/lib     $DSS_LIBRARYS/huawei_security/lib
 cp -r $LIB_PATH/openssl/comm/lib               $DSS_LIBRARYS/openssl/lib
+cp -r $LIB_PATH/zlib1.2.11/comm/lib              $DSS_LIBRARYS/zlib/lib
 
 cp -r $P_LIB_PATH/Huawei_Secure_C/comm/include    $DSS_LIBRARYS/huawei_security/include
 cp -r $LIB_PATH/openssl/comm/include              $DSS_LIBRARYS/openssl/include
+cp -r $LIB_PATH/zlib1.2.11/comm/include                 $DSS_LIBRARYS/zlib/include 
 
 if [ -f "/usr/include/libaio.h" ];then
     echo "begin cp libaio.h from /usr/include/"

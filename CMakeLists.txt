@@ -135,11 +135,13 @@ set(DSS_SECUREC_INC_PATH        "${CMAKE_CURRENT_SOURCE_DIR}/library/huawei_secu
 set(DSS_OPENSSL_PATH            "${CMAKE_CURRENT_SOURCE_DIR}/library/openssl/include")
 set(DSS_CBB_PATH                "${CMAKE_CURRENT_SOURCE_DIR}/library/cbb/include")
 set(LIBAIO_INC_PATH            "${CMAKE_CURRENT_SOURCE_DIR}/library/libaio/include")
+set(ZLIB_INC_PATH               "${CMAKE_CURRENT_SOURCE_DIR}/library/zlib/include")
 
 ## lib
 set(SECUREC_LIB_PATH            "${CMAKE_CURRENT_SOURCE_DIR}/library/huawei_security/lib")
 set(OPENSSL_LIB_PATH            "${CMAKE_CURRENT_SOURCE_DIR}/library/openssl/lib")
 set(CBB_LIB_PATH                "${CMAKE_CURRENT_SOURCE_DIR}/library/cbb/lib")
+set(ZLIB_PATH                   "${CMAKE_CURRENT_SOURCE_DIR}/library/zlib/lib")
 
 ## output path
 set (LIBRARY_OUTPUT_PATH        ${CMAKE_CURRENT_SOURCE_DIR}/output/lib)
@@ -158,7 +160,7 @@ IF (ENABLE_GLOBAL_CACHE STREQUAL "ON")
 ENDIF()
 
 ## add source
-link_directories(${LIBRARY_OUTPUT_PATH} ${SECUREC_LIB_PATH} ${CBB_LIB_PATH})
+link_directories(${LIBRARY_OUTPUT_PATH} ${SECUREC_LIB_PATH} ${ZLIB_PATH} ${CBB_LIB_PATH})
 IF (ENABLE_FUZZASAN)
     link_directories(${DSS_FUZZ_LIB_PATH})
     set(fuzz_lib "libSecodefuzz.a")
@@ -166,6 +168,7 @@ ENDIF()
 
 set(vpp_libsecurec "libsecurec.a")
 set(3rd_libccb "libcbb.a")
+set(zlib "libz.a")
 
 if (ENABLE_GLOBAL_CACHE STREQUAL "ON")
     set(vpp_libipsi_crypto "")

@@ -103,6 +103,7 @@ static void dss_clean_server()
         (void)cm_unlock_fd(g_dss_instance.lock_fd);
         cm_close_file(g_dss_instance.lock_fd);
     }
+    CM_FREE_PTR(cm_log_param_instance()->log_compress_buf);
 }
 
 static void handle_main_wait(void)
