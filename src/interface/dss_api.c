@@ -57,6 +57,7 @@ extern "C" {
 
 #define HANDLE_VALUE(handle) ((handle) - (DSS_HANDLE_BASE))
 #define DB_DSS_DEFAULT_UDS_PATH "UDS:/tmp/.dss_unix_d_socket"
+#define DSS_CONN_DEFAULT_TIME_OUT 30000
 #define DSS_CONN_RETRY_INTERVAL 5
 char g_dss_inst_path[CM_MAX_PATH_LEN] = {0};
 typedef struct st_dss_conn_info {
@@ -64,8 +65,9 @@ typedef struct st_dss_conn_info {
     latch_t conn_latch;
     uint32 conn_num;
     bool32 isinit;
+    int32 timeout;  // - 1: never time out
 } dss_conn_info_t;
-static dss_conn_info_t g_dss_conn_info = {{0, 0, 0, 0, 0}, 0, CM_FALSE};
+static dss_conn_info_t g_dss_conn_info = {{0, 0, 0, 0, 0}, 0, CM_FALSE, DSS_CONN_DEFAULT_TIME_OUT};
 status_t dss_conn_create(pointer_t *result);
 
 static void dss_conn_release(pointer_t thv_addr)
@@ -145,19 +147,15 @@ static status_t dss_conn_retry(dss_conn_t *conn)
 status_t dss_conn_sync(dss_conn_t *conn)
 {
     status_t ret = CM_ERROR;
-    int connect_fail = 0;
-    while (1) {
+    int timeout = g_dss_conn_info.timeout;
+    int wait_time = 0;
+    while (timeout == DSS_CONN_NEVER_TIMEOUT || timeout > wait_time) {
         ret = dss_conn_retry(conn);
         if (ret == CM_SUCCESS) {
             break;
         }
-        connect_fail++;
-        if (connect_fail > DSS_CONN_RETRY_THRESHOLD) {
-            LOG_RUN_ERR("The number of connections exceeds the %d. The program exits.", DSS_CONN_RETRY_THRESHOLD);
-            cm_fync_logfile();
-            _exit(1);
-        }
         cm_sleep(DSS_CONN_RETRY_INTERVAL);
+        wait_time += DSS_CONN_RETRY_INTERVAL;
     }
     return ret;
 }
@@ -696,6 +694,16 @@ void dss_register_log_callback(dss_log_output cb_log_output)
 {
     cm_log_param_instance()->log_write = (usr_cb_log_output_t)cb_log_output;
     cm_log_param_instance()->log_level = MAX_LOG_LEVEL;
+}
+
+int dss_set_conn_timeout(int32 timeout)
+{
+    if (timeout < 0 && timeout != DSS_CONN_NEVER_TIMEOUT) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid timeout when set connection timeout");
+        return CM_ERROR;
+    }
+    g_dss_conn_info.timeout = timeout;
+    return CM_SUCCESS;
 }
 
 static int32 init_single_logger_core(log_param_t *log_param, log_type_t log_id, char *file_name, uint32 file_name_len)
