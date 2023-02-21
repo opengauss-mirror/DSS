@@ -784,29 +784,24 @@ static status_t dss_rec_msgs(dss_session_t *session, void *buf, int32 size)
     lastctrl.seq = 0;
     lastctrl.cursize = 0;
     big_packets_ctrl_t ctrl;
-
     do {
         status_t ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, DSS_MES_WAIT_TIMEOUT);
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("dss server receive msg from remote node failed, result:%d.", ret);
-            dss_set_master_id(DSS_INVALID_ID32);
             return ret;
         }
 
         if (msg.head->size < (sizeof(mes_message_head_t) + sizeof(big_packets_ctrl_t))) {
             LOG_RUN_ERR("dss server load disk from remote node failed, msg len(%d) error.", msg.head->size);
-            dss_set_master_id(DSS_INVALID_ID32);
             mes_release_message_buf(&msg);
             return CM_ERROR;
         }
-
         ctrl = *(big_packets_ctrl_t *)(msg.buffer + sizeof(mes_message_head_t));
         if (dss_packets_verify(bfirst, &lastctrl, &ctrl) == CM_FALSE) {
             mes_release_message_buf(&msg);
             LOG_RUN_ERR("dss server receive msg verify failed.");
             return CM_ERROR;
         }
-
         errno_t errcode = memcpy_s((char *)buf + ctrl.offset, ctrl.cursize,
             msg.buffer + sizeof(mes_message_head_t) + sizeof(big_packets_ctrl_t), ctrl.cursize);
         mes_release_message_buf(&msg);
@@ -853,7 +848,6 @@ status_t dss_read_volume_remote(const char *vg_name, dss_volume_t *volume, int64
         LOG_RUN_ERR(
             "The dssserver fails to send messages to the remote node, src node (%u), dst node(%u).", currid, remoteid);
         dss_destroy_session(session);
-        dss_set_master_id(DSS_INVALID_ID32);
         return ret;
     }
     // 3. receive msg from remote
