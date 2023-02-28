@@ -1327,7 +1327,7 @@ uint64 dss_get_vg_latch_shm_offset(dss_vg_info_item_t *vg_item)
 // shoud lock in caller
 status_t dss_load_volume_ctrl(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume_ctrl)
 {
-    bool32 remote = CM_FALSE;
+    bool32 remote = CM_TRUE;
     status_t status = dss_load_vg_ctrl_part(
         vg_item, (int64)DSS_CTRL_VOLUME_OFFSET, volume_ctrl, (int32)DSS_VOLUME_CTRL_SIZE, &remote);
     if (status != CM_SUCCESS) {
@@ -1547,10 +1547,9 @@ bool32 dss_need_exec_local()
 }
 
 status_t dss_read_volume_inst(
-    dss_vg_info_item_t *vg_item, dss_volume_t *volume, int64 offset, void *buf, int32 size, bool32 *remote)
+    dss_vg_info_item_t *vg_item, dss_volume_t *volume, int64 offset, void *buf, int32 size, bool32 *remote_chksum)
 {
     status_t status = CM_ERROR;
-    *remote = CM_FALSE;
     CM_ASSERT(offset % DSS_DISK_UNIT_SIZE == 0);
     CM_ASSERT(size % DSS_DISK_UNIT_SIZE == 0);
     CM_ASSERT(((uint64)buf) % DSS_DISK_UNIT_SIZE == 0);
@@ -1558,7 +1557,7 @@ status_t dss_read_volume_inst(
     while (dss_need_load_remote(size) == CM_TRUE && status != CM_SUCCESS) {
         status = remote_read_proc(vg_item->vg_name, volume, offset, buf, size);
         if (status != CM_SUCCESS) {
-            LOG_RUN_ERR("Failed to load disk(%s) data from the active node, result:%d", volume->name_p, status);
+            LOG_RUN_WAR("Failed to load disk(%s) data from the active node, result:%d", volume->name_p, status);
             if (dss_need_exec_local()) {
                 break;
             }
@@ -1566,14 +1565,17 @@ status_t dss_read_volume_inst(
             continue;
         }
 
-        if (dss_read_remote_checksum(buf, size) != CM_TRUE) {
-            LOG_RUN_ERR("Failed to load disk(%s) data from the active node, checksum error", volume->name_p);
-            continue;
+        if (*remote_chksum == CM_TRUE) {
+            if (dss_read_remote_checksum(buf, size) != CM_TRUE) {
+                LOG_RUN_WAR("Failed to load disk(%s) data from the active node, checksum error", volume->name_p);
+                status = CM_ERROR;
+                continue;
+            }
         }
         
-        *remote = CM_TRUE;
         return status;
     }
+    *remote_chksum = CM_FALSE;
     status = dss_read_volume(volume, offset, buf, size);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to load disk(%s) data, result:%d", volume->name_p, status);

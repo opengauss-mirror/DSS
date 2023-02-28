@@ -301,14 +301,14 @@ status_t dss_get_core_version(dss_vg_info_item_t *item, uint64 *version)
 // shoud lock in caller
 status_t dss_load_core_ctrl(dss_vg_info_item_t *item, dss_core_ctrl_t *core)
 {
-    bool32 remote = CM_FALSE;
+    bool32 remote_chksum = CM_TRUE;
     status_t status =
-    dss_load_vg_ctrl_part(item, (int64)DSS_CTRL_CORE_OFFSET, core, (int32)DSS_CORE_CTRL_SIZE, &remote);
+    dss_load_vg_ctrl_part(item, (int64)DSS_CTRL_CORE_OFFSET, core, (int32)DSS_CORE_CTRL_SIZE, &remote_chksum);
     if (status != CM_SUCCESS) {
         return status;
     }
 
-    if (remote == CM_FALSE) {
+    if (remote_chksum == CM_FALSE) {
         uint32 checksum = dss_get_checksum(core, DSS_CORE_CTRL_SIZE);
         dss_check_checksum(checksum, core->checksum);
     }

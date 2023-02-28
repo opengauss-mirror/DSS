@@ -125,7 +125,7 @@ void dss_unregister_buffer_cache(dss_vg_info_item_t *vg_item, dss_block_id_t blo
 status_t dss_get_block_from_disk(
     dss_vg_info_item_t *vg_item, dss_block_id_t block_id, char *buf, int64_t offset, int32 size, bool32 calc_checksum)
 {
-    bool32 remote = CM_FALSE;
+    bool32 remote = calc_checksum;
     CM_ASSERT(block_id.volume < DSS_MAX_VOLUMES);
     status_t status = dss_check_read_volume(vg_item, (uint32)block_id.volume, offset, buf, size, &remote);
     if (status != CM_SUCCESS) {
