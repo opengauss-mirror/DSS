@@ -561,6 +561,7 @@ status_t dss_read_volume(dss_volume_t *volume, int64 offset, void *buf, int32 si
     total_size = 0;
 
     do {
+        curr_size = 0;
 #ifdef WIN32
         ret = dss_try_read_volume(volume, (char *)buf + total_size, size - total_size, &curr_size);
 #else
@@ -569,6 +570,12 @@ status_t dss_read_volume(dss_volume_t *volume, int64 offset, void *buf, int32 si
 #endif
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("Failed to read volume %s, begin:%d, volume id:%u, size:%d, offset:%lld.", volume->name_p,
+                total_size, volume->id, size - total_size, offset);
+            return CM_ERROR;
+        }
+
+        if ((curr_size == 0) && (total_size < size)) {
+            LOG_RUN_ERR("Read volume %s size error, begin:%d, volume id:%u, size:%d, offset:%lld.", volume->name_p,
                 total_size, volume->id, size - total_size, offset);
             return CM_ERROR;
         }

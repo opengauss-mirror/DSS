@@ -2154,7 +2154,7 @@ status_t dss_refresh_root_ft(dss_vg_info_item_t *vg_item, bool32 check_version, 
     if (dss_is_readwrite() && !active_refresh) {
         return CM_SUCCESS;
     }
-    bool32 remote = CM_FALSE;
+    bool32 remote = CM_TRUE;
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
     char *root = dss_ctrl->root;
     dss_root_ft_block_t *ft_block = (dss_root_ft_block_t *)(root);
