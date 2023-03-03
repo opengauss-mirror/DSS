@@ -109,6 +109,10 @@ status_t dss_apply_refresh_file(dss_conn_t *conn, dss_file_context_t *context, d
     send_pack->head->cmd = DSS_CMD_REFRESH_FILE;
     send_pack->head->flags = 0;
 
+    LOG_DEBUG_INF(
+        "Apply refresh file:%s, curr size:%llu, refresh ft id:%llu, refresh entry id:%llu, refresh block id:%llu.",
+        context->node->name, context->node->size, *(uint64 *)&ftid, *(uint64 *)&(context->node->entry),
+        *(uint64 *)&blockid);
     // 1. fid
     CM_RETURN_IFERR(dss_put_int64(send_pack, fid));
     // 2. ftid
@@ -1401,8 +1405,17 @@ static status_t dss_alloc_block_core(
             vg_item, second_block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
         if ((*second_block) == NULL) {
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-            LOG_RUN_ERR("Failed to find block:%llu in mem.", DSS_ID_TO_U64(second_block_id));
-            return CM_ERROR;
+            status = dss_apply_refresh_file(conn, context, second_block_id);
+            DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to refresh second fs block."));
+            DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session, NULL);
+            *second_block = (dss_fs_block_t *)dss_find_block_in_shm(
+                vg_item, second_block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
+            if ((*second_block) == NULL) {
+                DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+                DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "fs_block", *(uint64 *)&second_block_id);
+                LOG_RUN_ERR("Failed to find block:%llu in mem.", DSS_ID_TO_U64(second_block_id));
+                return CM_ERROR;
+            }
         }
     } else {
         *second_block = (dss_fs_block_t *)dss_find_block_in_shm(
@@ -1622,6 +1635,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
                 return CM_SUCCESS;
             }
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+            DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "au", *(uint64 *)&auid);
             LOG_DEBUG_ERR("Auid is invalid, volume:%u, fname:%s, fsize:%llu, written_size:%llu.", (uint32)auid.volume,
                 node->name, node->size, node->written_size);
             return CM_ERROR;
@@ -2406,6 +2420,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, bool32 is_read, int *f
 
     if (auid.volume >= DSS_MAX_VOLUMES) {
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+        DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "au", *(uint64 *)&auid);
         LOG_DEBUG_ERR("Auid is invalid, volume:%u, fname:%s, fsize:%llu, written_size:%llu.", (uint32)auid.volume,
             node->name, node->size, node->written_size);
         return CM_ERROR;
