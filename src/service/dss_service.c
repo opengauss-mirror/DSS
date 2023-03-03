@@ -470,7 +470,7 @@ static status_t dss_process_truncate_file(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&vgid));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
         "vg_name:%s, fid:%llu, ftid:%llu", vg_name, fid, *(uint64 *)&ftid));
-
+    LOG_DEBUG_INF("Truncate file ft id:%llu, offset:%lld, length:%llu", *(uint64 *)&ftid, offset, length);
     return dss_truncate(session, fid, ftid, offset, length, vg_name);
 }
 
