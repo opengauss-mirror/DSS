@@ -118,6 +118,8 @@ static void handle_main_wait(void)
             dss_check_peer_inst(&g_dss_instance, DSS_INVALID_64);
             if (g_dss_instance.cm_res.is_valid) {
                 dss_get_cm_lock_and_recover(&g_dss_instance);
+            } else {
+                dss_no_cm_recover(&g_dss_instance);
             }
         }
         if (periods == MILLISECS_PER_SECOND * SECONDS_PER_DAY / interval) {
