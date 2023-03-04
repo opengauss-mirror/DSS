@@ -37,6 +37,7 @@
 #include "dss_service.h"
 #include "dss_signal.h"
 #include "dss_instance.h"
+#include "dss_simulation_cm.h"
 
 #define DSS_MAINTAIN_ENV "DSS_MAINTAIN"
 dss_instance_t g_dss_instance;
@@ -305,23 +306,7 @@ status_t dss_get_instance_log_buf_no_cm(dss_instance_t *inst)
         dss_set_server_status_flag(DSS_STATUS_READWRITE);
         return dss_change_instance_status_to_open(inst, curr_id, curr_id);
     }
-#ifdef ENABLE_DSSTEST
-    uint32 i;
-    for (i = 0; i < DSS_MAX_INSTANCES; i++) {
-        if (inst_cfg->params.ports[i] != 0) {
-            dss_set_master_id(i);
-            LOG_RUN_INF("Set min id %u as master id.", i);
-            break;
-        }
-    }
-    if (i == curr_id) {
-        dss_set_server_status_flag(DSS_STATUS_READWRITE);
-        return dss_change_instance_status_to_open(inst, curr_id, curr_id);
-    } else {
-        dss_set_server_status_flag(DSS_STATUS_READONLY);
-        inst->status = ZFS_STATUS_OPEN;
-    }
-#else
+#ifndef ENABLE_DSSTEST
     if (inst->is_maintain || !dss_config_cm()) {
         dss_set_master_id(curr_id);
         dss_set_server_status_flag(DSS_STATUS_READWRITE);
@@ -456,6 +441,18 @@ status_t dss_start_lsnr(dss_instance_t *inst)
     return cs_start_uds_lsnr(&inst->lsnr, dss_lsnr_proc);
 }
 
+void dss_uninit_cm(dss_instance_t *inst)
+{
+    if (inst->cm_res.is_valid) {
+#ifdef ENABLE_DSSTEST
+        dss_simulation_cm_res_mgr_uninit(&inst->cm_res.mgr);
+#else
+        cm_res_mgr_uninit(&inst->cm_res.mgr);
+#endif
+        inst->cm_res.is_valid = CM_FALSE;
+    }
+}
+
 status_t dss_init_cm(dss_instance_t *inst)
 {
     inst->cm_res.is_valid = CM_FALSE;
@@ -464,30 +461,27 @@ status_t dss_init_cm(dss_instance_t *inst)
     char *value = cm_get_config_value(&inst_cfg->config, "DSS_CM_SO_NAME");
     if (value == NULL || strlen(value) == 0) {
         LOG_RUN_INF("dss cm config of DSS_CM_SO_NAME is empty.");
-        // if no cm, treat all nodes be ok
         return CM_SUCCESS;
     }
 
     if (strlen(value) >= DSS_MAX_NAME_LEN) {
         LOG_RUN_ERR("dss cm config of DSS_CM_SO_NAME is exceeds the max len %u.", DSS_MAX_NAME_LEN - 1);
-        return CM_SUCCESS;
+        return CM_ERROR;
     }
-
-    status_t status = cm_res_mgr_init(value, &inst->cm_res.mgr, NULL);
-    DSS_RETURN_IF_ERROR(status);
-    status =
+#ifdef ENABLE_DSSTEST
+    DSS_RETURN_IF_ERROR(dss_simulation_cm_res_mgr_init(value, &inst->cm_res.mgr, NULL));
+#else
+    DSS_RETURN_IF_ERROR(cm_res_mgr_init(value, &inst->cm_res.mgr, NULL));
+#endif
+    status_t status =
         (status_t)cm_res_init(&inst->cm_res.mgr, (unsigned int)inst->inst_cfg.params.inst_id, DSS_CMS_RES_TYPE, NULL);
+#ifdef ENABLE_DSSTEST
+    DSS_RETURN_IFERR2(status, dss_simulation_cm_res_mgr_uninit(&inst->cm_res.mgr));
+#else
     DSS_RETURN_IFERR2(status, cm_res_mgr_uninit(&inst->cm_res.mgr));
+#endif
     inst->cm_res.is_valid = CM_TRUE;
     return CM_SUCCESS;
-}
-
-void dss_uninit_cm(dss_instance_t *inst)
-{
-    if (inst->cm_res.is_valid) {
-        cm_res_mgr_uninit(&inst->cm_res.mgr);
-        inst->cm_res.is_valid = CM_FALSE;
-    }
 }
 
 void dss_free_log_ctrl(dss_instance_t *inst)
@@ -567,6 +561,20 @@ static void dss_check_peer_by_cm(dss_instance_t *inst)
     cm_res_uninit_memctx(&res_mem_ctx);
 }
 
+#ifdef ENABLE_DSSTEST
+static void dss_check_peer_by_simulation_cm(dss_instance_t *inst)
+{
+    if (g_simulation_cm.simulation) {
+        char *bitmap_online = inst->cm_res.mgr.cm_get_res_stat();
+        uint64 cur_inst_map = 0;
+        (void)cm_str2bigint(bitmap_online, (int64 *)&cur_inst_map);
+        dss_check_mes_conn(cur_inst_map);
+        return;
+    }
+    dss_check_peer_by_cm(inst);
+}
+#endif
+
 static void dss_check_peer_default(void)
 {
     dss_check_mes_conn(DSS_INVALID_64);
@@ -588,21 +596,6 @@ void dss_init_cm_res(dss_instance_t *inst)
     return;
 }
 
-#ifdef ENABLE_DSSTEST
-status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
-{
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    for (int i = 0; i < DSS_MAX_INSTANCES; i++) {
-        if (inst_cfg->params.ports[i] != 0) {
-            *master_id = i;
-            LOG_RUN_INF("Set min id %u as master id.", i);
-            break;
-        }
-    }
-    LOG_RUN_INF("master id is %u when get cm lock.", *master_id);
-    return CM_SUCCESS;
-}
-#else
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 {
     int ret = cm_res_get_lock_owner(&cm_res->mgr, DSS_CM_LOCK, master_id);
@@ -615,7 +608,6 @@ status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
     }
     return CM_SUCCESS;
 }
-#endif
 
 // get cm lock owner, if no owner, try to become.master_id can not be DSS_INVALID_ID32.
 uint32 dss_get_cm_lock_owner(dss_instance_t *inst)
@@ -644,6 +636,41 @@ uint32 dss_get_cm_lock_owner(dss_instance_t *inst)
         break;
     }
     return master_id;
+}
+
+void dss_no_cm_recover(dss_instance_t *inst)
+{
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    if (inst_cfg->params.inst_cnt <= 1) {
+        return;
+    }
+    uint32 curr_id = (uint32)inst_cfg->params.inst_id;
+    uint32 old_master_id = dss_get_master_id();
+    uint32 master_id;
+    uint32 i;
+    for (i = 0; i < DSS_MAX_INSTANCES; i++) {
+        if (inst_cfg->params.ports[i] != 0) {
+            master_id = i;
+            break;
+        }
+    }
+    if (old_master_id == master_id) {
+        return;
+    }
+    dss_set_master_id(master_id);
+    LOG_RUN_INF("Set min id %u as master id.", i);
+    if (master_id == curr_id) {
+        dss_set_server_status_flag(DSS_STATUS_READWRITE);
+        status_t ret = dss_change_instance_status_to_open(inst, curr_id, curr_id);
+        if (ret != CM_SUCCESS) {
+            LOG_RUN_ERR("[DSS] ABORT INFO: Fail to change status open without cm, exit.");
+            cm_fync_logfile();
+            _exit(1);
+        }
+    } else {
+        dss_set_server_status_flag(DSS_STATUS_READONLY);
+        inst->status = ZFS_STATUS_OPEN;
+    }
 }
 
 /*
@@ -709,7 +736,11 @@ static void dss_check_peer_inst_inner(dss_instance_t *inst)
         dss_init_cm_res(inst);
     }
     if (inst->cm_res.is_valid) {
+#ifdef ENABLE_DSSTEST
+        dss_check_peer_by_simulation_cm(inst);
+#else
         dss_check_peer_by_cm(inst);
+#endif
         return;
     }
     dss_check_peer_default();
