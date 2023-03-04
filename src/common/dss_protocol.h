@@ -133,7 +133,7 @@ static inline status_t dss_put_str(dss_packet_t *pack, const char *str)
     size = (uint32)strlen(str);
     addr = DSS_WRITE_ADDR(pack);
     if (size >= DSS_REMAIN_SIZE(pack)) {
-        CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, "PACKET OVERFLOW");
+        CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, size, DSS_REMAIN_SIZE(pack) - 1);
         return CM_ERROR;
     }
     if (size != 0) {
@@ -182,7 +182,7 @@ static inline status_t dss_put_int32(dss_packet_t *pack, uint32 value)
 static inline status_t dss_pack_check_len(dss_packet_t *pack, uint32 inc)
 {
     if ((pack->offset + inc) > pack->head->size) {
-        CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, "PACKET OVERFLOW");
+        CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, (pack->offset + inc), pack->head->size);
         return CM_ERROR;
     }
 

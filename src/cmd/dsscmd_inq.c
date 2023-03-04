@@ -286,7 +286,7 @@ static void dss_printf_iofence_key(int64 *iofence_key)
  * 3. get vg non entry info
  * 4. register vg non entry disk
  */
-status_t dss_reghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_info)
+status_t dss_reghl_core(const char *home, dss_vg_info_t *vg_info)
 {
 #ifndef WIN32
     dss_config_t inst_cfg;
@@ -294,7 +294,7 @@ status_t dss_reghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_info)
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg entry info when reghl, errcode is %d.\n", status));
 
     for (uint32 i = 0; i < vg_info->group_num; i++) {
-        status = dss_iof_register_single(host_id, vg_info->volume_group[i].entry_path);
+        status = dss_iof_register_single(inst_cfg.params.inst_id, vg_info->volume_group[i].entry_path);
         if (status != CM_SUCCESS) {
             DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
             DSS_PRINT_ERROR("Failed to register vg entry disk when reghl, errcode is %d.\n", status);
@@ -306,7 +306,7 @@ status_t dss_reghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_info)
             DSS_PRINT_ERROR("Failed to get vg non entry info when reghl, errcode is %d.\n", status);
             return status;
         }
-        status = dss_reghl_inner(&vg_info->volume_group[i], host_id);
+        status = dss_reghl_inner(&vg_info->volume_group[i], inst_cfg.params.inst_id);
         if (status != CM_SUCCESS) {
             DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
             DSS_PRINT_ERROR("Failed to reghl, errcode is %d.\n", status);
@@ -336,7 +336,7 @@ static status_t dss_unreghl_inner(dss_vg_info_item_t *item, int64 host_id)
  * 4. unregister vg non entry disk
  * 5. unregister vg entry disk
  */
-status_t dss_unreghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_info, bool32 is_lock)
+status_t dss_unreghl_core(const char *home, dss_vg_info_t *vg_info, bool32 is_lock)
 {
 #ifndef WIN32
     bool32 is_reg;
@@ -346,7 +346,8 @@ status_t dss_unreghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_inf
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg entry info, errcode is %d.\n", status));
 
     for (uint32 i = 0; i < vg_info->group_num; i++) {
-        status = dss_check_volume_register(vg_info->volume_group[i].entry_path, host_id, &is_reg, iofence_key);
+        status = dss_check_volume_register(
+            vg_info->volume_group[i].entry_path, inst_cfg.params.inst_id, &is_reg, iofence_key);
         if (status != CM_SUCCESS) {
             DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
             DSS_PRINT_ERROR("Failed to check volume register when unreghl, errcode is %d.\n", status);
@@ -361,7 +362,7 @@ status_t dss_unreghl_core(const char *home, int64 host_id, dss_vg_info_t *vg_inf
             DSS_PRINT_ERROR("Failed to get vg entry info when unreghl, errcode is %d.\n", status);
             return status;
         }
-        status = dss_unreghl_inner(&vg_info->volume_group[i], host_id);
+        status = dss_unreghl_inner(&vg_info->volume_group[i], inst_cfg.params.inst_id);
         if (status != CM_SUCCESS) {
             DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
             DSS_PRINT_ERROR("Failed to unreghl, errcode is %d.\n", status);

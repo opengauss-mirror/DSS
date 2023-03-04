@@ -193,9 +193,16 @@ static status_t cmd_check_au_size(const char *au_size_str)
 {
     uint32 min_multiple = DSS_MIN_AU_SIZE / SIZE_K(1);
     uint32 max_multiple = DSS_MAX_AU_SIZE / SIZE_K(1);
-    int64 au_size = atol(au_size_str);
-    if (au_size != 0 && ((au_size < min_multiple) || au_size > max_multiple)) {
-        DSS_PRINT_ERROR("au_size %lld is error, au_size must greater than 2MB, smaller than 64MB!\n", au_size);
+    uint32 au_size;
+    status_t ret = cm_str2uint32(au_size_str, &au_size);
+    if (ret != CM_SUCCESS) {
+        DSS_PRINT_ERROR("au_size %s is error\n", au_size_str);
+        return CM_ERROR;
+    }
+
+    if (au_size == 0 || au_size < min_multiple || au_size > max_multiple) {
+        DSS_PRINT_ERROR(
+            "au_size %u is error, au_size cannot be 0, au_size must greater than 2MB, smaller than 64MB!\n", au_size);
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -331,9 +338,14 @@ static status_t cmd_check_measure_type(const char *measure)
 
 static status_t cmd_check_inst_id(const char *inst_str)
 {
-    int64 inst_id = atoll(inst_str);
-    if (inst_id < DSS_MIN_INST_ID || inst_id >= DSS_MAX_INST_ID) {
+    uint32 inst_id;
+    status_t ret = cm_str2uint32(inst_str, &inst_id);
+    if (ret != CM_SUCCESS) {
         DSS_PRINT_ERROR("The value of inst_id is invalid.\n");
+        return CM_ERROR;
+    }
+    if (inst_id < DSS_MIN_INST_ID || inst_id >= DSS_MAX_INST_ID) {
+        DSS_PRINT_ERROR("The value of inst_id should be in [%u, %u).\n", DSS_MIN_INST_ID, DSS_MAX_INST_ID);
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -1671,7 +1683,6 @@ static status_t kickh_proc(void)
 }
 
 static dss_args_t cmd_reghl_args[] = {
-    {'i', "inst_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
     {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
         NULL, NULL, 0},
 };
@@ -1683,31 +1694,28 @@ static dss_args_set_t cmd_reghl_args_set = {
 
 static void reghl_help(char *prog_name)
 {
-    (void)printf("\nUsage:%s reghl <-i inst_id> [-D DSS_HOME]\n", prog_name);
+    (void)printf("\nUsage:%s reghl [-D DSS_HOME]\n", prog_name);
     (void)printf("[manage command] register host to array\n");
-    (void)printf("-i/--inst_id <inst_id>, <required>, the id of the host to be registered\n");
     (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
 }
 
 static status_t reghl_proc(void)
 {
-    int64 host_id = atoll(cmd_reghl_args[DSS_ARG_IDX_0].input_args);
-    char *home = cmd_reghl_args[DSS_ARG_IDX_1].input_args != NULL ? cmd_reghl_args[DSS_ARG_IDX_1].input_args : NULL;
+    char *home = cmd_reghl_args[DSS_ARG_IDX_0].input_args != NULL ? cmd_reghl_args[DSS_ARG_IDX_0].input_args : NULL;
 
     dss_vg_info_t vg_info;
     errno_t errcode = memset_s(&vg_info, sizeof(vg_info), 0, sizeof(vg_info));
     securec_check_ret(errcode);
-    status_t status = dss_reghl_core(home, host_id, &vg_info);
+    status_t status = dss_reghl_core(home, &vg_info);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to register host %s.\n", cmd_reghl_args[DSS_ARG_IDX_0].input_args);
+        DSS_PRINT_ERROR("Failed to register.\n");
     } else {
-        DSS_PRINT_INF("Succeed to register host %s.\n", cmd_reghl_args[DSS_ARG_IDX_0].input_args);
+        DSS_PRINT_INF("Succeed to register.\n");
     }
     return status;
 }
 
 static dss_args_t cmd_unreghl_args[] = {
-    {'i', "inst_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
     {'t', "type", CM_FALSE, CM_TRUE, NULL, NULL, NULL, 0, NULL, NULL, 0},
     {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
         NULL, NULL, 0},
@@ -1720,28 +1728,33 @@ static dss_args_set_t cmd_unreghl_args_set = {
 
 static void unreghl_help(char *prog_name)
 {
-    (void)printf("\nUsage:%s unreghl <-i inst_id> [-t type] [-D DSS_HOME]\n", prog_name);
+    (void)printf("\nUsage:%s unreghl [-t type] [-D DSS_HOME]\n", prog_name);
     (void)printf("[manage command] unregister host from array\n");
-    (void)printf("-i/--inst_id <inst_id>, <required>, the id of the host need to unregister\n");
     (void)printf("-t/--type <type>, [optional], value is int, 0 without lock, otherwise with lock\n");
     (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
 }
 
 static status_t unreghl_proc(void)
 {
-    int64 host_id = atoll(cmd_unreghl_args[DSS_ARG_IDX_0].input_args);
-    int64 type =
-        cmd_unreghl_args[DSS_ARG_IDX_1].input_args != NULL ? atoll(cmd_unreghl_args[DSS_ARG_IDX_1].input_args) : 1;
-    char *home = cmd_unreghl_args[DSS_ARG_IDX_2].input_args != NULL ? cmd_unreghl_args[DSS_ARG_IDX_2].input_args : NULL;
+    int32 type = 1;
+    status_t status;
+    if (cmd_unreghl_args[DSS_ARG_IDX_0].input_args != NULL) {
+        status = cm_str2int(cmd_unreghl_args[DSS_ARG_IDX_0].input_args, &type);
+        if (status != CM_SUCCESS) {
+            DSS_PRINT_ERROR("The value of type is invalid.\n");
+            return CM_ERROR;
+        }
+    }
 
+    char *home = cmd_unreghl_args[DSS_ARG_IDX_1].input_args != NULL ? cmd_unreghl_args[DSS_ARG_IDX_1].input_args : NULL;
     dss_vg_info_t vg_info;
     errno_t errcode = memset_s(&vg_info, sizeof(vg_info), 0, sizeof(vg_info));
     securec_check_ret(errcode);
-    status_t status = dss_unreghl_core(home, host_id, &vg_info, (type == 0) ? CM_FALSE : CM_TRUE);
+    status = dss_unreghl_core(home, &vg_info, (type == 0) ? CM_FALSE : CM_TRUE);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to unregister host %s.\n", cmd_unreghl_args[DSS_ARG_IDX_0].input_args);
+        DSS_PRINT_ERROR("Failed to unregister.\n");
     } else {
-        DSS_PRINT_INF("Succeed to unregister host %s.\n", cmd_unreghl_args[DSS_ARG_IDX_0].input_args);
+        DSS_PRINT_INF("Succeed to unregister.\n");
     }
     return status;
 }
