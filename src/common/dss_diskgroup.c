@@ -1206,10 +1206,6 @@ static status_t dss_remove_volume_impl_core(
         if (dss_read_volume(&vg_item->volume_handle[id], 0, vol_head, (int32)DSS_ALIGN_SIZE) != CM_SUCCESS) {
             break;
         }
-        if (vol_head->valid_flag != DSS_CTRL_VALID_FLAG) {
-            DSS_THROW_ERROR(ERR_DSS_VOLUME_REMOVE_NOEXIST, volume_name, vg_item->vg_name);
-            break;
-        }
         vol_head->valid_flag = 0;
         vol_head->software_version = 0;
 
