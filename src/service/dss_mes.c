@@ -457,6 +457,9 @@ static status_t dss_create_mes_session(void)
 
 status_t dss_startup_mes(void)
 {
+    if (g_dss_instance.is_maintain) {
+        return CM_SUCCESS;
+    }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     if (inst_cfg->params.inst_cnt <= 1) {
         return CM_SUCCESS;
@@ -479,6 +482,9 @@ status_t dss_startup_mes(void)
 
 void dss_stop_mes(void)
 {
+    if (g_dss_instance.is_maintain) {
+        return CM_SUCCESS;
+    }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     if (g_inst_cfg != NULL && inst_cfg->params.inst_cnt <= 1) {
         return;

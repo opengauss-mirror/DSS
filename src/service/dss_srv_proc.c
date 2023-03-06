@@ -27,6 +27,7 @@
 #include "dss_file.h"
 #include "dss_mes.h"
 #include "dss_srv_proc.h"
+#include "dss_instance.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,6 +36,9 @@ extern "C" {
 static status_t dss_notify_check_file_open(
     dss_vg_info_item_t *vg_item, dss_session_t *session, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *is_open)
 {
+    if (g_dss_instance.is_maintain) {
+        return CM_SUCCESS;
+    }
     dss_check_file_open_param check;
     check.ftid = ftid;
     *is_open = CM_FALSE;
