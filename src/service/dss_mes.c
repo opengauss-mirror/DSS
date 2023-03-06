@@ -328,6 +328,7 @@ static void dss_process_message(uint32 work_idx, mes_message_t *msg)
         LOG_DEBUG_ERR("Invalid request received,cmd is %u.", (uint8)msg->head->cmd);
         return;
     }
+    cm_reset_error();
     // ready the ack connection
     dss_check_peer_by_inst(&g_dss_instance, msg->head->src_inst);
     LOG_DEBUG_INF("dss process message, cmd is %u.", (uint8)msg->head->cmd);
@@ -556,6 +557,9 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
     status_t ret = CM_ERROR;
     mes_message_head_t head;
     mes_message_t msg;
+    uint16 cpsize;
+    uint32 code;
+    char *cpybuffer = NULL;
     uint32 size = session->recv_pack.head->size;
 
     // 1. init msg head
@@ -571,18 +575,52 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
     DSS_RETURN_IFERR2(ret,
         LOG_RUN_ERR("dss server receive msg from remote node failed, src node(%u), dst node(%u).", currtid, remoteid));
     // 4. attach remote execution result
-    uint16 cpsize = msg.head->size - (sizeof(mes_message_head_t) + sizeof(int32));
     *remote_result = *(int32 *)(msg.buffer + sizeof(mes_message_head_t));
-    if (cpsize) {
+    if (*remote_result != CM_SUCCESS) {
+        code = *(int32 *)(msg.buffer + sizeof(mes_message_head_t) + sizeof(int32));
+        cpsize = msg.head->size - sizeof(mes_message_head_t) - 2 * sizeof(int32);
+        cpybuffer = msg.buffer + sizeof(mes_message_head_t) + 2 * sizeof(int32);
+    } else {
+        cpsize = msg.head->size - sizeof(mes_message_head_t) - sizeof(int32);
+        cpybuffer = msg.buffer + sizeof(mes_message_head_t) + sizeof(int32);
+    }
+    if (cpsize > 0) {
         session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
         session->send_info.len = 0;
-        char *cpybuffer = (msg.buffer + sizeof(mes_message_head_t) + sizeof(int32));
         errno_t errcode = memcpy_s(session->send_info.str, cpsize, cpybuffer, cpsize);
         securec_check_panic(errcode);
+        session->send_info.str[cpsize] = '\0';
+    }
+    if (*remote_result != CM_SUCCESS) {
+        DSS_THROW_ERROR(code, session->send_info.str);
+        session->send_info.str = NULL;
+    } else {
         session->send_info.len = cpsize;
     }
     mes_release_message_buf(&msg);
     return ret;
+}
+
+static status_t dss_prepare_ack_msg(dss_session_t *session, status_t ret)
+{
+    int32 code;
+    const char *message = NULL;
+    dss_packet_t *send_pack = &session->send_pack;
+
+    dss_init_set(send_pack);
+    CM_RETURN_IFERR(dss_put_int32(send_pack, ret));
+
+    if (ret != CM_SUCCESS) {
+        cm_get_error(&code, &message);
+        CM_RETURN_IFERR(dss_put_int32(send_pack, code));
+        return dss_put_str(send_pack, message);
+    }
+
+    if (session->send_info.len > 0) {
+        return dss_put_text(send_pack, &session->send_info);
+    }
+    
+    return CM_SUCCESS;
 }
 
 void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg)
@@ -608,10 +646,10 @@ void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg)
     }
     status_t ret = dss_proc_standby_req(session);
     mes_message_head_t ack;
-    ack.size = (uint16)(session->send_info.len + sizeof(mes_message_head_t) + sizeof(int32));
+    dss_prepare_ack_msg(session, ret);
+    ack.size = (uint16)(session->send_pack.head->size - sizeof(dss_packet_head_t) + sizeof(mes_message_head_t));
     mes_init_ack_head(&head, &ack, DSS_CMD_ACK_SYB2ACTIVE, ack.size, session->id);
-    *(int32 *)(session->recv_pack.buf + sizeof(dss_packet_head_t)) = ret;
-    ret = mes_send_data2(&ack, session->recv_pack.buf + sizeof(dss_packet_head_t));
+    ret = mes_send_data2(&ack, session->send_pack.buf + sizeof(dss_packet_head_t));
     if (ret != CM_SUCCESS) {
         LOG_DEBUG_ERR("The dss server fails to send messages to the remote node, src node(%u), dst node(%u).",
             (uint32)(head.src_inst), (uint32)(head.dst_inst));
