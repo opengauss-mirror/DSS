@@ -87,6 +87,7 @@ typedef struct st_dss_instance {
     uint64 inst_work_status_map; // one bit one inst, bit value is 1 means inst ok, 0 means inst not ok
     spinlock_t inst_work_lock;
     dss_kernel_instance_t *kernel_instance;
+    bool8 is_maintain;
 } dss_instance_t;
 
 status_t dss_lock_instance(void);

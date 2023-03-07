@@ -38,6 +38,7 @@
 #include "dss_signal.h"
 #include "dss_instance.h"
 
+#define DSS_MAINTAIN_ENV "DSS_MAINTAIN"
 dss_instance_t g_dss_instance;
 
 static const char *const g_dss_lock_file = "dss.lck";
@@ -370,6 +371,17 @@ static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
     return CM_SUCCESS;
 }
 
+static void dss_init_maintain(dss_instance_t *inst)
+{
+    char *maintain_env = getenv(DSS_MAINTAIN_ENV);
+    inst->is_maintain = (maintain_env != NULL && cm_strcmpi(maintain_env, "TRUE") ==0);
+    if (inst->is_maintain) {
+        dss_set_master_id(inst->inst_cfg.params.inst_id);
+        LOG_RUN_INF("DSS_MAINTAIN is TRUE");
+    } else {
+        LOG_RUN_INF("DSS_MAINTAIN is FALSE");
+    }
+}
 static status_t instance_init(dss_instance_t *inst)
 {
     status_t status = dss_lock_instance();
@@ -415,6 +427,7 @@ status_t dss_startup(dss_instance_t *inst, char *home)
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to initialized!"));
     cm_set_shm_ctrl_flag(CM_SHM_CTRL_FLAG_TRUE);
     inst->abort_status = CM_FALSE;
+    dss_init_maintain(inst);
     return CM_SUCCESS;
 }
 
