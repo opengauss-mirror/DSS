@@ -129,7 +129,7 @@ status_t dss_put_str_with_cutoff(dss_packet_t *pack, const char *str)
 status_t dss_write_packet(cs_pipe_t *pipe, dss_packet_t *pack)
 {
     if (pack->head->size > DSS_MAX_PACKET_SIZE) {
-        DSS_RETURN_IFERR2(CM_ERROR, CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, "PACKET BUFFER OVERFLOW"));
+        DSS_RETURN_IFERR2(CM_ERROR, CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, pack->head->size, DSS_MAX_PACKET_SIZE));
     }
     status_t status = VIO_SEND_TIMED(pipe, pack->buf, pack->head->size, DSS_DEFAULT_NULL_VALUE);
     DSS_RETURN_IFERR2(
