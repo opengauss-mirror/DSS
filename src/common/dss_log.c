@@ -182,7 +182,11 @@ static status_t dss_init_loggers_inner(dss_config_t *inst_cfg, log_param_t *log_
     if (cm_str2uint32(value, &val_uint32) != CM_SUCCESS) {
         CM_THROW_ERROR(ERR_INVALID_PARAM, "_LOG_BACKUP_FILE_COUNT");
         return CM_ERROR;
+#ifdef OPENGAUSS
+    } else if (val_uint32 > CM_MAX_LOG_FILE_COUNT_LARGER) {
+#else
     } else if (val_uint32 > CM_MAX_LOG_FILE_COUNT) {
+#endif
         CM_THROW_ERROR(ERR_INVALID_PARAM, "_LOG_BACKUP_FILE_COUNT");
         return CM_ERROR;
     } else {
@@ -193,7 +197,11 @@ static status_t dss_init_loggers_inner(dss_config_t *inst_cfg, log_param_t *log_
     if (cm_str2uint32(value, &val_uint32) != CM_SUCCESS) {
         CM_THROW_ERROR(ERR_INVALID_PARAM, "_AUDIT_BACKUP_FILE_COUNT");
         return CM_ERROR;
+#ifdef OPENGAUSS
+    } else if (val_uint32 > CM_MAX_LOG_FILE_COUNT_LARGER) {
+#else
     } else if (val_uint32 > CM_MAX_LOG_FILE_COUNT) {
+#endif
         CM_THROW_ERROR(ERR_INVALID_PARAM, "_AUDIT_BACKUP_FILE_COUNT");
         return CM_ERROR;
     } else {
