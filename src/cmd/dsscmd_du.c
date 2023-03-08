@@ -77,7 +77,7 @@ static void du_print(double size, const char *params, const char *path)
 
 static double du_traverse_node(gft_node_t *node, dss_vg_info_item_t *vg_item, const char *params, char *path_prefix)
 {
-    char granularity = params[DSS_ARG_IDX_0];
+    char granularity = params[DSS_ARG_IDX_1];
     bool separate = (bool)params[DSS_ARG_IDX_2];
     double total_size = 0;
 
@@ -172,7 +172,7 @@ status_t du_traverse_path(char *path, size_t path_size, dss_conn_t *conn, const 
     path[(len - strlen(node->name)) - 1] = 0;
 
     double total_size = du_traverse_node(node, dir->vg_item, params, path);
-    char granularity = params[DSS_ARG_IDX_0];
+    char granularity = params[DSS_ARG_IDX_1];
 
     (void)dss_close_dir_impl(conn, dir);
 
