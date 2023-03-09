@@ -40,6 +40,9 @@ typedef struct st_dev_info {
     inquiry_data_t data;
 } dev_info_t;
 
+// because cm_destory_ptlist will NOT FRE ptlist->item[idx] memory
+void dss_destroy_ptlist(ptlist_t *ptlist);
+
 // kick/reg host with all devs
 status_t dss_iof_kick_all_volumes(dss_vg_info_t *dss_vg_info, int64 rk, int64 rk_kick, ptlist_t *reg_list);
 status_t dss_iof_sync_all_vginfo(dss_session_t *session, dss_vg_info_t *dss_vg_info);

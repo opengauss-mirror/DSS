@@ -28,6 +28,17 @@
 #include "dss_log.h"
 #include "dss_io_fence.h"
 
+void dss_destroy_ptlist(ptlist_t *ptlist)
+{
+    if (ptlist == NULL) {
+        return;
+    }
+    for (uint32 i = 0; i < ptlist->count; i++) {
+        DSS_FREE_POINT(ptlist->items[i]);
+    }
+    cm_destroy_ptlist(ptlist);
+}
+
 bool32 dss_iof_is_register(char *dev, int64 rk, ptlist_t *regs)
 {
 #ifdef WIN32
@@ -212,12 +223,12 @@ status_t dss_iof_kick_all(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, int64 
 
     cm_ptlist_init(&reg_list);
     status = dss_iof_inql_regs(vg_info, &reg_list);
-    DSS_RETURN_IFERR3(status, cm_destroy_ptlist(&reg_list), LOG_DEBUG_ERR("Inquiry regs info failed."));
+    DSS_RETURN_IFERR3(status, dss_destroy_ptlist(&reg_list), LOG_DEBUG_ERR("Inquiry regs info failed."));
 
     status = dss_iof_kick_all_volumes(vg_info, rk, rk_kick, &reg_list);
-    DSS_RETURN_IFERR2(status, cm_destroy_ptlist(&reg_list));
+    DSS_RETURN_IFERR2(status, dss_destroy_ptlist(&reg_list));
 
-    cm_destroy_ptlist(&reg_list);
+    dss_destroy_ptlist(&reg_list);
 #endif
     LOG_RUN_INF("IOfence kick all succ.");
 

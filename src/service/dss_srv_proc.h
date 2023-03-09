@@ -33,7 +33,7 @@ extern "C" {
 
 #define DSS_REMOVE_DIR_NEED_NODE_NUM 2
 
-status_t dss_rename_file(dss_session_t *session, const char *file, const char *dst);
+status_t dss_rename_file(dss_session_t *session, const char *src, const char *dst);
 // only rm empty dir
 status_t dss_remove_dir(dss_session_t *session, const char *dir, bool recursive);
 status_t dss_remove_file(dss_session_t *session, const char *file);
