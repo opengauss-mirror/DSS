@@ -80,13 +80,20 @@ static status_t dss_check_two_path_in_same_vg(const char *path1, const char *pat
 }
 
 static status_t dss_rename_file_check(
-    dss_session_t *session, const char *file, const char *dst, dss_vg_info_item_t **vg_item, gft_node_t **out_node)
+    dss_session_t *session, const char *src, const char *dst, dss_vg_info_item_t **vg_item, gft_node_t **out_node)
 {
     status_t status = dss_check_file(*vg_item);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check file,errcode:%d.", cm_get_error_code()));
 
     dss_check_dir_output_t output_info = {out_node, NULL, NULL};
-    if (dss_check_dir(dst, GFT_FILE, &output_info, CM_TRUE) != CM_SUCCESS) {
+    dss_vg_info_item_t *file_vg_item;
+    output_info.item = &file_vg_item;
+    status = dss_check_dir(src, GFT_FILE, &output_info, CM_TRUE);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check dir,errcode:%d.", cm_get_error_code()));
+
+    gft_node_t *out_node_tmp = NULL;
+    dss_check_dir_output_t output_info_tmp = {&out_node_tmp, NULL, NULL};
+    if (dss_check_dir(dst, GFT_FILE, &output_info_tmp, CM_TRUE) != CM_SUCCESS) {
         int32 errcode = cm_get_error_code();
         if (errcode != ERR_DSS_FILE_NOT_EXIST) {
             return CM_ERROR;
@@ -96,10 +103,6 @@ static status_t dss_rename_file_check(
         DSS_THROW_ERROR(ERR_DSS_FILE_RENAME_EXIST, "cannot rename a existed file.");
         return CM_ERROR;
     }
-    dss_vg_info_item_t *file_vg_item;
-    output_info.item = &file_vg_item;
-    status = dss_check_dir(file, GFT_FILE, &output_info, CM_TRUE);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check dir,errcode:%d.", cm_get_error_code()));
 
     if (file_vg_item->id != (*vg_item)->id) {
         dss_unlock_vg_mem_and_shm(session, *vg_item);
@@ -151,15 +154,15 @@ status_t dss_rename_file_check_path_and_name(
     return CM_SUCCESS;
 }
 
-status_t dss_rename_file(dss_session_t *session, const char *file, const char *dst)
+status_t dss_rename_file(dss_session_t *session, const char *src, const char *dst)
 {
-    if (cm_strcmpi(file, dst) == 0) {
+    if (cm_strcmpi(src, dst) == 0) {
         // nothing to do
         return CM_SUCCESS;
     }
     char vg_name[DSS_MAX_NAME_LEN];
     char dst_name[DSS_MAX_NAME_LEN];
-    CM_RETURN_IFERR(dss_rename_file_check_path_and_name(session, file, dst, vg_name, dst_name));
+    CM_RETURN_IFERR(dss_rename_file_check_path_and_name(session, src, dst, vg_name, dst_name));
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item == NULL) {
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
@@ -170,9 +173,9 @@ status_t dss_rename_file(dss_session_t *session, const char *file, const char *d
     status_t ret = CM_ERROR;
     do {
         gft_node_t *out_node = NULL;
-        DSS_BREAK_IF_ERROR(dss_rename_file_check(session, file, dst, &vg_item, &out_node));
+        DSS_BREAK_IF_ERROR(dss_rename_file_check(session, src, dst, &vg_item, &out_node));
         if (out_node == NULL) {
-            LOG_DEBUG_ERR("Failed to rename file %s.", file);
+            LOG_DEBUG_ERR("Failed to rename file %s.", src);
             break;
         }
         bool32 is_open = CM_FALSE;
@@ -180,7 +183,7 @@ status_t dss_rename_file(dss_session_t *session, const char *file, const char *d
             dss_notify_check_file_open(vg_item, session, BCAST_REQ_RENAME, *(uint64 *)&out_node->id, &is_open));
         if (is_open) {
             // logic same as before
-            DSS_THROW_ERROR(ERR_DSS_FILE_RENAME_OPENING_REMOTE, file, dst);
+            DSS_THROW_ERROR(ERR_DSS_FILE_RENAME_OPENING_REMOTE, src, dst);
             break;
         }
         DSS_BREAK_IF_ERROR(dss_rename_file_put_redo_log(session, out_node, dst_name, vg_item, inst_cfg));
