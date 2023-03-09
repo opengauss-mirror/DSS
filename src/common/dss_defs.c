@@ -266,6 +266,11 @@ status_t cm_str2size(const char *str, int64 *value)
 status_t cm_str2int(const char *str, int32 *value)
 {
     char *err = NULL;
+    int ret = cm_check_is_number(str);
+    if (ret != CM_SUCCESS) {
+        CM_THROW_ERROR_EX(ERR_VALUE_ERROR, "Convert int failed, the text is not number, text = %s", str);
+        return CM_ERROR;
+    }
     int64 val_int64 = strtol(str, &err, CM_DEFAULT_DIGIT_RADIX);
     if (dss_is_err(err)) {
         CM_THROW_ERROR_EX(ERR_VALUE_ERROR, "Convert int failed, text = %s", str);
