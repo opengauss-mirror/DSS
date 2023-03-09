@@ -69,6 +69,7 @@
 // cmd format : cmd subcmd [-f val]
 #define CMD_ARGS_AT_LEAST 2
 #define CMD_COMMAND_INJECTION_COUNT 22
+#define DSS_MAX_PATH_SIZE 1003
 #define DSS_DEFAULT_MEASURE "B"
 #define DSS_SUBSTR_UDS_PATH "UDS:"
 #define DSS_DEFAULT_VG_TYPE 't' /* show vg information in table format by default */
@@ -1288,6 +1289,11 @@ static void ls_help(char *prog_name)
 static status_t ls_get_parameter(const char **path, const char **measure, char *server_locator)
 {
     *path = cmd_ls_args[DSS_ARG_IDX_0].input_args;
+    if (strlen(*path) > DSS_MAX_PATH_SIZE) {
+        DSS_PRINT_ERROR("The path length exceeds the maximum %d", DSS_MAX_PATH_SIZE);
+        return CM_ERROR;
+    }
+
     *measure =
         cmd_ls_args[DSS_ARG_IDX_1].input_args != NULL ? cmd_ls_args[DSS_ARG_IDX_1].input_args : DSS_DEFAULT_MEASURE;
     status_t status = get_server_locator(cmd_ls_args[DSS_ARG_IDX_2].input_args, server_locator);
@@ -1391,7 +1397,7 @@ static status_t cp_proc(void)
 
     status = dss_copy_file_impl(&connection, srcpath, despath);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("fail to copy file from srcpath %s to destpath %s.\n", srcpath, despath);
+        DSS_PRINT_ERROR("Failed to copy file from srcpath %s to destpath %s.\n", srcpath, despath);
 #ifdef OPENGAUSS
         DSS_PRINT_ERROR("Check whether the Linux file: %s is 512-aligned.\n", srcpath);
 #endif
