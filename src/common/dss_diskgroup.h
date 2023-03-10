@@ -43,6 +43,7 @@ extern "C" {
 #endif
 
 #define DSS_LOADDISK_BUFFER_SIZE SIZE_K(32)
+#define DSS_READ4STANDBY_ERR (int32)3
 
 // for lsvg
 typedef struct dss_volume_space_info_t {

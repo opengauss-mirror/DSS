@@ -1706,6 +1706,10 @@ status_t dss_read_volume_inst(
     while (dss_need_load_remote(size) == CM_TRUE && status != CM_SUCCESS) {
         status = remote_read_proc(vg_item->vg_name, volume, offset, buf, size);
         if (status != CM_SUCCESS) {
+            if (status == DSS_READ4STANDBY_ERR) {
+                LOG_RUN_ERR("Failed to load disk(%s) data from the active node, result:%d", volume->name_p, status);
+                return CM_ERROR;
+            }
             LOG_RUN_WAR("Failed to load disk(%s) data from the active node, result:%d", volume->name_p, status);
             if (dss_need_exec_local()) {
                 break;
@@ -1750,7 +1754,7 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volumeid, int64 of
     dss_volume_t *volume = &vg_item->volume_handle[volumeid];
     if (volume->handle == DSS_INVALID_HANDLE) {
         if (dss_open_volume(volume->name_p, NULL, DSS_INSTANCE_OPEN_FLAG, volume) != CM_SUCCESS) {
-            LOG_RUN_ERR("Failed to open volume(%s).", volume->name_p);
+            LOG_RUN_ERR("Read volume for standby fialed, failed to open volume(%s).", volume->name_p);
             return CM_ERROR;
         } 
     }
@@ -1764,7 +1768,7 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volumeid, int64 of
     
 
     if (dss_read_volume(volume, offset, buf, size) != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to load disk(%s) data.", volume->name_p);
+        LOG_RUN_ERR("Read volume for standby fialed, failed to load disk(%s) data.", volume->name_p);
         return CM_ERROR;
     }
 
