@@ -2045,7 +2045,7 @@ static status_t dss_init_files(dss_env_t *dss_env, uint32 max_open_files)
     if (rc != EOK) {
         DSS_FREE_POINT(dss_env->files);
         CM_THROW_ERROR(ERR_SYSTEM_CALL, rc);
-        return CM_ERROR;
+        return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "memory init failed", CM_ERROR);
     }
     dss_file_context_t *context = dss_env->files;
     for (uint32 i = 0; i < dss_env->max_open_file; i++) {
