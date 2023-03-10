@@ -879,7 +879,7 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
         cm_spin_unlock(&g_dss_instance.switch_lock);
         return CM_SUCCESS;
     }
-    while (CM_TRUE) {
+    while (!g_dss_instance.is_maintain) {
         dss_init_get(&session->recv_pack);
         session->recv_pack.head->cmd = DSS_CMD_SWITCH_LOCK;
         LOG_DEBUG_INF("Try to switch lock to %u by %u.", curr_id, master_id);
