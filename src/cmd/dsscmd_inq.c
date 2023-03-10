@@ -111,11 +111,11 @@ status_t inq_lun(void)
     cm_ptlist_init(&devlist);
     status = dss_inquiry_luns(&devlist, DSS_FALSE);
     if (status != CM_SUCCESS) {
-        cm_destroy_ptlist(&devlist);
+        dss_destroy_ptlist(&devlist);
         return status;
     }
     print_dev_info(&devlist);
-    cm_destroy_ptlist(&devlist);
+    dss_destroy_ptlist(&devlist);
 
     return CM_SUCCESS;
 }
@@ -129,12 +129,12 @@ status_t inq_regs(void)
     cm_ptlist_init(&reg_info);
     status = dss_iof_inql_regs(dss_env->dss_vg_info, &reg_info);
     if (status != CM_SUCCESS) {
-        cm_destroy_ptlist(&reg_info);
+        dss_destroy_ptlist(&reg_info);
         return status;
     }
 
     print_reg_info(&reg_info);
-    cm_destroy_ptlist(&reg_info);
+    dss_destroy_ptlist(&reg_info);
 
     return CM_SUCCESS;
 }
