@@ -409,7 +409,7 @@ int dss_get_inst_status(int *status)
     return (int)dss_get_inst_status_on_server(conn, status);
 }
 
-int dss_set_main_inst()
+int dss_set_main_inst(void)
 {
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);

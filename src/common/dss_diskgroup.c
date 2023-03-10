@@ -1691,7 +1691,7 @@ static bool32 dss_read_remote_checksum(void *buf, int32 size)
     return sum1 == sum2;
 }
 
-bool32 dss_need_exec_local()
+bool32 dss_need_exec_local(void)
 {
     dss_config_t *cfg = dss_get_inst_cfg();
     uint32 master_id = dss_get_master_id();
@@ -1736,7 +1736,7 @@ status_t dss_read_volume_inst(
     return CM_SUCCESS;
 }
 
-status_t dss_read_volume_4standby(const char *vg_name, uint32 volumeid, int64 offset, void *buf, int32 size)
+status_t dss_read_volume_4standby(const char *vg_name, uint32 volume_id, int64 offset, void *buf, int32 size)
 {
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item == NULL) {
@@ -1744,12 +1744,12 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volumeid, int64 of
         return CM_ERROR;
     }
 
-    if (volumeid >= DSS_MAX_VOLUMES) {
-        LOG_RUN_ERR("Read volume for standby fialed, vg(%s) voiume id[%u] error.", vg_name, volumeid);
+    if (volume_id >= DSS_MAX_VOLUMES) {
+        LOG_RUN_ERR("Read volume for standby fialed, vg(%s) voiume id[%u] error.", vg_name, volume_id);
         return CM_ERROR;
     }
 
-    dss_volume_t *volume = &vg_item->volume_handle[volumeid];
+    dss_volume_t *volume = &vg_item->volume_handle[volume_id];
     if (volume->handle == DSS_INVALID_HANDLE) {
         if (dss_open_volume(volume->name_p, NULL, DSS_INSTANCE_OPEN_FLAG, volume) != CM_SUCCESS) {
             LOG_RUN_ERR("Failed to open volume(%s).", volume->name_p);
@@ -1757,10 +1757,10 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volumeid, int64 of
         } 
     }
 
-    uint64 volumesize = vg_item->dss_ctrl->core.volume_attrs[volumeid].size;
+    uint64 volumesize = vg_item->dss_ctrl->core.volume_attrs[volume_id].size;
     if (((uint64)offset > volumesize) || ((uint64)size > (volumesize - (uint64)offset))) {
         LOG_RUN_ERR("Read volume for standby fialed, params err, vg(%s) voiume id[%u] offset[%llu] size[%u] volume size[%llu].",
-            vg_name, volumeid, offset, size, volumesize);
+            vg_name, volume_id, offset, size, volumesize);
         return CM_ERROR;
     }
     
