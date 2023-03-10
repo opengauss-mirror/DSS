@@ -1728,6 +1728,13 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
             context->vol_offset = (int64)vol_offset;
         }
         buf = (void *)(((char *)buf) + real_size);
+        if (param->atom_oper) {
+            if (is_read && param->offset >= context->node->size) {
+                break;
+            }
+        } else if (is_read && context->offset >= context->node->size) {
+            break;
+        }
     } while (total_size > 0);
 
     DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
