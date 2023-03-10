@@ -997,7 +997,9 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
 
     session->audit_info.action = dss_get_cmd_desc(session->recv_pack.head->cmd);
     status_t status = handle->proc(session);
-    sql_record_audit_log(session, status, session->recv_pack.head->cmd);
+    if (local_req) {
+        sql_record_audit_log(session, status, session->recv_pack.head->cmd);
+    }
     return status;
 }
 
