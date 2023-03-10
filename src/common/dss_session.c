@@ -67,7 +67,7 @@ dss_session_ctrl_t *dss_get_session_ctrl(void)
     return &g_dss_session_ctrl;
 }
 
-uint32 dss_get_udssession_startid()
+uint32 dss_get_udssession_startid(void)
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 start_sid = 0;

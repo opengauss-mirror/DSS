@@ -150,7 +150,7 @@ DSS_DECLARE void dss_refresh_logger(char *log_field, unsigned long long *value);
 DSS_DECLARE int dss_set_svr_path(const char *conn_path);
 DSS_DECLARE int dss_set_conn_timeout(int timeout);
 // instance param
-DSS_DECLARE int dss_set_main_inst();
+DSS_DECLARE int dss_set_main_inst(void);
 DSS_DECLARE int dss_get_inst_status();
 
 DSS_DECLARE int dss_stat(const char *path, dss_stat_info_t item);
