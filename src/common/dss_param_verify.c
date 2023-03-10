@@ -201,7 +201,11 @@ status_t dss_verify_log_backup_file_count(void *lex, void *def)
     cm_trim_text(&text);
     status_t status = cm_text2uint32(&text, &num);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_LOG_BACKUP_FILE_COUNT"));
+#ifdef OPENGAUSS
+    if (num > CM_MAX_LOG_FILE_COUNT_LARGER) {
+#else
     if (num > CM_MAX_LOG_FILE_COUNT) {
+#endif
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_LOG_BACKUP_FILE_COUNT");
         return CM_ERROR;
     }
@@ -226,7 +230,11 @@ status_t dss_verify_audit_backup_file_count(void *lex, void *def)
     cm_trim_text(&text);
     status_t status = cm_text2uint32(&text, &num);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_AUDIT_BACKUP_FILE_COUNT"));
+#ifdef OPENGAUSS
+    if (num > CM_MAX_LOG_FILE_COUNT_LARGER) {
+#else
     if (num > CM_MAX_LOG_FILE_COUNT) {
+#endif
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_AUDIT_BACKUP_FILE_COUNT");
         return CM_ERROR;
     }
