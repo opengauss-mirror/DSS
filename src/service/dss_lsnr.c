@@ -147,7 +147,7 @@ static status_t cs_uds_lsnr_init_epoll_fd(uds_lsnr_t *lsnr)
 
 static status_t cs_create_uds_socks(uds_lsnr_t *lsnr)
 {
-    char(*name)[CM_UNIX_PATH_MAX] = lsnr->names;
+    char(*name)[DSS_MAX_PATH_BUFFER_SIZE] = lsnr->names;
 
     lsnr->sock_count = 0;
     for (uint32 loop = 0; loop < CM_MAX_LSNR_HOST_COUNT; loop++) {
