@@ -168,7 +168,7 @@ bool32 dss_is_server(void);
 bool32 dss_is_readwrite(void);
 bool32 dss_is_readonly(void);
 void dss_set_server_flag(void);
-bool32 dss_need_exec_local();
+bool32 dss_need_exec_local(void);
 int32 dss_get_server_status_flag();
 void dss_set_server_status_flag(int32 dss_status);
 status_t dss_load_ctrlinfo(uint32 index);
@@ -181,7 +181,7 @@ status_t dss_load_vg_conf_inner(dss_vg_info_t *vgs_info, const dss_config_t *ins
 typedef status_t (*dss_remote_read_proc_t)(
     const char *vg_name, dss_volume_t *volume, int64 offset, void *buf, int size);
 void regist_remote_read_proc(dss_remote_read_proc_t proc);
-status_t dss_read_volume_4standby(const char *vg_name, uint32 volumid, int64 offset, void *buf, int32 size);
+status_t dss_read_volume_4standby(const char *vg_name, uint32 volum_id, int64 offset, void *buf, int32 size);
 status_t dss_remove_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item, const char *vg_name,
     const char *volume_name, dss_config_t *inst_cfg);
 status_t dss_load_ctrl_core(dss_vg_info_item_t *vg_item, uint32 index);
