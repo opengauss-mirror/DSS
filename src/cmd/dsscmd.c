@@ -325,7 +325,7 @@ static status_t cmd_check_struct_name(const char *struct_name)
 
 static status_t cmd_check_measure_type(const char *measure)
 {
-    if (strlen(measure) > 1) {
+    if (strlen(measure) != 1) {
         DSS_PRINT_ERROR("The measure type len should be 1.\n");
         return CM_ERROR;
     }
@@ -354,7 +354,7 @@ static status_t cmd_check_inst_id(const char *inst_str)
 
 static status_t cmd_check_show_type(const char *show_type)
 {
-    if (strlen(show_type) > 1) {
+    if (strlen(show_type) != 1) {
         DSS_PRINT_ERROR("The show type len should be 1.\n");
         return CM_ERROR;
     }
@@ -387,17 +387,22 @@ static status_t cmd_check_disk_id(const char *id_str)
 
 static status_t cmd_check_offset(const char *offset_str)
 {
-    for (uint32 i = 0; i < strlen(offset_str); i++) {
-        if (!isdigit((int)offset_str[i]) && offset_str[i] != '-') {
-            DSS_PRINT_ERROR("The name's letter of offset should be digit.\n");
-            return CM_ERROR;
-        }
+    int64 offset;
+    status_t ret = cm_str2bigint(offset_str, &offset);
+    if (ret != CM_SUCCESS) {
+        DSS_PRINT_ERROR("The value of offset is invalid.\n");
+        return CM_ERROR;
     }
     return CM_SUCCESS;
 }
 
 static status_t cmd_check_format(const char *format)
 {
+    uint32 len = strlen(format);
+    if (len == 0) {
+        DSS_PRINT_ERROR("The value of format is invalid.\n");
+        return CM_ERROR;
+    }
     if (format[0] != 'c' && format[0] != 'h' && format[0] != 'u' && format[0] != 'l' && format[0] != 's' &&
         format[0] != 'x') {
         DSS_PRINT_ERROR("The name's letter of format should be [c|h|u|l|s|x].\n");
@@ -412,13 +417,13 @@ static status_t cmd_check_format(const char *format)
 
 static status_t cmd_check_read_size(const char *read_size_str)
 {
-    for (uint32 i = 0; i < strlen(read_size_str); i++) {
-        if (!isdigit((int)read_size_str[i])) {
-            DSS_PRINT_ERROR("The name's letter of read_size should be digit.\n");
-            return CM_ERROR;
-        }
+    int32 read_size;
+    status_t ret = cm_str2int(read_size_str, &read_size);
+    if (ret != CM_SUCCESS) {
+        DSS_PRINT_ERROR("The value of read_size is invalid.\n");
+        return CM_ERROR;
     }
-    long read_size = atol(read_size_str);
+
     if (read_size < 0) {
         DSS_PRINT_ERROR("The read_size should >= 0.\n");
         return CM_ERROR;
@@ -428,6 +433,11 @@ static status_t cmd_check_read_size(const char *read_size_str)
 
 static status_t cmd_check_du_format(const char *du_format)
 {
+    uint32 len = strlen(du_format);
+    if (len == 0) {
+        DSS_PRINT_ERROR("The value of format is invalid.\n");
+        return CM_ERROR;
+    }
     int part_one = 0;
     int part_two = 0;
     int part_three = 0;
@@ -461,7 +471,12 @@ static status_t cmd_check_du_format(const char *du_format)
 
 static status_t cmd_check_cfg_name(const char *name)
 {
-    for (uint32 i = 0; i < strlen(name); i++) {
+    uint32 len = strlen(name);
+    if (len == 0) {
+        DSS_PRINT_ERROR("The value of name is invalid.\n");
+        return CM_ERROR;
+    }
+    for (uint32 i = 0; i < len; i++) {
         if (!isalpha((int)name[i]) && !isdigit((int)name[i]) && name[i] != '-' && name[i] != '_') {
             DSS_PRINT_ERROR("The name's letter should be [aplha|digit|-|_].\n");
             return CM_ERROR;
@@ -472,7 +487,12 @@ static status_t cmd_check_cfg_name(const char *name)
 
 static status_t cmd_check_cfg_value(const char *value)
 {
-    for (uint32 i = 0; i < strlen(value); i++) {
+    uint32 len = strlen(value);
+    if (len == 0) {
+        DSS_PRINT_ERROR("The value is invalid.\n");
+        return CM_ERROR;
+    }
+    for (uint32 i = 0; i < len; i++) {
         if (!isprint((int)value[i])) {
             DSS_PRINT_ERROR("The value's letter should be print-able.\n");
             return CM_ERROR;
@@ -481,12 +501,12 @@ static status_t cmd_check_cfg_value(const char *value)
     return CM_SUCCESS;
 }
 
-static status_t cmd_check_cfg_scope(const char *socpe)
+static status_t cmd_check_cfg_scope(const char *scope)
 {
     const char *scope_memory = "memory";
     const char *scope_pfile = "pfile";
     const char *scope_both = "both";
-    if (strcmp(socpe, scope_memory) != 0 && strcmp(socpe, scope_pfile) != 0 && strcmp(socpe, scope_both) != 0) {
+    if (strcmp(scope, scope_memory) != 0 && strcmp(scope, scope_pfile) != 0 && strcmp(scope, scope_both) != 0) {
         DSS_PRINT_ERROR("scope should be [%s | %s | %s].\n", scope_memory, scope_pfile, scope_both);
         return CM_ERROR;
     }
@@ -765,7 +785,7 @@ static void lsvg_help(char *prog_name)
     (void)printf("-t/--show_type <show_type>, [optional], d show information in detail , t show information in table, "
                  "default value is 't'\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static int dss_load_ctrl_sync(dss_conn_t *connection, const char *vg_name, uint32 index)
@@ -1028,7 +1048,7 @@ static status_t lsvg_info(dss_conn_t *connection, const char *measure, bool32 de
 static status_t get_server_locator(char *input_args, char *server_locator)
 {
     if (input_args != NULL) {
-        errno_t errcode = strcpy_s(server_locator, CM_MAX_PATH_LEN, input_args);
+        errno_t errcode = strcpy_s(server_locator, DSS_MAX_PATH_BUFFER_SIZE, input_args);
         if (errcode != EOK) {
             DSS_PRINT_ERROR("Failed to strcpy server_locator, err = %d.\n", errcode);
             return CM_ERROR;
@@ -1085,7 +1105,7 @@ static status_t lsvg_proc(void)
 {
     status_t status;
     const char *measure;
-    char server_locator[CM_MAX_PATH_LEN] = {0};
+    char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
     bool32 detail;
     dss_conn_t connection;
 
@@ -1150,14 +1170,14 @@ static void adv_help(char *prog_name)
     (void)printf("\nUsage:%s adv <-g vg_name> <-v vol_name> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]add volume in volume group\n");
     (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name need to add volume\n");
-    (void)printf("-v/--vol_name <vol_name>, <required>, the volue name need to be added to volume group\n");
+    (void)printf("-v/--vol_name <vol_name>, <required>, the volume name need to be added to volume group\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t get_connection_by_input_args(char *input_args, dss_conn_t *connection)
 {
-    char server_locator[CM_MAX_PATH_LEN] = {0};
+    char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
     status_t status = get_server_locator(input_args, server_locator);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to get server_locator.\n");
@@ -1212,7 +1232,7 @@ static void mkdir_help(char *prog_name)
     (void)printf("-p/--path <path>, <required>, the name need to add dir\n");
     (void)printf("-d/--dir_name <dir_name>, <required>, the dir name need to be added to path\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t mkdir_proc(void)
@@ -1253,7 +1273,7 @@ static void touch_help(char *prog_name)
     (void)printf("[client command]create file\n");
     (void)printf("-p/--path <path>, <required>, file need to touch, path must begin with '+'\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t touch_proc(void)
@@ -1272,7 +1292,7 @@ static status_t touch_proc(void)
         DSS_PRINT_INF("Succeed to create file, name is %s.\n", path);
     }
     dss_disconnect_ex(&connection);
-    return CM_SUCCESS;
+    return status;
 }
 
 static dss_args_t cmd_ls_args[] = {
@@ -1295,14 +1315,14 @@ static void ls_help(char *prog_name)
     (void)printf("-m/--measure_type <measure_type>, [optional], B show size by Byte, K show size by kB ,"
                  "M show size by MB ,G show size by GB,  T show size by TB, default show size by Byte\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t ls_get_parameter(const char **path, const char **measure, char *server_locator)
 {
     *path = cmd_ls_args[DSS_ARG_IDX_0].input_args;
     if (strlen(*path) > DSS_MAX_PATH_SIZE) {
-        DSS_PRINT_ERROR("The path length exceeds the maximum %d", DSS_MAX_PATH_SIZE);
+        DSS_PRINT_ERROR("The path length exceeds the maximum %d\n", DSS_MAX_PATH_SIZE);
         return CM_ERROR;
     }
 
@@ -1319,7 +1339,7 @@ static status_t ls_get_parameter(const char **path, const char **measure, char *
 static status_t ls_proc(void)
 {
     const char *path = NULL;
-    char server_locator[CM_MAX_PATH_LEN] = {0};
+    char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
     const char *measure = NULL;
 
     status_t status = ls_get_parameter(&path, &measure, server_locator);
@@ -1394,7 +1414,7 @@ static void cp_help(char *prog_name)
     (void)printf("-s/--src_file <src_file>, <required>, source file\n");
     (void)printf("-d/--dest_file <dest_file>, <required>, destination file\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t cp_proc(void)
@@ -1437,7 +1457,7 @@ static void rm_help(char *prog_name)
     (void)printf("[client command]remove device\n");
     (void)printf("-p/--path <path>, <required>, device path, must begin with '+'\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t rm_proc(void)
@@ -1478,7 +1498,7 @@ static void rmv_help(char *prog_name)
     (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name need to remove volume\n");
     (void)printf("-v/--vol_name <vol_name>, <required>, the volue name need to be removed from volume group\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t rmv_proc(void)
@@ -1520,7 +1540,7 @@ static void rmdir_help(char *prog_name)
     (void)printf("-p/--path <path>, <required>, the name need to remove\n");
     (void)printf("-r/--recursive  [optional], remove dir and it's contents recursively\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t rmdir_proc(void)
@@ -1616,9 +1636,9 @@ static status_t inq_reg_proc(void)
     securec_check_ret(errcode);
     status_t status = dss_inq_reg_core(home, host_id, &vg_info);
     if (status == CM_ERROR) {
-        DSS_PRINT_ERROR("Failed to inq reg host %s.\n", cmd_inq_req_args[DSS_ARG_IDX_0].input_args);
+        DSS_PRINT_ERROR("Failed to inq reg host %lld.\n", host_id);
     } else {
-        DSS_PRINT_INF("Succeed to inq reg host %s.\n", cmd_inq_req_args[DSS_ARG_IDX_0].input_args);
+        DSS_PRINT_INF("Succeed to inq reg host %lld.\n", host_id);
     }
     return status;
 }
@@ -1823,10 +1843,10 @@ static void examine_help(char *prog_name)
     (void)printf("-o/--offset <offset>, <required>, the offset of the file need to examine\n");
     (void)printf("-f/--format <format>, <required>, value is[c|h|u|l|s|x]\n"
                  "c char, h unsigned short, u unsigned int, l unsigned long, s string, x hex.\n");
-    (void)printf("-s/--read_size <DSS_HOME>, [optional], size to show, default vaule is 512byte\n");
+    (void)printf("-s/--read_size <DSS_HOME>, [optional], size to show, default value is 512byte\n");
     (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static inline char escape_char(char c)
@@ -1908,7 +1928,7 @@ static status_t get_examine_opt_parameter(char *server_locator, char **home, int
 {
     *read_size = DSS_DISK_UNIT_SIZE;
     if (cmd_examine_args[DSS_ARG_IDX_3].input_args != NULL) {
-        *read_size = atoi(cmd_examine_args[DSS_ARG_IDX_3].input_args);
+        *read_size = (int32)strtol(cmd_examine_args[DSS_ARG_IDX_3].input_args, NULL, CM_DEFAULT_DIGIT_RADIX);
     }
     if (*read_size <= 0) {
         LOG_DEBUG_ERR("Invalid read_size.\n");
@@ -2017,7 +2037,7 @@ static status_t examine_proc(void)
     char format;
     int32 read_size = DSS_DISK_UNIT_SIZE;
     char *home = NULL;
-    char server_locator[CM_MAX_PATH_LEN] = {0};
+    char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
     dss_conn_t connection;
 
     status_t status = get_examine_parameter(&path, &offset, &format);
@@ -2279,7 +2299,7 @@ static void rename_help(char *prog_name)
     (void)printf("-o/--old_name <old_name>, <required>, the old file name\n");
     (void)printf("-n/--new_name <new_name>, <required>, the new file name\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t rename_proc(void)
@@ -2325,7 +2345,7 @@ static void du_help(char *prog_name)
     (void)printf("        [sa] s: summarize, a: count all files, not just directories\n");
     (void)printf("        [S] S: for directories do not include size of subdirectories\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t du_proc(void)
@@ -2381,14 +2401,14 @@ static void find_help(char *prog_name)
     (void)printf("-n/--name <name>, <required>, the name to find, support unix style wildcards "
                  "(man 7 glob for detail)\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t find_proc(void)
 {
     char *path = cmd_find_args[DSS_ARG_IDX_0].input_args;
     char *name = cmd_find_args[DSS_ARG_IDX_1].input_args;
-    char server_locator[CM_MAX_PATH_LEN] = {0};
+    char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
     status_t status = get_server_locator(cmd_find_args[DSS_ARG_IDX_2].input_args, server_locator);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to get server_locator.\n");
@@ -2446,7 +2466,7 @@ static void ln_help(char *prog_name)
     (void)printf("-s/--src_path <src_path>, <required>, the source path to link\n");
     (void)printf("-t/--target_path <target_path>, <required>, the target path to link\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t ln_proc(void)
@@ -2486,7 +2506,7 @@ static void readlink_help(char *prog_name)
     (void)printf("[client command]read link path\n");
     (void)printf("-p/--path <path>, <required>, the link path to read\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t readlink_proc(void)
@@ -2540,7 +2560,7 @@ static void unlink_help(char *prog_name)
     (void)printf("[client command] unlink path\n");
     (void)printf("-p/--path <path>, <required>, the link path to unlink\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t unlink_proc(void)
@@ -2628,7 +2648,7 @@ static void setcfg_help(char *prog_name)
                  "Pfile indicates that the modification is performed in the pfile. \n"
                  "The database must be restarted for the modification to take effect.\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t setcfg_proc(void)
@@ -2677,7 +2697,7 @@ static void getcfg_help(char *prog_name)
     (void)printf("[client command] get config value by name\n");
     (void)printf("-n/--name <name>, <required>, the config name to set\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t getcfg_proc(void)
@@ -2717,7 +2737,7 @@ static void getstatus_help(char *prog_name)
     (void)printf("\nUsage:%s getstatus [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command] get dss server status\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t getstatus_proc(void)
@@ -2753,7 +2773,7 @@ static void stopdss_help(char *prog_name)
     (void)printf("\nUsage:%s stopdss [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command] stop dss server\n");
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default vaule is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
 }
 
 static status_t stopdss_proc(void)

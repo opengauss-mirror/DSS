@@ -265,8 +265,8 @@ bool32 dss_config_cm()
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     char *value = cm_get_config_value(&inst_cfg->config, "DSS_CM_SO_NAME");
-    if (value == NULL || strlen(value) == 0) {
-        LOG_RUN_INF("dss cm config of DSS_CM_SO_NAME is empty.");
+    if (value == NULL || strlen(value) == 0 || strlen(value) >= DSS_MAX_NAME_LEN) {
+        LOG_RUN_INF("dss cm config of DSS_CM_SO_NAME is invalid.");
         return CM_FALSE;
     }
     return CM_TRUE;
@@ -448,7 +448,7 @@ static status_t dss_lsnr_proc(bool32 is_emerg, uds_lsnr_t *lsnr, cs_pipe_t *pipe
 status_t dss_start_lsnr(dss_instance_t *inst)
 {
     errno_t ret;
-    ret = snprintf_s(inst->lsnr.names[0], CM_UNIX_PATH_MAX, CM_UNIX_PATH_MAX - 1, inst->inst_cfg.params.lsnr_path);
+    ret = snprintf_s(inst->lsnr.names[0], DSS_MAX_PATH_BUFFER_SIZE, DSS_MAX_PATH_BUFFER_SIZE - 1, inst->inst_cfg.params.lsnr_path);
     if (ret == -1) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid DSS lsnr host");
         return CM_ERROR;
@@ -466,6 +466,11 @@ status_t dss_init_cm(dss_instance_t *inst)
     if (value == NULL || strlen(value) == 0) {
         LOG_RUN_INF("dss cm config of DSS_CM_SO_NAME is empty.");
         // if no cm, treat all nodes be ok
+        return CM_SUCCESS;
+    }
+
+    if (strlen(value) >= DSS_MAX_NAME_LEN) {
+        LOG_RUN_ERR("dss cm config of DSS_CM_SO_NAME is exceeds the max len %u.", DSS_MAX_NAME_LEN - 1);
         return CM_SUCCESS;
     }
 

@@ -263,10 +263,30 @@ status_t cm_str2size(const char *str, int64 *value)
     return cm_text2size(&text, value);
 }
 
+static status_t cm_check_is_sign_number(const char *str)
+{
+    size_t len = strlen(str);
+    if (len == 0) {
+        return CM_ERROR;
+    }
+    if (len == 1 && CM_IS_SIGN_CHAR(str[0])) {
+        return CM_ERROR;
+    }
+    if (!CM_IS_SIGN_CHAR(str[0]) && !CM_IS_DIGIT(str[0])) {
+        return CM_ERROR;
+    }
+    for (size_t i = 1; i < len; i++) {
+        if (!CM_IS_DIGIT(str[i])) {
+            return CM_ERROR;
+        }
+    }
+    return CM_SUCCESS;
+}
+
 status_t cm_str2int(const char *str, int32 *value)
 {
     char *err = NULL;
-    int ret = cm_check_is_number(str);
+    int ret = cm_check_is_sign_number(str);
     if (ret != CM_SUCCESS) {
         CM_THROW_ERROR_EX(ERR_VALUE_ERROR, "Convert int failed, the text is not number, text = %s", str);
         return CM_ERROR;
@@ -290,6 +310,11 @@ status_t cm_str2int(const char *str, int32 *value)
 status_t cm_str2bigint(const char *str, int64 *value)
 {
     char *err = NULL;
+    int ret = cm_check_is_sign_number(str);
+    if (ret != CM_SUCCESS) {
+        CM_THROW_ERROR_EX(ERR_VALUE_ERROR, "Convert int64 failed, the text is not number, text = %s", str);
+        return CM_ERROR;
+    }
     *value = strtoll(str, &err, CM_DEFAULT_DIGIT_RADIX);
     if (dss_is_err(err)) {
         CM_THROW_ERROR_EX(ERR_VALUE_ERROR, "Convert int64 failed, text = %s", str);
