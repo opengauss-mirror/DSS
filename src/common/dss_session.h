@@ -124,7 +124,7 @@ status_t dss_cli_lock_shm_meta_s(
 void dss_lock_shm_meta_x(const dss_session_t *session, latch_t *latch);
 void dss_unlock_shm_meta(dss_session_t *session, latch_t *latch);
 void dss_clean_session_latch(dss_session_ctrl_t *session_ctrl, dss_session_t *session);
-uint32 dss_get_udssession_startid();
+uint32 dss_get_udssession_startid(void);
 #ifdef __cplusplus
 }
 #endif
