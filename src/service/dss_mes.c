@@ -720,7 +720,7 @@ static void dss_loaddisk_unlock(char *vg_name)
     }
 }
 
-status_t dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, mes_message_head_t *reqhead)
+int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, mes_message_head_t *reqhead)
 {
 #ifndef WIN32
     char readbuff[DSS_LOADDISK_BUFFER_SIZE] __attribute__((__aligned__(DSS_ALIGN_SIZE))) = {0};
@@ -741,7 +741,7 @@ status_t dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, mes_mes
         if (dss_read_volume_4standby(req->vg_name, req->volumeid, roffset, readbuff, readsize) != CM_SUCCESS) {
             LOG_RUN_ERR("read volume for standby failed, vg name[%s], volume id[%u].", req->vg_name, req->volumeid);
             dss_loaddisk_unlock(req->vg_name);
-            return CM_ERROR;
+            return DSS_READ4STANDBY_ERR;
         }
         readtotal += readsize;
         remain -= readsize;
@@ -765,7 +765,7 @@ status_t dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, mes_mes
     return CM_SUCCESS;
 }
 
-static void dss_send_diskload_err_ack(dss_session_t *session, mes_message_head_t *head, status_t ret)
+static void dss_send_diskload_err_ack(dss_session_t *session, mes_message_head_t *head, int32 ret)
 {
     mes_message_head_t ack;
     ack.size = (uint16)(sizeof(mes_message_head_t) + sizeof(int32));
@@ -778,7 +778,7 @@ void dss_proc_loaddisk_req(dss_session_t *session, mes_message_t *msg)
     mes_message_head_t head = *(msg->head);
     uint32 size = msg->head->size - sizeof(mes_message_head_t);
     uint32 dstid = (uint32)(head.dst_inst);
-    status_t ret = CM_ERROR;
+    int32 ret = CM_ERROR;
 
     if (dss_is_readonly() == CM_TRUE) {
         dss_config_t *cfg = dss_get_inst_cfg();
@@ -857,9 +857,13 @@ static status_t dss_rec_msgs(dss_session_t *session, void *buf, int32 size)
         }
 
         if (msg.head->size < (sizeof(mes_message_head_t) + sizeof(big_packets_ctrl_t))) {
+            ret = CM_ERROR;
             LOG_RUN_ERR("dss server load disk from remote node failed, msg len(%d) error.", msg.head->size);
+            if (msg.head->size == (sizeof(mes_message_head_t) + sizeof(int32))) {
+                ret = *(int32*)(msg.buffer + sizeof(mes_message_head_t));
+            }
             mes_release_message_buf(&msg);
-            return CM_ERROR;
+            return ret;
         }
         ctrl = *(big_packets_ctrl_t *)(msg.buffer + sizeof(mes_message_head_t));
         if (dss_packets_verify(bfirst, &lastctrl, &ctrl) == CM_FALSE) {
