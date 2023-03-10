@@ -143,7 +143,6 @@ static status_t ltod_cp_buf(
         offset = dss_seek_file_impl(&conn, desthandle, offset, SEEK_SET);
         result = (bool32)(offset != -1);
         DSS_RETURN_IF_FALSE3(result, LOG_DEBUG_ERR("Failed to seek file %s", dpath), DSS_FREE_POINT(buf));
-
         status = dss_write_file_impl(&conn, desthandle, buf, read_size);
         DSS_RETURN_IFERR3(status, LOG_DEBUG_ERR("Failed to write file %s", dpath), DSS_FREE_POINT(buf));
     }
@@ -219,7 +218,7 @@ static status_t dss_cp_dtol(dss_conn_t conn, const char *srcpath, const char *de
 #else
     int64 size = dss_seek_file_impl(&conn, srchandle, 0, DSS_SEEK_MAXWR);
 #endif
-    LOG_DEBUG_INF("Seek file %s, size is %lld.", srcpath, size);
+    LOG_DEBUG_INF("Seek the src file %s, size is %lld.", srcpath, size);
     bool32 result = (bool32)(size != -1);
     DSS_RETURN_IF_FALSE3(result, dss_close_file_impl(&conn, srchandle), cm_close_file(desthandle));
 
@@ -303,7 +302,7 @@ status_t dss_copy_file(dss_conn_t conn, const char *srcpath, const char *destpat
     if (srcpath[0] == '+' && destpath[0] == '/') {
         status = dss_cp_dtol(conn, srcpath, destpath);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("fail to copy file from dss to linux.\n");
+            LOG_DEBUG_ERR("fail to copy file from dss to Linux.\n");
             return status;
         }
     } else if (srcpath[0] == '+' && destpath[0] == '+') {
@@ -315,11 +314,14 @@ status_t dss_copy_file(dss_conn_t conn, const char *srcpath, const char *destpat
     } else if (srcpath[0] == '/' && destpath[0] == '+') {
         status = dss_cp_ltod(conn, srcpath, destpath);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("fail to copy file from linx to dss.\n");
+            LOG_DEBUG_ERR("fail to copy file from Linux to dss.\n");
             return status;
         }
+    } else if (srcpath[0] == '/' && destpath[0] == '/') {
+        DSS_PRINT_ERROR("Not support copy file from Linux to Linux.\n");
+        return CM_ERROR;
     } else {
-        LOG_DEBUG_ERR("the format of srcpath or destpath is wrong.\n");
+        DSS_PRINT_ERROR("The format of srcpath or destpath is wrong.\n");
         return CM_ERROR;
     }
     return CM_SUCCESS;

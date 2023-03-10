@@ -195,9 +195,9 @@ static inline status_t dss_get_data(dss_packet_t *pack, uint32 size, void **buf)
     char *temp_buf = NULL;
     CM_ASSERT(pack != NULL);
 
-    CM_RETURN_IFERR(dss_pack_check_len(pack, 0));
     len = (int64)CM_ALIGN4(size);
     TO_UINT32_OVERFLOW_CHECK(len, int64);
+    CM_RETURN_IFERR(dss_pack_check_len(pack, len));
     temp_buf = DSS_READ_ADDR(pack);
     pack->offset += CM_ALIGN4(size);
     if (buf != NULL) {
@@ -226,7 +226,7 @@ static inline status_t dss_get_str(dss_packet_t *pack, char **buf)
     size_t str_len = 0;
     CM_ASSERT(pack != NULL);
 
-    CM_RETURN_IFERR(dss_pack_check_len(pack, 0));
+    CM_RETURN_IFERR(dss_pack_check_len(pack, 1));
     str = DSS_READ_ADDR(pack);
     CM_RETURN_IFERR(dss_get_packet_strlen(pack, str, &str_len));
     len = (int64)CM_ALIGN4(str_len);
