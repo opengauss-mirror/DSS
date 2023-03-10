@@ -328,7 +328,7 @@ bool32 cm_sys_process_alived(uint64 pid, int64 start_time)
 
 void cm_save_remote_host(cs_pipe_t *pipe, char *os_host)
 {
-    if (pipe->type == CS_TYPE_TCP) {
+    if (pipe->type == CS_TYPE_TCP || pipe->type == CS_TYPE_SSL) {
         (void)cm_inet_ntop((struct sockaddr *)&pipe->link.tcp.remote.addr, os_host, (int)CM_HOST_NAME_BUFFER_SIZE);
     } else if (pipe->type == CS_TYPE_DOMAIN_SCOKET) {
         errno_t errcode = strncpy_s(os_host, CM_HOST_NAME_BUFFER_SIZE, LOOPBACK_ADDRESS, strlen(LOOPBACK_ADDRESS));
