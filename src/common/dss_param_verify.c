@@ -102,13 +102,13 @@ status_t dss_verify_lsnr_path(char *path)
     if (len == 1 && (path[0] == '.' || path[0] == '\t')) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, path));
     }
-    uint32 max_len = DSS_UNIX_PATH_MAX - (uint32)strlen(DSS_UNIX_DOMAIN_SOCKET_NAME);
+    uint32 max_len = DSS_MAX_PATH_BUFFER_SIZE - (uint32)strlen(DSS_UNIX_DOMAIN_SOCKET_NAME);
     if (len >= max_len) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_FILE_NAME, path, max_len));
     }
-    char input_path_buffer[DSS_UNIX_PATH_MAX];
+    char input_path_buffer[DSS_MAX_PATH_BUFFER_SIZE];
     char *input_path = input_path_buffer;
-    MEMS_RETURN_IFERR(strcpy_s(input_path_buffer, DSS_UNIX_PATH_MAX, path));
+    MEMS_RETURN_IFERR(strcpy_s(input_path_buffer, DSS_MAX_PATH_BUFFER_SIZE, path));
     if (len > 1 && (CM_IS_QUOTE_STRING(input_path[0], input_path[len - 1]))) {
         input_path++;
         len -= CM_SINGLE_QUOTE_LEN;
@@ -120,8 +120,8 @@ status_t dss_verify_lsnr_path(char *path)
     if (cm_check_uds_path_special_char(input_path, len)) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, input_path));
     }
-    char realfile[DSS_UNIX_PATH_MAX];
-    CM_RETURN_IFERR(realpath_file(input_path, realfile, DSS_UNIX_PATH_MAX));
+    char realfile[DSS_MAX_PATH_BUFFER_SIZE];
+    CM_RETURN_IFERR(realpath_file(input_path, realfile, DSS_MAX_PATH_BUFFER_SIZE));
     if (!cm_dir_exist((const char *)realfile)) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, input_path));
     }

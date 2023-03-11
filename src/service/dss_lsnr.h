@@ -35,7 +35,7 @@ typedef struct st_uds_lsnr {
     thread_t thread;
     int epoll_fd;
     lsnr_status_t status;
-    char names[CM_MAX_LSNR_HOST_COUNT][DSS_UNIX_PATH_MAX];
+    char names[CM_MAX_LSNR_HOST_COUNT][DSS_MAX_PATH_BUFFER_SIZE];
     socket_t socks[CM_MAX_LSNR_HOST_COUNT];
     uint32 permissions;
     atomic_t sock_count;          // may listen on multiple uds file

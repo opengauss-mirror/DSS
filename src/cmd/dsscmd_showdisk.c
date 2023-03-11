@@ -381,6 +381,7 @@ status_t dss_read_meta_from_disk(dss_vg_info_item_t *vg_item, const char *struct
         DSS_RETURN_IFERR3(
             status, DSS_PRINT_ERROR("Failed to printf metadata root_ft_block.\n"), dss_close_volume(&volume));
     } else {
+        dss_close_volume(&volume);
         DSS_PRINT_ERROR("Incorrect input, %s is not in core_ctrl vg_header volume_ctrl root_ft_block.\n", struct_name);
         return CM_ERROR;
     }
