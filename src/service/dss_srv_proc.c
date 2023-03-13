@@ -160,10 +160,6 @@ status_t dss_rename_file_check_path_and_name(
 
 status_t dss_rename_file(dss_session_t *session, const char *src, const char *dst)
 {
-    if (cm_strcmpi(src, dst) == 0) {
-        // nothing to do
-        return CM_SUCCESS;
-    }
     char vg_name[DSS_MAX_NAME_LEN];
     char dst_name[DSS_MAX_NAME_LEN];
     CM_RETURN_IFERR(dss_rename_file_check_path_and_name(session, src, dst, vg_name, dst_name));
@@ -180,6 +176,11 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
         DSS_BREAK_IF_ERROR(dss_rename_file_check(session, src, dst, &vg_item, &out_node));
         if (out_node == NULL) {
             LOG_DEBUG_ERR("Failed to rename file %s.", src);
+            break;
+        }
+        if (cm_strcmpi(src, dst) == 0) {
+            // nothing to do
+            ret = CM_SUCCESS;
             break;
         }
         bool32 is_open = CM_FALSE;

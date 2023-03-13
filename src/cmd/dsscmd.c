@@ -945,9 +945,9 @@ static void lsvg_printf_vlm_info(vg_vlm_space_info_t *vg_vlm_info, const char *m
             volume_size = dss_convert_size(volume_size, measure);
             double volume_used = vg_vlm_info->volume_space_info[vol_id].volume_used;
             volume_used = dss_convert_size(volume_used, measure);
-            (void)printf("      volume_free:%.0lf\n", volume_free);
-            (void)printf("      volume_size:%.0lf\n", volume_size);
-            (void)printf("      volume_used:%.0lf\n", volume_used);
+            (void)printf("      volume_free:%.05f\n", volume_free);
+            (void)printf("      volume_size:%.05f\n", volume_size);
+            (void)printf("      volume_used:%.05f\n", volume_used);
         }
     }
 }
@@ -2526,7 +2526,7 @@ static status_t readlink_proc(void)
         return CM_ERROR;
     }
     if (status == CM_SUCCESS && !is_link) {
-        DSS_PRINT_ERROR("The path %s is not a soft link.\n", link_path);
+        DSS_PRINT_ERROR("The path %s does not exist or is not a soft link.\n", link_path);
         dss_disconnect_ex(&connection);
         return CM_ERROR;
     }
