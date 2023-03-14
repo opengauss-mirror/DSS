@@ -2521,9 +2521,7 @@ static status_t dss_get_block_entry(dss_session_t *session, dss_vg_info_item_t *
 status_t dss_get_fs_block_info_by_offset(
     int64 offset, uint64 au_size, uint32 *block_count, uint32 *block_au_count, uint32 *au_offset)
 {
-    if (au_size == 0) {
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("The au size cannot be zero."));
-    }
+    DSS_ASSERT_LOG(au_size != 0, "The au size cannot be zero.");
 
     // two level bitmap, ~2k block ids per entry FSB
     uint64 au_count = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(auid_t);  // 2043 2nd FSBs
