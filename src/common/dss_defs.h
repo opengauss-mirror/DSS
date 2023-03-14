@@ -386,6 +386,16 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
     } while (0)
 #endif
 
+#define DSS_ASSERT_LOG(condition, format, ...)                                              \
+    do {                                                                                    \
+        if (SECUREC_UNLIKELY(!(condition))) {                                               \
+            LOG_RUN_ERR(format, ##__VA_ARGS__);                                             \
+            LOG_RUN_ERR("Assertion throws an exception at line %u", (uint32)__LINE__);      \
+            cm_fync_logfile();                                                              \
+            CM_ASSERT(0);                                                                   \
+        }                                                                                   \
+    } while (0)
+
 typedef struct st_auid_t {  // id of allocation unit, 8 Bytes
     uint64 volume : DSS_MAX_BIT_NUM_VOLUME;
     uint64 au : DSS_MAX_BIT_NUM_AU;
