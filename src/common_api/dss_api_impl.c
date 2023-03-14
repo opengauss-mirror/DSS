@@ -1636,8 +1636,8 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
             }
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "au", *(uint64 *)&auid);
-            LOG_DEBUG_ERR("Auid is invalid, volume:%u, fname:%s, fsize:%llu, written_size:%llu.", (uint32)auid.volume,
-                node->name, node->size, node->written_size);
+            DSS_ASSERT_LOG(0, "Auid is invalid, volume:%u, fname:%s, fsize:%llu, written_size:%llu.", (uint32)auid.volume,
+                           node->name, node->size, node->written_size);
             return CM_ERROR;
         }
 

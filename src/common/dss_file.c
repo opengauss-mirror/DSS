@@ -2998,6 +2998,7 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
     if (node->size < align_length) {
 #endif
         /* to extend the file */
+        LOG_DEBUG_INF("start truncate to extend");
         status = truncate_to_extend(session, vg_item, node, length);
         dss_unlock_vg_mem_and_shm(session, vg_item);
         return status;
