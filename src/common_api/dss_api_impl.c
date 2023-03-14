@@ -2492,8 +2492,8 @@ status_t dss_get_fd_by_offset(
     dss_file_context_t *context = NULL;
     dss_rw_param_t param;
 
-    LOG_DEBUG_INF("get file descriptor in aio, handle:%d, offset:%lld", handle, offset);
     CM_RETURN_IFERR(dss_check_file_env(conn, handle, size, &context));
+    LOG_DEBUG_INF("Begin get file fd in aio, filename:%s, handle:%d, offset:%lld", context->node->name, handle, offset);
 
     dss_latch_s(&context->latch);
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);

@@ -322,7 +322,7 @@ status_t dss_get_instance_log_buf_no_cm(dss_instance_t *inst)
         inst->status = ZFS_STATUS_OPEN;
     }
 #else
-    if (!dss_config_cm()) {
+    if (inst->is_maintain || !dss_config_cm()) {
         dss_set_master_id(curr_id);
         dss_set_server_status_flag(DSS_STATUS_READWRITE);
         return dss_change_instance_status_to_open(inst, curr_id, curr_id);
@@ -376,7 +376,6 @@ static void dss_init_maintain(dss_instance_t *inst)
     char *maintain_env = getenv(DSS_MAINTAIN_ENV);
     inst->is_maintain = (maintain_env != NULL && cm_strcmpi(maintain_env, "TRUE") ==0);
     if (inst->is_maintain) {
-        dss_set_master_id(inst->inst_cfg.params.inst_id);
         LOG_RUN_INF("DSS_MAINTAIN is TRUE");
     } else {
         LOG_RUN_INF("DSS_MAINTAIN is FALSE");
@@ -422,12 +421,12 @@ status_t dss_startup(dss_instance_t *inst, char *home)
     status = dss_init_loggers(
         &inst->inst_cfg, g_dss_instance_log, sizeof(g_dss_instance_log) / sizeof(dss_log_def_t), "dssserver");
     DSS_RETURN_IFERR2(status, (void)printf("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code())));
+    dss_init_maintain(inst);
     LOG_RUN_INF("DSS instance begin to initialize.");
     status = instance_init(inst);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to initialized!"));
     cm_set_shm_ctrl_flag(CM_SHM_CTRL_FLAG_TRUE);
     inst->abort_status = CM_FALSE;
-    dss_init_maintain(inst);
     return CM_SUCCESS;
 }
 
