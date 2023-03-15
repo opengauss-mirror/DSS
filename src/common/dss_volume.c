@@ -38,12 +38,32 @@ extern "C" {
 
 uint64 g_log_offset = DSS_INVALID_ID64;
 #ifdef WIN32
+int32 device_os_error_array[] = {
+    EOPNOTSUPP, ETIMEDOUT, ENOSPC, ENOLINK, ENODATA, EILSEQ, ENOMEM, EBUSY, EAGAIN, ENODEV, EOVERFLOW, EIO};
+};
+#else
+int32 device_os_error_array[] = {EOPNOTSUPP, ETIMEDOUT, ENOSPC, ENOLINK, EBADE, ENODATA, EILSEQ, ENOMEM, EBUSY, EAGAIN,
+    ENODEV, EREMCHG, ETOOMANYREFS, EOVERFLOW, EIO};
+#endif
+
+bool32 dss_is_device_os_error(int32 os_err)
+{
+    uint8 size = (uint8)sizeof(device_os_error_array) / sizeof(device_os_error_array[0]);
+    for (uint8 i = 0; i < size; i++) {
+        if (os_err == device_os_error_array[i]) {
+            return CM_TRUE;
+        }
+    }
+    return CM_FALSE;
+}
+
+#ifdef WIN32
 status_t dss_open_volume(const char *name, const char *code, int flags, dss_volume_t *volume)
 {
     volume->handle =
         CreateFile(name, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, NULL);
     if (volume->handle == INVALID_HANDLE_VALUE) {
-        if (cm_get_os_error() == DSS_IO_ERROR) {
+        if (dss_is_device_os_error(cm_get_os_error())) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, name);
             LOG_RUN_ERR("[DSS] ABORT OPEN VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
@@ -68,7 +88,7 @@ status_t dss_open_simple_volume(const char *name, int flags, dss_simple_volume_t
         CreateFile(name, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, NULL);
 
     if (volume->handle == INVALID_HANDLE_VALUE) {
-        if (cm_get_os_error() == DSS_IO_ERROR) {
+        if (dss_is_device_os_error(cm_get_os_error())) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, name);
             LOG_RUN_ERR("[DSS] ABORT OPEN SIMPLE VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
@@ -118,7 +138,7 @@ static status_t dss_seek_volume(dss_volume_t *volume, uint64 offset)
     high32 = (LONG)(offset >> 32);
 
     if (SetFilePointer(volume->handle, low32, &high32, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
-        if (cm_get_os_error() == DSS_IO_ERROR) {
+        if (dss_is_device_os_error(cm_get_os_error())) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
             LOG_RUN_ERR("[DSS] ABORT SEEK VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
@@ -140,7 +160,7 @@ static status_t dss_try_read_volume(dss_volume_t *volume, char *buffer, int32 si
     CM_ASSERT(read_size != NULL);
 
     if (!ReadFile(volume->handle, buffer, (DWORD)size, (LPDWORD)read_size, NULL)) {
-        if (cm_get_os_error() == DSS_IO_ERROR) {
+        if (dss_is_device_os_error(cm_get_os_error())) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
             LOG_RUN_ERR("[DSS] ABORT READ VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
@@ -158,7 +178,7 @@ static status_t dss_try_read_volume(dss_volume_t *volume, char *buffer, int32 si
 static status_t dss_try_write_volume(dss_volume_t *volume, char *buffer, int32 size, int32 *written_size)
 {
     if (!WriteFile(volume->handle, buffer, (DWORD)size, (LPDWORD)written_size, NULL)) {
-        if (cm_get_os_error() == DSS_IO_ERROR) {
+        if (dss_is_device_os_error(cm_get_os_error())) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
             LOG_RUN_ERR("[DSS] ABORT WRITE VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
@@ -176,7 +196,7 @@ static status_t dss_try_write_volume(dss_volume_t *volume, char *buffer, int32 s
 #else
 static inline void dss_open_fail(const char *name)
 {
-    if (cm_get_os_error() == DSS_IO_ERROR) {
+    if (dss_is_device_os_error(cm_get_os_error())) {
         DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, name);
         LOG_RUN_ERR("[DSS] ABORT OPEN VOLUME RAW, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
             strerror(cm_get_os_error()));
@@ -258,7 +278,7 @@ uint64 dss_get_volume_size_raw(dss_volume_t *volume)
     int64 size = lseek64(volume->handle, 0, SEEK_END);
     if (size == -1) {
         DSS_LOG_WITH_OS_MSG("failed to seek file with handle %d", volume->handle);
-        if (cm_get_os_error() == DSS_IO_ERROR) {
+        if (dss_is_device_os_error(cm_get_os_error())) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
             LOG_RUN_ERR("[DSS] ABORT GET VOLUME SIZE, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
@@ -276,7 +296,7 @@ static status_t dss_try_pread_volume_raw(dss_volume_t *volume, int64 offset, cha
 {
     *read_size = (int32)pread(volume->handle, buffer, size, (off_t)offset);
     if (*read_size == -1) {
-        if (cm_get_os_error() == DSS_IO_ERROR) {
+        if (dss_is_device_os_error(cm_get_os_error())) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
             LOG_RUN_ERR("[DSS] ABORT PREAD VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
@@ -299,7 +319,7 @@ static int32 dss_try_pwrite_volume_raw(
     if (aligned_pwrite) {
         *written_size = (int32)pwrite(volume->handle, buffer, size, (off_t)offset);
         if (*written_size == -1) {
-            if (cm_get_os_error() == DSS_IO_ERROR) {
+            if (dss_is_device_os_error(cm_get_os_error())) {
                 DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
                 LOG_RUN_ERR("[DSS] ABORT ALIGNED PWRITE VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                     strerror(cm_get_os_error()));
@@ -313,7 +333,7 @@ static int32 dss_try_pwrite_volume_raw(
     } else {
         *written_size = (int32)pwrite(volume->unaligned_handle, buffer, size, (off_t)offset);
         if (*written_size == -1) {
-            if (cm_get_os_error() == DSS_IO_ERROR) {
+            if (dss_is_device_os_error(cm_get_os_error())) {
                 DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
                 LOG_RUN_ERR("[DSS] ABORT UNALIGNED PWRITE VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                     strerror(cm_get_os_error()));
@@ -438,7 +458,7 @@ uint64 dss_get_volume_size_rbd(dss_volume_t *volume)
     int64 size = ceph_client_read_size(volume->image);
     if (size < 0) {
         DSS_LOG_WITH_OS_MSG("failed to read size with handle %d", volume->handle);
-        if (cm_get_os_error() == DSS_IO_ERROR) {
+        if (dss_is_device_os_error(cm_get_os_error())) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
             LOG_RUN_ERR("[DSS] ABORT GET VOLUME SIZE RBD, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
@@ -457,7 +477,7 @@ static status_t dss_try_pread_volume_rbd(
 {
     *read_size = ceph_client_create_read(volume->image, offset, buffer, size);
     if (*read_size < 0) {
-        if (cm_get_os_error() == DSS_IO_ERROR) {
+        if (dss_is_device_os_error(cm_get_os_error())) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
             LOG_RUN_ERR("[DSS] ABORT PREAD VOLUME RBD, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
@@ -476,7 +496,7 @@ static int32 dss_try_pwrite_volume_rbd(
 {
     *written_size = ceph_client_create_write(volume->image, offset, buffer, size);
     if (*written_size < 0) {
-        if (cm_get_os_error() == DSS_IO_ERROR) {
+        if (dss_is_device_os_error(cm_get_os_error())) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
             LOG_RUN_ERR("[DSS] ABORT PWRITE VOLUME RBD, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
