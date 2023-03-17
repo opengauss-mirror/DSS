@@ -233,7 +233,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define CM_ALIGN_512(size) (((size) + 0x000001FF) & 0xFFFFFE00)
 #define DSS_DEFAULT_NULL_VALUE (uint32)0xFFFFFFFF
 #define DSS_UDS_CONNECT_TIMEOUT (int32)(30000) /* 30 seconds */
-#define DSS_UDS_SOCKET_TIMEOUT (int32)(30000)  /* 30 seconds */
+#define DSS_UDS_SOCKET_TIMEOUT (int32)0x4FFFFFFF
 #define DSS_SEEK_MAXWR 3                       /* Used for seek actual file size for openGauss */
 
 #define DSS_BASE_YEAR 1900
