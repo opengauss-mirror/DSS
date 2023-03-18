@@ -158,18 +158,18 @@ static status_t dss_cp_dtod(dss_conn_t conn, const char *srcpath, const char *de
     status_t status;
     status = dss_open_file_impl(&conn, srcpath, 0, &srchandle);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("the format of srcfile %s is false.\n", srcpath);
+        LOG_DEBUG_ERR("The format of srcfile %s is false.\n", srcpath);
         return status;
     }
     status = dss_create_file_impl(&conn, destpath, 0);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("create file %s failed.\n", destpath);
+        LOG_DEBUG_ERR("Create file %s failed.\n", destpath);
         dss_close_file_impl(&conn, srchandle);
         return status;
     }
     status = dss_open_file_impl(&conn, destpath, 0, &desthandle);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("the format of destfile %s is false.\n", destpath);
+        LOG_DEBUG_ERR("The format of destfile %s is false.\n", destpath);
         dss_close_file_impl(&conn, srchandle);
         return status;
     }
@@ -188,9 +188,9 @@ static status_t dss_cp_dtod(dss_conn_t conn, const char *srcpath, const char *de
     dss_close_file_impl(&conn, srchandle);
     dss_close_file_impl(&conn, desthandle);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("dss to dss copy buffer failed");
+        LOG_DEBUG_ERR("Dss to dss copy buffer failed");
         if (dss_remove_file_impl(&conn, destpath) != CM_SUCCESS) {
-            LOG_DEBUG_ERR("delete dest file: %s failed", destpath);
+            LOG_DEBUG_ERR("Delete dest file: %s failed", destpath);
         }
     }
     return status;
@@ -204,12 +204,12 @@ static status_t dss_cp_dtol(dss_conn_t conn, const char *srcpath, const char *de
     status_t status;
     status = dss_open_file_impl(&conn, srcpath, 0, &srchandle);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("the format of srcfile %s is false.\n", srcpath);
+        LOG_DEBUG_ERR("The format of srcfile %s is false.\n", srcpath);
         return status;
     }
     status = cm_create_file(destpath, O_RDWR | O_TRUNC | O_BINARY | O_CREAT, &desthandle);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("failed to create file %s", destpath);
+        LOG_DEBUG_ERR("Failed to create file %s", destpath);
         dss_close_file_impl(&conn, srchandle);
         return status;
     }
@@ -232,7 +232,7 @@ static status_t dss_cp_dtol(dss_conn_t conn, const char *srcpath, const char *de
     cm_close_file(desthandle);
     if (status != CM_SUCCESS) {
         if (cm_remove_file(destpath) != CM_SUCCESS) {
-            LOG_DEBUG_ERR("delete dest file: %s failed", destpath);
+            LOG_DEBUG_ERR("Delete dest file: %s failed", destpath);
         }
     }
     return status;
@@ -246,18 +246,18 @@ static status_t dss_cp_ltod(dss_conn_t conn, const char *srcpath, const char *de
     status_t status;
     status = cm_open_file(srcpath, O_RDONLY | O_BINARY, &srchandle);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("the format of srcfile %s is false.\n", srcpath);
+        LOG_DEBUG_ERR("The format of srcfile %s is false.\n", srcpath);
         return status;
     }
     status = dss_create_file_impl(&conn, destpath, 0);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("create file %s failed.\n", destpath);
+        LOG_DEBUG_ERR("Create file %s failed.\n", destpath);
         cm_close_file(srchandle);
         return status;
     }
     status = dss_open_file_impl(&conn, destpath, 0, &desthandle);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("the format of destfile %s is false.\n", destpath);
+        LOG_DEBUG_ERR("The format of destfile %s is false.\n", destpath);
         cm_close_file(srchandle);
         return status;
     }
@@ -270,11 +270,11 @@ static status_t dss_cp_ltod(dss_conn_t conn, const char *srcpath, const char *de
     }
 #ifdef OPENGAUSS
     if (size % DSS_DISK_UNIT_SIZE != 0) {
-        LOG_DEBUG_ERR("linux file %s not aligned with 512", srcpath);
+        LOG_DEBUG_ERR("Linux file %s not aligned with 512", srcpath);
         cm_close_file(srchandle);
         dss_close_file_impl(&conn, desthandle);
         if (dss_remove_file_impl(&conn, destpath) != CM_SUCCESS) {
-            LOG_DEBUG_ERR("delete dest file: %s failed", destpath);
+            LOG_DEBUG_ERR("Delete dest file: %s failed", destpath);
         }
         return CM_ERROR;
     }
@@ -288,9 +288,9 @@ static status_t dss_cp_ltod(dss_conn_t conn, const char *srcpath, const char *de
     cm_close_file(srchandle);
     dss_close_file_impl(&conn, desthandle);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("dss to dss copy buffer failed");
+        LOG_DEBUG_ERR("Dss to dss copy buffer failed");
         if (dss_remove_file_impl(&conn, destpath) != CM_SUCCESS) {
-            LOG_DEBUG_ERR("delete dest file: %s failed", destpath);
+            LOG_DEBUG_ERR("Delete dest file: %s failed", destpath);
         }
     }
     return status;
@@ -302,19 +302,19 @@ status_t dss_copy_file(dss_conn_t conn, const char *srcpath, const char *destpat
     if (srcpath[0] == '+' && destpath[0] == '/') {
         status = dss_cp_dtol(conn, srcpath, destpath);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("fail to copy file from dss to Linux.\n");
+            LOG_DEBUG_ERR("Fail to copy file from dss to Linux.\n");
             return status;
         }
     } else if (srcpath[0] == '+' && destpath[0] == '+') {
         status = dss_cp_dtod(conn, srcpath, destpath);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("fail to copy file from dss to dss.\n");
+            LOG_DEBUG_ERR("Fail to copy file from dss to dss.\n");
             return status;
         }
     } else if (srcpath[0] == '/' && destpath[0] == '+') {
         status = dss_cp_ltod(conn, srcpath, destpath);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("fail to copy file from Linux to dss.\n");
+            LOG_DEBUG_ERR("Fail to copy file from Linux to dss.\n");
             return status;
         }
     } else if (srcpath[0] == '/' && destpath[0] == '/') {
