@@ -3055,7 +3055,7 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
 
 static status_t dss_refresh_file_core(dss_vg_info_item_t *vg_item, uint64 fid, ftid_t ftid, dss_block_id_t blockid)
 {
-    gft_node_t *node = dss_get_ft_node_by_ftid(vg_item, ftid, CM_TRUE, CM_FALSE);
+    gft_node_t *node = dss_get_ft_node_by_ftid(vg_item, ftid, CM_TRUE, CM_TRUE);
     if (!node) {
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find ftid,ftid: %llu.", *(uint64 *)&ftid));
     }
@@ -3067,14 +3067,14 @@ static status_t dss_refresh_file_core(dss_vg_info_item_t *vg_item, uint64 fid, f
         "Apply refresh file:%s, curr size:%llu, refresh ft id:%llu, refresh entry id:%llu, refresh block id:%llu.",
         node->name, node->size, *(uint64 *)&ftid, *(uint64 *)&(node->entry), *(uint64 *)&blockid);
     // check the entry and load
-    char *block = dss_find_block_in_shm(vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
+    char *block = dss_find_block_in_shm(vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_TRUE);
     if (!block) {
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find block:%llu.", *(uint64 *)&node->entry));
     }
 
     bool32 cmp = dss_cmp_blockid(blockid, CM_INVALID_ID64);
     if (cmp == 0) {
-        block = dss_find_block_in_shm(vg_item, blockid, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
+        block = dss_find_block_in_shm(vg_item, blockid, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_TRUE);
         if (!block) {
             DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find block:%llu.", DSS_ID_TO_U64(blockid)));
         }
