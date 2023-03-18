@@ -1631,15 +1631,24 @@ static status_t inq_reg_proc(void)
     int64 host_id = atoll(cmd_inq_req_args[DSS_ARG_IDX_0].input_args);
     char *home = cmd_inq_req_args[DSS_ARG_IDX_1].input_args != NULL ? cmd_inq_req_args[DSS_ARG_IDX_1].input_args : NULL;
 
-    dss_vg_info_t vg_info;
-    errno_t errcode = memset_s(&vg_info, sizeof(vg_info), 0, sizeof(vg_info));
-    securec_check_ret(errcode);
-    status_t status = dss_inq_reg_core(home, host_id, &vg_info);
+    dss_vg_info_t *vg_info = cm_malloc(sizeof(dss_vg_info_t));
+    if (vg_info == NULL) {
+        DSS_PRINT_ERROR("Failed to malloc vg_info when inq reg.\n");
+        return CM_ERROR;
+    }
+    errno_t errcode = memset_s(vg_info, sizeof(vg_info), 0, sizeof(vg_info));
+    if (errcode != EOK) {
+        DSS_FREE_POINT(vg_info);
+        DSS_PRINT_ERROR("Failed to memset vg_info when inq reg.\n");
+        return CM_ERROR;
+    }
+    status_t status = dss_inq_reg_core(home, host_id, vg_info);
     if (status == CM_ERROR) {
         DSS_PRINT_ERROR("Failed to inq reg host %lld.\n", host_id);
     } else {
         DSS_PRINT_INF("Succeed to inq reg host %lld.\n", host_id);
     }
+    DSS_FREE_POINT(vg_info);
     return status;
 }
 
@@ -1729,15 +1738,24 @@ static status_t reghl_proc(void)
 {
     char *home = cmd_reghl_args[DSS_ARG_IDX_0].input_args != NULL ? cmd_reghl_args[DSS_ARG_IDX_0].input_args : NULL;
 
-    dss_vg_info_t vg_info;
-    errno_t errcode = memset_s(&vg_info, sizeof(vg_info), 0, sizeof(vg_info));
-    securec_check_ret(errcode);
-    status_t status = dss_reghl_core(home, &vg_info);
+    dss_vg_info_t *vg_info = cm_malloc(sizeof(dss_vg_info_t));
+    if (vg_info == NULL) {
+        DSS_PRINT_ERROR("Failed to malloc vg_info when register.\n");
+        return CM_ERROR;
+    }
+    errno_t errcode = memset_s(vg_info, sizeof(vg_info), 0, sizeof(vg_info));
+    if (errcode != EOK) {
+        DSS_FREE_POINT(vg_info);
+        DSS_PRINT_ERROR("Failed to memset vg_info when register.\n");
+        return CM_ERROR;
+    }
+    status_t status = dss_reghl_core(home, vg_info);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to register.\n");
     } else {
         DSS_PRINT_INF("Succeed to register.\n");
     }
+    DSS_FREE_POINT(vg_info);
     return status;
 }
 
@@ -1773,15 +1791,24 @@ static status_t unreghl_proc(void)
     }
 
     char *home = cmd_unreghl_args[DSS_ARG_IDX_1].input_args != NULL ? cmd_unreghl_args[DSS_ARG_IDX_1].input_args : NULL;
-    dss_vg_info_t vg_info;
-    errno_t errcode = memset_s(&vg_info, sizeof(vg_info), 0, sizeof(vg_info));
-    securec_check_ret(errcode);
-    status = dss_unreghl_core(home, &vg_info, (type == 0) ? CM_FALSE : CM_TRUE);
+    dss_vg_info_t *vg_info = cm_malloc(sizeof(dss_vg_info_t));
+    if (vg_info == NULL) {
+        DSS_PRINT_ERROR("Failed to malloc vg_info when unregister.\n");
+        return CM_ERROR;
+    }
+    errno_t errcode = memset_s(vg_info, sizeof(vg_info), 0, sizeof(vg_info));
+    if (errcode != EOK) {
+        DSS_FREE_POINT(vg_info);
+        DSS_PRINT_ERROR("Failed to memset vg_info when unregister.\n");
+        return CM_ERROR;
+    }
+    status = dss_unreghl_core(home, vg_info, (type == 0) ? CM_FALSE : CM_TRUE);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to unregister.\n");
     } else {
         DSS_PRINT_INF("Succeed to unregister.\n");
     }
+    DSS_FREE_POINT(vg_info);
     return status;
 }
 
