@@ -343,7 +343,7 @@ static void sql_audit_create_message(
 
 static void sql_audit_log(dss_session_t *session, status_t status, uint8 cmd_type)
 {
-    dss_audit_assist_t assist = {0};
+    dss_audit_assist_t assist = {{0}};
     char *log_msg = cm_get_t2s_addr();
     uint32 log_msg_len;
 
