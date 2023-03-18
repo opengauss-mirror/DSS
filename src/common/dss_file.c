@@ -122,7 +122,7 @@ static status_t dss_check_path_is_valid(const char *path, uint32 path_max_size)
 
 status_t dss_check_name(const char *name)
 {
-    if (name == NULL) {
+    if (name == NULL || strlen(name) == 0) {
         DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, "[null]", ", name cannot be a null string.");
         return CM_ERROR;
     }
@@ -132,7 +132,7 @@ status_t dss_check_name(const char *name)
 
 status_t dss_check_path(const char *path)
 {
-    if (path == NULL) {
+    if (path == NULL || strlen(path) == 0) {
         DSS_RETURN_IFERR2(
             CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, "[null]", ", path cannot be a null string."));
     }
@@ -142,7 +142,7 @@ status_t dss_check_path(const char *path)
 
 status_t dss_check_device_path(const char *path)
 {
-    if (path == NULL) {
+    if (path == NULL || strlen(path) == 0) {
         DSS_RETURN_IFERR2(
             CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, "[null]", ", path cannot be a null string."));
     }
@@ -157,7 +157,7 @@ status_t dss_check_device_path(const char *path)
 
 status_t dss_check_path_both(const char *path)
 {
-    if (path == NULL) {
+    if (path == NULL || strlen(path) == 0) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, "[null]", "path cannot be a null string."));
     }
 
