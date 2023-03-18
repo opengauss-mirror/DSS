@@ -168,6 +168,10 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
         return CM_ERROR;
     }
+    if (cm_strcmpi(src, dst) == 0) {
+        DSS_THROW_ERROR(ERR_DSS_FILE_RENAME, "src name is the same as dst");
+        return CM_ERROR;
+    }    
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     dss_lock_vg_mem_and_shm_x(session, vg_item);
     status_t ret = CM_ERROR;
@@ -176,11 +180,6 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
         DSS_BREAK_IF_ERROR(dss_rename_file_check(session, src, dst, &vg_item, &out_node));
         if (out_node == NULL) {
             LOG_DEBUG_ERR("Failed to rename file %s.", src);
-            break;
-        }
-        if (cm_strcmpi(src, dst) == 0) {
-            // nothing to do
-            ret = CM_SUCCESS;
             break;
         }
         bool32 is_open = CM_FALSE;
