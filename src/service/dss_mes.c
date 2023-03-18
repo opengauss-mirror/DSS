@@ -498,7 +498,7 @@ status_t dss_startup_mes(void)
 void dss_stop_mes(void)
 {
     if (g_dss_instance.is_maintain) {
-        return CM_SUCCESS;
+        return;
     }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     if (g_inst_cfg != NULL && inst_cfg->params.inst_cnt <= 1) {
@@ -578,7 +578,7 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
     mes_message_head_t head;
     mes_message_t msg;
     uint16 cpsize;
-    uint32 code;
+    uint32 code = 0;
     char *cpybuffer = NULL;
     uint32 size = session->recv_pack.head->size;
 
