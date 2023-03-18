@@ -393,6 +393,10 @@ static status_t cmd_check_offset(const char *offset_str)
         DSS_PRINT_ERROR("The value of offset is invalid.\n");
         return CM_ERROR;
     }
+    if (offset < 0 || offset % DSS_DISK_UNIT_SIZE != 0) {
+        DSS_PRINT_ERROR("offset must be >= 0 and be align %d.\n", DSS_DISK_UNIT_SIZE);
+        return CM_ERROR;
+    }
     return CM_SUCCESS;
 }
 
@@ -1915,8 +1919,8 @@ static status_t print_buf(const char *o_buf, uint32 buf_size, char format, int64
 static status_t get_examine_parameter(char **path, int64 *offset, char *fmt)
 {
     *path = cmd_examine_args[DSS_ARG_IDX_0].input_args;
-    *offset = atoll(cmd_examine_args[DSS_ARG_IDX_1].input_args);
-    if (*offset < 0) {
+    status_t status = cm_str2bigint(cmd_examine_args[DSS_ARG_IDX_1].input_args, offset);
+    if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Invalid offset.\n");
         return CM_ERROR;
     }
@@ -2097,8 +2101,6 @@ static dss_args_t cmd_dev_args[] = {
     {'p', "path", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
     {'o', "offset", CM_TRUE, CM_TRUE, cmd_check_offset, NULL, NULL, 0, NULL, NULL, 0},
     {'f', "format", CM_TRUE, CM_TRUE, cmd_check_format, NULL, NULL, 0, NULL, NULL, 0},
-    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
-        NULL, NULL, 0},
 };
 static dss_args_set_t cmd_dev_args_set = {
     cmd_dev_args,
@@ -2114,7 +2116,6 @@ static void dev_help(char *prog_name)
     (void)printf("-o/--offset <offset>, <required>, the offset of the dev need to display\n");
     (void)printf("-f/--format <format>, <required>, value is[c|h|u|l|s|x]"
                  "c char, h unsigned short, u unsigned int, l unsigned long, s string, x hex.\n");
-    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
 }
 
 static status_t dev_proc(void)
@@ -2134,11 +2135,13 @@ static status_t dev_proc(void)
     char o_buf[DSS_CMD_PRINT_BLOCK_SIZE];
 #endif
 
-    int64 offset = atoll(cmd_dev_args[DSS_ARG_IDX_1].input_args);
-    if (offset % DSS_DISK_UNIT_SIZE != 0) {
-        DSS_PRINT_ERROR("offset must be align %d.\n", DSS_DISK_UNIT_SIZE);
+    int offset = 0;
+    status = cm_str2bigint(cmd_dev_args[DSS_ARG_IDX_1].input_args, &offset);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("The value of offset is invalid");
         return CM_ERROR;
     }
+
     (void)printf("filename is %s, offset is %lld.\n", path, offset);
     status = dss_read_volume(&volume, offset, o_buf, (int32)DSS_CMD_PRINT_BLOCK_SIZE);
     if (status != CM_SUCCESS) {
