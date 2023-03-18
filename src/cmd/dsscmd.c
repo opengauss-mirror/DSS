@@ -2135,7 +2135,7 @@ static status_t dev_proc(void)
     char o_buf[DSS_CMD_PRINT_BLOCK_SIZE];
 #endif
 
-    int offset = 0;
+    int64 offset = 0;
     status = cm_str2bigint(cmd_dev_args[DSS_ARG_IDX_1].input_args, &offset);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("The value of offset is invalid");
