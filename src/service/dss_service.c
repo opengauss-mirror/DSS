@@ -277,7 +277,10 @@ static status_t dss_process_create_file(dss_session_t *session)
     cm_str2text(file_ptr, &text);
     bool32 result = cm_fetch_rtext(&text, '/', '\0', &sub);
     DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("not a complete absolute path name(%s %s)", T2S(&sub), T2S(&text)));
-
+    if (text.len == 0) {
+        DSS_THROW_ERROR(ERR_DSS_FILE_CREATE, "file name is null.");
+        return CM_ERROR;
+    }
     result = (bool32)(text.len < DSS_MAX_NAME_LEN);
     DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, text.str, "name length should less than 64."));
 

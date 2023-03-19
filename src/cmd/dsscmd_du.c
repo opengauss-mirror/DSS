@@ -36,8 +36,8 @@ double dss_convert_size(double size, const char *measure);
 status_t du_get_params(const char *input, char *params, size_t params_size)
 {
     if (input == NULL || input[0] == 0x00) {
-        params[DSS_ARG_IDX_0] = 's';
-        params[DSS_ARG_IDX_1] = 'B';
+        params[DSS_ARG_IDX_0] = 'B';
+        params[DSS_ARG_IDX_1] = 's';
         return CM_SUCCESS;
     }
     for (uint32 i = 0; i < strlen(input); i++) {
@@ -61,10 +61,10 @@ static void du_print(double size, const char *params, const char *path)
     char buf[DSS_DU_SIZE_BUF_LEN] = {0};
     size_t buf_size = sizeof(buf);
     char *fmt = "%0.0lf%c";
-    if (params[DSS_ARG_IDX_1] == 'T' || params[DSS_ARG_IDX_1] == 'G') {
-        fmt = "%0.2lf%c";
+    if (params[DSS_ARG_IDX_0] == 'T' || params[DSS_ARG_IDX_0] == 'G') {
+        fmt = "%0.5lf%c";
     }
-    if (sprintf_s(buf, buf_size, fmt, dss_convert_size(size, params), params[DSS_ARG_IDX_1]) == -1) {
+    if (sprintf_s(buf, buf_size, fmt, dss_convert_size(size, params), params[DSS_ARG_IDX_0]) == -1) {
         cm_panic(0);
     }
     size_t buf_len = strlen(buf);

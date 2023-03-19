@@ -1636,8 +1636,8 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
             }
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "au", *(uint64 *)&auid);
-            LOG_DEBUG_ERR("Auid is invalid, volume:%u, fname:%s, fsize:%llu, written_size:%llu.", (uint32)auid.volume,
-                node->name, node->size, node->written_size);
+            DSS_ASSERT_LOG(0, "Auid is invalid, volume:%u, fname:%s, fsize:%llu, written_size:%llu.", (uint32)auid.volume,
+                           node->name, node->size, node->written_size);
             return CM_ERROR;
         }
 
@@ -2045,7 +2045,7 @@ static status_t dss_init_files(dss_env_t *dss_env, uint32 max_open_files)
     if (rc != EOK) {
         DSS_FREE_POINT(dss_env->files);
         CM_THROW_ERROR(ERR_SYSTEM_CALL, rc);
-        return CM_ERROR;
+        return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "memory init failed", CM_ERROR);
     }
     dss_file_context_t *context = dss_env->files;
     for (uint32 i = 0; i < dss_env->max_open_file; i++) {
@@ -2492,8 +2492,8 @@ status_t dss_get_fd_by_offset(
     dss_file_context_t *context = NULL;
     dss_rw_param_t param;
 
-    LOG_DEBUG_INF("get file descriptor in aio, handle:%d, offset:%lld", handle, offset);
     CM_RETURN_IFERR(dss_check_file_env(conn, handle, size, &context));
+    LOG_DEBUG_INF("Begin get file fd in aio, filename:%s, handle:%d, offset:%lld", context->node->name, handle, offset);
 
     dss_latch_s(&context->latch);
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);

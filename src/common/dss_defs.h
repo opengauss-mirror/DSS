@@ -233,7 +233,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define CM_ALIGN_512(size) (((size) + 0x000001FF) & 0xFFFFFE00)
 #define DSS_DEFAULT_NULL_VALUE (uint32)0xFFFFFFFF
 #define DSS_UDS_CONNECT_TIMEOUT (int32)(30000) /* 30 seconds */
-#define DSS_UDS_SOCKET_TIMEOUT (int32)(30000)  /* 30 seconds */
+#define DSS_UDS_SOCKET_TIMEOUT (int32)0x4FFFFFFF
 #define DSS_SEEK_MAXWR 3                       /* Used for seek actual file size for openGauss */
 
 #define DSS_BASE_YEAR 1900
@@ -385,6 +385,16 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
             strerror_r(errno, os_errmsg_buf, sizeof(os_errmsg_buf)));                                                 \
     } while (0)
 #endif
+
+#define DSS_ASSERT_LOG(condition, format, ...)                                              \
+    do {                                                                                    \
+        if (SECUREC_UNLIKELY(!(condition))) {                                               \
+            LOG_RUN_ERR(format, ##__VA_ARGS__);                                             \
+            LOG_RUN_ERR("Assertion throws an exception at line %u", (uint32)__LINE__);      \
+            cm_fync_logfile();                                                              \
+            CM_ASSERT(0);                                                                   \
+        }                                                                                   \
+    } while (0)
 
 typedef struct st_auid_t {  // id of allocation unit, 8 Bytes
     uint64 volume : DSS_MAX_BIT_NUM_VOLUME;

@@ -160,10 +160,6 @@ status_t dss_rename_file_check_path_and_name(
 
 status_t dss_rename_file(dss_session_t *session, const char *src, const char *dst)
 {
-    if (cm_strcmpi(src, dst) == 0) {
-        // nothing to do
-        return CM_SUCCESS;
-    }
     char vg_name[DSS_MAX_NAME_LEN];
     char dst_name[DSS_MAX_NAME_LEN];
     CM_RETURN_IFERR(dss_rename_file_check_path_and_name(session, src, dst, vg_name, dst_name));
@@ -172,6 +168,10 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
         return CM_ERROR;
     }
+    if (cm_strcmpi(src, dst) == 0) {
+        DSS_THROW_ERROR(ERR_DSS_FILE_RENAME, "src name is the same as dst");
+        return CM_ERROR;
+    }    
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     dss_lock_vg_mem_and_shm_x(session, vg_item);
     status_t ret = CM_ERROR;

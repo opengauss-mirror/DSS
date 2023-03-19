@@ -53,7 +53,7 @@ typedef enum en_dss_mode {
 typedef struct st_dss_params {
     char *root_name;  // root volume name
     int64 inst_id;
-    char lsnr_path[DSS_UNIX_PATH_MAX];
+    char lsnr_path[DSS_MAX_PATH_BUFFER_SIZE];
     char disk_lock_file_path[DSS_UNIX_PATH_MAX];
     int32 dss_mode;
     uint32 cfg_session_num;

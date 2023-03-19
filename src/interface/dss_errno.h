@@ -31,7 +31,6 @@ extern "C" {
 
 #define DSS_SUCCESS 0
 #define DSS_ERROR (-1)
-#define DSS_IO_ERROR 5
 
 /** 1.DSS range [2000, 2500] *
  *  2.ERR_DSS_SUBMODEL_ACTION_DETAIL, _DETAIL is optional which indicates the error cause.
@@ -66,6 +65,7 @@ extern "C" {
 #define ERR_DSS_FILE_RENAME_DIFF_VG 2151
 #define ERR_DSS_FILE_RENAME_EXIST 2152
 #define ERR_DSS_FILE_RENAME_OPENING_REMOTE 2153
+#define ERR_DSS_FILE_CREATE 2170
 #define ERR_DSS_FILE_NOT_EXIST 2190
 #define ERR_DSS_FILE_OPENING_REMOTE 2191
 #define ERR_DSS_FILE_TYPE_MISMATCH 2192

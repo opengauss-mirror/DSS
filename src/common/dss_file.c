@@ -1438,11 +1438,10 @@ status_t dss_format_ft_node_core(dss_vg_info_item_t *vg_item, ga_queue_t queue, 
         if (i != block_num - 1) {
             block->next = auid;
             block->next.block = i + 1;
-
-            gft->last = block->id;
         } else {
             dss_set_blockid(&block->next, CM_INVALID_ID64);
         }
+        gft->last = block->id;
 
         ga_obj_id.obj_id = obj_id;
         do {
@@ -1996,6 +1995,7 @@ void dss_free_ft_node_inner(
         dss_set_blockid(&node->prev, DSS_INVALID_64);
         dss_set_blockid(&node->entry, DSS_INVALID_64);
         gft->free_list.first = node->id;
+        gft->free_list.count++;
     }
 
     dss_redo_free_ft_node_t redo_node;
@@ -2521,9 +2521,7 @@ static status_t dss_get_block_entry(dss_session_t *session, dss_vg_info_item_t *
 status_t dss_get_fs_block_info_by_offset(
     int64 offset, uint64 au_size, uint32 *block_count, uint32 *block_au_count, uint32 *au_offset)
 {
-    if (au_size == 0) {
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("The au size cannot be zero."));
-    }
+    DSS_ASSERT_LOG(au_size != 0, "The au size cannot be zero.");
 
     // two level bitmap, ~2k block ids per entry FSB
     uint64 au_count = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(auid_t);  // 2043 2nd FSBs
@@ -3000,6 +2998,7 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
     if (node->size < align_length) {
 #endif
         /* to extend the file */
+        LOG_DEBUG_INF("start truncate to extend");
         status = truncate_to_extend(session, vg_item, node, length);
         dss_unlock_vg_mem_and_shm(session, vg_item);
         return status;

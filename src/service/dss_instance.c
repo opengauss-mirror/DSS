@@ -265,8 +265,8 @@ bool32 dss_config_cm()
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     char *value = cm_get_config_value(&inst_cfg->config, "DSS_CM_SO_NAME");
-    if (value == NULL || strlen(value) == 0) {
-        LOG_RUN_INF("dss cm config of DSS_CM_SO_NAME is empty.");
+    if (value == NULL || strlen(value) == 0 || strlen(value) >= DSS_MAX_NAME_LEN) {
+        LOG_RUN_INF("dss cm config of DSS_CM_SO_NAME is invalid.");
         return CM_FALSE;
     }
     return CM_TRUE;
@@ -322,7 +322,7 @@ status_t dss_get_instance_log_buf_no_cm(dss_instance_t *inst)
         inst->status = ZFS_STATUS_OPEN;
     }
 #else
-    if (!dss_config_cm()) {
+    if (inst->is_maintain || !dss_config_cm()) {
         dss_set_master_id(curr_id);
         dss_set_server_status_flag(DSS_STATUS_READWRITE);
         return dss_change_instance_status_to_open(inst, curr_id, curr_id);
@@ -376,7 +376,6 @@ static void dss_init_maintain(dss_instance_t *inst)
     char *maintain_env = getenv(DSS_MAINTAIN_ENV);
     inst->is_maintain = (maintain_env != NULL && cm_strcmpi(maintain_env, "TRUE") ==0);
     if (inst->is_maintain) {
-        dss_set_master_id(inst->inst_cfg.params.inst_id);
         LOG_RUN_INF("DSS_MAINTAIN is TRUE");
     } else {
         LOG_RUN_INF("DSS_MAINTAIN is FALSE");
@@ -422,12 +421,12 @@ status_t dss_startup(dss_instance_t *inst, char *home)
     status = dss_init_loggers(
         &inst->inst_cfg, g_dss_instance_log, sizeof(g_dss_instance_log) / sizeof(dss_log_def_t), "dssserver");
     DSS_RETURN_IFERR2(status, (void)printf("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code())));
+    dss_init_maintain(inst);
     LOG_RUN_INF("DSS instance begin to initialize.");
     status = instance_init(inst);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to initialized!"));
     cm_set_shm_ctrl_flag(CM_SHM_CTRL_FLAG_TRUE);
     inst->abort_status = CM_FALSE;
-    dss_init_maintain(inst);
     return CM_SUCCESS;
 }
 
@@ -448,7 +447,7 @@ static status_t dss_lsnr_proc(bool32 is_emerg, uds_lsnr_t *lsnr, cs_pipe_t *pipe
 status_t dss_start_lsnr(dss_instance_t *inst)
 {
     errno_t ret;
-    ret = snprintf_s(inst->lsnr.names[0], CM_UNIX_PATH_MAX, CM_UNIX_PATH_MAX - 1, inst->inst_cfg.params.lsnr_path);
+    ret = snprintf_s(inst->lsnr.names[0], DSS_MAX_PATH_BUFFER_SIZE, DSS_MAX_PATH_BUFFER_SIZE - 1, inst->inst_cfg.params.lsnr_path);
     if (ret == -1) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid DSS lsnr host");
         return CM_ERROR;
@@ -466,6 +465,11 @@ status_t dss_init_cm(dss_instance_t *inst)
     if (value == NULL || strlen(value) == 0) {
         LOG_RUN_INF("dss cm config of DSS_CM_SO_NAME is empty.");
         // if no cm, treat all nodes be ok
+        return CM_SUCCESS;
+    }
+
+    if (strlen(value) >= DSS_MAX_NAME_LEN) {
+        LOG_RUN_ERR("dss cm config of DSS_CM_SO_NAME is exceeds the max len %u.", DSS_MAX_NAME_LEN - 1);
         return CM_SUCCESS;
     }
 

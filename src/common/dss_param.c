@@ -375,7 +375,7 @@ static status_t dss_load_path(dss_config_t *inst_cfg)
     char *value = cm_get_config_value(&inst_cfg->config, "LSNR_PATH");
     status_t status = dss_verify_lsnr_path(value);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid LSNR_PATH"));
-    ret = snprintf_s(inst_cfg->params.lsnr_path, DSS_UNIX_PATH_MAX, DSS_UNIX_PATH_MAX - 1, "%s/%s", value,
+    ret = snprintf_s(inst_cfg->params.lsnr_path, DSS_MAX_PATH_BUFFER_SIZE, DSS_MAX_PATH_BUFFER_SIZE - 1, "%s/%s", value,
         DSS_UNIX_DOMAIN_SOCKET_NAME);
     if (ret == -1) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid LSNR_PATH"));

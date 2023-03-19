@@ -74,7 +74,7 @@ function unregister()
     fi
 
     log "[UNREG] Start unreg."
-        dsscmd unreghl -i ${LOCAL_INSTANCE_ID} -t 0 -D ${DSS_HOME} >> /dev/null 2>&1  
+        dsscmd unreghl -t 0 -D ${DSS_HOME} >> /dev/null 2>&1  
     log "[UNREG] Unreg success."
 }
 

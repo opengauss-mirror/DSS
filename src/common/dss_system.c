@@ -283,7 +283,7 @@ int64 cm_sys_process_start_time(uint64 pid)
     }
     int32 fd = open(path, O_RDONLY);
     if (fd == -1) {
-        LOG_RUN_ERR("failed to open file with handle %d, error code %d", fd, errno);
+        LOG_DEBUG_INF("failed to open file with handle %d, error code %d, the client process is not alive", fd, errno);
         return 0;
     }
     size = (int32)read(fd, stat_buf, sizeof(stat_buf) - 1);

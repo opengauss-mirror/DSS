@@ -92,6 +92,11 @@ static void dss_check_file_open(dss_session_t *se, mes_message_t *msg)
 {
     bool32 is_open = CM_FALSE;
     status_t status = CM_ERROR;
+    if (msg->head->size <
+        sizeof(mes_message_head_t) + sizeof(dss_bcast_req_cmd_t) + sizeof(dss_check_file_open_param)) {
+        LOG_DEBUG_ERR("invalid broadcast req size");
+        return;
+    }
     char *data = msg->buffer + sizeof(mes_message_head_t);
     dss_bcast_req_cmd_t bcast_op = *(dss_bcast_req_cmd_t *)data;
     dss_check_file_open_param *check =
@@ -143,6 +148,10 @@ int32 dss_process_broadcast_ack(dss_session_t *session, char *data, unsigned int
 {
     int32 ret = ERR_DSS_MES_ILL;
 
+    if (len < sizeof(dss_bcast_ack_cmd_t) + sizeof(int32) + sizeof(bool32)) {
+        LOG_DEBUG_ERR("invalid broadcast ack buffer");
+        return ret;
+    }
     dss_bcast_ack_cmd_t bcast_op = *(dss_bcast_ack_cmd_t *)data;
     switch (bcast_op) {
         case BCAST_ACK_RENAME:
@@ -161,6 +170,11 @@ int32 dss_process_broadcast_ack(dss_session_t *session, char *data, unsigned int
 void dss_proc_broadcast_req(dss_session_t *session, mes_message_t *msg)
 {
     char *data = msg->buffer + sizeof(mes_message_head_t);
+    if (msg->head->size < sizeof(mes_message_head_t) + sizeof(dss_bcast_req_cmd_t)) {
+        LOG_DEBUG_ERR("invalid broadcast req size");
+        mes_release_message_buf(msg);
+        return;
+    }
     dss_bcast_req_cmd_t bcast_op = *(dss_bcast_req_cmd_t *)data;
     LOG_DEBUG_INF("Try proc broadcast req, head rsn is %llu, head cmd is %u, req cmd is %u.", msg->head->rsn,
         msg->head->cmd, bcast_op);
