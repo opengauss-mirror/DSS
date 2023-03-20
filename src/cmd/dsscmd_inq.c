@@ -481,17 +481,33 @@ status_t dss_clean_vg_lock(const char *home, int64 inst_id)
 {
 #ifndef WIN32
     dss_config_t inst_cfg;
-    dss_vg_info_t vg_info;
-    status_t status = dss_get_vg_entry_info(home, &inst_cfg, &vg_info);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg entry info when clean.\n"));
+    dss_vg_info_t *vg_info = cm_malloc(sizeof(dss_vg_info_t));
+    if (vg_info == NULL) {
+        DSS_PRINT_ERROR("Failed to malloc vg_info when clean.\n");
+        return CM_ERROR;
+    }
+    errno_t errcode = memset_s(vg_info, sizeof(vg_info), 0, sizeof(vg_info));
+    if (errcode != EOK) {
+        DSS_FREE_POINT(vg_info);
+        DSS_PRINT_ERROR("Failed to memset vg_info when clean.\n");
+        return CM_ERROR;
+    }
+    status_t status = dss_get_vg_entry_info(home, &inst_cfg, vg_info);
+    if (status != CM_SUCCESS) {
+        DSS_FREE_POINT(vg_info);
+        DSS_PRINT_ERROR("Failed to get vg entry info when clean.\n");
+        return CM_ERROR;
+    }
     int32 dss_mode = dss_storage_mode(&inst_cfg);
     if (dss_mode == DSS_MODE_DISK) {
-        DSS_FREE_POINT(vg_info.volume_group[0].buffer_cache);
+        DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+        DSS_FREE_POINT(vg_info);
         return CM_SUCCESS;
     }
 
-    status = dss_clean_inner(&vg_info, &inst_cfg, inst_id);
-    DSS_FREE_POINT(vg_info.volume_group[0].buffer_cache);
+    status = dss_clean_inner(vg_info, &inst_cfg, inst_id);
+    DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+    DSS_FREE_POINT(vg_info);
     return status;
 #endif
     return CM_SUCCESS;
@@ -526,26 +542,43 @@ status_t dss_kickh_core(const char *home, int64 host_id)
 {
 #ifndef WIN32
     dss_config_t inst_cfg;
-    dss_vg_info_t vg_info;
-    status_t status = dss_get_vg_entry_info(home, &inst_cfg, &vg_info);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg entry info when kickh.\n"));
-
-    status = dss_kickh_inner(&vg_info, &inst_cfg, host_id, CM_FALSE);
+    dss_vg_info_t *vg_info = cm_malloc(sizeof(dss_vg_info_t));
+    if (vg_info == NULL) {
+        DSS_PRINT_ERROR("Failed to malloc vg_info when kickh.\n");
+        return CM_ERROR;
+    }
+    errno_t errcode = memset_s(vg_info, sizeof(vg_info), 0, sizeof(vg_info));
+    if (errcode != EOK) {
+        DSS_FREE_POINT(vg_info);
+        DSS_PRINT_ERROR("Failed to memset vg_info when kickh.\n");
+        return CM_ERROR;
+    }
+    status_t status = dss_get_vg_entry_info(home, &inst_cfg, vg_info);
     if (status != CM_SUCCESS) {
-        DSS_FREE_POINT(vg_info.volume_group[0].buffer_cache);
+        DSS_FREE_POINT(vg_info);
+        DSS_PRINT_ERROR("Failed to get vg entry info when kickh.\n");
+        return CM_ERROR;
+    }
+
+    status = dss_kickh_inner(vg_info, &inst_cfg, host_id, CM_FALSE);
+    if (status != CM_SUCCESS) {
+        DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+        DSS_FREE_POINT(vg_info);
         DSS_PRINT_ERROR("Failed to kickh without lock.\n");
         return CM_ERROR;
     }
 
     status = dss_clean_vg_lock(home, host_id);
     if (status != CM_SUCCESS) {
-        DSS_FREE_POINT(vg_info.volume_group[0].buffer_cache);
+        DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+        DSS_FREE_POINT(vg_info);
         DSS_PRINT_ERROR("Failed to clean when kickh.\n");
         return CM_ERROR;
     }
 
-    status = dss_kickh_inner(&vg_info, &inst_cfg, host_id, CM_TRUE);
-    DSS_FREE_POINT(vg_info.volume_group[0].buffer_cache);
+    status = dss_kickh_inner(vg_info, &inst_cfg, host_id, CM_TRUE);
+    DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+    DSS_FREE_POINT(vg_info);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to kickh with lock.\n");
     }
