@@ -1493,6 +1493,7 @@ status_t dss_load_volume_ctrl(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *vo
 status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item)
 {
     if (dss_is_readwrite()) {
+        DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
 #ifndef WIN32
@@ -1704,6 +1705,9 @@ status_t dss_read_volume_inst(
     CM_ASSERT(((uint64)buf) % DSS_DISK_UNIT_SIZE == 0);
 
     while (dss_need_load_remote(size) == CM_TRUE && status != CM_SUCCESS) {
+        if (g_dss_instance_status != NULL && *g_dss_instance_status < DSS_STATUS_OPEN) {
+            break;
+        }
         status = remote_read_proc(vg_item->vg_name, volume, offset, buf, size);
         if (status != CM_SUCCESS) {
             LOG_RUN_WAR("Failed to load disk(%s) data from the active node, result:%d", volume->name_p, status);

@@ -2175,6 +2175,7 @@ gft_node_t *dss_find_ft_node(dss_vg_info_item_t *vg_item, gft_node_t *parent_nod
 status_t dss_refresh_root_ft(dss_vg_info_item_t *vg_item, bool32 check_version, bool32 active_refresh)
 {
     if (dss_is_readwrite() && !active_refresh) {
+        DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
     bool32 remote = CM_TRUE;
@@ -2274,7 +2275,7 @@ char *dss_get_ft_block_by_ftid(dss_vg_info_item_t *vg_item, ftid_t id)
         char *root = dss_ctrl->root;
         // NOTE:when recover just return root, must not be load from disk.Because format ft node is logic recovery,
         // its gft info only use redo log info.
-        if (vg_item->status == DSS_STATUS_RECOVERY) {
+        if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
             return root;
         }
 
@@ -2406,6 +2407,7 @@ status_t dss_check_refresh_fs_block(
     dss_vg_info_item_t *vg_item, dss_block_id_t blockid, char *block, bool32 *is_changed)
 {
     if (dss_is_readwrite()) {
+        DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
     status_t status = dss_check_refresh_core(vg_item);
@@ -2418,6 +2420,7 @@ status_t dss_check_refresh_fs_block(
 status_t dss_refresh_ft(dss_vg_info_item_t *vg_item)
 {
     if (dss_is_readwrite()) {
+        DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
     bool32 remote = CM_FALSE;
@@ -2468,6 +2471,7 @@ status_t dss_get_root_version(dss_vg_info_item_t *vg_item, uint64 *version)
 status_t dss_check_refresh_ft(dss_vg_info_item_t *vg_item)
 {
     if (dss_is_readwrite()) {
+        DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
     uint64 disk_version;
@@ -3138,7 +3142,7 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
 
 static status_t dss_refresh_file_core(dss_vg_info_item_t *vg_item, uint64 fid, ftid_t ftid, dss_block_id_t blockid)
 {
-    gft_node_t *node = dss_get_ft_node_by_ftid(vg_item, ftid, CM_TRUE, CM_TRUE);
+    gft_node_t *node = dss_get_ft_node_by_ftid(vg_item, ftid, CM_TRUE, CM_FALSE);
     if (!node) {
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find ftid,ftid: %llu.", *(uint64 *)&ftid));
     }
@@ -3150,14 +3154,14 @@ static status_t dss_refresh_file_core(dss_vg_info_item_t *vg_item, uint64 fid, f
         "Apply refresh file:%s, curr size:%llu, refresh ft id:%llu, refresh entry id:%llu, refresh block id:%llu.",
         node->name, node->size, *(uint64 *)&ftid, *(uint64 *)&(node->entry), *(uint64 *)&blockid);
     // check the entry and load
-    char *block = dss_find_block_in_shm(vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_TRUE);
+    char *block = dss_find_block_in_shm(vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
     if (!block) {
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find block:%llu.", *(uint64 *)&node->entry));
     }
 
     bool32 cmp = dss_cmp_blockid(blockid, CM_INVALID_ID64);
     if (cmp == 0) {
-        block = dss_find_block_in_shm(vg_item, blockid, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_TRUE);
+        block = dss_find_block_in_shm(vg_item, blockid, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
         if (!block) {
             DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find block:%llu.", DSS_ID_TO_U64(blockid)));
         }
@@ -3242,6 +3246,7 @@ void dss_init_root_fs_block(dss_ctrl_t *dss_ctrl)
 status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32 vgid, uint32 volumeid)
 {
     if (dss_is_readwrite()) {
+        DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
     dss_vg_info_item_t *vg_item = dss_find_vg_item(name_str);
@@ -3259,6 +3264,7 @@ status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32
 status_t dss_refresh_vginfo(dss_vg_info_item_t *vg_item)
 {
     if (dss_is_readwrite()) {
+        DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
     uint64 version;

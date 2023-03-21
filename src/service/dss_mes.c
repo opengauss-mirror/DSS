@@ -317,7 +317,7 @@ static bool32 dss_check_srv_status(mes_message_t *msg)
     date_t time_start = g_timer()->now;
     date_t time_now = 0;
     mes_message_head_t head = *(msg->head);
-    while (g_dss_instance.status != ZFS_STATUS_OPEN) {
+    while (g_dss_instance.status != DSS_STATUS_OPEN) {
         LOG_DEBUG_INF(
             "Could not exec remote req for the dssserver is not open, src node(%u).", (uint32)(head.src_inst));
         DSS_GET_CM_LOCK_LONG_SLEEP;

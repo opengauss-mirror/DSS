@@ -82,8 +82,16 @@ typedef struct st_dss_config {
     config_t config;
     dss_params_t params;
 } dss_config_t;
-
 extern dss_config_t *g_inst_cfg;
+
+typedef enum en_dss_instance_status {
+    DSS_STATUS_PREPARE = 0,
+    DSS_STATUS_RECOVERY,
+    DSS_STATUS_SWITCH,
+    DSS_STATUS_OPEN,
+} dss_instance_status_e;
+extern dss_instance_status_e *g_dss_instance_status;
+
 #define DSS_UNIX_DOMAIN_SOCKET_NAME ".dss_unix_d_socket"
 #define DSS_MAX_SSL_PERIOD_DETECTION 180
 #define DSS_MIN_SSL_PERIOD_DETECTION 1
