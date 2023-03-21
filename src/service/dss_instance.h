@@ -46,12 +46,6 @@ extern "C" {
 #define DSS_LOG_LEVEL 0xffffffff
 #define DSS_INS_SIZE (sizeof(dss_share_vg_info_t))
 
-typedef enum en_zfs_instance_status {
-    ZFS_STATUS_RECOVERY = 0,
-    ZFS_STATUS_SWITCH,
-    ZFS_STATUS_OPEN,
-} dss_instance_status_t;
-
 typedef enum {
     CM_RES_SUCCESS = 0,
     CM_RES_CANNOT_DO = 1,
@@ -77,7 +71,7 @@ typedef struct st_dss_instance {
     int32 lock_fd;
     spinlock_t switch_lock;
     dss_config_t inst_cfg;
-    dss_instance_status_t status;
+    dss_instance_status_e status;
     uds_lsnr_t lsnr;
     // HYJ: reform_ctx_t rf_ctx;
     thread_t *threads;
@@ -109,7 +103,7 @@ void dss_check_peer_by_inst(dss_instance_t *inst, uint64 inst_id);
 uint64 dss_get_inst_work_status(void);
 void dss_set_inst_work_status(uint64 cur_inst_map);
 status_t dss_recover_when_change_status(dss_instance_t *inst);
-uint32 dss_get_cm_lock_owner(dss_instance_t *inst);
+uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock);
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id);
 void dss_get_cm_lock_and_recover(dss_instance_t *inst);
 void dss_no_cm_recover(dss_instance_t *inst);

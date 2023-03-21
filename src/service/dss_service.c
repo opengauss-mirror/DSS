@@ -77,6 +77,9 @@ static status_t dss_process_remote(dss_session_t *session)
             LOG_DEBUG_ERR(
                 "End of processing the remote request(%d) failed, remote node(%u),current node(%u), result code(%d).",
                 session->recv_pack.head->cmd, remoteid, currid, ret);
+            if (session->recv_pack.head->cmd == DSS_CMD_SWITCH_LOCK) {
+                return ret;
+            }
             cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
             dss_get_exec_nodeid(session, &currid, &remoteid);
             continue;
@@ -393,6 +396,7 @@ static status_t dss_process_close_file(dss_session_t *session)
                 fid);
             return CM_SUCCESS;
         }
+        DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         status_t status = dss_remove_dir_file_by_node(session, vg_item, node);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_INF("Failed to remove delay file when close file, fid: %llu", fid));
         DSS_LOG_DEBUG_OP("Succeed to remove file when close file, ftid%llu, fid:%llu, vg: %s, session pid:%llu, v:%u, "
@@ -717,7 +721,7 @@ static status_t dss_process_get_ftid_by_path(dss_session_t *session)
 // get dssserver status:open, recovery or switch
 static status_t dss_process_get_inst_status(dss_session_t *session)
 {
-    dss_instance_status_t status = g_dss_instance.status;
+    dss_instance_status_e status = g_dss_instance.status;
     session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
     *(uint32 *)session->send_info.str = (uint32)status;
     session->send_info.len = sizeof(uint32);
@@ -831,27 +835,32 @@ static status_t dss_process_switch_lock(dss_session_t *session)
         LOG_DEBUG_ERR("current id is %u, just master id %u can do switch lock.", curr_id, master_id);
         return CM_ERROR;
     }
+    cm_spin_lock(&g_dss_instance.switch_lock, NULL);
     dss_wait_session_pause(&g_dss_instance);
-    g_dss_instance.status = ZFS_STATUS_SWITCH;
+    g_dss_instance.status = DSS_STATUS_SWITCH;
     status_t ret = CM_SUCCESS;
     // trans lock
     if (g_dss_instance.cm_res.is_valid) {
         dss_set_server_status_flag(DSS_STATUS_READONLY);
+        LOG_RUN_INF("inst %u set status flag %u when trans lock.", curr_id, DSS_STATUS_READONLY);
         ret = cm_res_trans_lock(&g_dss_instance.cm_res.mgr, DSS_CM_LOCK, (uint32)switch_id);
         if (ret != CM_SUCCESS) {
+            cm_spin_unlock(&g_dss_instance.switch_lock);
             LOG_DEBUG_ERR("cm do switch lock failed from %u to %u.", curr_id, master_id);
             return ret;
         }
         dss_set_master_id((uint32)switch_id);
         dss_set_session_running(&g_dss_instance);
-        g_dss_instance.status = ZFS_STATUS_OPEN;
+        g_dss_instance.status = DSS_STATUS_OPEN;
     } else {
         dss_set_session_running(&g_dss_instance);
-        g_dss_instance.status = ZFS_STATUS_OPEN;
+        g_dss_instance.status = DSS_STATUS_OPEN;
+        cm_spin_unlock(&g_dss_instance.switch_lock);
         LOG_DEBUG_ERR("Only with cm can switch lock.");
         return CM_ERROR;
     }
-    DSS_LOG_DEBUG_OP("Main server switch lock from %u to %u successfully.", curr_id, (uint32)switch_id);
+    LOG_RUN_INF("Old main server %u switch lock to new main server %u successfully.", curr_id, (uint32)switch_id);
+    cm_spin_unlock(&g_dss_instance.switch_lock);
     return CM_SUCCESS;
 }
 /*
@@ -862,44 +871,53 @@ static status_t dss_process_switch_lock(dss_session_t *session)
     (2) lsnr pause
     (3) trans lock
 */
+static status_t dss_process_remote_switch_lock(dss_session_t *session, uint32 curr_id, uint32 master_id)
+{
+    dss_init_get(&session->recv_pack);
+    session->recv_pack.head->cmd = DSS_CMD_SWITCH_LOCK;
+    LOG_DEBUG_INF("Try to switch lock to %u by %u.", curr_id, master_id);
+    (void)dss_put_int32(&session->recv_pack, curr_id);
+    return dss_process_remote(session);
+}
+
 static status_t dss_process_set_main_inst(dss_session_t *session)
 {
-    uint32 master_id = dss_get_master_id();
+    status_t status = CM_ERROR;
     dss_config_t *cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)(cfg->params.inst_id);
-    status_t status = CM_ERROR;
+    uint32 master_id;
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(
         session->audit_info.resource, DSS_AUDIT_MODIFY, "set %u as master", curr_id));
-    cm_spin_lock(&g_dss_instance.switch_lock, NULL);
-    if (master_id == curr_id) {
-        DSS_LOG_DEBUG_OP("Main server %u from %u set successfully.", curr_id, master_id);
-        cm_spin_unlock(&g_dss_instance.switch_lock);
-        return CM_SUCCESS;
-    }
-    while (!g_dss_instance.is_maintain) {
-        dss_init_get(&session->recv_pack);
-        session->recv_pack.head->cmd = DSS_CMD_SWITCH_LOCK;
-        LOG_DEBUG_INF("Try to switch lock to %u by %u.", curr_id, master_id);
-        (void)dss_put_int32(&session->recv_pack, curr_id);
-        status = dss_process_remote(session);
-        if (status == CM_SUCCESS) {
-            break;
-        } else {
-            LOG_DEBUG_ERR("Failed to switch lock to %u by %u.", curr_id, master_id);
-            cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
+    while (CM_TRUE) {
+        master_id = dss_get_master_id();
+        if (master_id == curr_id) {
+            LOG_RUN_INF("Main server %u is set successfully by %u.", curr_id, master_id);
+            return CM_SUCCESS;
         }
+        cm_spin_lock(&g_dss_instance.switch_lock, NULL);
+        if (!g_dss_instance.is_maintain) {
+            status = dss_process_remote_switch_lock(session, curr_id, master_id);
+            if (status != CM_SUCCESS) {
+                LOG_DEBUG_ERR("Failed to switch lock to %u by %u.", curr_id, master_id);
+                cm_spin_unlock(&g_dss_instance.switch_lock);
+                cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
+                continue;
+            }
+        }
+        break;
     }
-    g_dss_instance.status = ZFS_STATUS_SWITCH;
+    g_dss_instance.status = DSS_STATUS_SWITCH;
     dss_set_master_id(curr_id);
-    dss_set_server_status_flag(DSS_STATUS_READWRITE);
     status = dss_refresh_meta_info(session);
     if (status != CM_SUCCESS) {
         cm_spin_unlock(&g_dss_instance.switch_lock);
         LOG_DEBUG_ERR("dss instance %u refresh meta failed, result(%d).", curr_id, status);
         return CM_ERROR;
     }
-    g_dss_instance.status = ZFS_STATUS_OPEN;
-    DSS_LOG_DEBUG_OP("Main server %u from %u set successfully.", curr_id, master_id);
+    dss_set_server_status_flag(DSS_STATUS_READWRITE);
+    LOG_RUN_INF("inst %u set status flag %u when set main inst.", curr_id, DSS_STATUS_READWRITE);
+    g_dss_instance.status = DSS_STATUS_OPEN;
+    LOG_RUN_INF("Main server %u is set successfully by %u.", curr_id, master_id);
     cm_spin_unlock(&g_dss_instance.switch_lock);
     return CM_SUCCESS;
 }
@@ -1024,7 +1042,7 @@ status_t dss_process_command(dss_session_t *session)
     }
     date_t time_start = g_timer()->now;
     date_t time_now = 0;
-    while (g_dss_instance.status != ZFS_STATUS_OPEN) {
+    while (g_dss_instance.status != DSS_STATUS_OPEN) {
         if (dss_can_cmd_type_no_open(session->recv_pack.head->cmd)) {
             status = dss_exec_cmd(session, CM_TRUE);
             if (status != CM_SUCCESS) {

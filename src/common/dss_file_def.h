@@ -236,10 +236,10 @@ typedef struct st_dss_ctrl {
 } dss_ctrl_t;
 
 typedef enum en_dss_vg_status {
-    DSS_STATUS_OPEN = 1,
-    DSS_STATUS_RECOVERY,
-    DSS_STATUS_ROLLBACK,
-} dss_vg_status_t;
+    DSS_VG_STATUS_RECOVERY = 1,
+    DSS_VG_STATUS_ROLLBACK,
+    DSS_VG_STATUS_OPEN,
+} dss_vg_status_e;
 
 #define DSS_UNDO_LOG_NUM (DSS_LOG_BUFFER_SIZE / 8)
 
@@ -255,7 +255,7 @@ typedef struct st_dss_vg_info_item_t {
     uint32 id;
     char vg_name[DSS_MAX_NAME_LEN];
     char entry_path[DSS_MAX_VOLUME_PATH_LEN];  // the manager volume path
-    dss_vg_status_t status;
+    dss_vg_status_e status;
     cm_oamap_t au_map;  // UNUSED
     dss_volume_t volume_handle[DSS_MAX_VOLUMES];
     latch_t *vg_latch;
