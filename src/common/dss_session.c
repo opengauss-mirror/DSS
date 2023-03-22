@@ -332,7 +332,7 @@ status_t dss_cli_lock_shm_meta_s(
             LOG_RUN_ERR("Failed to lock vg share memery because uds connection is closed.");
             return CM_ERROR;
         }
-        if (dss_lock_shm_meta_s(session, offset, latch, DSS_CLIENT_TIMEOUT) == CM_SUCCESS) {
+        if (dss_lock_shm_meta_s(session, offset, latch, SPIN_WAIT_FOREVER) == CM_SUCCESS) {
             return CM_SUCCESS;
         }
 
