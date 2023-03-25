@@ -246,6 +246,33 @@ static status_t dss_load_mes_elapsed_switch(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
+static status_t dss_load_random_file(const uchar *value, int32 value_len)
+{
+    char file_name[CM_FILE_NAME_BUFFER_SIZE];
+    char dir_name[CM_FILE_NAME_BUFFER_SIZE];
+    int32 handle;
+    int32 file_size;
+    PRTS_RETURN_IFERR(snprintf_s(
+        dir_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/dss_protect", g_inst_cfg->home));
+    if (!cm_dir_exist(dir_name)) {
+        DSS_THROW_ERROR(ERR_DSS_DIR_NOT_EXIST, "dss_protect", g_inst_cfg->home);
+        return CM_ERROR;
+    }
+    PRTS_RETURN_IFERR(snprintf_s(file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/dss_protect/%s",
+        g_inst_cfg->home, DSS_FKEY_FILENAME));
+    DSS_RETURN_IF_ERROR(cs_ssl_verify_file_stat(file_name));
+    DSS_RETURN_IF_ERROR(
+        cm_open_file_ex(file_name, O_SYNC | O_RDONLY | O_BINARY, S_IRUSR, &handle));
+    status_t ret = cm_read_file(handle, value, value_len, &file_size);
+    cm_close_file(handle);
+    DSS_RETURN_IF_ERROR(ret);
+    if (file_size < RANDOM_LEN + 1) {
+        LOG_DEBUG_ERR("Random component file %s is invalid, size is %d.", file_name, file_size);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
 int32 dss_decrypt_pwd_cb(const char *cipher_text, uint32 cipher_len, char *plain_text, uint32 plain_len)
 {
     if (cipher_text == NULL) {
@@ -270,8 +297,10 @@ int32 dss_decrypt_pwd_cb(const char *cipher_text, uint32 cipher_len, char *plain
             LOG_DEBUG_ERR("[DSS] failed to decode SSL cipher."));
     }
     if (cipher.cipher_len > 0) {
-        status_t status = cm_decrypt_pwd(&cipher, (uchar *)plain_text, &plain_len);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[DSS] failed to decrypt ssl pwd."));
+        status_t status = dss_load_random_file(cipher.rand, (int32)sizeof(cipher.rand));
+        DSS_RETURN_IFERR2(status, CM_THROW_ERROR(ERR_VALUE_ERROR, "[DSS] load random component failed."));
+        status = cm_decrypt_pwd(&cipher, (uchar *)plain_text, &plain_len);
+        DSS_RETURN_IFERR2(status, CM_THROW_ERROR(ERR_VALUE_ERROR, "[DSS] failed to decrypt ssl pwd."));
     } else {
         CM_THROW_ERROR(ERR_INVALID_PARAM, "SSL_PWD_CIPHERTEXT");
         LOG_DEBUG_ERR("[DSS] failed to decrypt ssl pwd for the cipher len is invalid.");
