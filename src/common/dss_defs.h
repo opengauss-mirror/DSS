@@ -44,6 +44,7 @@ extern "C" {
 
 #define DSS_FILE_NAME_BUFFER_SIZE (uint32)256
 #define DSS_FILE_PATH_MAX_LENGTH (SIZE_K(1) + 1)
+#define DSS_FKEY_FILENAME "server.key.rand"
 
 /* invalid id */
 #define DSS_INVALID_INT8 ((int8)(-1))

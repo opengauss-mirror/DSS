@@ -2624,6 +2624,30 @@ static void encrypt_help(char *prog_name)
     (void)printf("[client command] password encrypt\n");
 }
 
+static status_t dss_save_random_file(const uchar *value, int32 value_len)
+{
+    char file_name[CM_FILE_NAME_BUFFER_SIZE];
+    char dir_name[CM_FILE_NAME_BUFFER_SIZE];
+    int32 handle;
+    PRTS_RETURN_IFERR(snprintf_s(
+        dir_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/dss_protect", g_inst_cfg->home));
+    PRTS_RETURN_IFERR(snprintf_s(file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/dss_protect/%s",
+        g_inst_cfg->home, DSS_FKEY_FILENAME));
+    if (!cm_dir_exist(dir_name)) {
+        DSS_RETURN_IF_ERROR(cm_create_dir(dir_name));
+    }
+    if (access(file_name, R_OK | F_OK) == 0) {
+        (void)chmod(file_name, S_IRUSR | S_IWUSR);
+        DSS_RETURN_IF_ERROR(cm_overwrite_file(file_name));
+        DSS_RETURN_IF_ERROR(cm_remove_file(file_name));
+    }
+    DSS_RETURN_IF_ERROR(
+        cm_open_file_ex(file_name, O_SYNC | O_CREAT | O_RDWR | O_TRUNC | O_BINARY, S_IRUSR | S_IWUSR, &handle));
+    status_t ret = cm_write_file(handle, value, value_len);
+    cm_close_file(handle);
+    return ret;
+}
+
 static status_t encrypt_proc(void)
 {
     status_t status;
@@ -2642,6 +2666,12 @@ static status_t encrypt_proc(void)
         return CM_ERROR;
     }
     (void)(memset_s(plain, CM_PASSWD_MAX_LEN + 1, 0, CM_PASSWD_MAX_LEN + 1));
+    status = dss_save_random_file(cipher.rand, RANDOM_LEN + 1);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to save random component");
+        return CM_ERROR;
+    }
+    (void)(memset_s(cipher.rand, RANDOM_LEN + 1, 0, RANDOM_LEN + 1));
     char buf[CM_MAX_SSL_CIPHER_LEN] = {0};
     uint32_t buf_len = CM_MAX_SSL_CIPHER_LEN;
     status = cm_base64_encode((uchar *)&cipher, (uint32)sizeof(cipher_t), buf, &buf_len);
