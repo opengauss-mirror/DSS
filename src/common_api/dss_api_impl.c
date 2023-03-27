@@ -1710,8 +1710,12 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
 #endif
         volume.vg_type = vol->vg_type;
         if (is_read) {
+            LOG_DEBUG_INF("Begin to read volume %s, offset:%lld, size:%d, fname:%s, fsize:%llu, fwritten_size:%llu.",
+                volume.name_p, vol_offset, real_size, node->name, node->size, node->written_size);
             status = dss_read_volume(&volume, (int64)vol_offset, buf, real_size);
         } else {
+            LOG_DEBUG_INF("Begin to write volume %s, offset:%lld, size:%d, fname:%s, fsize:%llu, fwritten_size:%llu.",
+                volume.name_p, vol_offset, real_size, node->name, node->size, node->written_size);
             status = dss_write_volume(&volume, (int64)vol_offset, buf, real_size);
         }
         if (status != CM_SUCCESS) {
