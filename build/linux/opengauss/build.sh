@@ -24,7 +24,7 @@ function print_help()
     echo "Usage: $0 [OPTION]
     -h|--help              show help information.
     -3rd|--binarylib_dir   the directory of third party binarylibs.
-    -m|--version_mode      this values of paramenter is Debug, Release, DebugDssTest, ReleaseDssTest, the default value is Release.
+    -m|--version_mode      this values of paramenter is Debug, Release, DebugDsstest, ReleaseDsstest, the default value is Release.
     -t|--build_tool          this values of parameter is cmake, make, the default value is cmake.
     -s|--storage_mode      storage device type. values is disk, ceph. default is disk. 
 "
