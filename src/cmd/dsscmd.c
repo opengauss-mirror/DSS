@@ -2137,7 +2137,7 @@ static dss_args_set_t cmd_dev_args_set = {
 
 static void dev_help(char *prog_name)
 {
-    (void)printf("\nUsage:%s dev <-p path> <-o offset> <-f format> [-D DSS_HOME]\n", prog_name);
+    (void)printf("\nUsage:%s dev <-p path> <-o offset> <-f format> \n", prog_name);
     (void)printf("[client command] display dev file content\n");
     (void)printf("-p/--path <path>, <required>, the path of the host need to display\n");
     (void)printf("-o/--offset <offset>, <required>, the offset of the dev need to display\n");
