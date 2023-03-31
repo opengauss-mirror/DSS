@@ -56,7 +56,7 @@ static config_item_t g_dss_params[] = {
         6, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "STORAGE_MODE",              CM_TRUE, CM_FALSE, "DISK",  NULL, NULL, "-", "CLUSTER_RAID,RAID,DISK",
         "GS_TYPE_VARCHAR", NULL, 7, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_LOG_LEVEL",                CM_TRUE, CM_FALSE, "7",    NULL, NULL, "-", "[0,4087]",  "GS_TYPE_INTEGER", NULL,
+    { "_LOG_LEVEL",                CM_TRUE, CM_FALSE, "519",    NULL, NULL, "-", "[0,4087]",  "GS_TYPE_INTEGER", NULL,
         8, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_log_level, dss_notify_log_level, NULL, NULL},
     { "MAX_SESSION_NUMS",          CM_TRUE, CM_FALSE, "8192",   NULL, NULL, "-", "[16,16320]",    "GS_TYPE_INTEGER",
         NULL, 9, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
@@ -305,7 +305,9 @@ status_t dss_load_mes_ssl(dss_config_t *inst_cfg)
     value = cm_get_config_value(&inst_cfg->config, "SSL_CERT_NOTIFY_TIME");
     status = dss_set_ssl_param("SSL_CERT_NOTIFY_TIME", value);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CERT_NOTIFY_TIME"));
-
+    uint32 alert_value;
+    status = cm_str2uint32(value, &alert_value);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CERT_NOTIFY_TIME"));
     value = cm_get_config_value(&inst_cfg->config, "SSL_PERIOD_DETECTION");
     status = cm_str2uint32(value, &inst_cfg->params.ssl_detect_day);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_PERIOD_DETECTION"));
@@ -314,7 +316,13 @@ status_t dss_load_mes_ssl(dss_config_t *inst_cfg)
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_PERIOD_DETECTION");
         return CM_ERROR;
     }
-
+    if (inst_cfg->params.ssl_detect_day > alert_value) {
+        DSS_THROW_ERROR_EX(ERR_DSS_INVALID_PARAM,
+            "SSL disabled: the value of SSL_PERIOD_DETECTION which is %u is "
+            "bigger than the value of SSL_CERT_NOTIFY_TIME which is %u",
+            inst_cfg->params.ssl_detect_day, alert_value);
+        return CM_ERROR;
+    }
     value = cm_get_config_value(&inst_cfg->config, "SSL_PWD_CIPHERTEXT");
     status = dss_set_ssl_param("SSL_PWD_CIPHERTEXT", value);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_PWD_CIPHERTEXT"));
