@@ -918,9 +918,9 @@ status_t dss_check_lock_instid(dss_vg_info_item_t *vg_item, const char *entry_pa
 
     if (LOCKR_INST_ID(lock) != LOCKW_INST_ID(lock)) {
         (void)close(fd);
+        LOG_DEBUG_INF("another inst_id(disk) %lld, curr inst_id(lock) %lld.", LOCKR_INST_ID(lock), LOCKW_INST_ID(lock));
         cm_destory_dlock(&lock);
         dss_unlatch(&vg_item->disk_latch);
-        LOG_DEBUG_INF("another inst_id(disk) %lld, curr inst_id(lock) %lld.", LOCKR_INST_ID(lock), LOCKW_INST_ID(lock));
         return CM_SUCCESS;
     }
 
