@@ -854,6 +854,21 @@ int dss_aio_prep_pwrite(void *iocb, int handle, void *buf, size_t count, long lo
     return CM_SUCCESS;
 }
 
+int dss_aio_post_pwrite(void *iocb, int handle, size_t count, long long offset)
+{
+    if (offset > (int64)DSS_MAX_FILE_SIZE) {
+        LOG_DEBUG_ERR("Invalid parameter offset:%lld.", offset);
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "offset must less than DSS_MAX_FILE_SIZE");
+        return CM_ERROR;
+    }
+
+    dss_conn_t *conn = NULL;
+    status_t ret = dss_get_conn(&conn);
+    DSS_RETURN_IF_ERROR(ret);
+
+    return (int)dss_aio_post_pwrite_file_impl(conn, HANDLE_VALUE(handle), offset, (int32)count);
+}
+
 int dss_get_au_size(int handle, long long *au_size)
 {
     dss_conn_t *conn = NULL;

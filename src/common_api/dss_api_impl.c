@@ -2663,6 +2663,33 @@ status_t dss_get_phy_size_impl(dss_conn_t *conn, int handle, long long *size)
     return status;
 }
 
+status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long offset, int32 size)
+{
+    status_t status;
+    dss_file_context_t *context = NULL;
+    dss_rw_param_t param;
+
+    DSS_RETURN_IF_ERROR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
+    LOG_DEBUG_INF("Begin get file fd in aio, filename:%s, handle:%d, offset:%lld", context->node->name, handle, offset);
+
+    dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
+    status = dss_refresh_file_impl(&param);
+    DSS_RETURN_IFERR2(status, dss_unlatch(&context->latch));
+
+    int64 new_offset = offset + size;
+    bool32 need_update = new_offset > context->node->written_size;
+    if (need_update) {
+        LOG_DEBUG_INF("Start update_written_size for file:\"%s\", cur offset:%llu, cur written_size:%llu.",
+            context->node->name, offset, context->node->written_size);
+        dss_env_t *dss_env = dss_get_env();
+        status = dss_update_written_size(dss_env, conn, context, new_offset);
+    }
+    dss_unlatch(&context->latch);
+    LOG_DEBUG_INF("end post pwrite in aio leave, result:%d", status);
+
+    return DSS_SUCCESS;
+}
+
 #ifdef __cplusplus
 }
 #endif
