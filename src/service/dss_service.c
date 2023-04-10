@@ -433,26 +433,19 @@ static status_t dss_process_close_dir(dss_session_t *session)
 
 static status_t dss_process_extending_file(dss_session_t *session)
 {
-    uint64 fid;
-    ftid_t ftid;
-    int64 offset;
-    int32 size;
-    uint32 vgid;
-    bool32 is_read;
-    char *vg_name = NULL;
+    dss_node_data_t node_data;
 
     dss_init_get(&session->recv_pack);
-    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&fid));
-    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&ftid));
-    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, &offset));
-    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &size));
-    DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &vg_name));
-    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&vgid));
-    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&is_read));
+    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&node_data.fid));
+    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&node_data.ftid));
+    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, &node_data.offset));
+    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &node_data.size));
+    DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &node_data.vg_name));
+    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&node_data.vgid));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
-        "vg_name:%s, fid:%llu, ftid:%llu", vg_name, fid, *(uint64 *)&ftid));
+        "vg_name:%s, fid:%llu, ftid:%llu", node_data.vg_name, node_data.fid, *(uint64 *)&node_data.ftid));
 
-    return dss_extend(session, fid, ftid, offset, vg_name, vgid, is_read);
+    return dss_extend(session, &node_data);
 }
 
 static status_t dss_process_truncate_file(dss_session_t *session)

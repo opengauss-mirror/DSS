@@ -63,6 +63,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_FILE_OPENING_REMOTE] = "The file is open in other inst: %d, command:%d exec failed.",
     [ERR_DSS_FILE_TYPE_MISMATCH] = "The type of directory link or file %s is not matched.",
     [ERR_DSS_FILE_PATH_ILL] = "Path %s decode error %s",
+    [ERR_DSS_FILE_INVALID_SIZE] = "Invalid extend offset %lld, size %d.",
     [ERR_DSS_DIR_REMOVE_NOT_EMPTY] = "The dir is not empty, can not remove.",
     [ERR_DSS_DIR_CREATE_DUPLICATED] = "Make dir or Create file failed, %s has already existed",
     [ERR_DSS_DIR_NOT_EXIST] = "The dir %s of %s is not existed.",

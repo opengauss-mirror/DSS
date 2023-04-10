@@ -79,8 +79,6 @@ status_t dss_apply_extending_file(dss_conn_t *conn, int32 handle, int32 size, bo
     CM_RETURN_IFERR(dss_put_str(send_pack, context->vg_name));
     // 6. vgid
     CM_RETURN_IFERR(dss_put_int32(send_pack, context->vgid));
-    // 7. is_read
-    CM_RETURN_IFERR(dss_put_int32(send_pack, is_read));
 
     // send it and wait for ack
     ack_pack = &conn->pack;
@@ -1338,6 +1336,7 @@ void dss_init_rw_param(
     param->context = ctx;
     param->offset = offset;
     param->atom_oper = atomic;
+    param->is_read = DSS_FALSE;
 }
 
 int64 dss_seek_file_impl(dss_conn_t *conn, int handle, int64 offset, int origin)
@@ -1803,7 +1802,7 @@ status_t dss_refresh_file_impl(dss_rw_param_t *param)
         size = (int64)context->node->size;
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
 
-        if (offset > size) {
+        if (offset > size && param->is_read) {
             LOG_DEBUG_ERR("Invalid parameter offset is greater than size, offset:%lld,"
                           " file size:%llu, vgid:%u, fid:%llu, node fid:%llu.",
                 offset, context->node->size, context->vg_item->id, context->fid, context->node->fid);
@@ -1825,6 +1824,7 @@ status_t dss_pwrite_file_impl(dss_conn_t *conn, int handle, const void *buf, int
     LOG_DEBUG_INF("dss pwrite file %s, handle:%d, offset:%lld", context->node->name, handle, offset);
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
+    param.is_read = DSS_FALSE;
     if (dss_refresh_file_impl(&param) != CM_SUCCESS) {
         dss_unlatch(&context->latch);
         return CM_ERROR;
@@ -1847,6 +1847,7 @@ status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, 
         handle, offset, size);
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
+    param.is_read = DSS_TRUE;
     if (dss_refresh_file_impl(&param) != CM_SUCCESS) {
         dss_unlatch(&context->latch);
         return CM_ERROR;
@@ -2320,7 +2321,8 @@ status_t dss_get_fname_impl(int handle, char *fname, int fname_size)
     return CM_SUCCESS;
 }
 
-static status_t get_fd(dss_rw_param_t *param, int32 size, bool32 is_read, int *fd, int64 *vol_offset)
+static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_offset)
+
 {
     status_t status = CM_SUCCESS;
     dss_conn_t *conn = param->conn;
@@ -2342,7 +2344,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, bool32 is_read, int *f
         return CM_ERROR;
     }
 
-    CM_RETURN_IFERR(dss_check_refresh_file(dss_env, conn, context, is_read, &total_size));
+    CM_RETURN_IFERR(dss_check_refresh_file(dss_env, conn, context, param->is_read, &total_size));
 
     dss_fs_block_t *entry_fs_block = (dss_fs_block_t *)entry_block;
     uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
@@ -2370,7 +2372,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, bool32 is_read, int *f
     rw_ctx.file_ctx = context;
     rw_ctx.handle = handle;
     rw_ctx.size = size;
-    rw_ctx.read = is_read;
+    rw_ctx.read = param->is_read;
     rw_ctx.offset = param->offset;
 
     dss_fs_block_t *second_block = NULL;
@@ -2382,8 +2384,8 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, bool32 is_read, int *f
     if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
         // allocate au
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-        if (!is_read) {
-            status = dss_apply_extending_file(conn, handle, size, is_read, rw_ctx.offset);
+        if (!param->is_read) {
+            status = dss_apply_extending_file(conn, handle, size, param->is_read, rw_ctx.offset);
             DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to extend file second block."));
         }
         auid = second_block->bitmap[block_au_count];
@@ -2435,7 +2437,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, bool32 is_read, int *f
         }
     }
 
-    DSS_RETURN_IFERR2(dss_check_file_written_size(dss_env, conn, context, rw_ctx.offset, is_read, &total_size),
+    DSS_RETURN_IFERR2(dss_check_file_written_size(dss_env, conn, context, rw_ctx.offset, param->is_read, &total_size),
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session));
 
     /* get the real block device descriptor */
@@ -2443,13 +2445,15 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, bool32 is_read, int *f
 
     DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
 
+#ifdef OPENGAUSS
     int64 offset = param->offset + size;
-    bool32 need_update = offset > context->node->written_size && !is_read;
+    bool32 need_update = offset > context->node->written_size && !param->is_read;
     if (need_update) {
         LOG_DEBUG_INF("Start update_written_size for file:\"%s\", curr offset:%llu, curr written_size:%llu.",
             node->name, offset, node->written_size);
         status = dss_update_written_size(dss_env, conn, context, offset);
     }
+#endif
 
     return status;
 }
@@ -2467,9 +2471,10 @@ status_t dss_get_fd_by_offset(
     LOG_DEBUG_INF("Begin get file fd in aio, filename:%s, handle:%d, offset:%lld", context->node->name, handle, offset);
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
+    param.is_read = is_read;
     status_t ret = dss_refresh_file_impl(&param);
     DSS_RETURN_IFERR2(ret, dss_unlatch(&context->latch));
-    status = get_fd(&param, size, is_read, fd, vol_offset);
+    status = get_fd(&param, size, fd, vol_offset);
 
     dss_unlatch(&context->latch);
     LOG_DEBUG_INF("get file descriptor in aio leave");

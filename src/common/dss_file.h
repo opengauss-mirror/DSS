@@ -36,6 +36,15 @@
 extern "C" {
 #endif
 
+typedef struct st_dss_node_data {
+    uint64 fid;
+    ftid_t ftid;
+    int64 offset;
+    int32 size;
+    uint32 vgid;
+    char *vg_name;
+} dss_node_data_t;
+
 status_t dss_make_dir(dss_session_t *session, const char *parent, const char *dir_name);
 status_t dss_open_dir(dss_session_t *session, const char *dir_path, bool32 is_refresh);
 void dss_close_dir(dss_session_t *session, char *vg_name, uint64 ftid);
@@ -49,10 +58,8 @@ status_t dss_create_file(dss_session_t *session, const char *parent, const char 
 status_t dss_exist_item(dss_session_t *session, const char *item, gft_item_type_t type, bool32 *result);
 status_t dss_open_file(dss_session_t *session, const char *file, int32_t flag);
 status_t dss_close_file(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid);
-status_t dss_extend_inner(
-    dss_session_t *session, uint64 fid, ftid_t ftid, int64 offset, char *vg_name, uint32 vgid, bool32 is_read);
-status_t dss_extend(
-    dss_session_t *session, uint64 fid, ftid_t ftid, int64 offset, char *vg_name, uint32 vgid, bool32 is_read);
+status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data);
+status_t dss_extend(dss_session_t *session, dss_node_data_t *node_data);
 status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 offset, uint64 length, char *vg_name);
 status_t dss_refresh_file(dss_session_t *session, uint64 fid, ftid_t ftid, char *vg_name, dss_block_id_t blockid);
 status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32 vgid, uint32 volumeid);
