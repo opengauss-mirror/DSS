@@ -1364,11 +1364,7 @@ static status_t ls_proc(void)
         dss_disconnect_ex(&connection);
         return CM_ERROR;
     }
-#ifndef OPENGAUSS
-    (void)printf("%-5s%-20s%-14s %-64s\n", "type", "time", "size", "name");
-#else
     (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
-#endif
     gft_node_t *node;
     char time[512];
     while ((node = (dss_dir_item_handle)dss_read_dir_impl(&connection, dir, CM_TRUE)) != NULL) {
@@ -1382,15 +1378,11 @@ static status_t ls_proc(void)
             size = dss_convert_size(size, measure);
         }
         char type = node->type == GFT_PATH ? 'd' : node->type == GFT_FILE ? '-' : 'l';
-#ifndef OPENGAUSS
-        (void)printf("%-5c%-20s%-14.05f %-64s\n", type, time, size, node->name);
-#else
         double written_size = (double)node->written_size;
         if (node->written_size != 0) {
             written_size = dss_convert_size(written_size, measure);
         }
         (void)printf("%-5c%-20s%-14.05f %-14.05f %-64s\n", type, time, size, written_size, node->name);
-#endif
     }
 
     (void)dss_close_dir_impl(&connection, dir);

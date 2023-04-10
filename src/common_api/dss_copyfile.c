@@ -173,11 +173,8 @@ static status_t dss_cp_dtod(dss_conn_t conn, const char *srcpath, const char *de
         dss_close_file_impl(&conn, srchandle);
         return status;
     }
-#ifndef OPENGAUSS
-    int64 size = dss_seek_file_impl(&conn, srchandle, 0, SEEK_END);
-#else
+
     int64 size = dss_seek_file_impl(&conn, srchandle, 0, DSS_SEEK_MAXWR);
-#endif
     LOG_DEBUG_INF("Seek file %s, size is %lld.", srcpath, size);
     bool32 result = (bool32)(size != -1);
     DSS_RETURN_IF_FALSE3(result, dss_close_file_impl(&conn, srchandle), dss_close_file_impl(&conn, desthandle));
@@ -213,11 +210,8 @@ static status_t dss_cp_dtol(dss_conn_t conn, const char *srcpath, const char *de
         dss_close_file_impl(&conn, srchandle);
         return status;
     }
-#ifndef OPENGAUSS
-    int64 size = dss_seek_file_impl(&conn, srchandle, 0, SEEK_END);
-#else
+
     int64 size = dss_seek_file_impl(&conn, srchandle, 0, DSS_SEEK_MAXWR);
-#endif
     LOG_DEBUG_INF("Seek the src file %s, size is %lld.", srcpath, size);
     bool32 result = (bool32)(size != -1);
     DSS_RETURN_IF_FALSE3(result, dss_close_file_impl(&conn, srchandle), cm_close_file(desthandle));
