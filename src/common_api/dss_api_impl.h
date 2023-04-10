@@ -42,6 +42,7 @@ typedef struct st_dss_rw_param {
     dss_file_context_t *context;
     int64 offset;
     bool32 atom_oper;
+    bool32 is_read;
 } dss_rw_param_t;
 
 struct __dss_conn_opt;

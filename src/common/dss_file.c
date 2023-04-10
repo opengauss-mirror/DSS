@@ -504,7 +504,14 @@ status_t dss_write_link_file(dss_session_t *session, char *link_path, char *dst_
     dss_unlock_vg_mem_and_shm(session, vg_item);
     CM_RETURN_IFERR(status);
     CM_RETURN_IF_FALSE(node->type == GFT_LINK);
-    status = dss_extend(session, node->fid, node->id, 0, vg_item->vg_name, vg_item->id, DSS_FALSE);
+    dss_node_data_t node_data;
+    node_data.fid = node->fid;
+    node_data.ftid = node->id;
+    node_data.offset = 0;
+    node_data.size = (int32)dss_get_vg_au_size(vg_item->dss_ctrl);
+    node_data.vgid = vg_item->id;
+    node_data.vg_name = (char *)vg_item->vg_name;
+    status = dss_extend(session, &node_data);
     if (status != CM_SUCCESS) {
         status = dss_delete_open_file_index(
             vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
@@ -2586,44 +2593,28 @@ status_t dss_get_fs_block_info_by_offset(
     return CM_SUCCESS;
 }
 
-status_t dss_extend(
-    dss_session_t *session, uint64 fid, ftid_t ftid, int64 offset, char *vg_name, uint32 vgid, bool32 is_read)
+status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
 {
-    status_t status;
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
-    if (!vg_item) {
-        DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("Failed to find vg,vg name %s.", vg_name),
-            DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name));
-    }
-
-    dss_lock_vg_mem_and_shm_x(session, vg_item);
-    status = dss_extend_inner(session, fid, ftid, offset, vg_name, vgid, is_read);
-    dss_unlock_vg_mem_and_shm(session, vg_item);
-    return status;
-}
-
-status_t dss_extend_inner(
-    dss_session_t *session, uint64 fid, ftid_t ftid, int64 offset, char *vg_name, uint32 vgid, bool32 is_read)
-{
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(node_data->vg_name);
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     if (vg_item == NULL) {
-        DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("Failed to find vg,vg name %s.", vg_name),
-            DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name));
+        DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("Failed to find vg,vg name %s.", node_data->vg_name),
+            DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, node_data->vg_name));
     }
 
     gft_node_t *node = NULL;
     dss_fs_block_header *entry_block = NULL;
-    CM_RETURN_IFERR(dss_get_block_entry(session, vg_item, inst_cfg, fid, ftid, &node, &entry_block));
+    CM_RETURN_IFERR(
+        dss_get_block_entry(session, vg_item, inst_cfg, node_data->fid, node_data->ftid, &node, &entry_block));
 
     dss_fs_block_t *entry_fs_block = (dss_fs_block_t *)entry_block;
     // two level bitmap
     uint32 block_count = 0;
     uint32 block_au_count = 0;
     uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
-    status_t status = dss_get_fs_block_info_by_offset(offset, au_size, &block_count, &block_au_count, NULL);
+    status_t status = dss_get_fs_block_info_by_offset(node_data->offset, au_size, &block_count, &block_au_count, NULL);
     DSS_RETURN_IFERR2(
-        status, LOG_DEBUG_ERR("The offset(%lld) is not correct,real block count:%u.", offset, block_count));
+        status, LOG_DEBUG_ERR("The offset(%lld) is not correct,real block count:%u.", node_data->offset, block_count));
     bool32 need_get_second = CM_FALSE;
     ga_obj_id_t sec_obj_id;
     dss_fs_block_t *second_block = NULL;
@@ -2635,10 +2626,6 @@ status_t dss_extend_inner(
 
         second_block_id = entry_fs_block->bitmap[block_count];
         if (dss_cmp_blockid(second_block_id, CM_INVALID_ID64)) {
-            if (is_read) {
-                LOG_DEBUG_INF("Read invalid offset in %s.", node->name);
-                return CM_SUCCESS;
-            }
             dss_alloc_fs_block_judge judge = {CM_TRUE, CM_FALSE, CM_TRUE};
             // allocate block
             status = dss_alloc_fs_block(session, vg_item, (char **)&second_block, &sec_obj_id, &judge);
@@ -2676,10 +2663,6 @@ status_t dss_extend_inner(
 
     auid_t auid = second_block->bitmap[block_au_count];
     if (dss_cmp_auid(auid, CM_INVALID_ID64)) {
-        if (is_read) {
-            LOG_DEBUG_INF("Read invalid offset in %s.", node->name);
-            return CM_SUCCESS;
-        }
         // allocate au
         status = dss_alloc_au(session, vg_item, &auid, CM_TRUE);
         if (status != CM_SUCCESS) {
@@ -2720,6 +2703,61 @@ status_t dss_extend_inner(
     }
 
     return CM_SUCCESS;
+}
+
+status_t dss_extend_from_offset(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, dss_node_data_t *node_data)
+{
+    status_t status = CM_SUCCESS;
+    uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
+    int64 file_size = node_data->offset + node_data->size;
+    uint64 align_size = CM_CALC_ALIGN((uint64)file_size, au_size);
+    // if pwrite offset more than node->size, should pre-alloc the hole from the node->size to node_data->offset
+    int64 offset = node_data->offset;
+    // the most size of one file is 8T, can be int64
+    if (offset > (int64)node->size) {
+        offset = (int64)node->size;
+    }
+    // CM_CALC_ALGN_FLOOR from 0 will be -8, offset start from 0
+    uint64 algin_offset = CM_CALC_ALIGN_FLOOR((uint64)(offset + 1), au_size);
+
+    dss_node_data_t node_data2 = *node_data;
+    /* ready to exten file size to 'align_size' */
+    for (node_data2.offset = (int64)algin_offset; node_data2.offset < (int64)align_size;
+        node_data2.offset += (int64)au_size) {
+        status = dss_extend_inner(session, &node_data2);
+        if (status != CM_SUCCESS) {
+            return status;
+        }
+    }
+    return status;
+}
+
+status_t dss_extend(dss_session_t *session, dss_node_data_t *node_data)
+{
+    status_t status;
+    if (node_data->offset < 0 || node_data->size <= 0) {
+        DSS_THROW_ERROR(ERR_DSS_FILE_INVALID_SIZE, node_data->offset, node_data->size);
+        LOG_DEBUG_ERR("Invalid extend offset %lld, size %d.", node_data->offset, node_data->size);
+        return CM_ERROR;
+    }
+
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(node_data->vg_name);
+    if (!vg_item) {
+        DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("Failed to find vg,vg name %s.", node_data->vg_name),
+            DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, node_data->vg_name));
+    }
+
+    dss_lock_vg_mem_and_shm_x(session, vg_item);
+    gft_node_t *node = dss_get_ft_node_by_ftid(vg_item, node_data->ftid, CM_TRUE, CM_FALSE);
+    if (!node) {
+        dss_unlock_vg_mem_and_shm(session, vg_item);
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find ftid, ftid: %llu.", *(int64*)&node_data->ftid));
+    }
+
+    status = dss_extend_from_offset(session, vg_item, node, node_data);
+    dss_unlock_vg_mem_and_shm(session, vg_item);
+    return status;
 }
 
 static bool32 dss_is_truncate_necessary(gft_node_t *node, uint64 aligned_length, uint64 au_size)
@@ -3004,24 +3042,23 @@ static void dss_truncate_set_sizes(
 
 status_t truncate_to_extend(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, uint64 size)
 {
-    status_t status = CM_SUCCESS;
-    uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
-    uint64 align_size = CM_CALC_ALIGN(size, au_size);
+    dss_node_data_t node_data;
+    node_data.fid = node->fid;
+    node_data.ftid = node->id;
+    node_data.vgid = vg_item->id;
+    node_data.vg_name = (char *)vg_item->vg_name;
+    node_data.offset = 0;
+    node_data.size = (int32)size;
+    status_t status = dss_extend_from_offset(session, vg_item, node, &node_data);
 
-    /* ready to extend file size to `align_size`, but its written_size is `size` */
-    int64 offset;
-    for (offset = (int64)node->size; offset < (int64)align_size; offset += (int64)au_size) {
-        status = dss_extend_inner(session, node->fid, node->id, offset, vg_item->vg_name, vg_item->id, CM_FALSE);
-        if (status != CM_SUCCESS) {
-            return status;
-        }
-    }
 #ifdef OPENGAUSS
-    node->written_size = size;
+    /* we need to add written_size redo future, now flush ft block to disk directly */
+    if (status == CM_SUCCESS) {
+        node->written_size = size;
+        dss_ft_block_t *block = dss_get_ft_block_by_node(node);
+        status = dss_update_ft_block_disk(vg_item, block, node->id);
+    }
 #endif
-    /* we need to add written_size redo future, now flush ft block to disk directly. */
-    dss_ft_block_t *block = dss_get_ft_block_by_node(node);
-    status = dss_update_ft_block_disk(vg_item, block, node->id);
     return status;
 }
 
