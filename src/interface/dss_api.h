@@ -99,7 +99,7 @@ typedef struct st_dss_stat {
 #define DSS_LOCAL_MINOR_VER_WEIGHT 1000
 #define DSS_LOCAL_MAJOR_VERSION 0
 #define DSS_LOCAL_MINOR_VERSION 0
-#define DSS_LOCAL_VERSION 4
+#define DSS_LOCAL_VERSION 5
 
 typedef struct st_dss_dirent *dss_dir_item_t;
 typedef struct st_dss_stat *dss_stat_info_t;
@@ -126,7 +126,7 @@ DSS_DECLARE int dss_fread(int handle, void *buf, int size, int *read_size);
 DSS_DECLARE int dss_fcopy(const char *src_path, const char *dest_path);
 DSS_DECLARE int dss_frename(const char *src, const char *dst);
 DSS_DECLARE int dss_ftruncate(int handle, long long length);
-DSS_DECLARE void dss_fsize(const char *fname, long long *fsize);
+DSS_DECLARE int dss_fsize_physical(int handle, long long *fsize);
 DSS_DECLARE void dss_fsize_maxwr(const char *fname, long long *fsize);
 DSS_DECLARE int dss_pwrite(int handle, const void *buf, int size, long long offset);
 DSS_DECLARE int dss_pread(int handle, void *buf, int size, long long offset, int *read_size);
@@ -134,6 +134,8 @@ DSS_DECLARE int dss_get_fname(int handle, char *fname, int fname_size);
 // aio
 DSS_DECLARE int dss_aio_prep_pread(void *iocb, int handle, void *buf, size_t count, long long offset);
 DSS_DECLARE int dss_aio_prep_pwrite(void *iocb, int handle, void *buf, size_t count, long long offset);
+DSS_DECLARE int dss_aio_post_pwrite(void *iocb, int handle, size_t count, long long offset);
+
 // link
 DSS_DECLARE int dss_unlink(const char *link);
 DSS_DECLARE int dss_islink(const char *name, bool *result);
