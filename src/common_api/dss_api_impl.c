@@ -1485,7 +1485,6 @@ static status_t dss_check_refresh_file(
     return CM_SUCCESS;
 }
 
-#ifdef OPENGAUSS
 static status_t dss_update_written_size(dss_env_t *dss_env, dss_conn_t *conn, dss_file_context_t *context, int64 offset)
 {
     int32 errcode = -1;
@@ -1551,7 +1550,6 @@ static status_t dss_check_file_written_size(dss_env_t *dss_env, dss_conn_t *conn
     }
     return CM_SUCCESS;
 }
-#endif
 
 status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, int32 *read_size, bool32 is_read)
 {
@@ -1656,9 +1654,10 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
                 return status;
             }
         }
-#ifdef OPENGAUSS
+
         DSS_RETURN_IFERR2(dss_check_file_written_size(dss_env, conn, context, rw_ctx.offset, is_read, &total_size),
             DSS_SET_PTR_VALUE_IF_NOT_NULL(read_size, read_cnt));
+#ifdef OPENGAUSS
         dss_vg_info_item_t *first_vg_item = dss_get_first_vg_item();
         if (strcmp(first_vg_item->vg_name, vg_item->vg_name) == 0 && auid.volume == 0) {
             if (g_log_offset == DSS_INVALID_64) {
@@ -1733,7 +1732,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
     DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
     DSS_SET_PTR_VALUE_IF_NOT_NULL(read_size, read_cnt);
 
-#ifdef OPENGAUSS /* tracking real written size may hinder performance, hence disabled otherwise */
+    /* tracking real written size may hinder performance, hence disabled otherwise */
     int64 offset = (param->atom_oper ? param->offset : context->offset);
     bool32 need_update = offset > context->node->written_size && !is_read;
     if (need_update) { /* updates written size outside of locking */
@@ -1741,7 +1740,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
             node->name, offset, node->written_size);
         status = dss_update_written_size(dss_env, conn, context, offset);
     }
-#endif
+
     return status;
 }
 
@@ -2436,17 +2435,14 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, bool32 is_read, int *f
         }
     }
 
-#ifdef OPENGAUSS
     DSS_RETURN_IFERR2(dss_check_file_written_size(dss_env, conn, context, rw_ctx.offset, is_read, &total_size),
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session));
-#endif
 
     /* get the real block device descriptor */
     *fd = vol->handle;
 
     DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
 
-#ifdef OPENGAUSS
     int64 offset = param->offset + size;
     bool32 need_update = offset > context->node->written_size && !is_read;
     if (need_update) {
@@ -2454,7 +2450,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, bool32 is_read, int *f
             node->name, offset, node->written_size);
         status = dss_update_written_size(dss_env, conn, context, offset);
     }
-#endif
+
     return status;
 }
 

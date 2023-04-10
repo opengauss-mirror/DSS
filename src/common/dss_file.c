@@ -2982,7 +2982,9 @@ status_t truncate_to_extend(dss_session_t *session, dss_vg_info_item_t *vg_item,
             return status;
         }
     }
+#ifdef OPENGAUSS
     node->written_size = size;
+#endif
     /* we need to add written_size redo future, now flush ft block to disk directly. */
     dss_ft_block_t *block = dss_get_ft_block_by_node(node);
     status = dss_update_ft_block_disk(vg_item, block, node->id);
