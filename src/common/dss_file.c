@@ -140,7 +140,7 @@ status_t dss_check_path(const char *path)
     return dss_check_path_is_valid(path, DSS_FILE_PATH_MAX_LENGTH);
 }
 
-status_t dss_check_volume_path(const char path)
+status_t dss_check_volume_path(const char *path)
 {
     if (path == NULL || strlen(path) == 0) {
         DSS_RETURN_IFERR2(
