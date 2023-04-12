@@ -125,7 +125,7 @@ dss_config_t *dss_get_inst_cfg(void);
 status_t dss_get_root_version(dss_vg_info_item_t *vg_item, uint64 *version);
 status_t dss_check_name(const char *name);
 status_t dss_check_path(const char *path);
-status_t dss_check_volume_path(const char path);
+status_t dss_check_volume_path(const char *path);
 status_t dss_check_device_path(const char *path);
 status_t dss_check_path_both(const char *path);
 
