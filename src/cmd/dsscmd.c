@@ -678,7 +678,7 @@ static status_t cmd_parse_args(int argc, char **argv, dss_args_set_t *args_set)
 
 static dss_args_t cmd_cv_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
-    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
     {'s', "au_size", CM_FALSE, CM_TRUE, cmd_check_au_size, NULL, NULL, 0, NULL, NULL, 0},
     {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
         NULL, NULL, 0},
@@ -1159,7 +1159,7 @@ static status_t dss_load_local_server_config(
 
 static dss_args_t cmd_adv_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
-    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -1485,7 +1485,7 @@ static status_t rm_proc(void)
 
 static dss_args_t cmd_rmv_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
-    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -2125,7 +2125,7 @@ static status_t examine_proc(void)
 }
 
 static dss_args_t cmd_dev_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
     {'o', "offset", CM_TRUE, CM_TRUE, cmd_check_offset, NULL, NULL, 0, NULL, NULL, 0},
     {'f', "format", CM_TRUE, CM_TRUE, cmd_check_format, NULL, NULL, 0, NULL, NULL, 0},
 };

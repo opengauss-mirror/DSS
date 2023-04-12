@@ -140,6 +140,16 @@ status_t dss_check_path(const char *path)
     return dss_check_path_is_valid(path, DSS_FILE_PATH_MAX_LENGTH);
 }
 
+status_t dss_check_volume_path(const char path)
+{
+    if (path == NULL || strlen(path) == 0) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, "[null]", ", path cannot be a null string."));
+    }
+
+    return dss_check_path_is_valid(path, DSS_MAX_VOLUME_PATH_LEN);
+}
+
 status_t dss_check_device_path(const char *path)
 {
     if (path == NULL || strlen(path) == 0) {

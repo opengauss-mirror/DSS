@@ -141,8 +141,8 @@ static status_t dss_initial_vg_ctrl(
     }
     vg_ctrl->vg_info.vol_type.id = 0;
     vg_ctrl->vg_info.vol_type.type = DSS_VOLUME_TYPE_MANAGER;
-    errcode =
-        strncpy_s(vg_ctrl->vg_info.vol_type.entry_volume_name, DSS_MAX_NAME_LEN, volume_name, strlen(volume_name));
+    errcode = strncpy_s(
+        vg_ctrl->vg_info.vol_type.entry_volume_name, DSS_MAX_VOLUME_PATH_LEN, volume_name, strlen(volume_name));
     if (errcode != EOK) {
         DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
         return CM_ERROR;
@@ -157,7 +157,7 @@ static status_t dss_initial_vg_ctrl(
     au_size = (size == 0 ? DSS_DEFAULT_AU_SIZE : SIZE_K(size));
     dss_set_vg_au_size(vg_ctrl, au_size);
 
-    errcode = strncpy_s(vg_ctrl->volume.defs[0].name, DSS_MAX_NAME_LEN, volume_name, strlen(volume_name));
+    errcode = strncpy_s(vg_ctrl->volume.defs[0].name, DSS_MAX_VOLUME_PATH_LEN, volume_name, strlen(volume_name));
     if (errcode != EOK) {
         DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
         return CM_ERROR;
