@@ -105,7 +105,7 @@ typedef struct st_dss_volume_def {
     uint64 flag : 1;
     uint64 reserve : 47;
     uint64 version;
-    char name[DSS_MAX_NAME_LEN];
+    char name[DSS_MAX_VOLUME_PATH_LEN];
     char code[DSS_VOLUME_CODE_SIZE];
     char resv[DSS_VOLUME_DEF_RESVS];
 } dss_volume_def_t;  // CAUTION:If add/remove field ,please keep 256B total !!! Or modify rp_redo_add_or_remove_volume
@@ -130,7 +130,7 @@ typedef enum dss_vg_device_Type {
 } dss_vg_device_Type_e;
 
 typedef struct st_dss_volume {
-    char name[DSS_MAX_NAME_LEN];
+    char name[DSS_MAX_VOLUME_PATH_LEN];
     char *name_p;
     dss_volume_attr_t *attr;
     uint32 id;
@@ -161,7 +161,7 @@ typedef struct st_dss_metablock_header_t {
 typedef struct st_dss_volume_type_t {
     uint32 type;
     uint32 id;
-    char entry_volume_name[DSS_MAX_NAME_LEN];
+    char entry_volume_name[DSS_MAX_VOLUME_PATH_LEN];
 } dss_volume_type_t;
 
 #define DSS_CTRL_VALID_FLAG 0x5f3759df
@@ -254,7 +254,7 @@ typedef enum en_latch_type {
 typedef struct st_dss_vg_info_item_t {
     uint32 id;
     char vg_name[DSS_MAX_NAME_LEN];
-    char entry_path[DSS_NAME_BUFFER_SIZE];  // the manager volume path
+    char entry_path[DSS_MAX_VOLUME_PATH_LEN];  // the manager volume path
     dss_vg_status_t status;
     cm_oamap_t au_map;  // UNUSED
     dss_volume_t volume_handle[DSS_MAX_VOLUMES];
@@ -286,7 +286,7 @@ typedef struct st_dss_cli_vg_handles_t {
 
 typedef struct st_dss_vg_conf_t {
     char vg_name[DSS_MAX_NAME_LEN];
-    char entry_path[DSS_NAME_BUFFER_SIZE];  // the manager volume path
+    char entry_path[DSS_MAX_VOLUME_PATH_LEN];  // the manager volume path
 } dss_vg_conf_t;
 
 typedef struct st_dss_share_vg_item_t {

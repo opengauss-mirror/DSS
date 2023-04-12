@@ -150,6 +150,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_MAX_SHM_KEY_BITS 8
 
 #define DSS_MAX_NAME_LEN 64
+#define DSS_MAX_VOLUME_PATH_LEN 64
 
 #define DSS_BLOCK_SIZE 512
 #define DSS_ROOT_FT_DISK_SIZE SIZE_K(8)

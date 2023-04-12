@@ -448,7 +448,7 @@ status_t dss_parse_vg_config(dss_vg_info_t *config, char *buf, uint32 buf_len)
             return CM_ERROR;
         }
         CM_RETURN_IFERR(cm_text2str(&name, config->volume_group[vg_no].vg_name, DSS_MAX_NAME_LEN));
-        CM_RETURN_IFERR(cm_text2str(&value, config->volume_group[vg_no].entry_path, DSS_NAME_BUFFER_SIZE));
+        CM_RETURN_IFERR(cm_text2str(&value, config->volume_group[vg_no].entry_path, DSS_MAX_VOLUME_PATH_LEN));
         vg_no++;
 
         comment.str = text.str;
@@ -1046,7 +1046,7 @@ static status_t dss_gen_volume_head(
     dss_volume_header_t *vol_head, dss_vg_info_item_t *vg_item, const char *volume_name, uint32 id)
 {
     vol_head->vol_type.id = id;
-    errno_t errcode = strcpy_s(vol_head->vol_type.entry_volume_name, DSS_MAX_NAME_LEN, volume_name);
+    errno_t errcode = strcpy_s(vol_head->vol_type.entry_volume_name, DSS_MAX_VOLUME_PATH_LEN, volume_name);
     DSS_SECUREC_SS_RETURN_IF_ERROR(errcode, CM_ERROR);
     vol_head->vol_type.type = DSS_VOLUME_TYPE_NORMAL;
     vol_head->valid_flag = DSS_CTRL_VALID_FLAG;
@@ -1082,7 +1082,7 @@ static status_t dss_add_volume_vg_ctrl(
     dss_session_t *session, uint32 id, uint64 vol_size, dss_vg_info_item_t *vg_item, const char *volume_name)
 {
     dss_ctrl_t *vg_ctrl = vg_item->dss_ctrl;
-    errno_t errcode = strcpy_s(vg_ctrl->volume.defs[id].name, DSS_MAX_NAME_LEN, volume_name);
+    errno_t errcode = strcpy_s(vg_ctrl->volume.defs[id].name, DSS_MAX_VOLUME_PATH_LEN, volume_name);
     DSS_SECUREC_SS_RETURN_IF_ERROR(errcode, CM_ERROR);
     vg_ctrl->volume.defs[id].flag = VOLUME_OCCUPY;
     vg_ctrl->volume.defs[id].id = id;

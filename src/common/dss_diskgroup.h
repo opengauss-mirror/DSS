@@ -46,7 +46,7 @@ extern "C" {
 
 // for lsvg
 typedef struct dss_volume_space_info_t {
-    char volume_name[DSS_MAX_NAME_LEN];
+    char volume_name[DSS_MAX_VOLUME_PATH_LEN];
     double volume_free;
     double volume_size;
     double volume_used;
