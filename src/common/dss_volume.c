@@ -76,7 +76,7 @@ status_t dss_open_volume(const char *name, const char *code, int flags, dss_volu
     }
 
     errno_t ret;
-    ret = snprintf_s(volume->name, DSS_MAX_NAME_LEN, DSS_MAX_NAME_LEN - 1, "%s", name);
+    ret = snprintf_s(volume->name, DSS_MAX_VOLUME_PATH_LEN, DSS_MAX_VOLUME_PATH_LEN - 1, "%s", name);
     DSS_SECUREC_SS_RETURN_IF_ERROR(ret, CM_ERROR);
     volume->name_p = name;
     return CM_SUCCESS;
@@ -223,7 +223,7 @@ status_t dss_open_volume_raw(const char *name, const char *code, int flags, dss_
         return CM_ERROR;
     }
 
-    errno_t ret = snprintf_s(volume->name, DSS_MAX_NAME_LEN, DSS_MAX_NAME_LEN - 1, "%s", name);
+    errno_t ret = snprintf_s(volume->name, DSS_MAX_VOLUME_PATH_LEN, DSS_MAX_VOLUME_PATH_LEN - 1, "%s", name);
     DSS_SECUREC_SS_RETURN_IF_ERROR(ret, CM_ERROR);
     volume->name_p = volume->name;
     return CM_SUCCESS;
@@ -380,7 +380,7 @@ status_t dss_open_volume_rbd(const char *name, const char *code, int flags, dss_
         LOG_RUN_INF("Ceph image %s/%s open success.\n", pool_name, image_name);
     }
 
-    ret = snprintf_s(volume->name, DSS_MAX_NAME_LEN, DSS_MAX_NAME_LEN - 1, "%s", name);
+    ret = snprintf_s(volume->name, DSS_MAX_VOLUME_PATH_LEN, DSS_MAX_VOLUME_PATH_LEN - 1, "%s", name);
     DSS_SECUREC_SS_RETURN_IF_ERROR(ret, CM_ERROR);
     volume->name_p = volume->name;
     volume->rds_cluster = cluster;

@@ -43,7 +43,7 @@ static status_t dsscmd_add_or_remove_volumn(dss_conn_t *conn, const char *vg_nam
     DSS_RETURN_IF_ERROR(dss_check_name(vg_name));
     DSS_RETURN_IF_ERROR(dss_put_str(send_pack, vg_name));
     // 2. volume_name
-    DSS_RETURN_IF_ERROR(dss_check_path(volume_name));
+    DSS_RETURN_IF_ERROR(dss_check_volume_path(volume_name));
     DSS_RETURN_IF_ERROR(dss_put_str(send_pack, volume_name));
 
     // send it and wait for ack

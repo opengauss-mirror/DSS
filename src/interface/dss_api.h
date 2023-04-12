@@ -66,6 +66,8 @@ typedef enum en_dss_log_id {
 #define DSS_SEEK_MAXWR 3                         /* Used for seek actual file size for openGauss */
 #define DSS_MAX_NAME_LEN 64                      /* Consistent with dss_defs.h */
 #define DSS_FILE_PATH_MAX_LENGTH (SIZE_K(1) + 1) /* Consistent with dss_defs.h */
+#define DSS_MAX_VOLUME_PATH_LEN 64               /* Consistent with dss_defs.h */
+
 /* make the dss handle start from this value, to be distinguished from file system handle value */
 #define DSS_HANDLE_BASE 0x20000000
 #define DSS_CONN_NEVER_TIMEOUT (-1)
