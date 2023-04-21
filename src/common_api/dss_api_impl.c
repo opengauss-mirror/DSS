@@ -1118,13 +1118,8 @@ status_t dss_open_file_impl(dss_conn_t *conn, const char *file_path, int flag, i
     return CM_SUCCESS;
 }
 
-static status_t dss_check_file_env(dss_conn_t *conn, int32 handle, int32 size, dss_file_context_t **context)
+status_t dss_latch_context_by_handle(dss_conn_t *conn, int32 handle, dss_file_context_t **context, dss_latch_mode_e latch_mode)
 {
-    if (size < 0) {
-        LOG_DEBUG_ERR("File size is invalid:%d.", size);
-        return CM_ERROR;
-    }
-
     dss_env_t *dss_env = dss_get_env();
     if (!dss_env->initialized) {
         DSS_THROW_ERROR(ERR_DSS_ENV_NOT_INITIALIZED);
@@ -1141,7 +1136,7 @@ static status_t dss_check_file_env(dss_conn_t *conn, int32 handle, int32 size, d
 
     dss_file_context_t *file_cxt = &dss_env->files[handle];
 
-    dss_latch_s(&file_cxt->latch);
+    dss_latch(&file_cxt->latch, latch_mode, ((dss_session_t *)conn->session)->id);
     if (file_cxt->flag == DSS_FILE_CONTEXT_FLAG_FREE) {
         dss_unlatch(&file_cxt->latch);
         LOG_DEBUG_ERR("Failed to r/w, file is closed, handle:%d, context id:%u.", handle, file_cxt->id);
@@ -1156,8 +1151,6 @@ static status_t dss_check_file_env(dss_conn_t *conn, int32 handle, int32 size, d
         return CM_ERROR;
     }
 
-    dss_unlatch(&file_cxt->latch);
-
     *context = file_cxt;
     return CM_SUCCESS;
 }
@@ -1169,9 +1162,7 @@ status_t dss_close_file_impl(dss_conn_t *conn, int handle)
     LOG_DEBUG_INF("dss close file entry, handle:%d", handle);
 
     dss_file_context_t *context = NULL;
-    DSS_RETURN_IF_ERROR(dss_check_file_env(conn, handle, 0, &context));
-
-    dss_latch_x(&context->latch);
+    DSS_RETURN_IF_ERROR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_EXCLUSIVE));
     fname = context->node->name;
 
     status_t ret = dss_close_file_on_server(conn, context->vg_item, context->fid, context->node->id);
@@ -1318,23 +1309,23 @@ int64 dss_seek_file_impl_core(dss_rw_param_t *param, int64 offset, int origin)
             DSS_THROW_ERROR(ERR_DSS_FILE_SEEK, context->vg_item->id, context->fid, offset, context->node->size);
             return CM_ERROR;
         }
-
-        if (need_refresh) {
-            new_offset = size + offset;
-#ifdef OPENGAUSS
-            if (DSS_SEEK_MAXWR == origin) {
-                new_offset = (int64)context->node->written_size;
-                LOG_DEBUG_INF("Success to seek(origin:%d) file:%s, offset:%lld, fsize:%llu, written_size:%llu.", origin,
-                    context->node->name, new_offset, context->node->size, context->node->written_size);
-            }
-#endif
-        }
         LOG_DEBUG_INF("Apply to refresh file, offset:%lld, size:%lld, need_refresh:%d.", offset, size, need_refresh);
+    }
+    if (origin == SEEK_END) {
+        new_offset = (int64)context->node->written_size + offset;
+    } else if (origin == DSS_SEEK_MAXWR) {
+        new_offset = (int64)context->node->written_size;
+    }
+    if (new_offset < 0) {
+        DSS_THROW_ERROR(ERR_DSS_FILE_SEEK, context->vg_item->id, context->fid, offset, context->node->size);
+        return CM_ERROR;
     }
     if (new_offset == 0) {
         context->vol_offset = 0;
     }
     context->offset = new_offset;
+    LOG_DEBUG_INF("Success to seek(origin:%d) file:%s, offset:%lld, fsize:%llu, written_size:%llu.", origin,
+        context->node->name, new_offset, context->node->size, context->node->written_size);
     return new_offset;
 }
 
@@ -1354,11 +1345,9 @@ int64 dss_seek_file_impl(dss_conn_t *conn, int handle, int64 offset, int origin)
     LOG_DEBUG_INF("dss seek file entry, handle:%d, offset:%lld, origin:%d", handle, offset, origin);
 
     dss_file_context_t *context = NULL;
-    DSS_RETURN_IF_ERROR(dss_check_file_env(conn, handle, 0, &context));
+    DSS_RETURN_IF_ERROR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_EXCLUSIVE));
 
     dss_rw_param_t param;
-
-    dss_latch_x(&context->latch);
     dss_init_rw_param(&param, conn, handle, context, context->offset, DSS_FALSE);
     int64 new_offset = dss_seek_file_impl_core(&param, offset, origin);
     dss_unlatch(&context->latch);
@@ -1761,11 +1750,14 @@ status_t dss_read_write_file(dss_conn_t *conn, int32 handle, void *buf, int32 si
     status_t status;
     dss_file_context_t *context = NULL;
     dss_rw_param_t param;
+
+    if (size < 0) {
+        LOG_DEBUG_ERR("File size is invalid: %d.", size);
+        return CM_ERROR;
+    }
     LOG_DEBUG_INF("dss read write file entry, handle:%d, is_read:%u", handle, is_read);
 
-    DSS_RETURN_IF_ERROR(dss_check_file_env(conn, handle, size, &context));
-
-    dss_latch_x(&context->latch);
+    DSS_RETURN_IF_ERROR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_EXCLUSIVE));
     dss_init_rw_param(&param, conn, handle, context, context->offset, DSS_FALSE);
     status = dss_read_write_file_core(&param, buf, size, read_size, is_read);
     dss_unlatch(&context->latch);
@@ -1796,11 +1788,6 @@ status_t dss_refresh_file_impl(dss_rw_param_t *param)
     int64 offset = param->offset;
 
     CM_ASSERT(param->handle == (int32)context->id);
-
-    if (offset > (int64)DSS_MAX_FILE_SIZE) {
-        LOG_DEBUG_ERR("Invalid parameter offset:%lld, context offset:%lld.", offset, context->offset);
-        return CM_ERROR;
-    }
     DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session, NULL);
     size = (int64)context->node->size;
     DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
@@ -1834,11 +1821,10 @@ status_t dss_pwrite_file_impl(dss_conn_t *conn, int handle, const void *buf, int
     status_t status;
     dss_file_context_t *context = NULL;
     dss_rw_param_t param;
-
-    CM_RETURN_IFERR(dss_check_file_env(conn, handle, size, &context));
+    
+    CM_RETURN_IFERR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
     LOG_DEBUG_INF("dss pwrite file %s, handle:%d, offset:%lld", context->node->name, handle, offset);
 
-    dss_latch_s(&context->latch);
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
     if (dss_refresh_file_impl(&param) != CM_SUCCESS) {
         dss_unlatch(&context->latch);
@@ -1853,18 +1839,14 @@ status_t dss_pwrite_file_impl(dss_conn_t *conn, int handle, const void *buf, int
 
 status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, long long offset, int *read_size)
 {
-    if (read_size == NULL) {
-        return CM_ERROR;
-    }
-
     status_t status;
     dss_file_context_t *context = NULL;
     dss_rw_param_t param;
 
-    LOG_DEBUG_INF("dss pread file entry, handle:%d, offset:%lld", handle, offset);
-    CM_RETURN_IFERR(dss_check_file_env(conn, handle, size, &context));
+    CM_RETURN_IFERR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
+    LOG_DEBUG_INF("dss pread file entry, name:%s, handle:%d, offset:%lld, size:%d", context->node->name,
+        handle, offset, size);
 
-    dss_latch_s(&context->latch);
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
     if (dss_refresh_file_impl(&param) != CM_SUCCESS) {
         dss_unlatch(&context->latch);
@@ -1928,12 +1910,10 @@ status_t dss_truncate_impl(dss_conn_t *conn, int handle, uint64 length)
     char *errmsg = NULL;
 
     dss_file_context_t *context = NULL;
-    DSS_RETURN_IF_ERROR(dss_check_file_env(conn, handle, 0, &context));
+    DSS_RETURN_IF_ERROR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_EXCLUSIVE));
 
     LOG_DEBUG_INF("Truncating file via handle(%d), file name: %s, node size: %lld, length: %lld.", handle,
         context->node->name, context->node->size, length);
-
-    dss_latch_x(&context->latch);
 
     uint64 fid = context->fid;
     ftid_t ftid = context->node->id;
@@ -2341,15 +2321,6 @@ status_t dss_get_fname_impl(int handle, char *fname, int fname_size)
     return CM_SUCCESS;
 }
 
-gft_node_t *dss_get_node_by_handle_impl(dss_conn_t *conn, int handle)
-{
-    dss_file_context_t *context = NULL;
-    if (dss_check_file_env(conn, handle, 0, &context) != CM_SUCCESS) {
-        return NULL;
-    }
-    return context->node;
-}
-
 static status_t get_fd(dss_rw_param_t *param, int32 size, bool32 is_read, int *fd, int64 *vol_offset)
 {
     status_t status = CM_SUCCESS;
@@ -2496,10 +2467,9 @@ status_t dss_get_fd_by_offset(
     dss_file_context_t *context = NULL;
     dss_rw_param_t param;
 
-    CM_RETURN_IFERR(dss_check_file_env(conn, handle, size, &context));
+    CM_RETURN_IFERR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
     LOG_DEBUG_INF("Begin get file fd in aio, filename:%s, handle:%d, offset:%lld", context->node->name, handle, offset);
 
-    dss_latch_s(&context->latch);
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
     status_t ret = dss_refresh_file_impl(&param);
     DSS_RETURN_IFERR2(ret, dss_unlatch(&context->latch));
@@ -2515,7 +2485,7 @@ status_t get_au_size_impl(dss_conn_t *conn, int handle, long long *au_size)
     dss_file_context_t *context = NULL;
 
     LOG_DEBUG_INF("get_au_size_impl, handle:%d", handle);
-    CM_RETURN_IFERR(dss_check_file_env(conn, handle, 0, &context));
+    CM_RETURN_IFERR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
 
     *au_size = context->vg_item->dss_ctrl->core.au_size;
     return CM_SUCCESS;
@@ -2649,6 +2619,47 @@ status_t dss_stop_server_impl(dss_conn_t *conn)
     }
     LOG_DEBUG_INF("dss stop server leave");
     return CM_SUCCESS;
+}
+
+status_t dss_set_stat_info(dss_stat_info_t item, gft_node_t *node)
+{
+    item->type = node->type;
+    item->size = node->size;
+    item->written_size = node->written_size;
+    item->create_time = node->create_time;
+    item->update_time = node->update_time;
+    int32 errcode = memcpy_s(item->name, DSS_MAX_NAME_LEN, node->name, DSS_MAX_NAME_LEN);
+    if (SECUREC_UNLIKELY(errcode != EOK)) {
+        DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
+        return DSS_ERROR;
+    }
+    return DSS_SUCCESS;
+}
+
+status_t dss_fstat_impl(dss_conn_t *conn, int handle, dss_stat_info_t item)
+{
+    dss_file_context_t *context = NULL;
+    DSS_RETURN_IF_ERROR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
+    status_t ret = dss_set_stat_info(item, context->node);
+    dss_unlatch(&context->latch);
+    return ret;
+}
+
+status_t dss_get_phy_size_impl(dss_conn_t *conn, int handle, long long *size)
+{
+    dss_file_context_t *context = NULL;
+    DSS_RETURN_IF_ERROR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
+
+    dss_block_id_t blockid;
+    dss_set_blockid(&blockid, DSS_INVALID_ID64);
+    status_t status = dss_apply_refresh_file(conn, context, blockid);
+    if (status != DSS_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to apply refresh file,fid:%llu.", context->fid);
+        return DSS_ERROR;
+    }
+    *size = context->node->size;
+    dss_unlatch(&context->latch);
+    return status;
 }
 
 #ifdef __cplusplus
