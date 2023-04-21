@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include "dss_errno.h"
 #include "dss_interaction.h"
+#include "dss_api.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -81,6 +82,8 @@ status_t dss_rename_file_impl(dss_conn_t *conn, const char *src, const char *dst
 status_t dss_truncate_impl(dss_conn_t *conn, int handle, uint64 length);
 status_t dss_add_volume_impl(dss_conn_t *conn, const char *vg_name, const char *volume_name);
 status_t dss_remove_volume_impl(dss_conn_t *conn, const char *vg_name, const char *volume_name);
+status_t dss_fstat_impl(dss_conn_t *conn, int handle, dss_stat_info_t item);
+status_t dss_set_stat_info(dss_stat_info_t item, gft_node_t *node);
 
 status_t dss_set_session_sync(dss_conn_t *conn);
 status_t dss_init_vol_handle_sync(dss_conn_t *conn);
@@ -97,7 +100,6 @@ status_t dss_get_fname_impl(int handle, char *fname, int fname_size);
 status_t dss_pwrite_file_impl(dss_conn_t *conn, int handle, const void *buf, int size, long long offset);
 status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, long long offset, int *read_size);
 gft_node_t *dss_get_node_by_path_impl(dss_conn_t *conn, const char *path);
-gft_node_t *dss_get_node_by_handle_impl(dss_conn_t *conn, int handle);
 status_t dss_get_fd_by_offset(
     dss_conn_t *conn, int handle, long long offset, int32 size, bool32 is_read, int *fd, int64 *vol_offset);
 status_t get_au_size_impl(dss_conn_t *conn, int handle, long long *au_size);
@@ -105,6 +107,7 @@ status_t dss_setcfg_impl(dss_conn_t *conn, const char *name, const char *value, 
 status_t dss_getcfg_impl(dss_conn_t *conn, const char *name, char *out_str, size_t str_len);
 status_t dss_stop_server_impl(dss_conn_t *conn);
 void dss_get_api_volume_error(void);
+status_t dss_get_phy_size_impl(dss_conn_t *conn, int handle, long long *size);
 
 #define DSS_SET_PTR_VALUE_IF_NOT_NULL(ptr, value) \
     do {                                          \
