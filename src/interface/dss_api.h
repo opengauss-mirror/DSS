@@ -99,7 +99,7 @@ typedef struct st_dss_stat {
 #define DSS_LOCAL_MINOR_VER_WEIGHT 1000
 #define DSS_LOCAL_MAJOR_VERSION 0
 #define DSS_LOCAL_MINOR_VERSION 0
-#define DSS_LOCAL_VERSION 3
+#define DSS_LOCAL_VERSION 4
 
 typedef struct st_dss_dirent *dss_dir_item_t;
 typedef struct st_dss_stat *dss_stat_info_t;
@@ -145,7 +145,8 @@ DSS_DECLARE int dss_align_size(int size);
 DSS_DECLARE int dss_get_au_size(int handle, long long *au_size);
 // log
 DSS_DECLARE void dss_get_error(int *errcode, const char **errmsg);
-DSS_DECLARE void dss_register_log_callback(dss_log_output cb_log_output);
+DSS_DECLARE void dss_register_log_callback(dss_log_output cb_log_output, unsigned int log_level);
+DSS_DECLARE void dss_set_log_level(unsigned int log_level);
 DSS_DECLARE int dss_init_logger(char *log_home, unsigned int log_level, unsigned int log_backup_file_count, unsigned long long log_max_file_size);
 DSS_DECLARE void dss_refresh_logger(char *log_field, unsigned long long *value);
 // connection

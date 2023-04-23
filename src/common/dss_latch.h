@@ -27,6 +27,10 @@
 
 #include "cm_latch.h"
 
+typedef enum en_dss_latch_mode {
+    LATCH_MODE_SHARE = 0,
+    LATCH_MODE_EXCLUSIVE = 1
+} dss_latch_mode_e;
 #define SPIN_SLEEP_TIME 500
 #define SPIN_WAIT_FOREVER (-1)
 #define DSS_CLIENT_TIMEOUT_COUNT 30
@@ -40,4 +44,9 @@ typedef bool32 (*latch_should_exit)(void);
 void dss_latch_s(latch_t *latch);
 void dss_latch_x(latch_t *latch);
 void dss_unlatch(latch_t *latch);
+void dss_latch_x2(latch_t *latch, uint32 sid);
+static inline void dss_latch(latch_t *latch, dss_latch_mode_e latch_mode, uint32 sid)
+{
+    latch_mode == LATCH_MODE_SHARE ? cm_latch_s(latch, sid, CM_FALSE, NULL) : cm_latch_x(latch, sid, NULL);
+}
 #endif
