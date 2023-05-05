@@ -101,7 +101,7 @@ static void dss_clt_env_init(void)
         if (g_dss_conn_info.isinit == CM_FALSE) {
             status_t status = cm_launch_thv(GLOBAL_THV_OBJ0, NULL, dss_conn_create, dss_conn_release);
             if (status != CM_SUCCESS) {
-                DSS_THROW_ERROR(ERR_SYSTEM_CALL, "Dss client initialization failed.");
+                LOG_RUN_ERR("Dss client initialization failed.");
                 cm_unlatch(&g_dss_conn_info.conn_latch, NULL);
                 return;
             }
@@ -120,23 +120,20 @@ static status_t dss_conn_retry(dss_conn_t *conn)
         // avoid buffer leak when disconnect
         dss_free_packet_buffer(&conn->pack);
         status = dss_connect(dss_get_inst_path(), NULL, NULL, conn);
-        DSS_BREAK_IFERR2(status, DSS_THROW_ERROR(ERR_SYSTEM_CALL, "Dss client connet server failed."));
+        DSS_BREAK_IFERR2(status, LOG_RUN_ERR("Dss client connet server failed."));
         char *home = NULL;
         status = dss_get_home_sync(conn, &home);
-        DSS_BREAK_IFERR3(
-            status, DSS_THROW_ERROR(ERR_SYSTEM_CALL, "Dss client get home from server failed."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client get home from server failed."), dss_disconnect(conn));
 
         uint32 max_open_file = DSS_MAX_OPEN_FILES;
         status = dss_init(max_open_file, home);
-        DSS_BREAK_IFERR3(status, DSS_THROW_ERROR(ERR_SYSTEM_CALL, "Dss client init failed."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client init failed."), dss_disconnect(conn));
 
         status = dss_set_session_sync(conn);
-        DSS_BREAK_IFERR3(
-            status, DSS_THROW_ERROR(ERR_SYSTEM_CALL, "Dss client failed to initialize session."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client failed to initialize session."), dss_disconnect(conn));
 
         status = dss_init_vol_handle_sync(conn);
-        DSS_BREAK_IFERR3(
-            status, DSS_THROW_ERROR(ERR_SYSTEM_CALL, "Dss client init vol handle failed."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client init vol handle failed."), dss_disconnect(conn));
 
         g_dss_conn_info.conn_num++;
     } while (0);
