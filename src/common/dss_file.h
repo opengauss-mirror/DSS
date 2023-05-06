@@ -40,6 +40,7 @@ status_t dss_make_dir(dss_session_t *session, const char *parent, const char *di
 status_t dss_open_dir(dss_session_t *session, const char *dir_path, bool32 is_refresh);
 void dss_close_dir(dss_session_t *session, char *vg_name, uint64 ftid);
 status_t dss_find_vg_by_dir(const char *dir_path, char *name, dss_vg_info_item_t **vg_item);
+void dss_lock_vg_mem_s_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_unlock_vg_mem_and_shm(dss_session_t *session, dss_vg_info_item_t *vg_item);
@@ -79,6 +80,7 @@ gft_node_t *dss_find_ft_node(dss_vg_info_item_t *vg_item, gft_node_t *parent_nod
 char *dss_find_ft_block_latch(dss_vg_info_item_t *vg_item, ftid_t ftid, ga_obj_id_t *out_obj_id);
 gft_node_t *dss_get_ft_node_by_ftid(
     dss_vg_info_item_t *vg_item, ftid_t id, bool32 check_version, bool32 active_refresh);
+gft_node_t *dss_get_ft_node_by_ftid_no_refresh(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id);
 dss_ft_block_t *dss_get_ft_block_by_node(gft_node_t *node);
 status_t dss_update_ft_block_disk(dss_vg_info_item_t *vg_item, dss_ft_block_t *block, ftid_t id);
 int64 dss_get_ft_block_offset(dss_vg_info_item_t *vg_item, ftid_t id);
@@ -135,6 +137,8 @@ status_t dss_refresh_vginfo(dss_vg_info_item_t *vg_item);
 status_t dss_get_fs_block_info_by_offset(
     int64 offset, uint64 au_size, uint32 *block_count, uint32 *block_au_count, uint32 *au_offset);
 status_t dss_check_open_file_remote(const char *vg_name, uint64 ftid, bool32 *is_open);
+status_t dss_clean_file_meta(dss_session_t *session, uint64 ftid, const char *vg_name);
+status_t dss_check_with_clean_meta(dss_session_t *session, const char *vg_name, uint64 ftid, bool32 *is_open);
 void dss_mv_to_recycle_dir(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node);
 status_t dss_recycle_empty_file(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node);

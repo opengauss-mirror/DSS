@@ -243,6 +243,12 @@ status_t dss_find_vg_by_dir(const char *dir_path, char *name, dss_vg_info_item_t
     return CM_SUCCESS;
 }
 
+void dss_lock_vg_mem_s_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item)
+{
+    dss_lock_vg_mem_s(vg_item);
+    dss_lock_shm_meta_x(session, vg_item->vg_latch);
+}
+
 void dss_lock_vg_mem_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
     dss_lock_vg_mem_x(vg_item);
@@ -2226,6 +2232,34 @@ gft_node_t *dss_get_ft_node_by_ftid(dss_vg_info_item_t *vg_item, ftid_t id, bool
     return NULL;
 }
 
+gft_node_t *dss_get_ft_node_by_ftid_no_refresh(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id)
+{
+    dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
+    if (is_ft_root_block(id)) {
+        char *root = dss_ctrl->root;
+        dss_root_ft_block_t *ft_block = (dss_root_ft_block_t *)(root);
+        if (id.item < ft_block->ft_block.node_num) {
+            return (gft_node_t *)((root + sizeof(dss_root_ft_block_t)) + id.item * sizeof(gft_node_t));
+        }
+    } else {
+        dss_block_id_t block_id = id;
+        block_id.item = 0;
+        dss_ft_block_t *block = (dss_ft_block_t *)dss_find_block_in_shm_no_refresh(session, vg_item, block_id, DSS_BLOCK_TYPE_FT);
+        if (block == NULL) {
+            LOG_DEBUG_ERR("Failed to find block:%llu in mem.", *(uint64 *)&block_id);
+            return NULL;
+        }
+
+        if (block->node_num <= id.item) {
+            LOG_DEBUG_ERR("The block is wrong, node_num:%u, item:%u.", block->node_num, (uint32)id.item);
+            return NULL;
+        }
+
+        return (gft_node_t *)(((char *)block + sizeof(dss_ft_block_t)) + id.item * sizeof(gft_node_t));
+    }
+    return NULL;
+}
+
 char *dss_get_ft_block_by_ftid(dss_vg_info_item_t *vg_item, ftid_t id)
 {
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
@@ -3108,6 +3142,56 @@ status_t dss_refresh_file(dss_session_t *session, uint64 fid, ftid_t ftid, char 
     return ret;
 }
 
+// no need to update meta from disk here
+static status_t dss_clean_file_meta_core(dss_vg_info_item_t *vg_item, uint64 ftid)
+{
+    gft_node_t *node = dss_get_ft_node_by_ftid_no_refresh(NULL, vg_item, *(dss_block_id_t *)&ftid);
+    if (!node) {
+        LOG_DEBUG_INF("Failed to find ftid, ftid:%llu.", ftid);
+        return CM_SUCCESS;
+    }
+
+    LOG_DEBUG_INF("clean meta cache of file:%s, curr size:%llu, refresh ft id:%llu, refresh entry id:%llu", node->name,
+        node->size, ftid, *(uint64 *)&(node->entry));
+    
+    // clean the fs block shm
+    dss_fs_block_t *block =
+        (dss_fs_block_t *)dss_find_block_in_shm_no_refresh(NULL, vg_item, node->entry, DSS_BLOCK_TYPE_FS);
+    if (block != NULL) {
+        for (uint16 i = 0; i < block->head.used_num; i++) {
+            bool32 cmp = dss_cmp_blockid(block->bitmap[i], CM_INVALID_ID64);
+            if (cmp != 0) {
+                continue;
+            }
+            dss_fs_block_t *sec_block =
+                (dss_fs_block_t *)dss_find_block_in_shm_no_refresh(NULL, vg_item, block->bitmap[i], DSS_BLOCK_TYPE_FS);
+            if (sec_block != NULL) {
+                    dss_unregister_buffer_cache(vg_item, block->bitmap[i]);
+            }
+        }
+        dss_unregister_buffer_cache(vg_item, node->entry);
+    }
+
+    // clean the ft block shm
+    dss_unregister_buffer_cache(vg_item, *(dss_block_id_t *)&ftid);
+
+    return CM_SUCCESS;
+}
+
+status_t dss_clean_file_meta(dss_session_t *session, uint64 ftid, const char *vg_name)
+{
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
+    if (vg_item == NULL) {
+        DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("Failed to find vg, vg_name %s:.", vg_name),
+            DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name));
+    }
+
+    dss_lock_vg_mem_s_and_shm_x(session, vg_item);
+    status_t ret = dss_clean_file_meta_core(vg_item, ftid);
+    dss_unlock_vg_mem_and_shm(session, vg_item);
+    return ret;
+}
+
 void dss_init_root_fs_block(dss_ctrl_t *dss_ctrl)
 {
     CM_ASSERT(dss_ctrl != NULL);
@@ -3204,6 +3288,18 @@ status_t dss_check_open_file_remote(const char *vg_name, uint64 ftid, bool32 *is
     status_t status = dss_check_open_file(vg_item, ftid, is_open);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check open file, vg: %s, ftid:%llu.", vg_name, ftid));
     return CM_SUCCESS;
+}
+
+status_t dss_check_with_clean_meta(dss_session_t *session, const char *vg_name, uint64 ftid, bool32 *is_open)
+{
+    status_t status = dss_check_open_file_remote(vg_name, ftid, is_open);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    if (!(*is_open)) {
+        status = dss_clean_file_meta(session, ftid, vg_name);
+    }
+    return status;
 }
 
 status_t dss_refresh_ft_block(dss_session_t *session, char *vg_name, uint32 vgid, dss_block_id_t blockid)
