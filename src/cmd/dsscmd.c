@@ -376,11 +376,17 @@ static status_t cmd_check_inq_type(const char *inq_type)
 
 static status_t cmd_check_disk_id(const char *id_str)
 {
-    for (uint32 i = 0; i < strlen(id_str); i++) {
-        if (!isdigit((int)id_str[i])) {
-            DSS_PRINT_ERROR("The name's letter of disk id should be digit.\n");
-            return CM_ERROR;
-        }
+    uint64 id = 0;
+    status_t status = cm_str2uint64(id_str, &id);
+    if (status == CM_ERROR) {
+        DSS_PRINT_ERROR("id_str:%s is not a valid uint64\n", id_str);
+        return CM_ERROR;
+    }
+    dss_block_id_t *block_id = (dss_block_id_t *)&id;
+    printf("id = %llu: \n", id);
+    if (block_id->volume >= DSS_MAX_VOLUMES) {
+        DSS_PRINT_ERROR("block_id is invalid, volume:%u.\n", (uint32)block_id->volume);
+        return CM_ERROR;
     }
     return CM_SUCCESS;
 }
