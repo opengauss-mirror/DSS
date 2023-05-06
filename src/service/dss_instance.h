@@ -76,7 +76,7 @@ typedef struct st_dss_cm_res {
 typedef struct st_dss_instance {
     int32 lock_fd;
     spinlock_t switch_lock;
-    dss_config_t inst_cfg;  // instance config_
+    dss_config_t inst_cfg;
     dss_instance_status_t status;
     uds_lsnr_t lsnr;
     // HYJ: reform_ctx_t rf_ctx;
@@ -112,6 +112,7 @@ status_t dss_recover_when_change_status(dss_instance_t *inst);
 uint32 dss_get_cm_lock_owner(dss_instance_t *inst);
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id);
 void dss_get_cm_lock_and_recover(dss_instance_t *inst);
+void dss_no_cm_recover(dss_instance_t *inst);
 
 #ifdef __cplusplus
 }
