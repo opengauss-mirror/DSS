@@ -483,12 +483,6 @@ static status_t print_ftn_by_id(dss_volume_t volume, char *block, uint64 node_id
 status_t printf_dss_file_table_block(
     dss_volume_ctrl_t *volume_ctrl, dss_core_ctrl_t *core_ctrl, dss_block_id_t *id, uint64 node_id)
 {
-    if (id->volume >= DSS_MAX_VOLUMES) {
-        LOG_DEBUG_ERR("block_id is invalid, volume:%u.", (uint32)id->volume);
-        DSS_PRINT_ERROR("block_id is invalid, volume:%u.\n", (uint32)id->volume);
-        return CM_ERROR;
-    }
-
     int64 offset;
     dss_volume_t volume;
     status_t status = dss_open_volume(volume_ctrl->defs[id->volume].name, NULL, DSS_CLI_OPEN_FLAG, &volume);
@@ -576,7 +570,7 @@ static status_t print_fsb_by_id(dss_volume_t volume, char *block, uint64 node_id
 
     if (node_id == DSS_DEFAULT_NODE_ID) {
         for (uint32 i = 0; i < size; ++i) {
-            node = (dss_block_id_t *)(block + sizeof(dss_ft_block_t) + i * sizeof(dss_block_id_t));
+            node = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + i * sizeof(dss_block_id_t));
             printf("bitmap[%u] = {\n", i);
             printf_auid(node);
             printf("}\n");
@@ -586,7 +580,7 @@ static status_t print_fsb_by_id(dss_volume_t volume, char *block, uint64 node_id
             DSS_PRINT_ERROR("node_id should be in range 0-%u.\n", size - 1);
             return CM_ERROR;
         }
-        node = (dss_block_id_t *)(block + sizeof(dss_ft_block_t) + node_id * sizeof(dss_block_id_t));
+        node = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + node_id * sizeof(dss_block_id_t));
         printf("bitmap[%llu] = {\n", node_id);
         printf_auid(node);
         printf("}\n");
@@ -598,12 +592,6 @@ static status_t print_fsb_by_id(dss_volume_t volume, char *block, uint64 node_id
 static status_t printf_dss_file_space_block(
     dss_volume_ctrl_t *volume_ctrl, dss_core_ctrl_t *core_ctrl, dss_block_id_t *id, uint64 node_id)
 {
-    if (id->volume >= DSS_MAX_VOLUMES) {
-        LOG_DEBUG_ERR("block_id is invalid, volume:%u.", (uint32)id->volume);
-        DSS_PRINT_ERROR("block_id is invalid, volume is:%u.\n", (uint32)id->volume);
-        return CM_ERROR;
-    }
-
     status_t status;
     int64 offset;
     dss_volume_t volume;
@@ -641,11 +629,6 @@ static int64 dss_get_type_offset(const dss_core_ctrl_t *core_ctrl, const dss_blo
 static status_t dss_get_block_type(
     dss_volume_ctrl_t *volume_ctrl, dss_core_ctrl_t *core_ctrl, dss_block_id_t *id, uint32_t *type)
 {
-    if (id->volume >= DSS_MAX_VOLUMES) {
-        LOG_DEBUG_ERR("block_id is invalid, volume:%u.", (uint32)id->volume);
-        return CM_ERROR;
-    }
-
     status_t status;
     int64 offset;
     dss_volume_t volume;
