@@ -112,7 +112,7 @@ static void dss_check_file_open(dss_session_t *se, mes_message_t *msg)
         LOG_DEBUG_ERR("Failed to find vg, %s.", check->vg_name);
         return;
     }
-    status = dss_check_open_file_remote(check->vg_name, check->ftid, &is_open);
+    status = dss_check_with_clean_meta(se, check->vg_name, check->ftid, &is_open);
     if (is_open) {
         LOG_DEBUG_INF(
             "The file is opened when notify check file open, vg :%s, ftid: %llu.", check->vg_name, check->ftid);
