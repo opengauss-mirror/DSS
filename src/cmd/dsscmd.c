@@ -83,9 +83,9 @@ config_item_t g_dss_admin_parameters[] = {
     /* log */
     { "LOG_HOME",                  CM_TRUE, CM_TRUE,  "",      NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL, 0,
         EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_BACKUP_FILE_COUNT",    CM_TRUE, CM_FALSE, "10",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL, 1,
+    { "_LOG_BACKUP_FILE_COUNT",    CM_TRUE, CM_FALSE, "20",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL, 1,
         EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_MAX_FILE_SIZE",        CM_TRUE, CM_FALSE, "10M",   NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL, 2,
+    { "_LOG_MAX_FILE_SIZE",        CM_TRUE, CM_FALSE, "256M",  NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL, 2,
         EFFECT_REBOOT, CFG_INS, NULL, NULL },
     { "_LOG_FILE_PERMISSIONS",     CM_TRUE, CM_FALSE, "600",   NULL, NULL, "-", "[600-777]", "GS_TYPE_INTEGER", NULL, 3,
         EFFECT_REBOOT, CFG_INS, NULL, NULL },
@@ -93,9 +93,9 @@ config_item_t g_dss_admin_parameters[] = {
         EFFECT_REBOOT, CFG_INS, NULL, NULL },
     { "_LOG_LEVEL",                CM_TRUE, CM_FALSE, "7",     NULL, NULL, "-", "[0,4087]",  "GS_TYPE_INTEGER", NULL, 5,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_AUDIT_BACKUP_FILE_COUNT",  CM_TRUE, CM_FALSE, "10",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL, 6,
+    { "_AUDIT_BACKUP_FILE_COUNT",  CM_TRUE, CM_FALSE, "20",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL, 6,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_AUDIT_MAX_FILE_SIZE",      CM_TRUE, CM_FALSE, "10M",   NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL, 7,
+    { "_AUDIT_MAX_FILE_SIZE",      CM_TRUE, CM_FALSE, "256M",  NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL, 7,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "LSNR_PATH",                 CM_TRUE, CM_FALSE, "/tmp/", NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL, 8,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
@@ -3038,7 +3038,6 @@ static status_t dss_cmd_append_oper_log(char *log_buf, void *buf, uint32 *offset
 
 static void dss_cmd_oper_log(int argc, char **argv, status_t status)
 {
-    char date[CM_MAX_TIME_STRLEN] = {0};
     char log_buf[CM_MAX_LOG_CONTENT_LENGTH] = {0};
     uint32 offset = 0;
 
@@ -3046,8 +3045,6 @@ static void dss_cmd_oper_log(int argc, char **argv, status_t status)
         return;
     }
 
-    (void)cm_date2str(g_timer()->now, "yyyy-mm-dd hh24:mi:ss.ff3", date, CM_MAX_TIME_STRLEN);
-    DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, date, &offset));
     DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, "|dsscmd", &offset));
 
     for (int i = 1; i < argc; i++) {
@@ -3055,11 +3052,13 @@ static void dss_cmd_oper_log(int argc, char **argv, status_t status)
         DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, argv[i], &offset));
     }
 
-    if (status != CM_SUCCESS) {
-        DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, ". execute result error.", &offset));
-    } else {
-        DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, ". execute result success.", &offset));
+    char result[DSS_MAX_PATH_BUFFER_SIZE];
+    int32 ret = snprintf_s(
+        result, DSS_MAX_PATH_BUFFER_SIZE, DSS_MAX_PATH_BUFFER_SIZE - 1, ". execute result %d.", (int32)status);
+    if (ret == -1) {
+        return;
     }
+    DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, result, &offset));
 
     if (offset + 1 > CM_MAX_LOG_CONTENT_LENGTH) {
         DSS_PRINT_ERROR("Oper log len %u exceeds max %u.\n", offset, CM_MAX_LOG_CONTENT_LENGTH);
