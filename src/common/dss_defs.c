@@ -190,10 +190,8 @@ static status_t cm_text2real(const text_t *text_src, double *value)
     cm_trim_text(&text);
 
     if (text.len > DSS_MAX_REAL_INPUT_STRLEN) {
-        CM_THROW_ERROR_EX(ERR_DSS_STRING_TOO_LONG,
-            "Convert double failed, the length(%u) of text can't be larger than %u, text = %s", text.len,
-            DSS_MAX_REAL_INPUT_STRLEN, T2S(&text));
-        return ERR_DSS_STRING_TOO_LONG;
+        CM_THROW_ERROR(ERR_DSS_STRING_TOO_LONG, text.len, DSS_MAX_REAL_INPUT_STRLEN, T2S(&text));
+        return CM_ERROR;
     }
     CM_RETURN_IFERR(cm_text2str(&text, buf, DSS_MAX_REAL_INPUT_STRLEN + 1));
 
@@ -340,9 +338,7 @@ status_t cm_text2bigint(const text_t *text_src, int64 *value)
     cm_trim_text(&text);
 
     if (text.len > CM_MAX_NUMBER_LEN) {
-        CM_THROW_ERROR_EX(ERR_SYSTEM_CALL,
-            "Convert int64 failed, the length of text can't be larger than %u, text = %s", CM_MAX_NUMBER_LEN,
-            T2S(&text));
+        CM_THROW_ERROR(ERR_DSS_STRING_TOO_LONG, text.len, CM_MAX_NUMBER_LEN, T2S(&text));
         return CM_ERROR;
     }
 

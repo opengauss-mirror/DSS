@@ -68,7 +68,7 @@ status_t cm_create_thv_ctrl(void)
 {
     int32 ret = pthread_key_create(&g_thv_key, cm_destroy_thv);
     if (ret != EOK) {
-        DSS_THROW_ERROR(ERR_SYSTEM_CALL, "g_thv_key", ret, "call pthread_key_create failed");
+        LOG_RUN_ERR("call pthread_key_create failed");
         return CM_ERROR;
     }
     errno_t errcode =
@@ -81,14 +81,14 @@ status_t cm_set_thv_args_by_id(
     thv_type_e var_type, init_thv_func init, create_thv_func create, release_thv_func release)
 {
     if (var_type >= MAX_THV_TYPE) {
-        DSS_THROW_ERROR(ERR_SYSTEM_CALL, "g_thv_key", var_type, "Invalid var type");
+        LOG_RUN_ERR("invalid var type %u", (uint32)var_type);
         return CM_ERROR;
     }
 
     g_thv_ctrl_func[var_type].init = init;
 
     if (create == NULL) {
-        DSS_THROW_ERROR(ERR_SYSTEM_CALL, "g_thv_ctrl_func.create", -1, "create_thv_func cannot be null");
+        LOG_RUN_ERR("create_thv_func cannot be null");
         return CM_ERROR;
     }
     g_thv_ctrl_func[var_type].create = create;
@@ -111,13 +111,13 @@ status_t cm_get_thv(thv_type_e var_type, pointer_t *result)
     if (g_thv_addr[var_type] == NULL) {
         int32 ret = g_thv_ctrl_func[var_type].create(&g_thv_addr[var_type]);
         if (ret != EOK) {
-            DSS_THROW_ERROR(ERR_SYSTEM_CALL, "g_thv_ctrl_func.create", var_type, "create thread variable failed");
+            LOG_RUN_ERR("create thread variable failed, var_type %u", (uint32)var_type);
             return CM_ERROR;
         }
         if (!g_thv_spec) {
             ret = pthread_setspecific(g_thv_key, g_thv_addr);
             if (ret != EOK) {
-                DSS_THROW_ERROR(ERR_SYSTEM_CALL, "g_thv_key", ret, "call pthread_setspecific failed");
+                LOG_RUN_ERR("call pthread_setspecific failed");
                 return CM_ERROR;
             }
             g_thv_spec = CM_TRUE;
