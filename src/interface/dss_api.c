@@ -57,7 +57,9 @@ extern "C" {
 
 #define HANDLE_VALUE(handle) ((handle) - (DSS_HANDLE_BASE))
 #define DB_DSS_DEFAULT_UDS_PATH "UDS:/tmp/.dss_unix_d_socket"
-#define DSS_CONN_DEFAULT_TIME_OUT 30000
+/* A node is deleted only when it fails to be started for 5 consecutive times within 30 seconds.
+   Therefore, the startup failure time cannot exceed 6 seconds. */
+#define DSS_CONN_DEFAULT_TIME_OUT 3000
 #define DSS_CONN_RETRY_INTERVAL 5
 char g_dss_inst_path[CM_MAX_PATH_LEN] = {0};
 typedef struct st_dss_conn_info {
