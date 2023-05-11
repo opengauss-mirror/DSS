@@ -3374,9 +3374,22 @@ status_t dss_update_file_written_size(
         DSS_RETURN_IFERR3(CM_ERROR, dss_unlock_vg_mem(vg_item),
             LOG_DEBUG_ERR("Failed to find FTN, ftid: %llu.", *(uint64 *)&blockid));
     }
+    if (written_size > (uint64)node->size) {
+        DSS_THROW_ERROR(ERR_DSS_FILE_INVALID_WRITTEN_SIZE, written_size);
+        LOG_DEBUG_ERR(
+            "Invalid written size:%llu, bigger than file:%s size: %llu", written_size, node->name, (uint64)node->size);
+        dss_unlock_vg_mem(vg_item);
+        return CM_ERROR;
+    }
 
-    node->written_size = node->written_size > written_size ? node->written_size : written_size;
-    cm_assert((bool32)node->written_size <= node->size);
+    if (node->written_size >= written_size) {
+        LOG_DEBUG_INF("No need to update written_size:%llu of file:%s, node size:%llu.", node->written_size, node->name,
+            node->size);
+        dss_unlock_vg_mem(vg_item);
+        return CM_SUCCESS;
+    }
+
+    node->written_size = written_size;
     dss_ft_block_t *cur_block = dss_get_ft_block_by_node(node);
     status_t status = dss_update_ft_block_disk(vg_item, cur_block, node->id);
     LOG_DEBUG_INF(

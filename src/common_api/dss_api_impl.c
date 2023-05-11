@@ -2785,7 +2785,7 @@ status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long o
     dss_unlatch(&context->latch);
     LOG_DEBUG_INF("end post pwrite in aio leave, result:%d", status);
 
-    return DSS_SUCCESS;
+    return status;
 }
 
 #ifdef __cplusplus
