@@ -772,10 +772,11 @@ int32 dss_init_logger(char *log_home, unsigned int log_level, unsigned int log_b
     log_param->audit_backup_file_count = log_backup_file_count;
     log_param->max_log_file_size = log_max_file_size;
     log_param->max_audit_file_size = log_max_file_size;
-    log_param->log_compressed = DSS_TRUE;
-    log_param->log_compress_buf = malloc(CM_LOG_COMPRESS_BUFSIZE);
     if (log_param->log_compress_buf == NULL) {
-        return ERR_DSS_INIT_LOGGER_FAILED;
+        log_param->log_compress_buf = malloc(CM_LOG_COMPRESS_BUFSIZE);
+        if (log_param->log_compress_buf == NULL) {
+            return ERR_DSS_INIT_LOGGER_FAILED;
+        }
     }
     cm_log_set_file_permissions(600);
     cm_log_set_path_permissions(700);
