@@ -2252,7 +2252,7 @@ gft_node_t *dss_get_ft_node_by_ftid_no_refresh(dss_session_t *session, dss_vg_in
     } else {
         dss_block_id_t block_id = id;
         block_id.item = 0;
-        dss_ft_block_t *block = (dss_ft_block_t *)dss_find_block_in_shm_no_refresh(session, vg_item, block_id, DSS_BLOCK_TYPE_FT);
+        dss_ft_block_t *block = (dss_ft_block_t *)dss_find_block_in_shm_no_refresh(session, vg_item, block_id, DSS_BLOCK_TYPE_FT, NULL);
         if (block == NULL) {
             LOG_DEBUG_ERR("Failed to find block:%llu in mem.", *(uint64 *)&block_id);
             return NULL;
@@ -3132,7 +3132,8 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
         cm_fync_logfile();
         _exit(1);
     }
-
+    // clean the truncate block shm info, at present, clean all first
+    dss_clean_file_meta_core(vg_item, *(uint64 *)&ftid);
     // release resources
     dss_unlock_vg_mem_and_shm(session, vg_item);
     LOG_DEBUG_INF(
@@ -3184,39 +3185,39 @@ status_t dss_refresh_file(dss_session_t *session, uint64 fid, ftid_t ftid, char 
 }
 
 // no need to update meta from disk here
-static status_t dss_clean_file_meta_core(dss_vg_info_item_t *vg_item, uint64 ftid)
+void dss_clean_file_meta_core(dss_vg_info_item_t *vg_item, uint64 ftid)
 {
     gft_node_t *node = dss_get_ft_node_by_ftid_no_refresh(NULL, vg_item, *(dss_block_id_t *)&ftid);
     if (!node) {
         LOG_DEBUG_INF("Failed to find ftid, ftid:%llu.", ftid);
-        return CM_SUCCESS;
+        return;
     }
-
-    LOG_DEBUG_INF("clean meta cache of file:%s, curr size:%llu, refresh ft id:%llu, refresh entry id:%llu", node->name,
-        node->size, ftid, *(uint64 *)&(node->entry));
     
     // clean the fs block shm
+    ga_obj_id_t out_obj_id;
     dss_fs_block_t *block =
-        (dss_fs_block_t *)dss_find_block_in_shm_no_refresh(NULL, vg_item, node->entry, DSS_BLOCK_TYPE_FS);
+        (dss_fs_block_t *)dss_find_block_in_shm_no_refresh(NULL, vg_item, node->entry, DSS_BLOCK_TYPE_FS, &out_obj_id);
     if (block != NULL) {
         for (uint16 i = 0; i < block->head.used_num; i++) {
             bool32 cmp = dss_cmp_blockid(block->bitmap[i], CM_INVALID_ID64);
             if (cmp != 0) {
                 continue;
             }
+            ga_obj_id_t out_obj_id2;
             dss_fs_block_t *sec_block =
-                (dss_fs_block_t *)dss_find_block_in_shm_no_refresh(NULL, vg_item, block->bitmap[i], DSS_BLOCK_TYPE_FS);
+                (dss_fs_block_t *)dss_find_block_in_shm_no_refresh(NULL, vg_item, block->bitmap[i], DSS_BLOCK_TYPE_FS, &out_obj_id2);
             if (sec_block != NULL) {
-                    dss_unregister_buffer_cache(vg_item, block->bitmap[i]);
+                dss_unregister_buffer_cache(vg_item, block->bitmap[i]);
+                ga_free_object(out_obj_id2.pool_id, out_obj_id2.obj_id);
+                LOG_DEBUG_INF("clean meta cache of file:%s, curr size:%llu, refresh ft id:%llu, second id:%llu", node->name,
+                    node->size, ftid, *(uint64 *)&(block->bitmap[i]));
             }
         }
         dss_unregister_buffer_cache(vg_item, node->entry);
+        ga_free_object(out_obj_id.pool_id, out_obj_id.obj_id);
+        LOG_DEBUG_INF("clean meta cache of file:%s, curr size:%llu, refresh ft id:%llu, fs entry id:%llu", node->name,
+            node->size, ftid, *(uint64 *)&(node->entry));
     }
-
-    // clean the ft block shm
-    dss_unregister_buffer_cache(vg_item, *(dss_block_id_t *)&ftid);
-
-    return CM_SUCCESS;
 }
 
 status_t dss_clean_file_meta(dss_session_t *session, uint64 ftid, const char *vg_name)
@@ -3228,9 +3229,9 @@ status_t dss_clean_file_meta(dss_session_t *session, uint64 ftid, const char *vg
     }
 
     dss_lock_vg_mem_s_and_shm_x(session, vg_item);
-    status_t ret = dss_clean_file_meta_core(vg_item, ftid);
+    dss_clean_file_meta_core(vg_item, ftid);
     dss_unlock_vg_mem_and_shm(session, vg_item);
-    return ret;
+    return CM_SUCCESS;
 }
 
 void dss_init_root_fs_block(dss_ctrl_t *dss_ctrl)
