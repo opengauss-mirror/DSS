@@ -356,13 +356,15 @@ char *dss_find_block_in_shm(dss_vg_info_item_t *vg_item, dss_block_id_t block_id
                 return NULL;
             }
         }
+        if (dss_is_readwrite()) {
+            DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
+        }
         return addr;
     }
 
     if (!dss_is_server()) {
         return NULL;
     }
-
     status = dss_load_buffer_cache(vg_item, block_id, type, &addr, out_obj_id);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load meta block, block_id:%llu.", DSS_ID_TO_U64(block_id));

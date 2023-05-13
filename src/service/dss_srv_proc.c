@@ -665,6 +665,7 @@ void dss_clean_open_files_in_vg(dss_session_t *session, dss_vg_info_item_t *vg_i
             LOG_DEBUG_INF("Failed to delete pid skiplist index, ftid:%llu, pid:%llu.", next_key->ftid, next_key->pid);
         }
         if (dss_is_readwrite()) {
+            DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
             dss_close_handle(session, vg_item, ftid);
         }
         DSS_LOG_DEBUG_OP(
