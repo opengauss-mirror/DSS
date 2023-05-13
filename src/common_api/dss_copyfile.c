@@ -32,11 +32,16 @@
 #define DSS_PRINT_BLOCK_SIZE SIZE_M(1)
 
 static status_t dtod_cp_buf(
-    dss_conn_t conn, int32 srchandle, int32 desthandle, const char *spath, const char *dpath, int64 count)
+    dss_conn_t conn, int32 srchandle, int32 desthandle, const char *spath, const char *dpath, int64 size)
 {
     status_t status;
     int read_size;
     int64 offset = 0;
+    int64 count = size / (int64)DSS_PRINT_BLOCK_SIZE;
+    int64 align_size = size % (int64)DSS_PRINT_BLOCK_SIZE;
+    count = (align_size == 0) ? count :count + 1;
+    align_size = CM_CALC_ALIGN(align_size, DSS_DISK_UNIT_SIZE);
+    int unit_size = (int)DSS_PRINT_BLOCK_SIZE;
     char *buf = cm_malloc_align(DSS_DISK_UNIT_SIZE, DSS_PRINT_BLOCK_SIZE);
     if (buf == NULL) {
         DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_PRINT_BLOCK_SIZE, "dtod buf");
@@ -47,35 +52,42 @@ static status_t dtod_cp_buf(
         offset = DSS_PRINT_BLOCK_SIZE * (i);
         offset = dss_seek_file_impl(&conn, srchandle, offset, SEEK_SET);
         bool32 result = (bool32)(offset != -1);
-        DSS_RETURN_IF_FALSE3(result, LOG_DEBUG_ERR("Failed to seek file %s", spath), DSS_FREE_POINT(buf));
+        DSS_RETURN_IF_FALSE3(result, LOG_DEBUG_ERR("Failed to seek file %s when dtod cp", spath), DSS_FREE_POINT(buf));
+        if (i == count -1 && align_size != 0) {
+            unit_size = (int)align_size;
+        }
+        status = dss_read_file_impl(&conn, srchandle, buf, unit_size, &read_size);
+        DSS_RETURN_IFERR3(status, LOG_DEBUG_ERR("Failed to read file %s when dtod cp", spath), DSS_FREE_POINT(buf));
 
-        status = dss_read_file_impl(&conn, srchandle, buf, (int)DSS_PRINT_BLOCK_SIZE, &read_size);
-        DSS_RETURN_IFERR3(status, LOG_DEBUG_ERR("Failed to read file %s", spath), DSS_FREE_POINT(buf));
-
-        if (read_size < (int)DSS_PRINT_BLOCK_SIZE) {
+        if (read_size < unit_size) {
             errno_t errcode = memset_s(
-                buf + read_size, DSS_PRINT_BLOCK_SIZE - (uint32)read_size, 0, DSS_PRINT_BLOCK_SIZE - (uint32)read_size);
+                buf + read_size, (uint32)unit_size - (uint32)read_size, 0, (uint32)unit_size - (uint32)read_size);
             result = (bool32)(errcode == EOK);
             DSS_RETURN_IF_FALSE3(result, CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode), DSS_FREE_POINT(buf));
         }
         offset = DSS_PRINT_BLOCK_SIZE * (i);
         offset = dss_seek_file_impl(&conn, desthandle, offset, SEEK_SET);
         result = (bool32)(offset != -1);
-        DSS_RETURN_IF_FALSE3(result, LOG_DEBUG_ERR("Failed to seek file %s", dpath), DSS_FREE_POINT(buf));
+        DSS_RETURN_IF_FALSE3(result, LOG_DEBUG_ERR("Failed to seek file %s when dtod cp", dpath), DSS_FREE_POINT(buf));
 
         status = dss_write_file_impl(&conn, desthandle, buf, read_size);
-        DSS_RETURN_IFERR3(status, LOG_DEBUG_ERR("Failed to write file %s", dpath), DSS_FREE_POINT(buf));
+        DSS_RETURN_IFERR3(status, LOG_DEBUG_ERR("Failed to write file %s when dtod cp", dpath), DSS_FREE_POINT(buf));
     }
     DSS_FREE_POINT(buf);
     return CM_SUCCESS;
 }
 
 static status_t dtol_cp_buf(
-    dss_conn_t conn, int32 srchandle, int32 desthandle, const char *spath, const char *dpath, int64 count)
+    dss_conn_t conn, int32 srchandle, int32 desthandle, const char *spath, const char *dpath, int64 size)
 {
     status_t ret;
     int32 read_size;
     int64 offset = 0;
+    int64 count = size / (int64)DSS_PRINT_BLOCK_SIZE;
+    int64 align_size = size % (int64)DSS_PRINT_BLOCK_SIZE;
+    count = (align_size == 0) ? count :count + 1;
+    align_size = CM_CALC_ALIGN(align_size, DSS_DISK_UNIT_SIZE);
+    int unit_size = (int)DSS_PRINT_BLOCK_SIZE;
     char *buf = cm_malloc_align(DSS_DISK_UNIT_SIZE, DSS_PRINT_BLOCK_SIZE);
     if (buf == NULL) {
         DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_PRINT_BLOCK_SIZE, "dtol buf");
@@ -86,35 +98,42 @@ static status_t dtol_cp_buf(
         offset = DSS_PRINT_BLOCK_SIZE * (i);
         offset = dss_seek_file_impl(&conn, srchandle, offset, SEEK_SET);
         bool32 result = (bool32)(offset != -1);
-        DSS_RETURN_IF_FALSE3(result, LOG_DEBUG_ERR("Failed to seek file %s", spath), DSS_FREE_POINT(buf));
+        DSS_RETURN_IF_FALSE3(result, LOG_DEBUG_ERR("Failed to seek file %s when dtol cp", spath), DSS_FREE_POINT(buf));
+        if (i == count -1 && align_size != 0) {
+            unit_size = (int)align_size;
+        }
+        ret = dss_read_file_impl(&conn, srchandle, buf, unit_size, &read_size);
+        DSS_RETURN_IFERR3(ret, LOG_DEBUG_ERR("Failed to read file %s when dtol cp", spath), DSS_FREE_POINT(buf));
 
-        ret = dss_read_file_impl(&conn, srchandle, buf, (int)DSS_PRINT_BLOCK_SIZE, &read_size);
-        DSS_RETURN_IFERR3(ret, LOG_DEBUG_ERR("Failed to read file %s", spath), DSS_FREE_POINT(buf));
-
-        if ((uint32)read_size < DSS_PRINT_BLOCK_SIZE) {
+        if ((uint32)read_size < (uint32)unit_size) {
             errno_t errcode = memset_s(
-                buf + read_size, DSS_PRINT_BLOCK_SIZE - (uint32)read_size, 0, DSS_PRINT_BLOCK_SIZE - (uint32)read_size);
+                buf + read_size, (uint32)unit_size - (uint32)read_size, 0, (uint32)unit_size - (uint32)read_size);
             result = (bool32)(errcode == EOK);
             DSS_RETURN_IF_FALSE3(result, CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode), DSS_FREE_POINT(buf));
         }
         offset = DSS_PRINT_BLOCK_SIZE * (i);
         offset = cm_seek_file(desthandle, offset, SEEK_SET);
         result = (bool32)(offset != -1);
-        DSS_RETURN_IF_FALSE3(result, LOG_DEBUG_ERR("Failed to seek file %s", dpath), DSS_FREE_POINT(buf));
+        DSS_RETURN_IF_FALSE3(result, LOG_DEBUG_ERR("Failed to seek file %s when dtol cp", dpath), DSS_FREE_POINT(buf));
 
         ret = cm_write_file(desthandle, buf, read_size);
-        DSS_RETURN_IFERR3(ret, LOG_DEBUG_ERR("Failed to write file %s", dpath), DSS_FREE_POINT(buf));
+        DSS_RETURN_IFERR3(ret, LOG_DEBUG_ERR("Failed to write file %s when dtol cp", dpath), DSS_FREE_POINT(buf));
     }
     DSS_FREE_POINT(buf);
     return CM_SUCCESS;
 }
 
 static status_t ltod_cp_buf(
-    dss_conn_t conn, int32 srchandle, int32 desthandle, const char *spath, const char *dpath, int64 count)
+    dss_conn_t conn, int32 srchandle, int32 desthandle, const char *spath, const char *dpath, int64 size)
 {
     status_t status;
     int32 read_size;
     int64 offset = 0;
+    int64 count = size / (int64)DSS_PRINT_BLOCK_SIZE;
+    int64 align_size = size % (int64)DSS_PRINT_BLOCK_SIZE;
+    count = (align_size == 0) ? count :count + 1;
+    align_size = CM_CALC_ALIGN(align_size, DSS_DISK_UNIT_SIZE);
+    int unit_size = (int)DSS_PRINT_BLOCK_SIZE;
     char *buf = cm_malloc_align(DSS_DISK_UNIT_SIZE, DSS_PRINT_BLOCK_SIZE);
     if (buf == NULL) {
         DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_PRINT_BLOCK_SIZE, "ltod buf");
@@ -125,14 +144,16 @@ static status_t ltod_cp_buf(
         offset = DSS_PRINT_BLOCK_SIZE * (i);
         offset = cm_seek_file(srchandle, offset, SEEK_SET);
         bool32 result = (bool32)(offset != -1);
-        DSS_RETURN_IF_FALSE3(result, LOG_DEBUG_ERR("Failed to seek file %s", spath), DSS_FREE_POINT(buf));
+        DSS_RETURN_IF_FALSE3(result, LOG_DEBUG_ERR("Failed to seek file %s when ltod cp", spath), DSS_FREE_POINT(buf));
+        if (i == count -1 && align_size != 0) {
+            unit_size = (int)align_size;
+        }
+        status = cm_read_file(srchandle, buf, unit_size, &read_size);
+        DSS_RETURN_IFERR3(status, LOG_DEBUG_ERR("Failed to read file %s when ltod cp", spath), DSS_FREE_POINT(buf));
 
-        status = cm_read_file(srchandle, buf, (int32)DSS_PRINT_BLOCK_SIZE, &read_size);
-        DSS_RETURN_IFERR3(status, LOG_DEBUG_ERR("Failed to read file %s", spath), DSS_FREE_POINT(buf));
-
-        if ((uint32)read_size < DSS_PRINT_BLOCK_SIZE) {
+        if ((uint32)read_size < (uint32)unit_size) {
             errno_t err = memset_s(
-                buf + read_size, DSS_PRINT_BLOCK_SIZE - (uint32)read_size, 0, DSS_PRINT_BLOCK_SIZE - (uint32)read_size);
+                buf + read_size, (uint32)unit_size - (uint32)read_size, 0, (uint32)unit_size - (uint32)read_size);
             result = (bool32)(err == EOK);
             DSS_RETURN_IF_FALSE3(result, CM_THROW_ERROR(ERR_SYSTEM_CALL, err), DSS_FREE_POINT(buf));
         }
@@ -142,9 +163,9 @@ static status_t ltod_cp_buf(
         offset = DSS_PRINT_BLOCK_SIZE * (i);
         offset = dss_seek_file_impl(&conn, desthandle, offset, SEEK_SET);
         result = (bool32)(offset != -1);
-        DSS_RETURN_IF_FALSE3(result, LOG_DEBUG_ERR("Failed to seek file %s", dpath), DSS_FREE_POINT(buf));
+        DSS_RETURN_IF_FALSE3(result, LOG_DEBUG_ERR("Failed to seek file %s when ltod cp", dpath), DSS_FREE_POINT(buf));
         status = dss_write_file_impl(&conn, desthandle, buf, read_size);
-        DSS_RETURN_IFERR3(status, LOG_DEBUG_ERR("Failed to write file %s", dpath), DSS_FREE_POINT(buf));
+        DSS_RETURN_IFERR3(status, LOG_DEBUG_ERR("Failed to write file %s when ltod cp", dpath), DSS_FREE_POINT(buf));
     }
     DSS_FREE_POINT(buf);
     return CM_SUCCESS;
@@ -178,10 +199,7 @@ static status_t dss_cp_dtod(dss_conn_t conn, const char *srcpath, const char *de
     LOG_DEBUG_INF("Seek file %s, size is %lld.", srcpath, size);
     bool32 result = (bool32)(size != -1);
     DSS_RETURN_IF_FALSE3(result, dss_close_file_impl(&conn, srchandle), dss_close_file_impl(&conn, desthandle));
-
-    int64 count = size / (int64)DSS_PRINT_BLOCK_SIZE;
-    count = (size % (int64)DSS_PRINT_BLOCK_SIZE == 0) ? count : count + 1;
-    status = dtod_cp_buf(conn, srchandle, desthandle, srcpath, destpath, count);
+    status = dtod_cp_buf(conn, srchandle, desthandle, srcpath, destpath, size);
     dss_close_file_impl(&conn, srchandle);
     dss_close_file_impl(&conn, desthandle);
     if (status != CM_SUCCESS) {
@@ -215,13 +233,7 @@ static status_t dss_cp_dtol(dss_conn_t conn, const char *srcpath, const char *de
     LOG_DEBUG_INF("Seek the src file %s, size is %lld.", srcpath, size);
     bool32 result = (bool32)(size != -1);
     DSS_RETURN_IF_FALSE3(result, dss_close_file_impl(&conn, srchandle), cm_close_file(desthandle));
-
-    int64 count = size / (int64)DSS_PRINT_BLOCK_SIZE;
-    int64 rem_size = size % (int64)DSS_PRINT_BLOCK_SIZE;
-    if (rem_size != 0) {
-        count++;
-    }
-    status = dtol_cp_buf(conn, srchandle, desthandle, srcpath, destpath, count);
+    status = dtol_cp_buf(conn, srchandle, desthandle, srcpath, destpath, size);
     dss_close_file_impl(&conn, srchandle);
     cm_close_file(desthandle);
     if (status != CM_SUCCESS) {
@@ -273,12 +285,7 @@ static status_t dss_cp_ltod(dss_conn_t conn, const char *srcpath, const char *de
         return CM_ERROR;
     }
 #endif
-    int64 count = size / (int64)DSS_PRINT_BLOCK_SIZE;
-    int64 rem_size = size % (int64)DSS_PRINT_BLOCK_SIZE;
-    if (rem_size != 0) {
-        count++;
-    }
-    status = ltod_cp_buf(conn, srchandle, desthandle, srcpath, destpath, count);
+    status = ltod_cp_buf(conn, srchandle, desthandle, srcpath, destpath, size);
     cm_close_file(srchandle);
     dss_close_file_impl(&conn, desthandle);
     if (status != CM_SUCCESS) {
