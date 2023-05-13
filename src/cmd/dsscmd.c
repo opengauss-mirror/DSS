@@ -91,7 +91,7 @@ config_item_t g_dss_admin_parameters[] = {
         EFFECT_REBOOT, CFG_INS, NULL, NULL },
     { "_LOG_PATH_PERMISSIONS",     CM_TRUE, CM_FALSE, "700",   NULL, NULL, "-", "[700-777]", "GS_TYPE_INTEGER", NULL, 4,
         EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_LEVEL",                CM_TRUE, CM_FALSE, "7",     NULL, NULL, "-", "[0,4087]",  "GS_TYPE_INTEGER", NULL, 5,
+    { "_LOG_LEVEL",                CM_TRUE, CM_FALSE, "519",     NULL, NULL, "-", "[0,4087]",  "GS_TYPE_INTEGER", NULL, 5,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "_AUDIT_BACKUP_FILE_COUNT",  CM_TRUE, CM_FALSE, "20",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL, 6,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
@@ -2825,7 +2825,7 @@ static status_t stopdss_proc(void)
 static const char command_injection_check_list[] = {
     '|', ';', '&', '$', '<', '>', '`', '\\', '\'', '\"', '{', '}', '(', ')', '[', ']', '~', '*', '?', ' ', '!', '\n'};
 
-static status_t cmd_check_command_injection(const char *param)
+static status_t dss_check_command_injection(const char *param)
 {
     if (param == NULL) {
         DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, "[null]", "param cannot be a null string.");
@@ -2844,6 +2844,36 @@ static status_t cmd_check_command_injection(const char *param)
     return CM_SUCCESS;
 }
 
+static status_t cmd_check_user_or_group_name(const char *param)
+{
+    status_t status = dss_check_command_injection(param);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to check name %s.\n", param);
+        return CM_ERROR;
+    }
+    status = dss_check_name(param);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to check name %s.\n", param);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t cmd_check_scandisk_path(const char *param)
+{
+    status_t status = dss_check_command_injection(param);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to check path %s.\n", param);
+        return CM_ERROR;
+    }
+    status = dss_check_path(param);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to check name %s.\n", param);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
 static status_t cmd_check_file_type(const char *type)
 {
     if (strcmp(type, "block") == 0) {
@@ -2855,9 +2885,9 @@ static status_t cmd_check_file_type(const char *type)
 
 static dss_args_t cmd_scandisk_args[] = {
     {'t', "type", CM_TRUE, CM_TRUE, cmd_check_file_type, NULL, NULL, 0, NULL, NULL, 0},
-    {'p', "path", CM_TRUE, CM_TRUE, cmd_check_command_injection, NULL, NULL, 0, NULL, NULL, 0},
-    {'u', "user_name", CM_TRUE, CM_TRUE, cmd_check_command_injection, NULL, NULL, 0, NULL, NULL, 0},
-    {'g', "group_name", CM_TRUE, CM_TRUE, cmd_check_command_injection, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, cmd_check_scandisk_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'u', "user_name", CM_TRUE, CM_TRUE, cmd_check_user_or_group_name, NULL, NULL, 0, NULL, NULL, 0},
+    {'g', "group_name", CM_TRUE, CM_TRUE, cmd_check_user_or_group_name, NULL, NULL, 0, NULL, NULL, 0},
 };
 
 static dss_args_set_t cmd_scandisk_args_set = {
