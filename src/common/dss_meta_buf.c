@@ -371,11 +371,11 @@ char *dss_find_block_in_shm(dss_vg_info_item_t *vg_item, dss_block_id_t block_id
     return addr;
 }
 
-char *dss_find_block_in_shm_no_refresh(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id, dss_block_type_t type)
+char *dss_find_block_in_shm_no_refresh(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
+    dss_block_type_t type, ga_obj_id_t *out_obj_id)
 {
     uint32 hash = cm_hash_int64(*(int64 *)&block_id);
-    return dss_find_block_in_bucket(vg_item->buffer_cache, hash, (uint64 *)&block_id, CM_FALSE, NULL);
+    return dss_find_block_in_bucket(vg_item->buffer_cache, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
 }
 
 status_t dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *map)

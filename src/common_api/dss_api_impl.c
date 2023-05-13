@@ -1550,7 +1550,7 @@ static status_t dss_check_file_written_size(dss_env_t *dss_env, dss_conn_t *conn
     return CM_SUCCESS;
 }
 
-status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, int32 *read_size, bool32 is_read)
+status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, int32 *read_size)
 {
     status_t status = CM_SUCCESS;
     int32 total_size = size;
@@ -1575,7 +1575,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         return CM_ERROR;
     }
 
-    CM_RETURN_IFERR(dss_check_refresh_file(dss_env, conn, context, is_read, &total_size));
+    CM_RETURN_IFERR(dss_check_refresh_file(dss_env, conn, context, param->is_read, &total_size));
 
     dss_fs_block_t *entry_fs_block = (dss_fs_block_t *)entry_block;
     uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
@@ -1586,7 +1586,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         rw_ctx.file_ctx = context;
         rw_ctx.handle = handle;
         rw_ctx.size = size;
-        rw_ctx.read = is_read;
+        rw_ctx.read = param->is_read;
         rw_ctx.offset = (param->atom_oper ? param->offset : context->offset);
 
         dss_fs_block_t *second_block = NULL;
@@ -1598,8 +1598,8 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
             // allocate au or refresh second block
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-            if (!is_read) {
-                status = dss_apply_extending_file(conn, handle, size, is_read, rw_ctx.offset);
+            if (!param->is_read) {
+                status = dss_apply_extending_file(conn, handle, size, param->is_read, rw_ctx.offset);
                 DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to extend file second block."));
             }
             auid = second_block->bitmap[block_au_count];
@@ -1615,7 +1615,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         vol_offset = vol_offset + (uint64)au_offset;
 
         if (auid.volume >= DSS_MAX_VOLUMES) {
-            if (is_read && block_au_count == second_block->head.used_num && au_offset == 0) {
+            if (param->is_read && block_au_count == second_block->head.used_num && au_offset == 0) {
                 DSS_SET_PTR_VALUE_IF_NOT_NULL(read_size, 0);
                 DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
                 return CM_SUCCESS;
@@ -1654,7 +1654,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
             }
         }
 
-        DSS_RETURN_IFERR2(dss_check_file_written_size(dss_env, conn, context, rw_ctx.offset, is_read, &total_size),
+        DSS_RETURN_IFERR2(dss_check_file_written_size(dss_env, conn, context, rw_ctx.offset, param->is_read, &total_size),
             DSS_SET_PTR_VALUE_IF_NOT_NULL(read_size, read_cnt));
 #ifdef OPENGAUSS
         dss_vg_info_item_t *first_vg_item = dss_get_first_vg_item();
@@ -1696,7 +1696,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         volume.ctx = vol->ctx;
 #endif
         volume.vg_type = vol->vg_type;
-        if (is_read) {
+        if (param->is_read) {
             LOG_DEBUG_INF("Begin to read volume %s, offset:%lld, size:%d, fname:%s, fsize:%llu, fwritten_size:%llu.",
                 volume.name_p, vol_offset, real_size, node->name, node->size, node->written_size);
             status = dss_read_volume(&volume, (int64)vol_offset, buf, real_size);
@@ -1720,10 +1720,10 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         }
         buf = (void *)(((char *)buf) + real_size);
         if (param->atom_oper) {
-            if (is_read && param->offset >= context->node->size) {
+            if (param->is_read && param->offset >= context->node->size) {
                 break;
             }
-        } else if (is_read && context->offset >= context->node->size) {
+        } else if (param->is_read && context->offset >= context->node->size) {
             break;
         }
     } while (total_size > 0);
@@ -1733,7 +1733,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
 
     /* tracking real written size may hinder performance, hence disabled otherwise */
     int64 offset = (param->atom_oper ? param->offset : context->offset);
-    bool32 need_update = offset > context->node->written_size && !is_read;
+    bool32 need_update = offset > context->node->written_size && !param->is_read;
     if (need_update) { /* updates written size outside of locking */
         LOG_DEBUG_INF("Start update_written_size for file:\"%s\", curr offset:%llu, curr written_size:%llu.",
             node->name, offset, node->written_size);
@@ -1757,7 +1757,8 @@ status_t dss_read_write_file(dss_conn_t *conn, int32 handle, void *buf, int32 si
 
     DSS_RETURN_IF_ERROR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_EXCLUSIVE));
     dss_init_rw_param(&param, conn, handle, context, context->offset, DSS_FALSE);
-    status = dss_read_write_file_core(&param, buf, size, read_size, is_read);
+    param.is_read = is_read;
+    status = dss_read_write_file_core(&param, buf, size, read_size);
     dss_unlatch(&context->latch);
     LOG_DEBUG_INF("dss read write file leave");
 
@@ -1829,7 +1830,7 @@ status_t dss_pwrite_file_impl(dss_conn_t *conn, int handle, const void *buf, int
         dss_unlatch(&context->latch);
         return CM_ERROR;
     }
-    status = dss_read_write_file_core(&param, (void *)buf, size, NULL, DSS_FALSE);
+    status = dss_read_write_file_core(&param, (void *)buf, size, NULL);
     dss_unlatch(&context->latch);
     LOG_DEBUG_INF("dss pwrite file leave");
 
@@ -1857,7 +1858,7 @@ status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, 
         dss_unlatch(&context->latch);
         return CM_SUCCESS;
     }
-    status = dss_read_write_file_core(&param, buf, size, read_size, DSS_TRUE);
+    status = dss_read_write_file_core(&param, buf, size, read_size);
 
     dss_unlatch(&context->latch);
     LOG_DEBUG_INF("dss pread file leave");
