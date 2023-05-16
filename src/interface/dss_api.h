@@ -130,6 +130,8 @@ DSS_DECLARE int dss_fsize_physical(int handle, long long *fsize);
 DSS_DECLARE void dss_fsize_maxwr(const char *fname, long long *fsize);
 DSS_DECLARE int dss_pwrite(int handle, const void *buf, int size, long long offset);
 DSS_DECLARE int dss_pread(int handle, void *buf, int size, long long offset, int *read_size);
+DSS_DECLARE int dss_get_addr(int handle, long long offset, char *pool_name, char *image_name, char *obj_addr,
+    unsigned int *obj_id, unsigned long int *obj_offset);
 DSS_DECLARE int dss_get_fname(int handle, char *fname, int fname_size);
 // aio
 DSS_DECLARE int dss_aio_prep_pread(void *iocb, int handle, void *buf, size_t count, long long offset);
@@ -145,6 +147,7 @@ DSS_DECLARE int dss_symlink(const char *oldpath, const char *newpath);
 DSS_DECLARE int dss_check_size(int size);
 DSS_DECLARE int dss_align_size(int size);
 DSS_DECLARE int dss_get_au_size(int handle, long long *au_size);
+DSS_DECLARE int dss_compare_size_equal(const char *vg_name, long long *au_size);
 // log
 DSS_DECLARE void dss_get_error(int *errcode, const char **errmsg);
 DSS_DECLARE void dss_register_log_callback(dss_log_output cb_log_output, unsigned int log_level);

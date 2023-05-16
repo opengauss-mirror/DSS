@@ -28,9 +28,6 @@
 #include <fcntl.h>
 #endif  // !WIN32
 #include "dss_file.h"
-#ifdef ENABLE_GLOBAL_CACHE
-#include "ceph_rbd_param.h"
-#endif
 
 #ifdef __cplusplus
 extern "C" {
