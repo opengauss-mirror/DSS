@@ -187,8 +187,21 @@ status_t dyn_rbd_get_size(rbd_image_t image, int64_t *size)
 
 void dyn_rados_conf_set(rados_t cluster, const char *option, const char *value)
 {
-    status_t (*func)() = dss_dlsym(g_rbd_handle, "rados_conf_set");
+    status_t (*func)() = dss_dlsym(g_rados_handle, "rados_conf_set");
     (void)(*func)(cluster, option, value);
+}
+
+void dyn_rbd_get_data_addr(rbd_image_t image, rados_ioctx_t ioctx, uint64_t offset, uint64_t *obj_offset,
+    char *obj_addr, uint32_t *obj_id)
+{
+    status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_get_data_dts_addr");
+    (void)(*func)(image, ioctx, offset, obj_offset, obj_addr, obj_id);
+}
+
+void dyn_rbd_stat(rbd_image_t image, rbd_image_info_t *info, size_t infosize)
+{
+    status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_stat");
+    (void)(*func)(image, info, infosize);
 }
 
 #ifdef __cplusplus

@@ -116,6 +116,21 @@ int32_t ceph_client_create_read(image_handle fd, uint64_t offset, char *buf, int
  */
 int64_t ceph_client_read_size(image_handle fd);
 
+/**
+ * get data addr
+ * fd     image operation handler
+ * ctx    handler of pool operation
+ * offset get from image offset
+ */
+void ceph_client_get_data_addr(image_handle fd, ceph_client_ctx ctx, uint64_t offset, uint64_t *obj_offset,
+    char *obj_addr, uint32_t *obj_id);
+
+/**
+ * get object size
+ * fd     image operation handler
+ */
+void ceph_client_get_object_size(image_handle fd, long long *obj_size);
+
 #ifdef __cplusplus
 }
 #endif
