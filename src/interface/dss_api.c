@@ -552,6 +552,23 @@ int dss_pread(int handle, void *buf, int size, long long offset, int *read_size)
     return (int)ret;
 }
 
+int dss_get_addr(int handle, long long offset, char *pool_name, char *image_name, char *obj_addr,
+    unsigned int *obj_id, unsigned long int *obj_offset)
+{
+#ifdef ENABLE_GLOBAL_CACHE
+    dss_conn_t *conn = NULL;
+    status_t ret = dss_get_conn(&conn);
+    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("get conn error when get ceph address."));
+
+    ret = dss_get_addr_impl(conn, HANDLE_VALUE(handle), offset, pool_name, image_name, obj_addr,
+        obj_id, obj_offset);
+    dss_get_api_volume_error();
+    return (int)ret;
+#endif
+    return CM_ERROR;
+}
+
+
 int dss_fcopy(const char *src_path, const char *dest_path)
 {
     dss_conn_t *conn = NULL;
@@ -878,6 +895,15 @@ int dss_get_au_size(int handle, long long *au_size)
 
     return get_au_size_impl(conn, HANDLE_VALUE(handle), au_size);
 }
+
+int dss_compare_size_equal(const char *vg_name, long long *au_size)
+{
+#ifdef ENABLE_GLOBAL_CACHE
+    return dss_compare_size_equal_impl(vg_name, au_size);
+#endif
+    return CM_ERROR;
+}
+
 
 int dss_setcfg(const char *name, const char *value, const char *scope)
 {

@@ -28,6 +28,9 @@
 #include "dss_defs.h"
 #include "cm_date.h"
 #include "dss_file_def.h"
+#ifdef ENABLE_GLOBAL_CACHE
+#include "ceph_rbd_param.h"
+#endif
 
 #ifdef __cplusplus
 extern "C" {

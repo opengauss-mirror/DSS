@@ -100,10 +100,17 @@ status_t dss_get_fname_impl(int handle, char *fname, int fname_size);
 
 status_t dss_pwrite_file_impl(dss_conn_t *conn, int handle, const void *buf, int size, long long offset);
 status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, long long offset, int *read_size);
+#ifdef ENABLE_GLOBAL_CACHE
+status_t dss_get_addr_impl(dss_conn_t *conn, int32 handle, long long offset, char *pool_name, char *image_name,
+    char *obj_addr, unsigned int *obj_id, unsigned long int *obj_offset);
+#endif
 gft_node_t *dss_get_node_by_path_impl(dss_conn_t *conn, const char *path);
 status_t dss_get_fd_by_offset(
     dss_conn_t *conn, int handle, long long offset, int32 size, bool32 is_read, int *fd, int64 *vol_offset);
 status_t get_au_size_impl(dss_conn_t *conn, int handle, long long *au_size);
+#ifdef ENABLE_GLOBAL_CACHE
+status_t dss_compare_size_equal_impl(const char *vg_name, long long *au_size);
+#endif
 status_t dss_setcfg_impl(dss_conn_t *conn, const char *name, const char *value, const char *scope);
 status_t dss_getcfg_impl(dss_conn_t *conn, const char *name, char *out_str, size_t str_len);
 status_t dss_stop_server_impl(dss_conn_t *conn);

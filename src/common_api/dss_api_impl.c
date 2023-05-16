@@ -1864,6 +1864,96 @@ status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, 
     return status;
 }
 
+#ifdef ENABLE_GLOBAL_CACHE
+static status_t dss_get_addr_core(dss_rw_param_t *param, char *pool_name, char *image_name,
+    char *obj_addr, unsigned int *obj_id, unsigned long int *obj_offset)
+{
+    status_t status = CM_SUCCESS;
+    dss_conn_t *conn = param->conn;
+    int handle = param->handle;
+    dss_env_t *dss_env = param->dss_env;
+    dss_file_context_t *context = param->context;
+
+    DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session, NULL);
+
+    gft_node_t *node = context->node;
+    dss_vg_info_item_t *vg_item = context->vg_item;
+    dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
+        vg_item, node->entry, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
+    if (!entry_block) {
+        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+        LOG_DEBUG_ERR("Can not find entry block in memory,entry blockid:%llu,nodeid:%llu.", DSS_ID_TO_U64(node->entry),
+            DSS_ID_TO_U64(node->id));
+        return CM_ERROR;
+    }
+
+    dss_fs_block_t *entry_fs_block = (dss_fs_block_t *)entry_block;
+    
+    files_rw_ctx_t rw_ctx;
+    rw_ctx.conn = conn;
+    rw_ctx.env = dss_env;
+    rw_ctx.file_ctx = context;
+    rw_ctx.handle = handle;
+    rw_ctx.size = 0;
+    rw_ctx.read = DSS_TRUE;
+    rw_ctx.offset = param->offset;
+
+    dss_fs_block_t *second_block = NULL;
+    uint32 block_au_count = 0;
+    uint32 au_offset = 0;
+    CM_RETURN_IFERR(dss_alloc_block(rw_ctx, entry_fs_block, &second_block, &block_au_count, &au_offset));
+
+    auid_t auid = second_block->bitmap[block_au_count];
+    uint64 vol_offset = (uint64)dss_get_au_offset(vg_item, auid);
+    vol_offset = vol_offset + (uint64)au_offset;
+
+    if (auid.volume >= DSS_MAX_VOLUMES) {
+        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+        DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "au", *(uint64 *)&auid);
+        DSS_ASSERT_LOG(0, "Auid is invalid, volume:%u, fname:%s, fsize:%llu, written_size:%llu.", (uint32)auid.volume,
+                        node->name, node->size, node->written_size);
+        return CM_ERROR;
+    }
+
+    /* now support ceph only */
+    char *name = vg_item->dss_ctrl->volume.defs[auid.volume].name;
+    rbd_config_param *config = ceph_parse_rbd_configs(name);
+    if (config->rbd_handle == NULL) {
+        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+        return CM_ERROR;
+    }
+    strcpy_s(pool_name, strlen(config->pool_name) + 1, config->pool_name);
+    strcpy_s(image_name, strlen(config->image_name) + 1, config->image_name);
+    ceph_client_get_data_addr(config->rbd_handle, config->rados_handle, vol_offset, obj_offset, obj_addr, obj_id);
+
+    DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+    return status;
+}
+
+status_t dss_get_addr_impl(dss_conn_t *conn, int32 handle, long long offset, char *pool_name, char *image_name,
+    char *obj_addr, unsigned int *obj_id, unsigned long int *obj_offset)
+{
+    status_t status;
+    dss_file_context_t *context = NULL;
+    dss_rw_param_t param;
+
+    CM_RETURN_IFERR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
+    LOG_DEBUG_INF("dss get ceph address, handle:%d, offset:%lld", handle, offset);
+
+    dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
+    param.is_read = DSS_TRUE;
+    if (dss_refresh_file_impl(&param) != CM_SUCCESS) {
+        dss_unlatch(&context->latch);
+        return CM_ERROR;
+    }
+    status = dss_get_addr_core(&param, pool_name, image_name, obj_addr, obj_id, obj_offset);
+
+    dss_unlatch(&context->latch);
+    LOG_DEBUG_INF("dss get ceph address leave");
+    return status;
+}
+#endif
+
 status_t dss_copy_file_impl(dss_conn_t *conn, const char *src, const char *dest)
 {
     return dss_copy_file(*conn, src, dest);
@@ -2491,6 +2581,31 @@ status_t get_au_size_impl(dss_conn_t *conn, int handle, long long *au_size)
     *au_size = context->vg_item->dss_ctrl->core.au_size;
     return CM_SUCCESS;
 }
+
+#ifdef ENABLE_GLOBAL_CACHE
+status_t dss_compare_size_equal_impl(const char *vg_name, long long *au_size)
+{
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
+    if (vg_name == NULL) {
+        dss_free_vg_info(g_vgs_info);
+        LOG_DEBUG_ERR("Failed to find vg info from config, vg name is %s\n", vg_name);
+        return CM_ERROR;
+    }
+    *au_size = vg_item->dss_ctrl->core.au_size;
+
+    open_global_rbd_handle();
+    rbd_config_param *config = ceph_parse_rbd_configs(vg_item->entry_path);
+    if (config->rbd_handle == NULL) {
+        return CM_ERROR;
+    }
+    long long obj_size;
+    ceph_client_get_object_size(config->rbd_handle, &obj_size);
+    if (*au_size != obj_size) {
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+#endif
 
 status_t dss_setcfg_impl(dss_conn_t *conn, const char *name, const char *value, const char *scope)
 {

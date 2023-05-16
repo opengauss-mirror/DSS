@@ -126,6 +126,23 @@ int64_t ceph_client_read_size(image_handle fd)
     return size;
 }
 
+void ceph_client_get_data_addr(image_handle fd, ceph_client_ctx ctx, uint64_t offset, uint64_t *obj_offset,
+    char *obj_addr, uint32_t *obj_id)
+{
+#ifdef ENABLE_GLOBAL_CACHE
+    dyn_rbd_get_data_addr((rbd_image_t *)fd, ctx, offset, obj_offset, obj_addr, obj_id);
+#endif
+}
+
+void ceph_client_get_object_size(image_handle fd, long long *obj_size)
+{
+#ifdef ENABLE_GLOBAL_CACHE
+    rbd_image_info_t info;
+    dyn_rbd_stat((rbd_image_t *)fd, &info, 0);
+    *obj_size = info.obj_size;
+#endif
+}
+
 #ifdef __cplusplus
 }
 #endif
