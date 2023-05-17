@@ -112,7 +112,7 @@ static void dss_check_file_open(dss_session_t *se, mes_message_t *msg)
         LOG_DEBUG_ERR("Failed to find vg, %s.", check->vg_name);
         return;
     }
-    status = dss_check_with_clean_meta(se, check->vg_name, check->ftid, &is_open);
+    status = dss_check_open_file_remote(check->vg_name, check->ftid, &is_open);
     if (is_open) {
         LOG_DEBUG_INF(
             "The file is opened when notify check file open, vg :%s, ftid: %llu.", check->vg_name, check->ftid);
@@ -142,6 +142,10 @@ static void dss_check_file_open(dss_session_t *se, mes_message_t *msg)
         check->ftid, is_open, ack->head.cmd, ack->head.rsn, ack->head.src_inst, ack->head.dst_inst, ack->head.src_sid,
         ack->head.dst_sid);
     DSS_FREE_POINT(send_msg);
+    // delay because exist the lock of vg and shm, may dead lock with the peer node
+    if (!is_open) {
+        dss_clean_file_meta(se, check->ftid, check->vg_name);
+    }
 }
 
 int32 dss_process_broadcast_ack(dss_session_t *session, char *data, unsigned int len, dss_recv_msg_t *recv_msg_output)

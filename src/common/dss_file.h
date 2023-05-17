@@ -145,8 +145,7 @@ status_t dss_get_fs_block_info_by_offset(
     int64 offset, uint64 au_size, uint32 *block_count, uint32 *block_au_count, uint32 *au_offset);
 status_t dss_check_open_file_remote(const char *vg_name, uint64 ftid, bool32 *is_open);
 void dss_clean_file_meta_core(dss_vg_info_item_t *vg_item, uint64 ftid);
-status_t dss_clean_file_meta(dss_session_t *session, uint64 ftid, const char *vg_name);
-status_t dss_check_with_clean_meta(dss_session_t *session, const char *vg_name, uint64 ftid, bool32 *is_open);
+void dss_clean_file_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid);
 void dss_mv_to_recycle_dir(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node);
 status_t dss_recycle_empty_file(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node);
