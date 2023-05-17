@@ -3220,18 +3220,11 @@ void dss_clean_file_meta_core(dss_vg_info_item_t *vg_item, uint64 ftid)
     }
 }
 
-status_t dss_clean_file_meta(dss_session_t *session, uint64 ftid, const char *vg_name)
+void dss_clean_file_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid)
 {
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
-    if (vg_item == NULL) {
-        DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("Failed to find vg, vg_name %s:.", vg_name),
-            DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name));
-    }
-
     dss_lock_vg_mem_s_and_shm_x(session, vg_item);
     dss_clean_file_meta_core(vg_item, ftid);
     dss_unlock_vg_mem_and_shm(session, vg_item);
-    return CM_SUCCESS;
 }
 
 void dss_init_root_fs_block(dss_ctrl_t *dss_ctrl)
@@ -3332,18 +3325,6 @@ status_t dss_check_open_file_remote(const char *vg_name, uint64 ftid, bool32 *is
     status_t status = dss_check_open_file(vg_item, ftid, is_open);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check open file, vg: %s, ftid:%llu.", vg_name, ftid));
     return CM_SUCCESS;
-}
-
-status_t dss_check_with_clean_meta(dss_session_t *session, const char *vg_name, uint64 ftid, bool32 *is_open)
-{
-    status_t status = dss_check_open_file_remote(vg_name, ftid, is_open);
-    if (status != CM_SUCCESS) {
-        return status;
-    }
-    if (!(*is_open)) {
-        status = dss_clean_file_meta(session, ftid, vg_name);
-    }
-    return status;
 }
 
 status_t dss_refresh_ft_block(dss_session_t *session, char *vg_name, uint32 vgid, dss_block_id_t blockid)
