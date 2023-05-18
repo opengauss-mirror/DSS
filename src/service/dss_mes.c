@@ -530,7 +530,7 @@ status_t dss_notify_sync(
         DSS_RETURN_IFERR3(CM_ERROR, DSS_THROW_ERROR(ERR_SYSTEM_CALL, err), DSS_FREE_POINT(tmp));
     }
     bcast_req->buffer[size] = '\0';
-    status_t status = dss_broadcast_msg(session, (void *)bcast_req, req_size, recv_msg, DSS_MES_WAIT_TIMEOUT);
+    status_t status = dss_broadcast_msg(session, (void *)bcast_req, req_size, recv_msg, DSS_MES_LONG_WAIT_TIMEOUT);
     DSS_FREE_POINT(tmp);
     return status;
 }

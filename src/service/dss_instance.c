@@ -698,7 +698,7 @@ void dss_get_cm_lock_and_recover(dss_instance_t *inst)
     if (master_id != curr_id) {
         dss_set_master_id(master_id);
         dss_set_server_status_flag(DSS_STATUS_READONLY);
-        LOG_RUN_INF("inst %u set status flag %u when get cm lock.", curr_id, DSS_STATUS_READONLY);
+        LOG_RUN_INF("inst %u set status flag %u when not get cm lock.", curr_id, DSS_STATUS_READONLY);
         inst->status = DSS_STATUS_OPEN;
         return;
     }
