@@ -1175,7 +1175,7 @@ status_t dss_open_file_core(dss_session_t *session, const char *path, uint32 typ
     status = dss_process_redo_log(session, vg_item);
     if (status != CM_SUCCESS) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
-        LOG_RUN_ERR("[DSS API] ABORT INFO : redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
+        LOG_RUN_ERR("[DSS] ABORT INFO : redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
         _exit(1);

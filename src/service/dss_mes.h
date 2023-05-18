@@ -47,7 +47,8 @@ typedef enum en_dss_mes_command {
 } dss_mes_command_t;
 
 #define DSS_MES_THREAD_NUM 2
-#define DSS_MES_WAIT_TIMEOUT 5000  // 5s
+#define DSS_MES_LONG_WAIT_TIMEOUT 5000  // 5s
+#define DSS_MES_WAIT_TIMEOUT 1000  // 1s
 #define DSS_MES_TRY_TIMES 100
 #define DSS_BROADCAST_WAIT_INFINITE (0xFFFFFFFF)
 #define DSS_IS_INST_SEND(bits, id) (((bits) >> (id)) & 0x1)
