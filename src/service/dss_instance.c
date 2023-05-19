@@ -108,7 +108,7 @@ static status_t instance_init_ga(dss_instance_t *inst)
 
 static status_t dss_init_thread(dss_instance_t *inst)
 {
-    uint32 size = inst->inst_cfg.params.cfg_session_num + dss_get_udssession_startid();
+    uint32 size = inst->inst_cfg.params.cfg_session_num + dss_get_udssession_startid() + 1;
     inst->threads = (thread_t *)cm_malloc(size * (uint32)sizeof(thread_t));
     if (inst->threads == NULL) {
         return CM_ERROR;
@@ -685,8 +685,11 @@ void dss_no_cm_recover(dss_instance_t *inst)
     1、old_master_id == master_id, just return;
     2、old_master_id ！= master_id, just indicates that the master has been reselected.so to juge whether recover.
 */
-void dss_get_cm_lock_and_recover(dss_instance_t *inst) 
+void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst) 
 {
+    if (!inst->cm_res.is_valid) {
+        return dss_no_cm_recover(inst);
+    }
     uint32 old_master_id = dss_get_master_id();
     bool32 grab_lock = CM_FALSE;
     uint32 master_id = dss_get_cm_lock_owner(inst, &grab_lock);
@@ -751,6 +754,16 @@ void dss_get_cm_lock_and_recover(dss_instance_t *inst)
     dss_set_server_status_flag(DSS_STATUS_READWRITE);
     LOG_RUN_INF("inst %u set status flag %u when get cm lock.", curr_id, DSS_STATUS_READWRITE);
     cm_spin_unlock(&g_dss_instance.switch_lock);
+}
+
+#define DSS_RECOVERY_INTERVAL 500
+void dss_get_cm_lock_and_recover(thread_t *thread) 
+{
+    while (!thread->closed) {
+        dss_instance_t *inst = (dss_instance_t *)thread->argument;
+        dss_get_cm_lock_and_recover_inner(inst);
+        cm_sleep(DSS_RECOVERY_INTERVAL);
+    }
 }
 
 static void dss_check_peer_inst_inner(dss_instance_t *inst)
