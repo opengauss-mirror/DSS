@@ -3139,7 +3139,7 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
         _exit(1);
     }
     // clean the truncate block shm info, at present, clean all first
-    dss_clean_file_meta_core(vg_item, *(uint64 *)&ftid);
+    dss_clean_file_meta_core(vg_item, *(uint64 *)&trunc_ftn->id);
     // release resources
     dss_unlock_vg_mem_and_shm(session, vg_item);
     LOG_DEBUG_INF(
