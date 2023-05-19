@@ -41,6 +41,7 @@ extern "C" {
 #define DSS_MAX_LATCH_STACK_BOTTON 0
 #define DSS_MAX_LATCH_STACK_DEPTH 8
 #define DSS_LOCK_CLEAN_SLEEP_TIME 500
+#define DSS_BACKGROUND_TASK_NUM 5
 
 typedef struct tagdss_cli_info {
     uint64 cli_pid;
