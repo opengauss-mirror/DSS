@@ -845,6 +845,9 @@ static status_t dss_process_switch_lock(dss_session_t *session)
         LOG_RUN_INF("inst %u set status flag %u when trans lock.", curr_id, DSS_STATUS_READONLY);
         ret = cm_res_trans_lock(&g_dss_instance.cm_res.mgr, DSS_CM_LOCK, (uint32)switch_id);
         if (ret != CM_SUCCESS) {
+            dss_set_session_running(&g_dss_instance);
+            dss_set_server_status_flag(DSS_STATUS_READWRITE);
+            g_dss_instance.status = DSS_STATUS_OPEN;
             cm_spin_unlock(&g_dss_instance.switch_lock);
             LOG_DEBUG_ERR("cm do switch lock failed from %u to %u.", curr_id, master_id);
             return ret;
@@ -873,8 +876,9 @@ static status_t dss_process_switch_lock(dss_session_t *session)
 */
 static status_t dss_process_remote_switch_lock(dss_session_t *session, uint32 curr_id, uint32 master_id)
 {
-    dss_init_get(&session->recv_pack);
+    dss_init_set(&session->recv_pack);
     session->recv_pack.head->cmd = DSS_CMD_SWITCH_LOCK;
+    session->recv_pack.head->flags = 0;
     LOG_DEBUG_INF("Try to switch lock to %u by %u.", curr_id, master_id);
     (void)dss_put_int32(&session->recv_pack, curr_id);
     return dss_process_remote(session);
@@ -891,6 +895,7 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
     while (CM_TRUE) {
         master_id = dss_get_master_id();
         if (master_id == curr_id) {
+            session->recv_pack.head->cmd = DSS_CMD_SET_MAIN_INST;
             LOG_RUN_INF("Main server %u is set successfully by %u.", curr_id, master_id);
             return CM_SUCCESS;
         }
@@ -906,13 +911,16 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
         }
         break;
     }
+    session->recv_pack.head->cmd = DSS_CMD_SET_MAIN_INST;
     g_dss_instance.status = DSS_STATUS_SWITCH;
     dss_set_master_id(curr_id);
     status = dss_refresh_meta_info(session);
     if (status != CM_SUCCESS) {
+        g_dss_instance.status = DSS_STATUS_OPEN;
         cm_spin_unlock(&g_dss_instance.switch_lock);
-        LOG_DEBUG_ERR("dss instance %u refresh meta failed, result(%d).", curr_id, status);
-        return CM_ERROR;
+        LOG_RUN_ERR("[DSS] ABORT INFO: dss instance %u refresh meta failed, result(%d).", curr_id, status);
+        cm_fync_logfile();
+        _exit(1);
     }
     dss_set_server_status_flag(DSS_STATUS_READWRITE);
     LOG_RUN_INF("inst %u set status flag %u when set main inst.", curr_id, DSS_STATUS_READWRITE);
