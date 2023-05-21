@@ -257,62 +257,36 @@ status_t dss_recover_from_instance(dss_instance_t *inst)
     return status;
 }
 
-status_t dss_recover_when_change_status(dss_instance_t *inst)
-{
-    return dss_recover_from_instance(inst);
-}
-
-bool32 dss_config_cm()
-{
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    char *value = cm_get_config_value(&inst_cfg->config, "DSS_CM_SO_NAME");
-    if (value == NULL || strlen(value) == 0 || strlen(value) >= DSS_MAX_NAME_LEN) {
-        LOG_RUN_INF("dss cm config of DSS_CM_SO_NAME is invalid.");
-        return CM_FALSE;
-    }
-    return CM_TRUE;
-}
-
-/* For startup:
-   (1) if master_id == cur_id and status is recovery,try to recover, then set status open;
-   (2) if master_id != cur_id and status is recovery, just set status open. When metadata needs to be modified,
-       just send messages to master_id, if master_id is in recovery, just reject;
-*/
-status_t dss_change_instance_status_to_open(dss_instance_t *cur_inst, uint32 curr_id, uint32 master_id)
-{
-    status_t ret;
-    if (curr_id == master_id) {
-        LOG_RUN_INF("instance [%u] begin to recover.", master_id);
-        ret = dss_recover_when_change_status(cur_inst);
-        if (ret != CM_SUCCESS) {
-            return ret;
-        }
-    }
-    cur_inst->status = DSS_STATUS_OPEN;
-    return CM_SUCCESS;
-}
-
 /*
     1、NO CM:every node can do readwrite
     2、CM:get cm lock to be master
     3、ENABLE_DSSTEST: for test, select min id as master
 */
-status_t dss_get_instance_log_buf_no_cm(dss_instance_t *inst)
+status_t dss_recover_no_cm(dss_instance_t *inst)
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)inst_cfg->params.inst_id;
+    status_t ret;
     if (inst_cfg->params.inst_cnt <= 1) {
         dss_set_master_id(curr_id);
         dss_set_server_status_flag(DSS_STATUS_READWRITE);
         LOG_RUN_INF("inst %u set status flag %u when server start.", curr_id, DSS_STATUS_READWRITE);
-        return dss_change_instance_status_to_open(inst, curr_id, curr_id);
+        ret = dss_recover_from_instance(inst);
+        if (ret == CM_SUCCESS) {
+            inst->status = DSS_STATUS_OPEN;
+        }
+        return ret;
     }
 #ifndef ENABLE_DSSTEST
-    if (inst->is_maintain || !dss_config_cm()) {
+    if (inst->is_maintain) {
         dss_set_master_id(curr_id);
         dss_set_server_status_flag(DSS_STATUS_READWRITE);
         LOG_RUN_INF("inst %u set status flag %u when server start.", curr_id, DSS_STATUS_READWRITE);
-        return dss_change_instance_status_to_open(inst, curr_id, curr_id);
+        ret = dss_recover_from_instance(inst);
+        if (ret == CM_SUCCESS) {
+            inst->status = DSS_STATUS_OPEN;
+        }
+        return ret;
     }
 #endif
     return CM_SUCCESS;
@@ -327,7 +301,7 @@ status_t dss_get_instance_log_buf(dss_instance_t *inst)
     if (ret != CM_SUCCESS) {
         return ret;
     }
-    return dss_get_instance_log_buf_no_cm(inst);
+    return dss_recover_no_cm(inst);
 }
 
 static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
@@ -669,12 +643,13 @@ void dss_no_cm_recover(dss_instance_t *inst)
     LOG_RUN_INF("Set min id %u as master id.", i);
     if (master_id == curr_id) {
         dss_set_server_status_flag(DSS_STATUS_READWRITE);
-        status_t ret = dss_change_instance_status_to_open(inst, curr_id, curr_id);
+        status_t ret = dss_recover_from_instance(inst);
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("[DSS] ABORT INFO: Fail to change status open without cm, exit.");
             cm_fync_logfile();
             _exit(1);
         }
+        inst->status = DSS_STATUS_OPEN;
     } else {
         dss_set_server_status_flag(DSS_STATUS_READONLY);
         inst->status = DSS_STATUS_OPEN;
@@ -712,7 +687,7 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
             inst->status = DSS_STATUS_RECOVERY;
             dss_set_master_id(master_id);
             dss_set_server_status_flag(DSS_STATUS_READWRITE);
-            status_t status = dss_change_instance_status_to_open(inst, curr_id, master_id);
+            status_t status = dss_recover_from_instance(inst);
             if (status != CM_SUCCESS) {
                 LOG_RUN_ERR("[DSS] ABORT INFO: Recover failed when get cm lock.");
                 cm_fync_logfile();
@@ -729,7 +704,7 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
     dss_wait_session_pause(inst);
     inst->status = DSS_STATUS_RECOVERY;
     LOG_RUN_INF("master_id is %u when get cm lock to do recovery.", master_id);
-    status_t ret = dss_change_instance_status_to_open(inst, curr_id, master_id);
+    status_t ret = dss_recover_from_instance(inst);
     if (ret != CM_SUCCESS) {
         cm_spin_unlock(&g_dss_instance.switch_lock);
         LOG_RUN_ERR("[DSS] ABORT INFO: Recover failed when get cm lock.");
@@ -753,6 +728,7 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
     dss_set_session_running(inst);
     dss_set_server_status_flag(DSS_STATUS_READWRITE);
     LOG_RUN_INF("inst %u set status flag %u when get cm lock.", curr_id, DSS_STATUS_READWRITE);
+    inst->status = DSS_STATUS_OPEN;
     cm_spin_unlock(&g_dss_instance.switch_lock);
 }
 
