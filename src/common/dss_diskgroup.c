@@ -1669,7 +1669,7 @@ void regist_remote_read_proc(dss_remote_read_proc_t proc)
 
 static inline bool32 dss_need_load_remote(int size)
 {
-    return ((remote_read_proc != NULL) && (dss_is_readonly()) && (size <= (int32)DSS_LOADDISK_BUFFER_SIZE));
+    return ((remote_read_proc != NULL) && (!dss_need_exec_local()) && (size <= (int32)DSS_LOADDISK_BUFFER_SIZE));
 }
 
 /*
