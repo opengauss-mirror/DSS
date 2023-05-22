@@ -557,6 +557,7 @@ void dss_check_mes_conn(uint64 cur_inst_map)
     if (old_inst_map == cur_inst_map) {
         return;
     }
+    dss_set_inst_work_status(cur_inst_map);
     uint32 inst_cnt = 0;
     for (uint32_t id = 0; id < DSS_MAX_INSTANCES; id++) {
         if (id == inst_cfg->params.inst_id) {
@@ -572,8 +573,6 @@ void dss_check_mes_conn(uint64 cur_inst_map)
             break;
         }
     }
-
-    dss_set_inst_work_status(cur_inst_map);
 }
 
 status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result)
