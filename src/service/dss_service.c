@@ -731,14 +731,30 @@ static status_t dss_process_get_inst_status(dss_session_t *session)
     return CM_SUCCESS;
 }
 
-static void dss_wait_session_pause_inner(dss_session_t *session)
+static void dss_set_all_user_session_pausing(dss_instance_t *inst)
 {
-    if (session != NULL && session->status == DSS_THREAD_STATUS_RUNNING) {
-        session->status = DSS_THREAD_STATUS_PAUSING;
-        LOG_DEBUG_INF("Succeed to pause session: %d.", session->id);
-        while (session->status != DSS_THREAD_STATUS_PAUSED && !session->is_closed) {
-            cm_sleep(1);
+    uint32 start_sid = dss_get_udssession_startid();
+    uint32 end_sid = start_sid + inst->inst_cfg.params.cfg_session_num;
+    for (uint32 i = start_sid; i < end_sid; i++) {
+        dss_session_t *session = (dss_session_t *)inst->threads[i].argument;
+        if (session != NULL && session->status == DSS_THREAD_STATUS_RUNNING) {
+            session->status = DSS_THREAD_STATUS_PAUSING;
+            LOG_DEBUG_INF("Succeed to pausing session: %d.", session->id);
         }
+    }
+}
+
+static void dss_wait_all_user_session_paused(dss_instance_t *inst)
+{
+    uint32 start_sid = dss_get_udssession_startid();
+    uint32 end_sid = start_sid + inst->inst_cfg.params.cfg_session_num;
+    while (start_sid < end_sid) {
+        dss_session_t *session = (dss_session_t *)inst->threads[start_sid].argument;
+        if (session != NULL && !session->is_closed && session->status == DSS_THREAD_STATUS_PAUSING) {
+            cm_sleep(1);
+            continue;
+        }
+        start_sid++;
     }
 }
 
@@ -747,31 +763,32 @@ void dss_wait_session_pause(dss_instance_t *inst)
     uds_lsnr_t *lsnr = &inst->lsnr;
     LOG_DEBUG_INF("Begin to set session paused.");
     cs_pause_uds_lsnr(lsnr);
-    uint32 start_sid = dss_get_udssession_startid();
-    uint32 end_sid = start_sid + inst->inst_cfg.params.cfg_session_num;
     if (inst->threads != NULL) {
-        for (uint32 i = start_sid; i < end_sid; i++) {
-            dss_session_t *session = (dss_session_t *)inst->threads[i].argument;
-            dss_wait_session_pause_inner(session);
-        }
+        dss_set_all_user_session_pausing(inst);
+        dss_wait_all_user_session_paused(inst);
     }
     LOG_DEBUG_INF("Succeed to pause all session.");
+}
+
+static void dss_set_all_user_session_running(dss_instance_t *inst)
+{
+    uint32 start_sid = dss_get_udssession_startid();
+    uint32 end_sid = start_sid + inst->inst_cfg.params.cfg_session_num;
+    for (uint32 i = start_sid; i < end_sid; i++) {
+        dss_session_t *session = (dss_session_t *)inst->threads[i].argument;
+        if (session != NULL && session->status == DSS_THREAD_STATUS_PAUSED) {
+            session->status = DSS_THREAD_STATUS_RUNNING;
+            LOG_DEBUG_INF("Succeed to run session: %d.", session->id);
+        }
+    }
 }
 
 void dss_set_session_running(dss_instance_t *inst)
 {
     LOG_DEBUG_INF("Begin to set session running.");
     uds_lsnr_t *lsnr = &inst->lsnr;
-    uint32 start_sid = dss_get_udssession_startid();
-    uint32 end_sid = start_sid + inst->inst_cfg.params.cfg_session_num;
     if (inst->threads != NULL) {
-        for (uint32 i = start_sid; i < end_sid; i++) {
-            dss_session_t *session = (dss_session_t *)inst->threads[i].argument;
-            if (session != NULL && session->status == DSS_THREAD_STATUS_PAUSED) {
-                session->status = DSS_THREAD_STATUS_RUNNING;
-                LOG_DEBUG_INF("Succeed to run session: %d.", session->id);
-            }
-        }
+        dss_set_all_user_session_running(inst);
     }
     lsnr->status = LSNR_STATUS_RUNNING;
     LOG_DEBUG_INF("Succeed to run all sessions.");
