@@ -247,7 +247,7 @@ static status_t dss_load_mes_elapsed_switch(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
-static status_t dss_load_random_file(const uchar *value, int32 value_len)
+static status_t dss_load_random_file(uchar *value, int32 value_len)
 {
     char file_name[CM_FILE_NAME_BUFFER_SIZE];
     char dir_name[CM_FILE_NAME_BUFFER_SIZE];

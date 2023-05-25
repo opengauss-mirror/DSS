@@ -242,6 +242,7 @@ status_t dss_recover_from_instance(dss_instance_t *inst)
     }
     LOG_RUN_INF(
         "Flush assemble log, whose size is %u, maybe greater than %u in recovery", batch->size, DSS_LOG_BUFFER_SIZE);
+    batch->in_recovery = CM_TRUE;
     if (dss_flush_log(0, vg_item, log_buf) != CM_SUCCESS) {
         LOG_RUN_ERR("Flush log failed.");
         DSS_FREE_POINT(batch);
@@ -628,7 +629,7 @@ void dss_no_cm_recover(dss_instance_t *inst)
     }
     uint32 curr_id = (uint32)inst_cfg->params.inst_id;
     uint32 old_master_id = dss_get_master_id();
-    uint32 master_id;
+    uint32 master_id = 0;
     uint32 i;
     for (i = 0; i < DSS_MAX_INSTANCES; i++) {
         if (inst_cfg->params.ports[i] != 0) {
