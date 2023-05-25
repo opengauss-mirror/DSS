@@ -1027,7 +1027,7 @@ static status_t lsvg_info(dss_conn_t *connection, const char *measure, bool32 de
         LOG_DEBUG_ERR("Malloc failed.\n");
         return CM_ERROR;
     }
-    memset_s(allvg_vlm_space_info, sizeof(dss_allvg_vlm_space_t), 0, sizeof(dss_allvg_vlm_space_t));
+    (void)memset_s(allvg_vlm_space_info, sizeof(dss_allvg_vlm_space_t), 0, sizeof(dss_allvg_vlm_space_t));
     status = dss_load_vginfo_sync(connection, allvg_vlm_space_info);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load vg information.\n");
@@ -1376,6 +1376,7 @@ static status_t ls_proc(void)
     while ((node = (dss_dir_item_handle)dss_read_dir_impl(&connection, dir, CM_TRUE)) != NULL) {
         if (cm_time2str(node->create_time, "YYYY-MM-DD HH24:mi:ss", time, sizeof(time)) != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to get create time of node %s.\n", node->name);
+            (void)dss_close_dir_impl(&connection, dir);
             dss_disconnect_ex(&connection);
             return CM_ERROR;
         }
@@ -2163,6 +2164,7 @@ static status_t dev_proc(void)
     int64 offset = 0;
     status = cm_str2bigint(cmd_dev_args[DSS_ARG_IDX_1].input_args, &offset);
     if (status != CM_SUCCESS) {
+        dss_close_volume(&volume);
         DSS_PRINT_ERROR("The value of offset is invalid");
         return CM_ERROR;
     }
@@ -2170,6 +2172,7 @@ static status_t dev_proc(void)
     (void)printf("filename is %s, offset is %lld.\n", path, offset);
     status = dss_read_volume(&volume, offset, o_buf, (int32)DSS_CMD_PRINT_BLOCK_SIZE);
     if (status != CM_SUCCESS) {
+        dss_close_volume(&volume);
         DSS_PRINT_ERROR("Failed to read file %s.\n", path);
         return status;
     }
