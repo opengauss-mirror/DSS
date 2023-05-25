@@ -36,6 +36,7 @@
 #include "cm_encrypt.h"
 #include "cm_utils.h"
 #include "cm_signal.h"
+#include "cm_sec_file.h"
 
 #include "dss_errno.h"
 #include "dss_defs.h"

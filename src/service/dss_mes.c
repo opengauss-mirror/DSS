@@ -144,7 +144,7 @@ static void dss_check_file_open(dss_session_t *se, mes_message_t *msg)
     DSS_FREE_POINT(send_msg);
     // delay because exist the lock of vg and shm, may dead lock with the peer node
     if (!is_open) {
-        dss_clean_file_meta(se, check->ftid, check->vg_name);
+        dss_clean_file_meta(se, vg_item, check->ftid);
     }
 }
 
@@ -669,7 +669,11 @@ void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg)
     }
     status_t ret = dss_proc_standby_req(session);
     mes_message_head_t ack;
-    dss_prepare_ack_msg(session, ret);
+    status_t status = dss_prepare_ack_msg(session, ret);
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("The dss server prepare ack msg failed, src node(%u), dst node(%u).", srcid, dstid);
+        return;
+    }
     ack.size = (uint16)(session->send_pack.head->size - sizeof(dss_packet_head_t) + sizeof(mes_message_head_t));
     mes_init_ack_head(&head, &ack, DSS_CMD_ACK_SYB2ACTIVE, ack.size, session->id);
     ret = mes_send_data2(&ack, session->send_pack.buf + sizeof(dss_packet_head_t));
