@@ -218,6 +218,7 @@ static status_t dss_set_vg_ctrl(
     status_t status;
     dss_ctrl_t *vg_ctrl = (dss_ctrl_t *)cm_malloc_align(DSS_ALIGN_SIZE, sizeof(dss_ctrl_t));
     if (vg_ctrl == NULL) {
+        dss_free_vg_info(g_vgs_info);
         LOG_DEBUG_ERR("Failed to alloc memory, vg name is %s, volume name is %s.\n", vg_name, volume_name);
         DSS_THROW_ERROR(ERR_ALLOC_MEMORY, sizeof(dss_ctrl_t), "vg_ctrl");
         return CM_ERROR;
