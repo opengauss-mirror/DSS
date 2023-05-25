@@ -1097,7 +1097,13 @@ status_t dss_open_file_impl(dss_conn_t *conn, const char *file_path, int flag, i
         if (file_vg_item->id != vg_item->id) {
             DSS_UNLOCK_VG_META_S(vg_item, conn->session);
             vg_item = file_vg_item;
-            DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session, NULL);
+            status = dss_lock_vg_s(vg_item, conn->session);
+            if (status != CM_SUCCESS) {
+                if (ft_node != NULL) {
+                    (void)dss_close_file_on_server(conn, vg_item, ft_node->fid, ft_node->id);
+                }
+                return status;
+            }
         }
         status = dss_open_file_inner(vg_item, ft_node, handle);
     } while (0);
