@@ -165,7 +165,7 @@ void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg);
 status_t dss_read_volume_remote(const char *vg_name, dss_volume_t *volume, int64 offset, void *buf, int32 size);
 status_t dss_send2standby(
     dss_session_t *session, mes_message_head_t *reqhead, big_packets_ctrl_t *ctrl, const char *buf, uint16 size);
-status_t dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, mes_message_head_t *reqhead);
+int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, mes_message_head_t *reqhead);
 status_t dss_notify_online(dss_session_t *session);
 
 #ifdef __cplusplus
