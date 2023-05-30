@@ -193,6 +193,9 @@ status_t dss_get_name_from_path(const char *path, uint32_t *beg_pos, char *name)
         DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, path, "begin pos is larger than string length.");
         return CM_ERROR;
     }
+    if (path[len - 1] == '/') {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, path, ", path should not end with /."));
+    }
 
     if (path[*beg_pos] == '/' || (*beg_pos == 0 && path[*beg_pos] == '+')) {
         (*beg_pos)++;
@@ -215,6 +218,9 @@ status_t dss_get_name_from_path(const char *path, uint32_t *beg_pos, char *name)
     } else {
         DSS_RETURN_IFERR2(
             CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, path, ", name should be [0~9,a~z,A~Z,-,_,.]"));
+    }
+    if (name[0] == 0 && path[*beg_pos] != 0) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, path, ", path split by / failed."));
     }
 
     return CM_SUCCESS;
