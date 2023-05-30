@@ -256,6 +256,10 @@ dss_dir_handle dss_dopen(const char *dir_path)
 
 int dss_dread(dss_dir_handle dir, dss_dir_item_t item, dss_dir_item_t *result)
 {
+    if (item == NULL || result == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "errcodss_dir_item_t");
+        return DSS_ERROR;
+    }
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("dread get conn error."));
