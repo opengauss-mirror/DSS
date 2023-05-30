@@ -2900,7 +2900,7 @@ static status_t cmd_check_scandisk_path(const char *param)
         DSS_PRINT_ERROR("Failed to check path %s.\n", param);
         return CM_ERROR;
     }
-    status = dss_check_path(param);
+    status = dss_check_volume_path(param);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to check name %s.\n", param);
         return CM_ERROR;

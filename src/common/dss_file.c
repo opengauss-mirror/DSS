@@ -573,7 +573,7 @@ static status_t dss_check_link(
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to get name from path %s,%d.", link_path, status));
 
     if (name[0] == 0) {
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to get name from path %s.", link_path));
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to get name from path %s.", link_path));
     }
     return dss_check_dir_core(link_path, type, name, beg_pos, output_param);
 }
@@ -659,7 +659,7 @@ status_t dss_check_dir(
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to get name from path %s,%d.", dir_path, status));
 
     if (name[0] == 0) {
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to get name from path %s.", dir_path));
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to get name from path %s.", dir_path));
     }
     dss_check_dir_param_t output_param = {0};
     output_param.is_throw_err = is_throw_err;
