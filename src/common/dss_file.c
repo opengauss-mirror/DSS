@@ -1740,7 +1740,7 @@ void dss_init_alloc_ft_node(gft_root_t *gft, gft_node_t *node, uint32 flags, gft
 {
     node->create_time = cm_current_time();
     node->update_time = node->create_time;
-    node->size = 0;
+    cm_atomic_set(&node->size, 0);
     node->written_size = 0;
     node->prev = parent_node->items.last;
     node->fid = gft->fid++;
@@ -2680,7 +2680,7 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
         dss_block_id_t old_id = second_block->bitmap[block_au_count];
         second_block->bitmap[block_au_count] = auid;
         second_block->head.used_num++;
-        uint64 old_size = node->size;
+        uint64 old_size = (uint64)node->size;
         dss_redo_set_fs_block_t redo;
         redo.id = second_block_id;
         redo.index = (uint16)block_au_count;
@@ -2690,10 +2690,10 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
         redo.old_used_num = old_used_num;
         dss_put_log(session, vg_item, DSS_RT_SET_FILE_FS_BLOCK, &redo, sizeof(redo));
 
-        node->size += dss_get_vg_au_size(vg_item->dss_ctrl);
+        (void)cm_atomic_set(&node->size, (int64)(old_size + dss_get_vg_au_size(vg_item->dss_ctrl)));
         dss_redo_set_file_size_t redo_size;
         redo_size.ftid = node->id;
-        redo_size.size = node->size;
+        redo_size.size = (uint64)node->size;
         redo_size.oldsize = old_size;
         dss_put_log(session, vg_item, DSS_RT_SET_FILE_SIZE, &redo_size, sizeof(redo_size));
     }
@@ -2766,7 +2766,7 @@ status_t dss_extend(dss_session_t *session, dss_node_data_t *node_data)
 
 static bool32 dss_is_truncate_necessary(gft_node_t *node, uint64 aligned_length, uint64 au_size)
 {
-    if (aligned_length >= node->size) {
+    if (aligned_length >= (uint64)node->size) {
         LOG_DEBUG_INF("Aligned target length %llu >= current file size %llu; curr AU size is %llu. No Truncation.",
             aligned_length, node->size, au_size);
         return CM_FALSE;
@@ -3003,7 +3003,7 @@ static status_t dss_init_trunc_ftn(dss_session_t *session, dss_vg_info_item_t *v
     char trunc_name[DSS_MAX_NAME_LEN];
     date_detail_t detail = g_timer()->detail;
     int iret_snprintf = snprintf_s(trunc_name, sizeof(trunc_name), sizeof(trunc_name) - 1, "%s_sz%llu_%02u%02u%02u%03u",
-        node->name, node->size - length, detail.hour, detail.min, detail.sec, detail.millisec);
+        node->name, (uint64)node->size - length, detail.hour, detail.min, detail.sec, detail.millisec);
     DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
     *truncated_ftn = dss_alloc_ft_node(session, vg_item, recycle_dir, trunc_name, GFT_FILE);
     status_t status = dss_process_redo_log(session, vg_item);
@@ -3027,19 +3027,19 @@ static void dss_truncate_set_sizes(
     uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
     uint64 align_length = CM_CALC_ALIGN(length, au_size);
     dss_redo_set_file_size_t redo_size;
-    uint64 old_size = trunc_ftn->size;
-    trunc_ftn->size = node->size - align_length;
+    uint64 old_size = (uint64)trunc_ftn->size;
+    cm_atomic_set(&trunc_ftn->size, (int64)((uint64)node->size - align_length));
     trunc_ftn->written_size = 0;
     redo_size.ftid = trunc_ftn->id;
-    redo_size.size = trunc_ftn->size;
+    redo_size.size = (uint64)trunc_ftn->size;
     redo_size.oldsize = old_size;
     dss_put_log(session, vg_item, DSS_RT_SET_FILE_SIZE, &redo_size, sizeof(redo_size));
 
-    old_size = node->size;
-    node->size = align_length;
+    old_size = (uint64)node->size;
+    cm_atomic_set(&node->size, (int64)align_length);
     node->written_size = length < node->written_size ? length : node->written_size;
     redo_size.ftid = node->id;
-    redo_size.size = node->size;
+    redo_size.size = (uint64)node->size;
     redo_size.oldsize = old_size;
     dss_put_log(session, vg_item, DSS_RT_SET_FILE_SIZE, &redo_size, sizeof(redo_size));
 }
@@ -3082,7 +3082,7 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
 #ifdef OPENGAUSS
     if (node->written_size < length) {
 #else
-    if (node->size < align_length) {
+    if ((uint64)node->size < align_length) {
 #endif
         /* to extend the file */
         LOG_DEBUG_INF("start truncate to extend");
