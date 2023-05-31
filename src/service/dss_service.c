@@ -388,7 +388,7 @@ static status_t dss_process_close_file(dss_session_t *session)
         ftid.item);
     bool32 should_rm_file = DSS_FALSE;
     gft_node_t *node;
-    (void)dss_check_rm_file(vg_item, ftid, &should_rm_file, &node);
+    (void)dss_check_rm_file(session, vg_item, ftid, &should_rm_file, &node);
     if (should_rm_file) {
         if (!dss_is_readwrite()) {
             LOG_DEBUG_INF(

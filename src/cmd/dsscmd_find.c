@@ -39,7 +39,8 @@ static inline bool is_match(const char *name, const char *pattern)
 #endif
 }
 
-static void find_traverse_node(gft_node_t *node, dss_vg_info_item_t *vg_item, const char *name, const char *path_prefix)
+static void find_traverse_node(
+    dss_conn_t *conn, gft_node_t *node, dss_vg_info_item_t *vg_item, const char *name, const char *path_prefix)
 {
     size_t origin_len = strlen(path_prefix);
     char *tmp = (char *)path_prefix;
@@ -51,11 +52,11 @@ static void find_traverse_node(gft_node_t *node, dss_vg_info_item_t *vg_item, co
     cm_concat_text(&path_text, DSS_MAX_PATH_BUFFER_SIZE, &name_text);
 
     if (node->type == GFT_PATH) {
-        gft_node_t *sub_node = dss_get_ft_node_by_ftid(vg_item, node->items.first, CM_TRUE, CM_FALSE);
+        gft_node_t *sub_node = dss_get_ft_node_by_ftid(conn->session, vg_item, node->items.first, CM_TRUE, CM_FALSE);
 
         while (sub_node) {
-            find_traverse_node(sub_node, vg_item, name, path_prefix);
-            sub_node = dss_get_ft_node_by_ftid(vg_item, sub_node->next, CM_TRUE, CM_FALSE);
+            find_traverse_node(conn, sub_node, vg_item, name, path_prefix);
+            sub_node = dss_get_ft_node_by_ftid(conn->session, vg_item, sub_node->next, CM_TRUE, CM_FALSE);
         }
     }
 
@@ -67,14 +68,14 @@ static void find_traverse_node(gft_node_t *node, dss_vg_info_item_t *vg_item, co
     }
 }
 
-static status_t find_try_match_link(char *path, const char *name)
+static status_t find_try_match_link(dss_conn_t *conn, char *path, const char *name)
 {
     size_t len = strlen(path);
     if (len > 0 && path[len - 1] != '/') {
         gft_node_t *node = NULL;
 
         dss_check_dir_output_t output_info = {&node, NULL, NULL};
-        dss_check_dir(path, GFT_LINK, &output_info, CM_FALSE);
+        dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE);
         if (node) {  // check the link name
             if (is_match(node->name, name)) {
                 printf("%s\n", path);
@@ -91,12 +92,12 @@ status_t find_traverse_path(dss_conn_t *conn, char *path, size_t path_size, char
     gft_node_t *node = NULL;
     size_t len = strlen(path);
 
-    DSS_RETURN_IF_SUCCESS(find_try_match_link(path, name));
+    DSS_RETURN_IF_SUCCESS(find_try_match_link(conn, path, name));
 
     dss_exist_file_impl(conn, path, &exist);
     if (exist) {
         dss_check_dir_output_t output_info = {&node, NULL, NULL};
-        dss_check_dir(path, GFT_FILE, &output_info, CM_TRUE);
+        dss_check_dir(conn->session, path, GFT_FILE, &output_info, CM_TRUE);
         if (!node) {
             LOG_DEBUG_ERR("Failed to check file node\n");
             return CM_ERROR;
@@ -114,7 +115,7 @@ status_t find_traverse_path(dss_conn_t *conn, char *path, size_t path_size, char
         return CM_ERROR;
     }
     dss_check_dir_output_t output_info = {&node, NULL, NULL};
-    dss_check_dir(path, GFT_PATH, &output_info, CM_TRUE);
+    dss_check_dir(conn->session, path, GFT_PATH, &output_info, CM_TRUE);
     if (!node) {
         LOG_DEBUG_ERR("Failed to check dir node\n");
         (void)dss_close_dir_impl(conn, dir);
@@ -127,7 +128,7 @@ status_t find_traverse_path(dss_conn_t *conn, char *path, size_t path_size, char
         len--;
     }
     path[(strlen(path) - strlen(node->name)) - 1] = 0;
-    find_traverse_node(node, dir->vg_item, name, path);
+    find_traverse_node(conn, node, dir->vg_item, name, path);
     (void)dss_close_dir_impl(conn, dir);
     return CM_SUCCESS;
 }

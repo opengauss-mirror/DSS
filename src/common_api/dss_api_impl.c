@@ -692,7 +692,7 @@ static dss_dir_t *dss_open_dir_impl_core(dss_conn_t *conn, const char *dir_path,
     DSS_LOCK_VG_META_S_RETURN_NULL(vg_item, conn->session);
     dss_vg_info_item_t *dir_vg_item;
     dss_check_dir_output_t output_info = {&node, &dir_vg_item, NULL};
-    status = dss_check_dir(dir_path, GFT_PATH, &output_info, CM_TRUE);
+    status = dss_check_dir(conn->session, dir_path, GFT_PATH, &output_info, CM_TRUE);
     if (status != CM_SUCCESS) {
         DSS_UNLOCK_VG_META_S(vg_item, conn->session);
         LOG_DEBUG_ERR("dss check dir failed, when open dir impl, dir_path:%s.", dir_path);
@@ -791,7 +791,7 @@ dss_dir_item_handle dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 s
 
     DSS_LOCK_VG_META_S_RETURN_NULL(dir->vg_item, conn->session);
 
-    gft_node_t *node = dss_get_ft_node_by_ftid(dir->vg_item, dir->cur_ftid, CM_FALSE, CM_FALSE);
+    gft_node_t *node = dss_get_ft_node_by_ftid(conn->session, dir->vg_item, dir->cur_ftid, CM_FALSE, CM_FALSE);
     while (node != NULL) {
         dir->cur_ftid = node->next;
         dir->cur_node = *node;
@@ -810,7 +810,7 @@ dss_dir_item_handle dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 s
             return NULL;
         }
         DSS_LOCK_VG_META_S_RETURN_NULL(dir->vg_item, conn->session);
-        node = dss_get_ft_node_by_ftid(dir->vg_item, dir->cur_ftid, CM_FALSE, CM_FALSE);
+        node = dss_get_ft_node_by_ftid(conn->session, dir->vg_item, dir->cur_ftid, CM_FALSE, CM_FALSE);
     }
     DSS_UNLOCK_VG_META_S(dir->vg_item, conn->session);
     return NULL;
@@ -1023,7 +1023,7 @@ gft_node_t *dss_get_node_by_path_impl(dss_conn_t *conn, const char *path)
     }
 
     DSS_LOCK_VG_META_S_RETURN_NULL(vg_item, conn->session);
-    gft_node_t *node = dss_get_ft_node_by_ftid(vg_item, ftid, CM_FALSE, CM_FALSE);
+    gft_node_t *node = dss_get_ft_node_by_ftid(conn->session, vg_item, ftid, CM_FALSE, CM_FALSE);
     DSS_UNLOCK_VG_META_S(vg_item, conn->session);
     return node;
 }
@@ -1083,7 +1083,7 @@ status_t dss_open_file_impl(dss_conn_t *conn, const char *file_path, int flag, i
     do {
         dss_vg_info_item_t *file_vg_item = NULL;
         dss_check_dir_output_t output_info = {&ft_node, &file_vg_item, NULL};
-        status = dss_check_dir(file_path, GFT_FILE, &output_info, CM_TRUE);
+        status = dss_check_dir(conn->session, file_path, GFT_FILE, &output_info, CM_TRUE);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to check dir when open file impl, errcode:%d.", cm_get_error_code());
             break;
@@ -1384,14 +1384,14 @@ static status_t dss_alloc_block_core(
         DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
         second_block_id = entry_fs_block->bitmap[block_count];
         *second_block = (dss_fs_block_t *)dss_find_block_in_shm(
-            vg_item, second_block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
+            rw_ctx.conn->session, vg_item, second_block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
         if ((*second_block) == NULL) {
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             status = dss_apply_refresh_file(conn, context, second_block_id);
             DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to refresh second fs block."));
             DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
             *second_block = (dss_fs_block_t *)dss_find_block_in_shm(
-                vg_item, second_block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
+                rw_ctx.conn->session, vg_item, second_block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
             if ((*second_block) == NULL) {
                 DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
                 DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "fs_block", *(uint64 *)&second_block_id);
@@ -1401,7 +1401,7 @@ static status_t dss_alloc_block_core(
         }
     } else {
         *second_block = (dss_fs_block_t *)dss_find_block_in_shm(
-            vg_item, second_block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
+            rw_ctx.conn->session, vg_item, second_block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
         if ((*second_block) == NULL) {
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
 
@@ -1413,7 +1413,7 @@ static status_t dss_alloc_block_core(
 
             DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
             *second_block = (dss_fs_block_t *)dss_find_block_in_shm(
-                vg_item, second_block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
+                rw_ctx.conn->session, vg_item, second_block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
             if ((*second_block) == NULL) {
                 DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
                 LOG_RUN_ERR("Failed to find block:%llu in mem.", DSS_ID_TO_U64(second_block_id));
@@ -1561,7 +1561,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
     gft_node_t *node = context->node;
     dss_vg_info_item_t *vg_item = context->vg_item;
     dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
-        vg_item, node->entry, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
+        conn->session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
     if (!entry_block) {
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
         LOG_DEBUG_ERR("Can not find entry block in memory,entry blockid:%llu,nodeid:%llu.", DSS_ID_TO_U64(node->entry),
@@ -1862,7 +1862,7 @@ static status_t dss_get_addr_core(dss_rw_param_t *param, char *pool_name, char *
     gft_node_t *node = context->node;
     dss_vg_info_item_t *vg_item = context->vg_item;
     dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
-        vg_item, node->entry, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
+        conn->session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
     if (!entry_block) {
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
         LOG_DEBUG_ERR("Can not find entry block in memory,entry blockid:%llu,nodeid:%llu.", DSS_ID_TO_U64(node->entry),
@@ -2409,7 +2409,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
     gft_node_t *node = context->node;
     dss_vg_info_item_t *vg_item = context->vg_item;
     dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
-        vg_item, node->entry, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
+        conn->session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
     if (!entry_block) {
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
         LOG_DEBUG_ERR("Can not find entry block in memory, entry blockid:%llu, nodeid:%llu.",

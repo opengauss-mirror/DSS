@@ -63,9 +63,9 @@ status_t dss_register_buffer_cache(
             (uint64)block_id->au, block_id->block, block_id->item);
         return CM_ERROR;
     }
-    dss_latch_x(&bucket->enque_lock);
+    dss_lock_shm_meta_bucket_x(&bucket->enque_lock);
     dss_register_buffer_cache_inner(bucket, obj_id, block_ctrl, hash);
-    dss_unlatch(&bucket->enque_lock);
+    dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
     return CM_SUCCESS;
 }
 
@@ -80,7 +80,7 @@ void dss_unregister_buffer_cache(dss_vg_info_item_t *vg_item, dss_block_id_t blo
     uint32 hash = cm_hash_int64(*(int64 *)&block_id);
     shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(vg_item->buffer_cache->buckets);
     shm_hashmap_bucket_t *bucket = &buckets[hash % vg_item->buffer_cache->num];
-    dss_latch_x(&bucket->enque_lock);
+    dss_lock_shm_meta_bucket_x(&bucket->enque_lock);
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     while (has_next) {
@@ -112,13 +112,13 @@ void dss_unregister_buffer_cache(dss_vg_info_item_t *vg_item, dss_block_id_t blo
                                       (dss_block_ctrl_t *)(addr + DSS_FILE_SPACE_BLOCK_SIZE);
             }
             SHM_HASH_BUCKET_REMOVE(bucket, *(sh_mem_p *)&next_id, block_ctrl, prev_block_ctrl, next_block_ctrl);
-            dss_unlatch(&bucket->enque_lock);
+            dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
             return;
         }
         has_next = block_ctrl->has_next;
         next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
     }
-    dss_unlatch(&bucket->enque_lock);
+    dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
     LOG_DEBUG_ERR("Key to remove not found");
 }
 
@@ -196,7 +196,7 @@ static status_t dss_load_buffer_cache(
     shm_hashmap_t *map = vg_item->buffer_cache;
     shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
     shm_hashmap_bucket_t *bucket = &buckets[hash % map->num];
-    dss_latch_x(&bucket->enque_lock);
+    dss_lock_shm_meta_bucket_x(&bucket->enque_lock);
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     while (has_next) {
@@ -211,7 +211,7 @@ static status_t dss_load_buffer_cache(
             block_id_tmp = ((dss_fs_block_t *)addr)->head.id;
         }
         if ((block_ctrl->hash == hash) && (cm_oamap_uint64_compare(&block_id_tmp, &block_id) == CM_TRUE)) {
-            dss_unlatch(&bucket->enque_lock);
+            dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
             status_t status = dss_check_block_version(vg_item, block_id, type, addr, NULL);
             if (status != CM_SUCCESS) {
                 return status;
@@ -238,14 +238,14 @@ static status_t dss_load_buffer_cache(
     int64_t offset = dss_get_block_offset(vg_item, (uint64)size, block_id.block, block_id.au);
     uint32 obj_id = ga_alloc_object(pool_id, CM_INVALID_ID32);
     if (obj_id == CM_INVALID_ID32) {
-        dss_unlatch(&bucket->enque_lock);
+        dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
         return ERR_ALLOC_MEMORY;
     }
     char *buf = ga_object_addr(pool_id, obj_id);
 
     status_t status = dss_get_block_from_disk(vg_item, block_id, buf, offset, (int32)size, CM_TRUE);
     if (status != CM_SUCCESS) {
-        dss_unlatch(&bucket->enque_lock);
+        dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
         ga_free_object(pool_id, obj_id);
         LOG_DEBUG_ERR("Failed to get block from disk, v:%u,au:%llu,block:%u,item:%u,type:%d.", block_id.volume,
             (uint64)block_id.au, block_id.block, block_id.item, type);
@@ -259,7 +259,7 @@ static status_t dss_load_buffer_cache(
     }
     errno_t errcode = memset_s(block_ctrl, sizeof(dss_block_ctrl_t), 0, sizeof(dss_block_ctrl_t));
     if (errcode != EOK) {
-        dss_unlatch(&bucket->enque_lock);
+        dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
         ga_free_object(pool_id, obj_id);
         LOG_DEBUG_ERR("Failed to memset block ctrl, v:%u,au:%llu,block:%u,item:%u,type:%d.", block_id.volume,
             (uint64)block_id.au, block_id.block, block_id.item, type);
@@ -269,7 +269,7 @@ static status_t dss_load_buffer_cache(
     ga_obj_id.pool_id = pool_id;
     ga_obj_id.obj_id = obj_id;
     dss_register_buffer_cache_inner(bucket, ga_obj_id, block_ctrl, hash);
-    dss_unlatch(&bucket->enque_lock);
+    dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
     if (out_obj_id) {
         *out_obj_id = ga_obj_id;
     }
@@ -279,9 +279,10 @@ static status_t dss_load_buffer_cache(
     return CM_SUCCESS;
 }
 
-void *dss_find_block_in_bucket(
-    shm_hashmap_t *map, uint32 hash, uint64 *key, bool32 is_print_error_log, ga_obj_id_t *out_obj_id)
+void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 hash, uint64 *key,
+    bool32 is_print_error_log, ga_obj_id_t *out_obj_id)
 {
+    shm_hashmap_t *map = vg_item->buffer_cache;
     CM_ASSERT(key != NULL);
     if (map == NULL) {
         if (is_print_error_log) {
@@ -302,7 +303,7 @@ void *dss_find_block_in_bucket(
     auid_t block_id_tmp = {0};
     shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
     shm_hashmap_bucket_t *bucket = &buckets[hash % map->num];
-    dss_latch_s(&bucket->enque_lock);
+    dss_lock_shm_meta_bucket_s(session, vg_item->id, &bucket->enque_lock);
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     while (has_next) {
@@ -317,7 +318,7 @@ void *dss_find_block_in_bucket(
             block_id_tmp = ((dss_fs_block_t *)addr)->head.id;
         }
         if ((block_ctrl->hash == hash) && (cm_oamap_uint64_compare(&block_id_tmp, key) == CM_TRUE)) {
-            dss_unlatch(&bucket->enque_lock);
+            dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
             if (out_obj_id != NULL) {
                 *out_obj_id = next_id;
             }
@@ -326,7 +327,7 @@ void *dss_find_block_in_bucket(
         has_next = block_ctrl->has_next;
         next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
     }
-    dss_unlatch(&bucket->enque_lock);
+    dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
     return NULL;
 }
 
@@ -335,20 +336,20 @@ status_t dss_find_block_objid_in_shm(
 {
     char *addr = NULL;
     uint32 hash = cm_hash_int64(*(int64 *)&block_id);
-    addr = dss_find_block_in_bucket(vg_item->buffer_cache, hash, (uint64 *)&block_id, CM_FALSE, objid);
+    addr = dss_find_block_in_bucket(NULL, vg_item, hash, (uint64 *)&block_id, CM_FALSE, objid);
     if (addr != NULL) {
         return CM_SUCCESS;
     }
     return CM_ERROR;
 }
 
-char *dss_find_block_in_shm(dss_vg_info_item_t *vg_item, dss_block_id_t block_id, dss_block_type_t type,
-    bool32 check_version, ga_obj_id_t *out_obj_id, bool32 active_refresh)
+char *dss_find_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
+    dss_block_type_t type, bool32 check_version, ga_obj_id_t *out_obj_id, bool32 active_refresh)
 {
     status_t status;
     char *addr = NULL;
     uint32 hash = cm_hash_int64(*(int64 *)&block_id);
-    addr = dss_find_block_in_bucket(vg_item->buffer_cache, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
+    addr = dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
     if (addr != NULL) {
         if (check_version && dss_is_server() && (!dss_is_readwrite() || active_refresh)) {
             status = dss_check_block_version(vg_item, block_id, type, addr, NULL);
@@ -377,7 +378,7 @@ char *dss_find_block_in_shm_no_refresh(dss_session_t *session, dss_vg_info_item_
     dss_block_type_t type, ga_obj_id_t *out_obj_id)
 {
     uint32 hash = cm_hash_int64(*(int64 *)&block_id);
-    return dss_find_block_in_bucket(vg_item->buffer_cache, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
+    return dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
 }
 
 status_t dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *map)
@@ -393,7 +394,7 @@ status_t dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *ma
     char *addr = NULL;
     for (uint32_t i = 0; i < map->num; i++) {
         bucket = &buckets[i];
-        dss_latch_s(&bucket->enque_lock);
+        dss_lock_shm_meta_bucket_s(NULL, vg_item->id, &bucket->enque_lock);
         next_id = *(ga_obj_id_t *)&bucket->first;
         has_next = bucket->has_next;
         while (has_next) {
@@ -408,13 +409,13 @@ status_t dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *ma
             }
             status = dss_check_block_version(vg_item, block_id_tmp, block->type, addr, NULL);
             if (status != CM_SUCCESS) {
-                dss_unlatch(&bucket->enque_lock);
+                dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
                 return status;
             }
             has_next = block_ctrl->has_next;
             next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
         }
-        dss_unlatch(&bucket->enque_lock);
+        dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
     }
     return CM_SUCCESS;
 }
