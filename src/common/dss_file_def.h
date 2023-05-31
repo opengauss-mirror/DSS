@@ -319,7 +319,7 @@ typedef struct st_gft_node {
     time_t create_time;
     time_t update_time;
     uint32 flags;
-    uint64 size;
+    atomic_t size;    //Actually uint64, use atomic_get for client read and atomic_set for server modify.
     union {
         dss_block_id_t entry;  // for file and link
         gft_list_t items;      // for dir

@@ -105,11 +105,11 @@ static status_t dss_alloc_au_from_recycle(
             block->head.used_num--;
             dss_set_blockid(&block->bitmap[sec_index], DSS_INVALID_64);
             dss_redo_set_file_size_t redo_size;
-            uint64 old_size = node->size;
+            uint64 old_size = (uint64)node->size;
             uint64 au_size = dss_get_vg_au_size(dss_ctrl);
-            node->size = node->size - au_size;
+            (void)cm_atomic_set(&node->size, (int64)((uint64)node->size - au_size));
             redo_size.ftid = node->id;
-            redo_size.size = node->size;
+            redo_size.size = (uint64)node->size;
             redo_size.oldsize = old_size;
             dss_put_log(session, vg_item, DSS_RT_SET_FILE_SIZE, &redo_size, sizeof(redo_size));
             if (block->head.used_num == 0) {
