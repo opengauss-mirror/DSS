@@ -59,11 +59,11 @@ static status_t dss_alloc_au_from_recycle(
     dss_au_root_t *dss_au_root = DSS_GET_AU_ROOT(dss_ctrl);
     bool32 entry_changed = CM_FALSE;
     ftid_t free_root = *(ftid_t *)(&dss_au_root->free_root);
-    gft_node_t *root_node = dss_get_ft_node_by_ftid(vg_item, free_root, DSS_TRUE, CM_FALSE);
+    gft_node_t *root_node = dss_get_ft_node_by_ftid(session, vg_item, free_root, DSS_TRUE, CM_FALSE);
     CM_ASSERT(root_node != NULL);
     if (dss_can_alloc_from_recycle(root_node, is_before)) {
         ftid_t id = root_node->items.first;
-        gft_node_t *node = dss_get_ft_node_by_ftid(vg_item, id, DSS_TRUE, CM_FALSE);
+        gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, id, DSS_TRUE, CM_FALSE);
         if (node == NULL) {
             LOG_DEBUG_ERR("Failed to get ft node %llu,%llu, maybe no memory.", (uint64)(id.au), (uint64)(id.volume));
             return ERR_ALLOC_MEMORY;
@@ -72,7 +72,7 @@ static status_t dss_alloc_au_from_recycle(
         CM_ASSERT(node->type == GFT_FILE || node->type == GFT_LINK);
         ga_obj_id_t entry_objid;
         dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
-            vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, &entry_objid, CM_FALSE);
+            session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, &entry_objid, CM_FALSE);
         if (!entry_block) {
             LOG_DEBUG_ERR("Failed to get fs block %llu,%llu,%llu, maybe no memory.", (uint64)node->entry.au,
                 (uint64)node->entry.volume, (uint64)node->entry.block);
@@ -86,7 +86,7 @@ static status_t dss_alloc_au_from_recycle(
 
         index = (uint16)(entry_block->used_num - 1);
         dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
-            vg_item, entry_fs_block->bitmap[index], DSS_BLOCK_TYPE_FS, DSS_TRUE, &sec_objid, CM_FALSE);
+            session, vg_item, entry_fs_block->bitmap[index], DSS_BLOCK_TYPE_FS, DSS_TRUE, &sec_objid, CM_FALSE);
         if (!block) {
             LOG_DEBUG_ERR("Failed to get fs block %llu,%llu,%llu, maybe no memory.", (uint64)node->entry.au,
                 (uint64)node->entry.volume, (uint64)node->entry.block);
