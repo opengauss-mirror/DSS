@@ -83,10 +83,11 @@ void dss_free_ft_node_inner(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node, bool32 real_del);
 void dss_free_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node,
     bool32 real_del, bool32 latch_safe);
-gft_node_t *dss_find_ft_node(dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, bool32 skip_del);
+gft_node_t *dss_find_ft_node(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, bool32 skip_del);
 char *dss_find_ft_block_latch(dss_vg_info_item_t *vg_item, ftid_t ftid, ga_obj_id_t *out_obj_id);
 gft_node_t *dss_get_ft_node_by_ftid(
-    dss_vg_info_item_t *vg_item, ftid_t id, bool32 check_version, bool32 active_refresh);
+    dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id, bool32 check_version, bool32 active_refresh);
 gft_node_t *dss_get_ft_node_by_ftid_no_refresh(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id);
 dss_ft_block_t *dss_get_ft_block_by_node(gft_node_t *node);
 status_t dss_update_ft_block_disk(dss_vg_info_item_t *vg_item, dss_ft_block_t *block, ftid_t id);
@@ -126,8 +127,8 @@ void dss_init_fs_block_head(dss_fs_block_t *fs_block);
 
 status_t dss_check_rename_path(dss_session_t *session, const char *src_path, const char *dst_path, text_t *dst_name);
 status_t dss_get_name_from_path(const char *path, uint32_t *beg_pos, char *name);
-status_t dss_check_dir(
-    const char *dir_path, gft_item_type_t type, dss_check_dir_output_t *output_info, bool32 is_throw_err);
+status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_type_t type,
+    dss_check_dir_output_t *output_info, bool32 is_throw_err);
 
 dss_env_t *dss_get_env(void);
 dss_config_t *dss_get_inst_cfg(void);
@@ -154,7 +155,8 @@ status_t dss_open_file_check(dss_session_t *session, const char *file, dss_vg_in
     gft_item_type_t type, gft_node_t **out_node);
 
 gft_node_t *dss_find_parent_node_by_node(dss_vg_info_item_t *vg_item, gft_node_t *node);
-status_t dss_check_rm_file(dss_vg_info_item_t *vg_item, ftid_t ftid, bool32 *should_rm_file, gft_node_t **file_node);
+status_t dss_check_rm_file(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t ftid, bool32 *should_rm_file, gft_node_t **file_node);
 
 #ifdef __cplusplus
 }

@@ -101,6 +101,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_RECV_MSG_FAILED] = "Recv msg failed, errcode:%d, inst:%u.",
     [ERR_DSS_LINK_NOT_EXIST] = "The link %s of %s does not exist.",
     [ERR_DSS_INVALID_ID] = "Invalid %s id : %llu.",
+    [ERR_DSS_PROCESS_REMOTE] = "Failed to process remote, errcode: %d, errmsg: %s.",
 };
 
 static status_t dss_init_log_file(log_param_t *log_param, dss_config_t *inst_cfg)

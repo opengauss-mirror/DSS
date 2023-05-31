@@ -36,7 +36,7 @@ typedef enum en_dss_latch_mode {
 #define DSS_CLIENT_TIMEOUT_COUNT 30
 #define DSS_CLIENT_TIMEOUT 1000  // ms
 
-#define DSS_DEFAULT_SESSIONID 1025
+#define DSS_DEFAULT_SESSIONID (uint16)0xFFFF
 #define DSS_SESSIONID_IN_LOCK(sid) ((sid) + 1)
 
 typedef bool32 (*latch_should_exit)(void);

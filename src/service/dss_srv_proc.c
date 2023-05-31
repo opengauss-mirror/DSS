@@ -92,12 +92,12 @@ static status_t dss_rename_file_check(
     dss_check_dir_output_t output_info = {out_node, NULL, NULL};
     dss_vg_info_item_t *file_vg_item;
     output_info.item = &file_vg_item;
-    status = dss_check_dir(src, GFT_FILE, &output_info, CM_TRUE);
+    status = dss_check_dir(session, src, GFT_FILE, &output_info, CM_TRUE);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check dir,errcode:%d.", cm_get_error_code()));
 
     gft_node_t *out_node_tmp = NULL;
     dss_check_dir_output_t output_info_tmp = {&out_node_tmp, NULL, NULL};
-    if (dss_check_dir(dst, GFT_FILE, &output_info_tmp, CM_TRUE) != CM_SUCCESS) {
+    if (dss_check_dir(session, dst, GFT_FILE, &output_info_tmp, CM_TRUE) != CM_SUCCESS) {
         int32 errcode = cm_get_error_code();
         if (errcode != ERR_DSS_FILE_NOT_EXIST) {
             return CM_ERROR;
@@ -215,7 +215,7 @@ static status_t dss_rm_dir_file_r(
             return CM_SUCCESS;
         }
         // delete files or folders in dir, then delete empty dir
-        gft_node_t *sub_node = dss_get_ft_node_by_ftid(vg_item, node->items.first, CM_TRUE, CM_FALSE);
+        gft_node_t *sub_node = dss_get_ft_node_by_ftid(session, vg_item, node->items.first, CM_TRUE, CM_FALSE);
         while (!dss_cmp_auid(sub_node->next, DSS_INVALID_ID64)) {
             gft_node_t *cur_sub_node = sub_node;
             bool32 is_open;
@@ -230,7 +230,7 @@ static status_t dss_rm_dir_file_r(
                 DSS_THROW_ERROR(ERR_DSS_FILE_REMOVE_OPENING);
                 return CM_ERROR;
             }
-            sub_node = dss_get_ft_node_by_ftid(vg_item, sub_node->next, CM_TRUE, CM_FALSE);
+            sub_node = dss_get_ft_node_by_ftid(session, vg_item, sub_node->next, CM_TRUE, CM_FALSE);
             CM_RETURN_IFERR(dss_rm_dir_file_r(session, vg_item, cur_sub_node, node));
         }
         CM_RETURN_IFERR(dss_rm_dir_file_r(session, vg_item, sub_node, node));
@@ -271,7 +271,7 @@ status_t dss_rm_dir_by_path(
         if (recursive) {
             return dss_rm_dir_file_r(session, vg_item, node, parent_node);
         }
-        gft_node_t *sub_node = dss_get_ft_node_by_ftid(vg_item, node->items.first, CM_TRUE, CM_FALSE);
+        gft_node_t *sub_node = dss_get_ft_node_by_ftid(session, vg_item, node->items.first, CM_TRUE, CM_FALSE);
         while (sub_node) {
             if (sub_node->flags != DSS_FT_NODE_FLAG_DEL) {
                 DSS_THROW_ERROR_EX(ERR_DSS_DIR_REMOVE_NOT_EMPTY, "Failed to rm dir %s, which has sub node %s.",
@@ -281,7 +281,7 @@ status_t dss_rm_dir_by_path(
             if (dss_cmp_auid(sub_node->next, DSS_INVALID_ID64)) {
                 break;
             }
-            sub_node = dss_get_ft_node_by_ftid(vg_item, sub_node->next, CM_TRUE, CM_FALSE);
+            sub_node = dss_get_ft_node_by_ftid(session, vg_item, sub_node->next, CM_TRUE, CM_FALSE);
         }
         if (node->flags & DSS_FT_NODE_FLAG_NORMAL) {
             node->flags = DSS_FT_NODE_FLAG_DEL;
@@ -306,7 +306,7 @@ status_t dss_check_vg_ft_dir(dss_session_t *session, dss_vg_info_item_t **vg_ite
 
     dss_vg_info_item_t *tmp_vg_item;
     dss_check_dir_output_t output_info = {node, &tmp_vg_item, parent_node};
-    status_t status = dss_check_dir(path, type, &output_info, CM_TRUE);
+    status_t status = dss_check_dir(session, path, type, &output_info, CM_TRUE);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to check dir, errcode: %d.", status);
         return status;
@@ -507,7 +507,7 @@ static status_t dss_make_dir_file_core(dss_session_t *session, const char *paren
         return status;
     }
     // check if file/dir to create is duplicated
-    gft_node_t *check_node = dss_find_ft_node(*vg_item, out_node, dir_name, CM_TRUE);
+    gft_node_t *check_node = dss_find_ft_node(session, *vg_item, out_node, dir_name, CM_TRUE);
     if (check_node != NULL) {
         if (check_node->flags & DSS_FT_NODE_FLAG_DEL) {
             LOG_DEBUG_INF(
@@ -591,7 +591,7 @@ status_t dss_create_link(dss_session_t *session, const char *parent, const char 
 
 static void dss_close_handle(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t ftid)
 {
-    gft_node_t *node = dss_get_ft_node_by_ftid(vg_item, ftid, CM_TRUE, CM_FALSE);
+    gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, ftid, CM_TRUE, CM_FALSE);
     if (node == NULL || node->type != GFT_FILE) {
         return;
     }

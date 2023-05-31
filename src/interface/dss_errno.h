@@ -122,6 +122,7 @@ extern "C" {
 #define ERR_DSS_LINK_NOT_EXIST 2413
 #define ERR_DSS_INIT_LOGGER_FAILED 2414
 #define ERR_DSS_INVALID_ID 2416
+#define ERR_DSS_PROCESS_REMOTE 2417
 #define ERR_DSS_CEIL 2500
 
 #ifdef __cplusplus

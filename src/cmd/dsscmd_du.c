@@ -75,7 +75,8 @@ static void du_print(double size, const char *params, const char *path)
     printf("%s%s\n", buf, path);
 }
 
-static double du_traverse_node(gft_node_t *node, dss_vg_info_item_t *vg_item, const char *params, char *path_prefix)
+static double du_traverse_node(
+    dss_conn_t *conn, gft_node_t *node, dss_vg_info_item_t *vg_item, const char *params, char *path_prefix)
 {
     char granularity = params[DSS_ARG_IDX_1];
     bool separate = (bool)params[DSS_ARG_IDX_2];
@@ -90,16 +91,16 @@ static double du_traverse_node(gft_node_t *node, dss_vg_info_item_t *vg_item, co
     cm_concat_text(&path_text, DSS_MAX_PATH_BUFFER_SIZE, &name_text);
 
     if (node->type == GFT_PATH) {
-        gft_node_t *sub_node = dss_get_ft_node_by_ftid(vg_item, node->items.first, CM_TRUE, CM_FALSE);
+        gft_node_t *sub_node = dss_get_ft_node_by_ftid(conn->session, vg_item, node->items.first, CM_TRUE, CM_FALSE);
 
         while (sub_node) {
             if (sub_node->type != GFT_PATH || (sub_node->type == GFT_PATH && !separate)) {
-                double size = du_traverse_node(sub_node, vg_item, params, path_prefix);
+                double size = du_traverse_node(conn, sub_node, vg_item, params, path_prefix);
                 total_size += size;
             } else if (sub_node->type == GFT_PATH) {
-                du_traverse_node(sub_node, vg_item, params, path_prefix);
+                du_traverse_node(conn, sub_node, vg_item, params, path_prefix);
             }
-            sub_node = dss_get_ft_node_by_ftid(vg_item, sub_node->next, CM_TRUE, CM_FALSE);
+            sub_node = dss_get_ft_node_by_ftid(conn->session, vg_item, sub_node->next, CM_TRUE, CM_FALSE);
         }
         if (granularity != 's') {
             du_print(total_size, params, path_prefix + 1);
@@ -123,7 +124,7 @@ static status_t du_try_print_link(dss_conn_t *conn, char *path, const char *para
         gft_node_t *node = NULL;
 
         dss_check_dir_output_t output_info = {&node, NULL, NULL};
-        dss_check_dir(path, GFT_LINK, &output_info, CM_TRUE);
+        dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_TRUE);
         if (node) {  // print the link du
             du_print(node->size, params, path + 1);
             return CM_SUCCESS;
@@ -143,7 +144,7 @@ status_t du_traverse_path(char *path, size_t path_size, dss_conn_t *conn, const 
     dss_exist_file_impl(conn, path, &exist);
     if (exist) {
         dss_check_dir_output_t output_info = {&node, NULL, NULL};
-        dss_check_dir(path, GFT_FILE, &output_info, CM_TRUE);
+        dss_check_dir(conn->session, path, GFT_FILE, &output_info, CM_TRUE);
         if (!node) {
             DSS_PRINT_ERROR("Failed to check file node.\n");
             return CM_ERROR;
@@ -154,7 +155,7 @@ status_t du_traverse_path(char *path, size_t path_size, dss_conn_t *conn, const 
 
     dss_dir_t *dir = dss_open_dir_impl(conn, path, CM_TRUE);
     dss_check_dir_output_t output_info = {&node, NULL, NULL};
-    dss_check_dir(path, GFT_PATH, &output_info, CM_TRUE);
+    dss_check_dir(conn->session, path, GFT_PATH, &output_info, CM_TRUE);
 
     if (!dir || !node) {
         if (dir) {
@@ -171,7 +172,7 @@ status_t du_traverse_path(char *path, size_t path_size, dss_conn_t *conn, const 
     }
     path[(len - strlen(node->name)) - 1] = 0;
 
-    double total_size = du_traverse_node(node, dir->vg_item, params, path);
+    double total_size = du_traverse_node(conn, node, dir->vg_item, params, path);
     char granularity = params[DSS_ARG_IDX_1];
 
     (void)dss_close_dir_impl(conn, dir);

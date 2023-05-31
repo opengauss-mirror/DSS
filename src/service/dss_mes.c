@@ -615,7 +615,7 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
         session->send_info.str[cpsize] = '\0';
     }
     if (*remote_result != CM_SUCCESS) {
-        DSS_THROW_ERROR(code, session->send_info.str);
+        DSS_THROW_ERROR(ERR_DSS_PROCESS_REMOTE, code, session->send_info.str);
         session->send_info.str = NULL;
     } else {
         session->send_info.len = cpsize;
