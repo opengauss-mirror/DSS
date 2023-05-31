@@ -153,6 +153,9 @@ status_t dss_conn_sync(dss_conn_t *conn)
         if (ret == CM_SUCCESS) {
             break;
         }
+        if (cm_get_os_error() == ENOENT) {
+            break;
+        }
         cm_sleep(DSS_CONN_RETRY_INTERVAL);
         wait_time += DSS_CONN_RETRY_INTERVAL;
     }
