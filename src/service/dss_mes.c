@@ -145,7 +145,7 @@ static void dss_check_file_open(dss_session_t *se, mes_message_t *msg)
     // delay because exist the lock of vg and shm, may dead lock with the peer node
 
     if (bcast_op == BCAST_REQ_DEL_DIR_FILE && !is_open) {
-        dss_clean_file_meta(se, check->ftid, check->vg_name);
+        dss_clean_file_meta(se, vg_item, check->ftid);
     }
 }
 
