@@ -101,7 +101,6 @@ static config_item_t g_dss_params[] = {
         "GS_TYPE_VARCHAR", NULL, 28, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "SSL_CIPHER", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
         "GS_TYPE_VARCHAR", NULL, 29, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-#ifdef ENABLE_GLOBAL_CACHE
     { "POOL_NAMES",           CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
         "GS_TYPE_VARCHAR", NULL, 30, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
     { "IMAGE_NAMES",           CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
@@ -110,7 +109,6 @@ static config_item_t g_dss_params[] = {
         "GS_TYPE_VARCHAR", NULL, 32, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
     { "VOLUME_TYPES",           CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
         "GS_TYPE_VARCHAR", NULL, 33, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
-#endif
     { "_AUDIT_LEVEL",           CM_TRUE, CM_FALSE, "1",    NULL, NULL, "-", "[0,255]",  "GS_TYPE_INTEGER", NULL,
         34, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_audit_level, dss_notify_audit_level, NULL, NULL},
     { "SSL_PERIOD_DETECTION", CM_TRUE, CM_FALSE, "7", NULL, NULL, "-", "[1,180]",
@@ -525,10 +523,8 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_dlock_retry_count(inst_cfg));
     CM_RETURN_IFERR(dss_load_mes_params(inst_cfg));
     CM_RETURN_IFERR(dss_load_shm_key(inst_cfg));
-#ifdef ENABLE_GLOBAL_CACHE
     CM_RETURN_IFERR(dss_load_cephrbd_params(inst_cfg));
     CM_RETURN_IFERR(dss_load_cephrbd_config_file(inst_cfg));
-#endif
     return CM_SUCCESS;
 }
 

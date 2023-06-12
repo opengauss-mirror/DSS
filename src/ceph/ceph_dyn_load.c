@@ -22,7 +22,6 @@
  * -------------------------------------------------------------------------
  */
 
-#ifdef ENABLE_GLOBAL_CACHE
 #include <dlfcn.h>
 #include "ceph_dyn_load.h"
 
@@ -143,13 +142,6 @@ void dyn_rados_ioctx_destroy(rados_ioctx_t ioctx)
     (*func)(ioctx);
 }
 
-status_t dyn_rbd_create2(rados_ioctx_t ioctx, const char *name, uint64_t size, uint64_t features, int *order)
-{
-    status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_create2");
-    DYN_LOAD_FUNC_RTN_ERROR(func);
-    return (*func)(ioctx, name, size, features, order);
-}
-
 status_t dyn_rbd_open(rados_ioctx_t ioctx, const char *name, rbd_image_t *image, const char *snap_name)
 {
     status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_open");
@@ -162,27 +154,6 @@ status_t dyn_rbd_close(rbd_image_t image)
     status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_close");
     DYN_LOAD_FUNC_RTN_ERROR(func);
     return (*func)(image);
-}
-
-int32_t dyn_rbd_write(rbd_image_t image, uint64_t ofs, int32_t len, const char *buf)
-{
-    status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_write");
-    DYN_LOAD_FUNC_RTN_ERROR(func);
-    return (*func)(image, ofs, len, buf);
-}
-
-int32_t dyn_rbd_read(rbd_image_t image, uint64_t ofs, int32_t len, char *buf)
-{
-    status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_read");
-    DYN_LOAD_FUNC_RTN_ERROR(func);
-    return (*func)(image, ofs, len, buf);
-}
-
-status_t dyn_rbd_get_size(rbd_image_t image, int64_t *size)
-{
-    status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_get_size");
-    DYN_LOAD_FUNC_RTN_ERROR(func);
-    return (*func)(image, size);
 }
 
 void dyn_rados_conf_set(rados_t cluster, const char *option, const char *value)
@@ -207,4 +178,3 @@ void dyn_rbd_stat(rbd_image_t image, rbd_image_info_t *info, size_t infosize)
 #ifdef __cplusplus
 }
 #endif
-#endif  // ENABLE_GLOBAL_CACHE

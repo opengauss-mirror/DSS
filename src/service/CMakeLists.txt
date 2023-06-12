@@ -1,5 +1,5 @@
 ## include
-include_directories(${DSS_GLOBAL_CACHE_PATH})
+include_directories(${DSS_CEPH_PATH})
 include_directories(${DSS_COMMON_PATH})
 include_directories(${DSS_INTERFACE_PATH})
 
@@ -16,15 +16,12 @@ include_directories(${ZLIB_INC_PATH})
 
 aux_source_directory(${DSS_COMMON_PATH} COMMON_SRC)
 aux_source_directory(${DSS_SER_PATH} SER_SRC)
-option(ENABLE_GLOBAL_CACHE OFF)
-if (ENABLE_GLOBAL_CACHE)
-    aux_source_directory(${DSS_GLOBAL_CACHE_PATH} GCACHE_SRC)
-endif (ENABLE_GLOBAL_CACHE)
+aux_source_directory(${DSS_CEPH_PATH} CEPH_SRC)
 
 set(COMMON_ALL_SRC
         ${COMMON_SRC}
         ${SER_SRC}
-        ${GCACHE_SRC}
+        ${CEPH_SRC}
         )
 
 ADD_EXECUTABLE(dssserver ${COMMON_ALL_SRC})
