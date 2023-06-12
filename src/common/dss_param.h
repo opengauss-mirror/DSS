@@ -28,9 +28,7 @@
 #include "dss_defs.h"
 #include "cm_config.h"
 #include "cs_pipe.h"
-#ifdef ENABLE_GLOBAL_CACHE
 #include "ceph_rbd_param.h"
-#endif
 #include "mes_metadata.h"
 #include "mes.h"
 #include "dss_errno.h"
@@ -71,10 +69,8 @@ typedef struct st_dss_params {
     bool32 elapsed_switch;
     uint32 shm_key;
     uint32 ssl_detect_day;
-#ifdef ENABLE_GLOBAL_CACHE
     rbd_config_params_t rbd_config_params;
     char ceph_config[DSS_FILE_NAME_BUFFER_SIZE];
-#endif
 } dss_params_t;
 
 typedef struct st_dss_config {

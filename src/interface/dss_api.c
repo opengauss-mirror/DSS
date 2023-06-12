@@ -562,7 +562,6 @@ int dss_pread(int handle, void *buf, int size, long long offset, int *read_size)
 int dss_get_addr(int handle, long long offset, char *pool_name, char *image_name, char *obj_addr,
     unsigned int *obj_id, unsigned long int *obj_offset)
 {
-#ifdef ENABLE_GLOBAL_CACHE
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("get conn error when get ceph address."));
@@ -571,8 +570,6 @@ int dss_get_addr(int handle, long long offset, char *pool_name, char *image_name
         obj_id, obj_offset);
     dss_get_api_volume_error();
     return (int)ret;
-#endif
-    return CM_ERROR;
 }
 
 
@@ -905,10 +902,7 @@ int dss_get_au_size(int handle, long long *au_size)
 
 int dss_compare_size_equal(const char *vg_name, long long *au_size)
 {
-#ifdef ENABLE_GLOBAL_CACHE
     return dss_compare_size_equal_impl(vg_name, au_size);
-#endif
-    return CM_ERROR;
 }
 
 

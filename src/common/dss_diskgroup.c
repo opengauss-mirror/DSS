@@ -256,11 +256,6 @@ status_t dss_init_vol_handle(dss_vg_info_item_t *vg_item, int32 flags, dss_vol_h
                 vol_handles->volume_handle[vid].handle = vol->handle;
                 vol_handles->volume_handle[vid].unaligned_handle = vol->unaligned_handle;
                 vol_handles->volume_handle[vid].id = vol->id;
-#ifdef ENABLE_GLOBAL_CACHE
-                vol_handles->volume_handle[vid].image = vol->image;
-                vol_handles->volume_handle[vid].ctx = vol->ctx;
-                vol_handles->volume_handle[vid].rds_cluster = vol->rds_cluster;
-#endif
                 vol_handles->volume_handle[vid].vg_type = vol->vg_type;
                 vol_handles->volume_handle[vid].version = vg_item->dss_ctrl->volume.defs[vid].version;
             }
