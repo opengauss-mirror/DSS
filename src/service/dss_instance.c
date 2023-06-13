@@ -257,7 +257,16 @@ status_t dss_recover_from_instance(dss_instance_t *inst)
     }
     return status;
 }
-
+bool32 dss_config_cm()
+{
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    char *value = cm_get_config_value(&inst_cfg->config, "DSS_CM_SO_NAME");
+    if (value == NULL || strlen(value) == 0 || strlen(value) >= DSS_MAX_NAME_LEN) {
+        LOG_RUN_INF("dss cm config of DSS_CM_SO_NAME is empty.");
+        return CM_FALSE;
+    }
+    return CM_TRUE;
+}
 /*
     1、NO CM:every node can do readwrite
     2、CM:get cm lock to be master
@@ -278,7 +287,34 @@ status_t dss_recover_no_cm(dss_instance_t *inst)
         }
         return ret;
     }
-#ifndef ENABLE_DSSTEST
+#ifdef ENABLE_DSSTEST
+    if (!dss_config_cm()) {
+        uint32 master_id = 0;
+        uint32 i;
+        for (i = 0; i < DSS_MAX_INSTANCES; i++) {
+            if (inst_cfg->params.ports[i] != 0) {
+                master_id = i;
+                break;
+            }
+        }
+        dss_set_master_id(master_id);
+        LOG_RUN_INF("Set min id %u as master id.", i);
+        if (master_id == curr_id) {
+            dss_set_server_status_flag(DSS_STATUS_READWRITE);
+            ret = dss_recover_from_instance(inst);
+            if (ret != CM_SUCCESS) {
+                LOG_RUN_ERR("[DSS] ABORT INFO: Fail to change status open without cm, exit.");
+                cm_fync_logfile();
+                _exit(1);
+            }
+            inst->status = DSS_STATUS_OPEN;
+        } else {
+            dss_set_server_status_flag(DSS_STATUS_READONLY);
+            inst->status = DSS_STATUS_OPEN;
+        }
+        return CM_SUCCESS;
+    }
+#else
     if (inst->is_maintain) {
         dss_set_master_id(curr_id);
         dss_set_server_status_flag(DSS_STATUS_READWRITE);
@@ -292,6 +328,7 @@ status_t dss_recover_no_cm(dss_instance_t *inst)
 #endif
     return CM_SUCCESS;
 }
+
 /*
    1、when create first vg, init global log buffer;
    2、when dss_server start up, init memory log buf;
@@ -621,42 +658,6 @@ uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock)
     return master_id;
 }
 
-void dss_no_cm_recover(dss_instance_t *inst)
-{
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    if (inst_cfg->params.inst_cnt <= 1) {
-        return;
-    }
-    uint32 curr_id = (uint32)inst_cfg->params.inst_id;
-    uint32 old_master_id = dss_get_master_id();
-    uint32 master_id = 0;
-    uint32 i;
-    for (i = 0; i < DSS_MAX_INSTANCES; i++) {
-        if (inst_cfg->params.ports[i] != 0) {
-            master_id = i;
-            break;
-        }
-    }
-    if (old_master_id == master_id) {
-        return;
-    }
-    dss_set_master_id(master_id);
-    LOG_RUN_INF("Set min id %u as master id.", i);
-    if (master_id == curr_id) {
-        dss_set_server_status_flag(DSS_STATUS_READWRITE);
-        status_t ret = dss_recover_from_instance(inst);
-        if (ret != CM_SUCCESS) {
-            LOG_RUN_ERR("[DSS] ABORT INFO: Fail to change status open without cm, exit.");
-            cm_fync_logfile();
-            _exit(1);
-        }
-        inst->status = DSS_STATUS_OPEN;
-    } else {
-        dss_set_server_status_flag(DSS_STATUS_READONLY);
-        inst->status = DSS_STATUS_OPEN;
-    }
-}
-
 /*
     1、old_master_id == master_id, just return;
     2、old_master_id ！= master_id, just indicates that the master has been reselected.so to juge whether recover.
@@ -664,7 +665,7 @@ void dss_no_cm_recover(dss_instance_t *inst)
 void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst) 
 {
     if (!inst->cm_res.is_valid) {
-        return dss_no_cm_recover(inst);
+        return;
     }
     uint32 old_master_id = dss_get_master_id();
     bool32 grab_lock = CM_FALSE;
