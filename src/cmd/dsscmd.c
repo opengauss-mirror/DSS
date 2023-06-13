@@ -839,7 +839,7 @@ static status_t dss_load_volumes(vg_vlm_space_info_t *volume_space, dss_volume_d
             continue;
         }
 
-        if (strcpy_s(volume_space->volume_space_info[vol_id].volume_name, DSS_MAX_NAME_LEN, defs[vol_id].name) != EOK) {
+        if (strcpy_s(volume_space->volume_space_info[vol_id].volume_name, DSS_MAX_VOLUME_PATH_LEN, defs[vol_id].name) != EOK) {
             return CM_ERROR;
         }
 
@@ -1569,6 +1569,8 @@ static status_t rmdir_proc(void)
 
 static dss_args_t cmd_inq_args[] = {
     {'t', "inq_type", CM_TRUE, CM_TRUE, cmd_check_inq_type, NULL, NULL, 0, NULL, NULL, 0},
+    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
 };
 static dss_args_set_t cmd_inq_args_set = {
     cmd_inq_args,
@@ -1578,28 +1580,25 @@ static dss_args_set_t cmd_inq_args_set = {
 
 static void inq_help(char *prog_name)
 {
-    (void)printf("\nUsage:%s inq <-t inq_type>\n", prog_name);
+    (void)printf("\nUsage:%s inq <-t inq_type> [-D DSS_HOME]\n", prog_name);
     (void)printf("[raid command] inquiry LUN information or reservations\n");
     (void)printf("-t/--type <inq_type>, <required>, the type need to inquiry, values [lun|reg]"
                  "lun :inquiry LUN information, reg:inquiry reservations\n");
+    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
 }
 
 static status_t inq_proc(void)
 {
-    status_t status = dss_init(DSS_OPEN_FILES_NUM, NULL);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to initialize, errcode is %d.\n", status);
-        return status;
-    }
-
+    status_t status;
+    char *home = cmd_inq_args[DSS_ARG_IDX_1].input_args;
     if (cm_strcmpi(cmd_inq_args[DSS_ARG_IDX_0].input_args, "lun") == 0) {
-        status = inq_lun();
+        status = dss_inq_lun(home);
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to inquire lun info, status is %d.\n", status);
             return status;
         }
     } else if (cm_strcmpi(cmd_inq_args[DSS_ARG_IDX_0].input_args, "reg") == 0) {
-        status = inq_regs();
+        status = dss_inq_reg(home);
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to inquire reg info, status is %d.\n", status);
             return status;
@@ -1633,26 +1632,13 @@ static void inq_reg_help(char *prog_name)
 static status_t inq_reg_proc(void)
 {
     int64 host_id = atoll(cmd_inq_req_args[DSS_ARG_IDX_0].input_args);
-    char *home = cmd_inq_req_args[DSS_ARG_IDX_1].input_args != NULL ? cmd_inq_req_args[DSS_ARG_IDX_1].input_args : NULL;
-
-    dss_vg_info_t *vg_info = cm_malloc(sizeof(dss_vg_info_t));
-    if (vg_info == NULL) {
-        DSS_PRINT_ERROR("Failed to malloc vg_info when inq reg.\n");
-        return CM_ERROR;
-    }
-    errno_t errcode = memset_s(vg_info, sizeof(vg_info), 0, sizeof(vg_info));
-    if (errcode != EOK) {
-        DSS_FREE_POINT(vg_info);
-        DSS_PRINT_ERROR("Failed to memset vg_info when inq reg.\n");
-        return CM_ERROR;
-    }
-    status_t status = dss_inq_reg_core(home, host_id, vg_info);
+    char *home = cmd_inq_req_args[DSS_ARG_IDX_1].input_args;
+    status_t status = dss_inq_reg_core(home, host_id);
     if (status == CM_ERROR) {
         DSS_PRINT_ERROR("Failed to inq reg host %lld.\n", host_id);
     } else {
         DSS_PRINT_INF("Succeed to inq reg host %lld.\n", host_id);
     }
-    DSS_FREE_POINT(vg_info);
     return status;
 }
 
@@ -1710,7 +1696,7 @@ static void kickh_help(char *prog_name)
 static status_t kickh_proc(void)
 {
     int64 kick_hostid = atoll(cmd_kickh_args[DSS_ARG_IDX_0].input_args);
-    char *home = cmd_kickh_args[DSS_ARG_IDX_1].input_args != NULL ? cmd_kickh_args[DSS_ARG_IDX_1].input_args : NULL;
+    char *home = cmd_kickh_args[DSS_ARG_IDX_1].input_args;
 
     status_t status = dss_kickh_core(home, kick_hostid);
     if (status != CM_SUCCESS) {
@@ -1740,26 +1726,13 @@ static void reghl_help(char *prog_name)
 
 static status_t reghl_proc(void)
 {
-    char *home = cmd_reghl_args[DSS_ARG_IDX_0].input_args != NULL ? cmd_reghl_args[DSS_ARG_IDX_0].input_args : NULL;
-
-    dss_vg_info_t *vg_info = cm_malloc(sizeof(dss_vg_info_t));
-    if (vg_info == NULL) {
-        DSS_PRINT_ERROR("Failed to malloc vg_info when register.\n");
-        return CM_ERROR;
-    }
-    errno_t errcode = memset_s(vg_info, sizeof(vg_info), 0, sizeof(vg_info));
-    if (errcode != EOK) {
-        DSS_FREE_POINT(vg_info);
-        DSS_PRINT_ERROR("Failed to memset vg_info when register.\n");
-        return CM_ERROR;
-    }
-    status_t status = dss_reghl_core(home, vg_info);
+    char *home = cmd_reghl_args[DSS_ARG_IDX_0].input_args;
+    status_t status = dss_reghl_core(home);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to register.\n");
     } else {
         DSS_PRINT_INF("Succeed to register.\n");
     }
-    DSS_FREE_POINT(vg_info);
     return status;
 }
 
@@ -1794,25 +1767,13 @@ static status_t unreghl_proc(void)
         }
     }
 
-    char *home = cmd_unreghl_args[DSS_ARG_IDX_1].input_args != NULL ? cmd_unreghl_args[DSS_ARG_IDX_1].input_args : NULL;
-    dss_vg_info_t *vg_info = cm_malloc(sizeof(dss_vg_info_t));
-    if (vg_info == NULL) {
-        DSS_PRINT_ERROR("Failed to malloc vg_info when unregister.\n");
-        return CM_ERROR;
-    }
-    errno_t errcode = memset_s(vg_info, sizeof(vg_info), 0, sizeof(vg_info));
-    if (errcode != EOK) {
-        DSS_FREE_POINT(vg_info);
-        DSS_PRINT_ERROR("Failed to memset vg_info when unregister.\n");
-        return CM_ERROR;
-    }
-    status = dss_unreghl_core(home, vg_info, (type == 0) ? CM_FALSE : CM_TRUE);
+    char *home = cmd_unreghl_args[DSS_ARG_IDX_1].input_args;
+    status = dss_unreghl_core(home, (type == 0) ? CM_FALSE : CM_TRUE);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to unregister.\n");
     } else {
         DSS_PRINT_INF("Succeed to unregister.\n");
     }
-    DSS_FREE_POINT(vg_info);
     return status;
 }
 
@@ -3011,9 +2972,7 @@ static void clean_vglock_help(char *prog_name)
 
 static status_t clean_vglock_proc(void)
 {
-    char *home = cmd_clean_vglock_args[DSS_ARG_IDX_0].input_args != NULL ?
-                    cmd_clean_vglock_args[DSS_ARG_IDX_0].input_args :
-                    NULL;
+    char *home = cmd_clean_vglock_args[DSS_ARG_IDX_0].input_args;
     status_t status = dss_clean_vg_lock(home, DSS_MAX_INST_ID);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to clean vg lock.\n");
@@ -3109,7 +3068,7 @@ static void dss_cmd_oper_log(int argc, char **argv, status_t status)
         return;
     }
 
-    DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, "|dsscmd", &offset));
+    DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, "dsscmd", &offset));
 
     for (int i = 1; i < argc; i++) {
         DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, " ", &offset));
