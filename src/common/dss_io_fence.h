@@ -54,7 +54,7 @@ status_t dss_iof_unregister_all(int64 rk, bool32 is_server);
 
 // inquire lun info
 status_t dss_inquiry_luns_from_ctrl(dss_vg_info_item_t *item, ptlist_t *lunlist);
-status_t dss_inquiry_luns(ptlist_t *lunlist, bool32 is_server);
+status_t dss_inquiry_luns(dss_vg_info_t *vg_info, ptlist_t *lunlist);
 status_t dss_inquiry_lun(dev_info_t *dev_info);
 
 // read keys and reservations
