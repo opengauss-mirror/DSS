@@ -156,9 +156,6 @@ cd $PACKAGE
 if [ "$build_tool"x == "cmake"x ];then
     cmake_opts="-DCMAKE_BUILD_TYPE=${version_mode} -DENABLE_DSSTEST=${enable_dsstest} -DOPENGAUSS_FLAG=ON \
     -DENABLE_EXPORT_API=${export_api}"
-    if [ "${storage_mode}"x == "ceph"x ];then
-        cmake_opts="${cmake_opts} -DENABLE_GLOBAL_CACHE=ON"
-    fi
     cmake ${cmake_opts} CMakeLists.txt
     make all -sj 8
 else

@@ -1,5 +1,5 @@
 ## include
-include_directories(${DSS_GLOBAL_CACHE_PATH})
+include_directories(${DSS_CEPH_PATH})
 include_directories(${DSS_COMMON_PATH})
 include_directories(${DSS_COMMON_API_PATH})
 include_directories(${DSS_INTERFACE_PATH})
@@ -18,10 +18,7 @@ include_directories(${DSS_CBB_PATH})
 aux_source_directory(${DSS_COMMON_PATH} COMMON_SRC)
 aux_source_directory(${DSS_COMMON_API_PATH} COMMON_API_SRC)
 aux_source_directory(${DSS_CMD_PATH} CMD_SRC)
-option(ENABLE_GLOBAL_CACHE OFF)
-if (ENABLE_GLOBAL_CACHE)
-    aux_source_directory(${DSS_GLOBAL_CACHE_PATH} GCACHE_SRC)
-endif (ENABLE_GLOBAL_CACHE)
+aux_source_directory(${DSS_CEPH_PATH} CEPH_SRC)
 
 link_directories(${LIBRARY_OUTPUT_PATH} ${CBB_LIB_PATH})
 
@@ -29,7 +26,7 @@ set(COMMON_ALL_SRC
         ${COMMON_SRC}
         ${COMMON_API_SRC}
         ${CMD_SRC}
-        ${GCACHE_SRC}
+        ${CEPH_SRC}
         )
 
 ADD_EXECUTABLE(dsscmd ${COMMON_ALL_SRC})

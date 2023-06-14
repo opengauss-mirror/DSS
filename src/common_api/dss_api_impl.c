@@ -1685,10 +1685,6 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         volume.unaligned_handle = vol->unaligned_handle;
         volume.id = vol->id;
         volume.name_p = vg_item->dss_ctrl->volume.defs[auid.volume].name;
-#ifdef ENABLE_GLOBAL_CACHE
-        volume.image = vol->image;
-        volume.ctx = vol->ctx;
-#endif
         volume.vg_type = vol->vg_type;
         if (param->is_read) {
             LOG_DEBUG_INF("Begin to read volume %s, offset:%lld, size:%d, fname:%s, fsize:%llu, fwritten_size:%llu.",
@@ -1847,7 +1843,6 @@ status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, 
     return status;
 }
 
-#ifdef ENABLE_GLOBAL_CACHE
 static status_t dss_get_addr_core(dss_rw_param_t *param, char *pool_name, char *image_name,
     char *obj_addr, unsigned int *obj_id, unsigned long int *obj_offset)
 {
@@ -1935,7 +1930,6 @@ status_t dss_get_addr_impl(dss_conn_t *conn, int32 handle, long long offset, cha
     LOG_DEBUG_INF("dss get ceph address leave");
     return status;
 }
-#endif
 
 status_t dss_copy_file_impl(dss_conn_t *conn, const char *src, const char *dest)
 {
@@ -2565,7 +2559,6 @@ status_t get_au_size_impl(dss_conn_t *conn, int handle, long long *au_size)
     return CM_SUCCESS;
 }
 
-#ifdef ENABLE_GLOBAL_CACHE
 status_t dss_compare_size_equal_impl(const char *vg_name, long long *au_size)
 {
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
@@ -2588,7 +2581,6 @@ status_t dss_compare_size_equal_impl(const char *vg_name, long long *au_size)
     }
     return CM_SUCCESS;
 }
-#endif
 
 status_t dss_setcfg_impl(dss_conn_t *conn, const char *name, const char *value, const char *scope)
 {

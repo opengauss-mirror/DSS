@@ -130,7 +130,7 @@ set(DSS_COMMON_API_PATH ${PROJECT_SOURCE_DIR}/src/common_api)
 set(DSS_CMD_PATH ${PROJECT_SOURCE_DIR}/src/cmd)
 set(DSS_SER_PATH ${PROJECT_SOURCE_DIR}/src/service)
 set(DSS_INTERFACE_PATH ${PROJECT_SOURCE_DIR}/src/interface)
-set(DSS_GLOBAL_CACHE_PATH ${PROJECT_SOURCE_DIR}/src/gcache)
+set(DSS_CEPH_PATH ${PROJECT_SOURCE_DIR}/src/ceph)
 
 ## other dependency include
 set(DSS_SECUREC_INC_PATH        "${CMAKE_CURRENT_SOURCE_DIR}/library/huawei_security/include")
@@ -151,16 +151,6 @@ set (EXECUTABLE_OUTPUT_PATH     ${CMAKE_CURRENT_SOURCE_DIR}/output/bin)
 
 CONFIGURE_FILE(config.h.in ${DSS_COMMON_API_PATH}/config.h)
 
-OPTION(ENABLE_GLOBAL_CACHE "Enable Global Cache" OFF)
-message(STATUS "ENABLE_GLOBAL_CACHE = ${ENABLE_GLOBAL_CACHE}")
-IF (ENABLE_GLOBAL_CACHE STREQUAL "ON")
-    set(ENABLE_GLOBAL_CACHE ON)
-    message(STATUS "Enable Global Cache On")
-    # ceph compile options
-    add_link_options(-lssl -lcrypto)
-    add_definitions(-DENABLE_GLOBAL_CACHE)
-ENDIF()
-
 ## add source
 link_directories(${LIBRARY_OUTPUT_PATH} ${SECUREC_LIB_PATH} ${ZLIB_PATH} ${CBB_LIB_PATH})
 IF (ENABLE_FUZZASAN)
@@ -172,13 +162,8 @@ set(vpp_libsecurec "libsecurec.a")
 set(3rd_libccb "libcbb.a")
 set(zlib "libz.a")
 
-if (ENABLE_GLOBAL_CACHE STREQUAL "ON")
-    set(vpp_libipsi_crypto "")
-    set(3rd_libssl "")
-else()
-    set(vpp_libipsi_crypto "libcrypto.a")
-    set(3rd_libssl "libssl.a")
-    link_directories(${OPENSSL_LIB_PATH})
-endif()
+set(vpp_libipsi_crypto "libcrypto.a")
+set(3rd_libssl "libssl.a")
+link_directories(${OPENSSL_LIB_PATH})
 
 add_subdirectory(src)
