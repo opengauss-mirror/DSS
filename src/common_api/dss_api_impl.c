@@ -2564,7 +2564,7 @@ status_t dss_compare_size_equal_impl(const char *vg_name, long long *au_size)
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_name == NULL) {
         dss_free_vg_info(g_vgs_info);
-        LOG_DEBUG_ERR("Failed to find vg info from config, vg name is %s\n", vg_name);
+        LOG_DEBUG_ERR("Failed to find vg info from config, vg name is null\n");
         return CM_ERROR;
     }
     *au_size = vg_item->dss_ctrl->core.au_size;
