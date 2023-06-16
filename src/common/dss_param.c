@@ -113,11 +113,40 @@ static config_item_t g_dss_params[] = {
         34, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_audit_level, dss_notify_audit_level, NULL, NULL},
     { "SSL_PERIOD_DETECTION", CM_TRUE, CM_FALSE, "7", NULL, NULL, "-", "[1,180]",
         "GS_TYPE_INTEGER", NULL, 35, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "IO_THREADS",       CM_TRUE, CM_FALSE, "2",   NULL, NULL, "-", "[1,8]",
+        "GS_TYPE_INTEGER", NULL, 38, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "WORK_THREADS",       CM_TRUE, CM_FALSE, "16",   NULL, NULL, "-", "[16,128]",
+        "GS_TYPE_INTEGER", NULL, 39, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 // clang-format on
 static const char *g_dss_config_file = (const char *)"dss_inst.ini";
 #define DSS_PARAM_COUNT (sizeof(g_dss_params) / sizeof(config_item_t))
+
+static status_t dss_load_threadpool_cfg(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "IO_THREADS");
+    int32 count = 0;
+    status_t status = cm_str2int(value, &count);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "IO_THREADS"));
+
+    if (count < DSS_MIN_IOTHREADS_CFG || count > DSS_MAX_IOTHREADS_CFG) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "IO_THREADS");
+        return CM_ERROR;
+    }
+    inst_cfg->params.iothread_count = (uint32)count;
+
+    value = cm_get_config_value(&inst_cfg->config, "WORK_THREADS");
+    status = cm_str2int(value, &count);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "WORK_THREADS"));
+    if (count < DSS_MIN_WORKTHREADS_CFG || count > DSS_MAX_WORKTHREADS_CFG) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "WORK_THREADS");
+        return CM_ERROR;
+    }
+    inst_cfg->params.workthread_count = (uint32)count;
+
+    return CM_SUCCESS;
+}
 
 static status_t dss_load_session_cfg(dss_config_t *inst_cfg)
 {
@@ -523,6 +552,7 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_dlock_retry_count(inst_cfg));
     CM_RETURN_IFERR(dss_load_mes_params(inst_cfg));
     CM_RETURN_IFERR(dss_load_shm_key(inst_cfg));
+    CM_RETURN_IFERR(dss_load_threadpool_cfg(inst_cfg));
     CM_RETURN_IFERR(dss_load_cephrbd_params(inst_cfg));
     CM_RETURN_IFERR(dss_load_cephrbd_config_file(inst_cfg));
     return CM_SUCCESS;

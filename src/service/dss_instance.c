@@ -38,6 +38,7 @@
 #include "dss_signal.h"
 #include "dss_instance.h"
 #include "dss_simulation_cm.h"
+#include "dss_reactor.h"
 
 #define DSS_MAINTAIN_ENV "DSS_MAINTAIN"
 dss_instance_t g_dss_instance;
@@ -108,7 +109,7 @@ static status_t instance_init_ga(dss_instance_t *inst)
 
 static status_t dss_init_thread(dss_instance_t *inst)
 {
-    uint32 size = inst->inst_cfg.params.cfg_session_num + dss_get_udssession_startid() + 1;
+    uint32 size = dss_get_udssession_startid();
     inst->threads = (thread_t *)cm_malloc(size * (uint32)sizeof(thread_t));
     if (inst->threads == NULL) {
         return CM_ERROR;
@@ -367,6 +368,8 @@ static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to startup mes"));
     status = dss_start_lsnr(inst);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to start lsnr!"));
+    status = dss_create_reactors();
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to start reactors!"));
     return CM_SUCCESS;
 }
 
@@ -437,8 +440,7 @@ static status_t dss_lsnr_proc(bool32 is_emerg, uds_lsnr_t *lsnr, cs_pipe_t *pipe
     status = dss_create_session(pipe, &session);
     DSS_RETURN_IFERR3(
         status, LOG_RUN_ERR("dss_lsnr_proc create session failed.\n"), cs_uds_disconnect(&pipe->link.uds));
-    LOG_DEBUG_INF("create client server thread.");
-    status = cm_create_thread(dss_session_entry, SIZE_K(512), session, &(g_dss_instance.threads[session->id]));
+    status = dss_reactors_add_session(session);
     DSS_RETURN_IFERR3(status, dss_destroy_session(session),
         LOG_RUN_ERR("Session:%u socket:%u closed.", session->id, pipe->link.uds.sock));
     return CM_SUCCESS;
@@ -698,6 +700,9 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
             inst->status = DSS_STATUS_OPEN;
             return;
         }
+        dss_set_master_id(master_id);
+        dss_set_server_status_flag(DSS_STATUS_READWRITE);
+        inst->status = DSS_STATUS_OPEN;
         LOG_RUN_INF("inst %u is set to be main inst, so no need to do recovery.", curr_id);
         return;
     }
