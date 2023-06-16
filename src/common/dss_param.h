@@ -69,6 +69,8 @@ typedef struct st_dss_params {
     bool32 elapsed_switch;
     uint32 shm_key;
     uint32 ssl_detect_day;
+    uint32 iothread_count;
+    uint32 workthread_count;
     rbd_config_params_t rbd_config_params;
     char ceph_config[DSS_FILE_NAME_BUFFER_SIZE];
 } dss_params_t;

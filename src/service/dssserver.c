@@ -82,14 +82,9 @@ static void dss_close_thread(dss_instance_t *inst)
     uds_lsnr_t *lsnr = &inst->lsnr;
     cs_pause_uds_lsnr(lsnr);
     // close worker thread
-    uint32 cfg_session_num = inst->inst_cfg.params.cfg_session_num;
+    dss_destroy_reactors();
+
     if (inst->threads != NULL) {
-        for (uint32 i = 0; i < cfg_session_num; i++) {
-            inst->threads[i].closed = CM_TRUE;
-        }
-        while (inst->thread_cnt != 0) {
-            cm_sleep(1);
-        }
         dss_close_background_task(inst);
         DSS_FREE_POINT(inst->threads);
     }
@@ -113,6 +108,7 @@ static void dss_clean_server()
         cm_close_file(g_dss_instance.lock_fd);
     }
     CM_FREE_PTR(cm_log_param_instance()->log_compress_buf);
+    dss_destroy_reactors();
 }
 
 static void handle_main_wait(void)
