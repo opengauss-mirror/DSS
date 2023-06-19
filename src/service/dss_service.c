@@ -130,7 +130,37 @@ static void dss_clean_open_files(dss_session_t *session)
     LOG_RUN_INF("Clean open files for pid:%llu.", session->cli_info.cli_pid);
 }
 
-#define DSS_SESSION_PAUSED_WAIT 50
+void dss_release_session_res(dss_session_t *session)
+{
+    dss_clean_session_latch(dss_get_session_ctrl(), session);
+    dss_clean_open_files(session);
+    dss_destroy_session(session);
+}
+
+status_t dss_process_single_cmd(dss_session_t *session)
+{
+    status_t status;
+    if (session->proto_type == PROTO_TYPE_UNKNOWN) {
+        LOG_DEBUG_INF("session %u begin check protocal type.", session->id);
+        /* fetch protocol type */
+        status = dss_diag_proto_type(session);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to get protocol type!");
+            dss_clean_reactor_session(session);
+            return CM_ERROR;
+        }
+    } else {
+        status = dss_process_command(session);
+    }
+    if (session->is_closed) {
+        LOG_RUN_INF("Session:%u end to do service.", session->id);
+        dss_clean_reactor_session(session);
+    } else {
+        dss_session_detach_workthread(session);
+    }
+    return status;
+}
+
 void dss_session_entry(thread_t *thread)
 {
     dss_session_t *session = (dss_session_t *)thread->argument;
@@ -149,11 +179,11 @@ void dss_session_entry(thread_t *thread)
         LOG_RUN_ERR("Failed to get protocol type!");
         return;
     }
-    session->status = DSS_THREAD_STATUS_RUNNING;
+    session->status = DSS_SESSION_STATUS_RUNNING;
     session->curr_lsn = cm_get_curr_lsn();
-    (void)cm_atomic_inc(&g_dss_instance.thread_cnt);
+    (void)cm_atomic_inc(&g_dss_instance.active_sessions);
     while (!thread->closed) {
-        if (session->status == DSS_THREAD_STATUS_PAUSED) {
+        if (session->status == DSS_SESSION_STATUS_PAUSED) {
             cm_sleep(DSS_SESSION_PAUSED_WAIT);
             continue;
         }
@@ -161,20 +191,18 @@ void dss_session_entry(thread_t *thread)
         if ((dss_process_command(session) != CM_SUCCESS) && (session->is_closed == CM_TRUE)) {
             break;
         }
-        if (session->status == DSS_THREAD_STATUS_PAUSING) {
-            session->status = DSS_THREAD_STATUS_PAUSED;
-            LOG_DEBUG_INF("Set Session:%u paused.", session->id);
+        if (session->status == DSS_SESSION_STATUS_PAUSING) {
+            session->status = DSS_SESSION_STATUS_PAUSED;
+            LOG_DEBUG_INF("Set session:%u paused.", session->id);
         }
     }
-    session->status = DSS_THREAD_STATUS_IDLE;
+    session->status = DSS_SESSION_STATUS_IDLE;
     LOG_RUN_INF("Session:%u end to do service.", session->id);
 
     session->is_closed = CM_TRUE;
-    dss_clean_session_latch(dss_get_session_ctrl(), session);
-    dss_clean_open_files(session);
-    dss_destroy_session(session);
+    dss_release_session_res(session);
     cm_release_thread(thread);
-    (void)cm_atomic_dec(&g_dss_instance.thread_cnt);
+    (void)cm_atomic_dec(&g_dss_instance.active_sessions);
 }
 
 static void dss_return_error(dss_session_t *session)
@@ -731,65 +759,20 @@ static status_t dss_process_get_inst_status(dss_session_t *session)
     return CM_SUCCESS;
 }
 
-static void dss_set_all_user_session_pausing(dss_instance_t *inst)
-{
-    uint32 start_sid = dss_get_udssession_startid();
-    uint32 end_sid = start_sid + inst->inst_cfg.params.cfg_session_num;
-    for (uint32 i = start_sid; i < end_sid; i++) {
-        dss_session_t *session = (dss_session_t *)inst->threads[i].argument;
-        if (session != NULL && session->status == DSS_THREAD_STATUS_RUNNING) {
-            session->status = DSS_THREAD_STATUS_PAUSING;
-            LOG_DEBUG_INF("Succeed to pausing session: %d.", session->id);
-        }
-    }
-}
-
-static void dss_wait_all_user_session_paused(dss_instance_t *inst)
-{
-    uint32 start_sid = dss_get_udssession_startid();
-    uint32 end_sid = start_sid + inst->inst_cfg.params.cfg_session_num;
-    while (start_sid < end_sid) {
-        dss_session_t *session = (dss_session_t *)inst->threads[start_sid].argument;
-        if (session != NULL && !session->is_closed && session->status == DSS_THREAD_STATUS_PAUSING) {
-            cm_sleep(1);
-            continue;
-        }
-        start_sid++;
-    }
-}
-
 void dss_wait_session_pause(dss_instance_t *inst)
 {
     uds_lsnr_t *lsnr = &inst->lsnr;
     LOG_DEBUG_INF("Begin to set session paused.");
     cs_pause_uds_lsnr(lsnr);
-    if (inst->threads != NULL) {
-        dss_set_all_user_session_pausing(inst);
-        dss_wait_all_user_session_paused(inst);
-    }
+    dss_pause_reactors();
     LOG_DEBUG_INF("Succeed to pause all session.");
-}
-
-static void dss_set_all_user_session_running(dss_instance_t *inst)
-{
-    uint32 start_sid = dss_get_udssession_startid();
-    uint32 end_sid = start_sid + inst->inst_cfg.params.cfg_session_num;
-    for (uint32 i = start_sid; i < end_sid; i++) {
-        dss_session_t *session = (dss_session_t *)inst->threads[i].argument;
-        if (session != NULL && session->status == DSS_THREAD_STATUS_PAUSED) {
-            session->status = DSS_THREAD_STATUS_RUNNING;
-            LOG_DEBUG_INF("Succeed to run session: %d.", session->id);
-        }
-    }
 }
 
 void dss_set_session_running(dss_instance_t *inst)
 {
     LOG_DEBUG_INF("Begin to set session running.");
     uds_lsnr_t *lsnr = &inst->lsnr;
-    if (inst->threads != NULL) {
-        dss_set_all_user_session_running(inst);
-    }
+    dss_continue_reactors();
     lsnr->status = LSNR_STATUS_RUNNING;
     LOG_DEBUG_INF("Succeed to run all sessions.");
 }

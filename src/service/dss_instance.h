@@ -36,6 +36,7 @@
 #include "dss_param.h"
 #include "dss_lsnr.h"
 #include "cm_res_mgr.h"  // for cm_res_mgr_t
+#include "dss_reactor.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -73,9 +74,9 @@ typedef struct st_dss_instance {
     dss_config_t inst_cfg;
     dss_instance_status_e status;
     uds_lsnr_t lsnr;
-    // HYJ: reform_ctx_t rf_ctx;
+    reactors_t reactors;
     thread_t *threads;
-    int64 thread_cnt;
+    int64 active_sessions;
     bool32 abort_status;
     dss_cm_res cm_res;
     uint64 inst_work_status_map; // one bit one inst, bit value is 1 means inst ok, 0 means inst not ok
