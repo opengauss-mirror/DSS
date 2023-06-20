@@ -122,7 +122,7 @@ status_t dss_set_ssl_param(const char *param_name, const char *param_value);
  * @[out]param value--ssl cert or ssl key
  * @* @return CM_SUCCESS - success;otherwise: failed
  */
-status_t inline dss_get_ssl_param(const char *param_name, char *param_value, uint32 size)
+inline status_t dss_get_ssl_param(const char *param_name, char *param_value, uint32 size)
 {
     if (param_name == NULL) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "the ssl param name should not be null.");

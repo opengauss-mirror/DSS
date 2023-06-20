@@ -1,4 +1,6 @@
 ## include
+include_directories($ENV{JAVA_HOME}/include)
+include_directories($ENV{JAVA_HOME}/include/linux)
 include_directories(${DSS_CEPH_PATH})
 include_directories(${DSS_COMMON_PATH})
 include_directories(${DSS_COMMON_API_PATH})
@@ -12,7 +14,6 @@ endif(ENABLE_FUZZASAN)
 ## other dependency include
 include_directories(${DSS_SECUREC_INC_PATH})
 include_directories(${DSS_OPENSSL_PATH})
-include_directories(${ZLIB_INC_PATH})
 include_directories(${LIBAIO_INC_PATH})
 include_directories(${DSS_CBB_PATH})
 
@@ -35,8 +36,8 @@ set(COMMON_ALL_SRC
 add_library(dssapi SHARED ${COMMON_ALL_SRC})
 
 if (ENABLE_FUZZASAN)
-    target_link_libraries(dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${3rd_libssl} ${zlib} ${fuzz_lib} -Wl,-Bstatic ${3rd_libccb} -Wl,-Bdynamic ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
+    target_link_libraries(dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${3rd_libssl} ${libz} ${fuzz_lib} -Wl,-Bstatic ${3rd_libccb} -Wl,-Bdynamic ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
 else()
-    target_link_libraries(dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${3rd_libssl} ${zlib} -Wl,-Bstatic ${3rd_libccb} -Wl,-Bdynamic ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
+    target_link_libraries(dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${3rd_libssl} ${libz} -Wl,-Bstatic ${3rd_libccb} -Wl,-Bdynamic ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
 endif(ENABLE_FUZZASAN)
 
