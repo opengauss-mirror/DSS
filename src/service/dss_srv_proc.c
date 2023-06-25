@@ -182,14 +182,6 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
             LOG_DEBUG_ERR("Failed to rename file %s.", src);
             break;
         }
-        bool32 is_open = CM_FALSE;
-        DSS_BREAK_IF_ERROR(
-            dss_notify_check_file_open(vg_item, session, BCAST_REQ_RENAME, *(uint64 *)&out_node->id, &is_open));
-        if (is_open) {
-            // logic same as before
-            DSS_THROW_ERROR(ERR_DSS_FILE_RENAME_OPENING_REMOTE, src, dst);
-            break;
-        }
         DSS_BREAK_IF_ERROR(dss_rename_file_put_redo_log(session, out_node, dst_name, vg_item, inst_cfg));
         ret = CM_SUCCESS;
     } while (0);
@@ -383,8 +375,26 @@ static status_t dss_rm_dir_file(dss_session_t *session, const char *dir_name, gf
             break;
         }
         bool32 is_open = CM_FALSE;
-        DSS_BREAK_IF_ERROR(
-            dss_notify_check_file_open(vg_item, session, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&node->id, &is_open));
+        gft_node_t *old_node = node;
+        dss_unlock_vg_mem_and_shm(session, vg_item);
+        DSS_BREAK_IFERR2(
+            dss_notify_check_file_open(vg_item, session, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&node->id, &is_open),
+            dss_lock_vg_mem_and_shm_x(session, vg_item));
+        dss_lock_vg_mem_and_shm_x(session, vg_item);
+        if (dss_check_vg_ft_dir(session, &vg_item, dir_name, type, &node, &parent_node) != CM_SUCCESS) {
+            if ((cm_get_error_code() == ERR_DSS_FILE_REMOVE_OPENING) && (node->flags & DSS_FT_NODE_FLAG_DEL)) {
+                cm_reset_error();
+                status = CM_SUCCESS;
+                break;
+            }
+            break;
+        }
+        if (old_node->fid != node->fid) {
+            DSS_THROW_ERROR_EX(ERR_DSS_FILE_NOT_EXIST, "%s not exist, old fid is %llu, new fid is %llu.",
+                old_node->name, old_node->fid, node->fid);
+            status = CM_ERROR;
+            break;
+        }
         if (is_open) {
             status = dss_check_and_mark_file(vg_item, node, dir_name);
             if (status != CM_SUCCESS && (cm_get_error_code() == ERR_DSS_FILE_REMOVE_OPENING) &&
@@ -439,11 +449,10 @@ status_t dss_remove_link(dss_session_t *session, const char *file)
     return dss_rm_dir_file(session, file, GFT_LINK, false);
 }
 
-static status_t dss_remove_dir_file_by_node_inner(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, gft_node_t **parent_node)
+static status_t dss_remove_dir_file_by_node_inner_check(
+    dss_vg_info_item_t *vg_item, gft_node_t *node, gft_node_t **parent_node)
 {
     DSS_RETURN_IF_ERROR(dss_check_file(vg_item));
-
     LOG_RUN_INF("Begin to get parent node of node: %s", node->name);
     *parent_node = dss_find_parent_node_by_node(vg_item, node);
     if (*parent_node == NULL) {
@@ -451,9 +460,26 @@ static status_t dss_remove_dir_file_by_node_inner(
         return CM_ERROR;
     }
     LOG_RUN_INF("Success to get parent node: %s of node: %s", (*parent_node)->name, node->name);
+    return  CM_SUCCESS;
+}
+
+static status_t dss_remove_dir_file_by_node_inner(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, gft_node_t **parent_node)
+{
+    DSS_RETURN_IF_ERROR(dss_remove_dir_file_by_node_inner_check(vg_item, node, parent_node));
     bool32 is_open = CM_FALSE;
-    DSS_RETURN_IF_ERROR(
-        dss_notify_check_file_open(vg_item, session, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&node->id, &is_open));
+    gft_node_t *old_node = node;
+    dss_unlock_vg_mem_and_shm(session, vg_item);
+    DSS_RETURN_IFERR2(
+        dss_notify_check_file_open(vg_item, session, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&node->id, &is_open),
+        dss_lock_vg_mem_and_shm_x(session, vg_item));
+    dss_lock_vg_mem_and_shm_x(session, vg_item);
+    DSS_RETURN_IF_ERROR(dss_remove_dir_file_by_node_inner_check(vg_item, node, parent_node));
+    if (old_node->fid != node->fid) {
+        DSS_THROW_ERROR_EX(ERR_DSS_FILE_NOT_EXIST, "The file %s not exist, old fid is %llu, new fid is %llu.",
+            old_node->name, old_node->fid, node->fid);
+        return CM_ERROR;
+    }
     if (is_open) {
         LOG_DEBUG_INF("Failed to remove delay file when close file, because file is opened in other instance ftid: "
                       "%llu, name: %s, v:%u, au:%llu, block:%u, item:%u.",
