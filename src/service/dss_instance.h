@@ -103,7 +103,7 @@ status_t dss_recover_from_instance(dss_instance_t *inst);
 void dss_check_peer_by_inst(dss_instance_t *inst, uint64 inst_id);
 uint64 dss_get_inst_work_status(void);
 void dss_set_inst_work_status(uint64 cur_inst_map);
-uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock);
+uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try_lock);
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id);
 void dss_get_cm_lock_and_recover(thread_t *thread);
 

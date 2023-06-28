@@ -629,7 +629,7 @@ status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 }
 
 // get cm lock owner, if no owner, try to become.master_id can not be DSS_INVALID_ID32.
-uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock)
+uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try_lock)
 {
     dss_cm_res *cm_res = &inst->cm_res;
     uint32 master_id = DSS_INVALID_ID32;
@@ -649,17 +649,93 @@ uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock)
             continue;
         }
         if (master_id == DSS_INVALID_ID32) {
+            if (!try_lock) {
+                continue;
+            }
             ret = cm_res_lock(&cm_res->mgr, DSS_CM_LOCK);
             *grab_lock = ((int)ret == CM_RES_SUCCESS);
-            master_id = inst->inst_cfg.params.inst_id;
-            LOG_RUN_INF("inst id %u succeed to get lock owner.", master_id);
-            break;
+            if (*grab_lock) {
+                master_id = (uint32)inst->inst_cfg.params.inst_id;
+                LOG_RUN_INF("inst id %u succeed to get lock owner.", master_id);
+                break;
+            }
+            continue;
         }
         break;
     }
     return master_id;
 }
 
+bool32 dss_check_whether_recovery(dss_instance_t *inst, uint32 curr_id)
+{
+    uint32 lock_ownerid = dss_get_cm_lock_owner(inst, NULL, CM_FALSE);
+    if (lock_ownerid != curr_id) {
+        if (dss_is_readonly()) {
+            LOG_RUN_INF("inst %u is no need to do recovery for it has switched lock.", curr_id);
+            return CM_FALSE;
+        }
+        LOG_RUN_ERR("only masterid %u can be readwrite.", lock_ownerid);
+        cm_fync_logfile();
+        CM_ASSERT(0);
+    }
+    if (dss_is_readwrite()) {
+        LOG_RUN_INF("inst %u is no need to do recovery for it is to be set main.", curr_id);
+        return CM_FALSE;
+    }
+    return CM_TRUE;
+}
+
+void dss_recovery_when_get_lock(dss_instance_t *inst, uint32 curr_id, bool32 grab_lock)
+{
+    cm_spin_lock(&g_dss_instance.switch_lock, NULL);
+    bool32 first_start = CM_FALSE;
+    if (!grab_lock) {
+        bool32 need_recovery = dss_check_whether_recovery(inst, curr_id);
+        if (!need_recovery) {
+            cm_spin_unlock(&g_dss_instance.switch_lock);
+            return;
+        }
+        first_start = (inst->status == DSS_STATUS_PREPARE);
+    }
+    if (first_start) {
+        LOG_RUN_INF("inst %u is old main inst to do recovery.", curr_id);
+    } else {
+        LOG_RUN_INF("master_id is %u when get cm lock to do recovery.", curr_id);
+    }
+    dss_set_master_id(curr_id);
+    if (!first_start) {
+        dss_wait_session_pause(inst);
+    }
+    inst->status = DSS_STATUS_RECOVERY;
+    status_t ret = dss_recover_from_instance(inst);
+    if (ret != CM_SUCCESS) {
+        cm_spin_unlock(&g_dss_instance.switch_lock);
+        LOG_RUN_ERR("[DSS] ABORT INFO: Recover failed when get cm lock.");
+        cm_fync_logfile();
+        _exit(1);
+    }
+    if (!first_start) {
+        dss_session_t *session = NULL;
+        if (dss_create_session(NULL, &session) != CM_SUCCESS) {
+            cm_spin_unlock(&g_dss_instance.switch_lock);
+            LOG_RUN_ERR("[DSS] ABORT INFO: Refresh meta info failed when create session.");
+            cm_fync_logfile();
+            _exit(1);
+        }
+        if (dss_refresh_meta_info(session) != CM_SUCCESS) {
+            cm_spin_unlock(&g_dss_instance.switch_lock);
+            LOG_RUN_ERR("[DSS] ABORT INFO: Refresh meta info failed after recovery.");
+            cm_fync_logfile();
+            _exit(1);
+        }
+        dss_destroy_session(session);
+        dss_set_session_running(inst);
+    }
+    dss_set_server_status_flag(DSS_STATUS_READWRITE);
+    LOG_RUN_INF("inst %u set status flag %u when get cm lock.", curr_id, DSS_STATUS_READWRITE);
+    inst->status = DSS_STATUS_OPEN;
+    cm_spin_unlock(&g_dss_instance.switch_lock);
+}
 /*
     1、old_master_id == master_id, just return;
     2、old_master_id ！= master_id, just indicates that the master has been reselected.so to juge whether recover.
@@ -671,12 +747,14 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
     }
     uint32 old_master_id = dss_get_master_id();
     bool32 grab_lock = CM_FALSE;
-    uint32 master_id = dss_get_cm_lock_owner(inst, &grab_lock);
+    uint32 master_id = dss_get_cm_lock_owner(inst, &grab_lock, CM_TRUE);
+    // master no change
     if (old_master_id == master_id) {
         return;
     }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)inst_cfg->params.inst_id;
+    // standby is started or masterid has been changed
     if (master_id != curr_id) {
         dss_set_master_id(master_id);
         dss_set_server_status_flag(DSS_STATUS_READONLY);
@@ -685,58 +763,8 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
         return;
     }
     /*1、grab lock success 2、set main,other switch lock 3、restart, lock no transfer*/
-    if (!grab_lock) {
-        if (inst->status == DSS_STATUS_PREPARE) {
-            LOG_RUN_INF("inst %u is old main inst to do recovery.", curr_id);
-            inst->status = DSS_STATUS_RECOVERY;
-            dss_set_master_id(master_id);
-            dss_set_server_status_flag(DSS_STATUS_READWRITE);
-            status_t status = dss_recover_from_instance(inst);
-            if (status != CM_SUCCESS) {
-                LOG_RUN_ERR("[DSS] ABORT INFO: Recover failed when get cm lock.");
-                cm_fync_logfile();
-                _exit(1);
-            }
-            inst->status = DSS_STATUS_OPEN;
-            return;
-        }
-        dss_set_master_id(master_id);
-        dss_set_server_status_flag(DSS_STATUS_READWRITE);
-        inst->status = DSS_STATUS_OPEN;
-        LOG_RUN_INF("inst %u is set to be main inst, so no need to do recovery.", curr_id);
-        return;
-    }
-    cm_spin_lock(&g_dss_instance.switch_lock, NULL);
-    dss_set_master_id(master_id);
-    dss_wait_session_pause(inst);
-    inst->status = DSS_STATUS_RECOVERY;
-    LOG_RUN_INF("master_id is %u when get cm lock to do recovery.", master_id);
-    status_t ret = dss_recover_from_instance(inst);
-    if (ret != CM_SUCCESS) {
-        cm_spin_unlock(&g_dss_instance.switch_lock);
-        LOG_RUN_ERR("[DSS] ABORT INFO: Recover failed when get cm lock.");
-        cm_fync_logfile();
-        _exit(1);
-    }
-    dss_session_t *session = NULL;
-    if (dss_create_session(NULL, &session) != CM_SUCCESS) {
-        cm_spin_unlock(&g_dss_instance.switch_lock);
-        LOG_RUN_ERR("[DSS] ABORT INFO: Refresh meta info failed when create session.");
-        cm_fync_logfile();
-        _exit(1);
-    }
-    if (dss_refresh_meta_info(session) != CM_SUCCESS) {
-        cm_spin_unlock(&g_dss_instance.switch_lock);
-        LOG_RUN_ERR("[DSS] ABORT INFO: Refresh meta info failed after recovery.");
-        cm_fync_logfile();
-        _exit(1);
-    }
-    dss_destroy_session(session);
-    dss_set_session_running(inst);
-    dss_set_server_status_flag(DSS_STATUS_READWRITE);
-    LOG_RUN_INF("inst %u set status flag %u when get cm lock.", curr_id, DSS_STATUS_READWRITE);
-    inst->status = DSS_STATUS_OPEN;
-    cm_spin_unlock(&g_dss_instance.switch_lock);
+    dss_recovery_when_get_lock(inst, curr_id, grab_lock);
+    return;
 }
 
 #define DSS_RECOVERY_INTERVAL 500
