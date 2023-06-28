@@ -12,7 +12,6 @@ endif (ENABLE_FUZZASAN)
 ## other dependency include 
 include_directories(${DSS_SECUREC_INC_PATH})
 include_directories(${DSS_OPENSSL_PATH})
-include_directories(${ZLIB_INC_PATH})
 include_directories(${DSS_CBB_PATH})
 
 aux_source_directory(${DSS_COMMON_PATH} COMMON_SRC)
@@ -32,17 +31,17 @@ set(COMMON_ALL_SRC
 ADD_EXECUTABLE(dsscmd ${COMMON_ALL_SRC})
 
 if (ENABLE_FUZZASAN)
-    target_link_libraries(dsscmd dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${3rd_libssl} ${zlib} ${3rd_libccb} ${vpp_libipsi_crypto} ${fuzz_lib} -Wl,--no-whole-archive)
+    target_link_libraries(dsscmd dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} ${fuzz_lib} -Wl,--no-whole-archive)
 else()
-    target_link_libraries(dsscmd dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${3rd_libssl} ${zlib} ${3rd_libccb} ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
+    target_link_libraries(dsscmd dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
 endif(ENABLE_FUZZASAN)
 
 if (ENABLE_DSSTEST)
     add_library(dsscmd_test SHARED ${COMMON_ALL_SRC})
     if (ENABLE_FUZZASAN)
-        target_link_libraries(dsscmd_dest dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${3rd_libssl} ${zlib} ${3rd_libccb} ${vpp_libipsi_crypto} ${fuzz_lib} -Wl,--no-whole-archive)
+        target_link_libraries(dsscmd_test dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} ${fuzz_lib} -Wl,--no-whole-archive)
     else()
-        target_link_libraries(dsscmd_test dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${3rd_libssl} ${zlib} ${3rd_libccb} ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
+        target_link_libraries(dsscmd_test dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
     endif(ENABLE_FUZZASAN)
 endif(ENABLE_DSSTEST)
 
