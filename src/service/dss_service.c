@@ -765,6 +765,9 @@ void dss_wait_session_pause(dss_instance_t *inst)
     LOG_DEBUG_INF("Begin to set session paused.");
     cs_pause_uds_lsnr(lsnr);
     dss_pause_reactors();
+    while (inst->active_sessions != 0) {
+        cm_sleep(1);
+    }
     LOG_DEBUG_INF("Succeed to pause all session.");
 }
 
@@ -847,6 +850,7 @@ static status_t dss_process_switch_lock(dss_session_t *session)
         if (ret != CM_SUCCESS) {
             dss_set_session_running(&g_dss_instance);
             dss_set_server_status_flag(DSS_STATUS_READWRITE);
+            LOG_RUN_INF("inst %u set status flag %u when failed to trans lock.", curr_id, DSS_STATUS_READWRITE);
             g_dss_instance.status = DSS_STATUS_OPEN;
             cm_spin_unlock(&g_dss_instance.switch_lock);
             LOG_DEBUG_ERR("cm do switch lock failed from %u to %u.", curr_id, master_id);
@@ -899,7 +903,10 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
             LOG_RUN_INF("Main server %u is set successfully by %u.", curr_id, master_id);
             return CM_SUCCESS;
         }
-        cm_spin_lock(&g_dss_instance.switch_lock, NULL);
+        if (!cm_spin_timed_lock(&g_dss_instance.switch_lock, DSS_PROCESS_REMOTE_INTERVAL)) {
+            LOG_DEBUG_INF("Spin switch_lock timed out, just continue.");
+            continue;
+        }
         if (!g_dss_instance.is_maintain) {
             status = dss_process_remote_switch_lock(session, curr_id, master_id);
             if (status != CM_SUCCESS) {

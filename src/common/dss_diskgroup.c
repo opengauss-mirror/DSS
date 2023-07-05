@@ -529,7 +529,8 @@ status_t dss_load_vg_ctrl_part(dss_vg_info_item_t *vg_item, int64 offset, void *
             return CM_ERROR;
         }
     }
-    LOG_DEBUG_INF("Begin to read volume %s,offset:%lld,size:%d.", vg_item->entry_path, offset, size);
+    LOG_DEBUG_INF(
+        "Begin to read volume %s when load vg ctrl part, offset:%lld,size:%d.", vg_item->entry_path, offset, size);
     if (dss_read_volume_inst(vg_item, &vg_item->volume_handle[0], offset, buf, size, remote) != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to read volume %s,offset:%lld,size:%d.", vg_item->entry_path, offset, size);
         return CM_ERROR;
@@ -1653,6 +1654,7 @@ status_t dss_check_read_volume(
     dss_volume_t *volume;
     DSS_RETURN_IF_ERROR(dss_check_volume(vg_item, volumeid));
     volume = &vg_item->volume_handle[volumeid];
+    LOG_DEBUG_INF("Begin to read volume %s when check, offset:%lld,size:%d.", vg_item->entry_path, offset, size);
     return dss_read_volume_inst(vg_item, volume, offset, buf, size, remote);
 }
 
