@@ -276,7 +276,7 @@ uint32 sklist_init(skip_list_t *list, skip_list_callback_t *callback)
     int32 level = SKIP_LIST_MAX_LEVEL;
     list->head = sklist_create_node(list, &level, 0, NULL);
     if (list->head == NULL || level != SKIP_LIST_MAX_LEVEL) {
-        return ERR_ALLOC_MEMORY;
+        return CM_ERROR;
     }
 
     if (memset_s(&list->usage, sizeof(skip_list_usage_t), 0, sizeof(skip_list_usage_t)) != EOK) {
@@ -483,7 +483,7 @@ uint32 sklist_insert(skip_list_t *list, void *key, void *value)
             list->usage.insert_nok++;
             sklist_create_node_fail(list, save_level, update);
             dss_unlatch(&list->lock);
-            return ERR_ALLOC_MEMORY;
+            return CM_ERROR;
         }
         uint32 ret = sklist_update_insert_info(list, cur, save_level, level, update);
         dss_unlatch(&list->lock);

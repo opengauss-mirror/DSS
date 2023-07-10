@@ -30,7 +30,7 @@ uint32 sklist_mem_init(mem_ctx_t *ctx)
     CM_ASSERT(ctx != NULL);
     ctx->free_page = (page_header_t *)cm_malloc(MEM_PAGE_SIZE);
     if (ctx->free_page == NULL) {
-        return ERR_ALLOC_MEMORY;
+        return CM_ERROR;
     }
     ctx->total_memory = (uint32)sizeof(mem_ctx_t) + MEM_PAGE_SIZE;
     ctx->free_memory = MEM_PAGE_SIZE - (uint32)sizeof(page_header_t);
@@ -117,7 +117,7 @@ uint32 sklist_mem_alloc(mem_ctx_t *ctx, uint16 size, void **ptr)
     /* add a new free page */
     cur = (page_header_t *)cm_malloc(MEM_PAGE_SIZE);
     if (cur == NULL) {
-        return ERR_ALLOC_MEMORY;
+        return CM_ERROR;
     }
     ctx->total_memory += MEM_PAGE_SIZE;
     ctx->free_memory += (MEM_PAGE_SIZE - (uint32)sizeof(page_header_t));

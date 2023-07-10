@@ -328,7 +328,7 @@ status_t dss_recycle_empty_file(
     if (!entry_block) {
         LOG_DEBUG_ERR("Failed to get fs block %llu,%llu,%llu, maybe no memory.", (uint64)node->entry.au,
             (uint64)node->entry.volume, (uint64)node->entry.block);
-        return ERR_ALLOC_MEMORY;
+        return CM_ERROR;
     }
 
     uint16 index;
@@ -342,7 +342,7 @@ status_t dss_recycle_empty_file(
     if (!block) {
         LOG_DEBUG_ERR("Failed to get fs block %llu,%llu,%llu, maybe no memory.", (uint64)node->entry.au,
             (uint64)node->entry.volume, (uint64)node->entry.block);
-        return ERR_ALLOC_MEMORY;
+        return CM_ERROR;
     }
     CM_ASSERT(block->head.used_num == 0);
 

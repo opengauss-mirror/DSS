@@ -80,6 +80,8 @@ add_compile_options(-Wno-implicit-fallthrough)
 add_compile_options(-Wno-unused-parameter)
 add_compile_options(-Wno-missing-field-initializers)
 add_compile_options(-Wno-ignored-qualifiers)
+add_compile_options(-Wno-cast-function-type)
+add_compile_options(-Wno-enum-conversion)
 
 OPTION(ENABLE_GCOV "Enable gcov (debug, Linux builds only)" OFF)
 message(STATUS "ENABLE_GCOV = ${ENABLE_GCOV}")
