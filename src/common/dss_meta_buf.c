@@ -239,7 +239,7 @@ static status_t dss_load_buffer_cache(
     uint32 obj_id = ga_alloc_object(pool_id, CM_INVALID_ID32);
     if (obj_id == CM_INVALID_ID32) {
         dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
-        return ERR_ALLOC_MEMORY;
+        return CM_ERROR;
     }
     char *buf = ga_object_addr(pool_id, obj_id);
 

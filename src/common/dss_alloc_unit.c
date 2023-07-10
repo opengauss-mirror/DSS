@@ -66,7 +66,7 @@ static status_t dss_alloc_au_from_recycle(
         gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, id, DSS_TRUE, CM_FALSE);
         if (node == NULL) {
             LOG_DEBUG_ERR("Failed to get ft node %llu,%llu, maybe no memory.", (uint64)(id.au), (uint64)(id.volume));
-            return ERR_ALLOC_MEMORY;
+            return CM_ERROR;
         }
 
         CM_ASSERT(node->type == GFT_FILE || node->type == GFT_LINK);
@@ -76,7 +76,7 @@ static status_t dss_alloc_au_from_recycle(
         if (!entry_block) {
             LOG_DEBUG_ERR("Failed to get fs block %llu,%llu,%llu, maybe no memory.", (uint64)node->entry.au,
                 (uint64)node->entry.volume, (uint64)node->entry.block);
-            return ERR_ALLOC_MEMORY;
+            return CM_ERROR;
         }
 
         uint16 index;
@@ -90,7 +90,7 @@ static status_t dss_alloc_au_from_recycle(
         if (!block) {
             LOG_DEBUG_ERR("Failed to get fs block %llu,%llu,%llu, maybe no memory.", (uint64)node->entry.au,
                 (uint64)node->entry.volume, (uint64)node->entry.block);
-            return ERR_ALLOC_MEMORY;
+            return CM_ERROR;
         }
         CM_ASSERT(block->head.used_num > 0);
         uint16 old_used_num = entry_fs_block->head.used_num;

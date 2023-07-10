@@ -202,7 +202,7 @@ static int32 oamap_rehash(cm_oamap_t *map, uint32 new_capacity)
     cm_oamap_bucket_t *new_buckets = (cm_oamap_bucket_t *)cm_malloc((uint32)size);
     if (new_buckets == NULL) {
         LOG_DEBUG_ERR("Malloc failed");
-        return ERR_ALLOC_MEMORY;
+        return CM_ERROR;
     }
     void **new_key = (void **)(new_buckets + new_capacity);
     void **new_value = (void **)(new_key + new_capacity);
@@ -265,7 +265,7 @@ int32 cm_oamap_init(
     map->buckets = (cm_oamap_bucket_t *)cm_malloc((uint32)size);
     if (map->buckets == NULL) {
         LOG_DEBUG_ERR("Malloc failed");
-        return ERR_ALLOC_MEMORY;
+        return CM_ERROR;
     }
     map->key = (void **)(map->buckets + map->num);
     map->value = (void **)(map->key + map->num);
