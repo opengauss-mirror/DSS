@@ -117,6 +117,7 @@ status_t cm_get_thv(thv_type_e var_type, pointer_t *result)
         if (!g_thv_spec) {
             ret = pthread_setspecific(g_thv_key, g_thv_addr);
             if (ret != EOK) {
+                DSS_THROW_ERROR(ERR_SYSTEM_CALL, ret);
                 LOG_RUN_ERR("call pthread_setspecific failed");
                 return CM_ERROR;
             }

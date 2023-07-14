@@ -122,20 +122,20 @@ static status_t dss_conn_retry(dss_conn_t *conn)
         // avoid buffer leak when disconnect
         dss_free_packet_buffer(&conn->pack);
         status = dss_connect(dss_get_inst_path(), NULL, NULL, conn);
-        DSS_BREAK_IFERR2(status, LOG_RUN_ERR("Dss client connet server failed."));
+        DSS_BREAK_IFERR2(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client connet server failed."));
         char *home = NULL;
         status = dss_get_home_sync(conn, &home);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client get home from server failed."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client get home from server failed."), dss_disconnect(conn));
 
         uint32 max_open_file = DSS_MAX_OPEN_FILES;
         status = dss_init(max_open_file, home);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client init failed."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client init failed."), dss_disconnect(conn));
 
         status = dss_set_session_sync(conn);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client failed to initialize session."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client failed to initialize session."), dss_disconnect(conn));
 
         status = dss_init_vol_handle_sync(conn);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client init vol handle failed."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client init vol handle failed."), dss_disconnect(conn));
 
         g_dss_conn_info.conn_num++;
     } while (0);
@@ -172,6 +172,7 @@ status_t dss_conn_create(pointer_t *result)
 
     errno_t rc = memset_s(conn, sizeof(dss_conn_t), 0, sizeof(dss_conn_t));
     if (rc != EOK) {
+        DSS_THROW_ERROR(ERR_SYSTEM_CALL, rc);
         DSS_FREE_POINT(conn);
         return CM_ERROR;
     }
@@ -179,6 +180,7 @@ status_t dss_conn_create(pointer_t *result)
     // init packet
     dss_init_packet(&conn->pack, conn->pipe.options);
     if (dss_conn_sync(conn) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CONNECT_FAILED, cm_get_os_error(), strerror(cm_get_os_error()));
         DSS_FREE_POINT(conn);
         return CM_ERROR;
     }
