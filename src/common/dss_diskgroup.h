@@ -155,7 +155,8 @@ static inline void dss_set_vg_au_size(dss_ctrl_t *ctrl, uint32 au_size)
 
 static inline bool32 dss_check_volume_is_used(dss_vg_info_item_t *vg_item, uint32 vid)
 {
-    return (dss_get_vg_au_size(vg_item->dss_ctrl) < vg_item->dss_ctrl->core.volume_attrs[vid].hwm);
+    return (CM_CALC_ALIGN(DSS_VOLUME_HEAD_SIZE, dss_get_vg_au_size(vg_item->dss_ctrl)) <
+        vg_item->dss_ctrl->core.volume_attrs[vid].hwm);
 }
 
 static inline bool32 dss_compare_version(uint64 disk_version, uint64 mem_version)

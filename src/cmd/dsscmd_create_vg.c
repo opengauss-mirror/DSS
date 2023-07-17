@@ -169,13 +169,17 @@ static status_t dss_initial_vg_ctrl(
     vg_ctrl->core.volume_attrs[0].flag = 1;
     vg_ctrl->core.volume_attrs[0].id = 0;
 
-    vg_ctrl->core.volume_attrs[0].hwm = dss_get_vg_au_size(vg_ctrl);
+    vg_ctrl->core.volume_attrs[0].hwm = CM_CALC_ALIGN(DSS_VOLUME_HEAD_SIZE, au_size);
     vg_ctrl->core.volume_attrs[0].size = dss_get_volume_size(volume);
     if (vg_ctrl->core.volume_attrs[0].size == DSS_INVALID_64) {
-        LOG_DEBUG_ERR("Failed to get volume size when create vg %s.", vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VG_CREATE, vg_name, "failed to get volume size");
         return CM_ERROR;
     }
-    vg_ctrl->core.volume_attrs[0].free = vg_ctrl->core.volume_attrs[0].size - dss_get_vg_au_size(vg_ctrl);
+    if (vg_ctrl->core.volume_attrs[0].size <= vg_ctrl->core.volume_attrs[0].hwm) {
+        DSS_THROW_ERROR(ERR_DSS_VG_CREATE, vg_name, "volume size is too small");
+        return CM_ERROR;
+    }
+    vg_ctrl->core.volume_attrs[0].free = vg_ctrl->core.volume_attrs[0].size - vg_ctrl->core.volume_attrs[0].hwm;
     return CM_SUCCESS;
 }
 
