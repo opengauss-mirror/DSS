@@ -47,6 +47,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_VOLUME_READ] = "Read volume '%s' failed, volume id %d, reason %d",
     [ERR_DSS_VOLUME_WRITE] = "Write volume '%s' failed, volume id %d, reason %d",
     [ERR_DSS_VOLUME_SEEK] = "Seek volume '%s' failed, volume id %d, reason %d",
+    [ERR_DSS_VOLUME_ADD] = "Failed to add volume %s, reason %s.",
     [ERR_DSS_VOLUME_ADD_EXISTED] = "Add an existed volume %s of volume-group %s failed",
     [ERR_DSS_VOLUME_REMOVE_NOEXIST] = "Remove a non-existent volume %s of volume-group %s failed",
     [ERR_DSS_VOLUME_REMOVE_NONEMPTY] = "Remove a nonempty volume %s failed",

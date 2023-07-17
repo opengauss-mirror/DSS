@@ -1691,22 +1691,7 @@ static status_t format_ft_au_when_create_vg(dss_vg_info_item_t *vg_item, auid_t 
     root_gft->last = ((dss_ft_block_t *)(au_buf + au_size - DSS_BLOCK_SIZE))->id;  // last block
 
     // link the gft_node and free_list
-    if (root_gft->free_list.count == 0) {
-        root_gft->free_list = new_list;
-    } else {
-        ftid_t last_id = root_gft->free_list.last;
-        CM_ASSERT(last_id.volume == 0 && last_id.au == 0 && last_id.block == 0);
-
-        // skip dss_root_ft_block_t header
-        gft_node_t *last_node =
-            (gft_node_t *)((char *)root_ft + sizeof(dss_root_ft_block_t) + sizeof(gft_node_t) * last_id.item);
-        gft_node_t *new_list_first_node = (gft_node_t *)au_buf;
-
-        last_node->next = new_list_first_node->id;
-        new_list_first_node->prev = last_node->id;
-        root_gft->free_list.last = new_list.last;
-        root_gft->free_list.count += new_list.count;
-    }
+    root_gft->free_list = new_list;
     // flush ft block to disk manually
     block = (dss_ft_block_t *)(au_buf);
     offset = dss_get_ft_block_offset(vg_item, block->id);
