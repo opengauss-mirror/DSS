@@ -89,11 +89,10 @@ void dss_unregister_buffer_cache(dss_vg_info_item_t *vg_item, dss_block_id_t blo
         block = DSS_GET_COMMON_BLOCK_HEAD(addr);
         if (block->type == DSS_BLOCK_TYPE_FT) {
             block_ctrl = (dss_block_ctrl_t *)(addr + DSS_BLOCK_SIZE);
-            block_id_tmp = ((dss_ft_block_t *)addr)->id;
         } else {
             block_ctrl = (dss_block_ctrl_t *)(addr + DSS_FILE_SPACE_BLOCK_SIZE);
-            block_id_tmp = ((dss_fs_block_t *)addr)->head.id;
         }
+        block_id_tmp = ((dss_common_block_t *)addr)->id;
         if ((block_ctrl->hash == hash) && (vg_item->buffer_cache->func(&block_id_tmp, &block_id) == CM_TRUE)) {
             if (block_ctrl->has_prev) {
                 ga_obj_id_t obj_id = *(ga_obj_id_t *)&block_ctrl->hash_prev;
@@ -205,11 +204,10 @@ static status_t dss_load_buffer_cache(
         block = DSS_GET_COMMON_BLOCK_HEAD(addr);
         if (block->type == DSS_BLOCK_TYPE_FT) {
             block_ctrl = (dss_block_ctrl_t *)(addr + DSS_BLOCK_SIZE);
-            block_id_tmp = ((dss_ft_block_t *)addr)->id;
         } else {
             block_ctrl = (dss_block_ctrl_t *)(addr + DSS_FILE_SPACE_BLOCK_SIZE);
-            block_id_tmp = ((dss_fs_block_t *)addr)->head.id;
         }
+        block_id_tmp = ((dss_common_block_t *)addr)->id;
         if ((block_ctrl->hash == hash) && (cm_oamap_uint64_compare(&block_id_tmp, &block_id) == CM_TRUE)) {
             dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
             status_t status = dss_check_block_version(vg_item, block_id, type, addr, NULL);
@@ -312,11 +310,10 @@ void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_it
         block = DSS_GET_COMMON_BLOCK_HEAD(addr);
         if (block->type == DSS_BLOCK_TYPE_FT) {
             block_ctrl = (dss_block_ctrl_t *)(addr + DSS_BLOCK_SIZE);
-            block_id_tmp = ((dss_ft_block_t *)addr)->id;
         } else {
             block_ctrl = (dss_block_ctrl_t *)(addr + DSS_FILE_SPACE_BLOCK_SIZE);
-            block_id_tmp = ((dss_fs_block_t *)addr)->head.id;
         }
+        block_id_tmp = ((dss_common_block_t *)addr)->id;
         if ((block_ctrl->hash == hash) && (cm_oamap_uint64_compare(&block_id_tmp, key) == CM_TRUE)) {
             dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
             if (out_obj_id != NULL) {
@@ -402,11 +399,10 @@ status_t dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *ma
             block = DSS_GET_COMMON_BLOCK_HEAD(addr);
             if (block->type == DSS_BLOCK_TYPE_FT) {
                 block_ctrl = (dss_block_ctrl_t *)(addr + DSS_BLOCK_SIZE);
-                block_id_tmp = ((dss_ft_block_t *)addr)->id;
             } else {
                 block_ctrl = (dss_block_ctrl_t *)(addr + DSS_FILE_SPACE_BLOCK_SIZE);
-                block_id_tmp = ((dss_fs_block_t *)addr)->head.id;
             }
+            block_id_tmp = ((dss_common_block_t *)addr)->id;
             status = dss_check_block_version(vg_item, block_id_tmp, block->type, addr, NULL);
             if (status != CM_SUCCESS) {
                 dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);

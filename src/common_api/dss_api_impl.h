@@ -47,7 +47,6 @@ typedef struct st_dss_rw_param {
 
 struct __dss_conn_opt;
 typedef struct __dss_conn_opt *dss_conn_opt_t;
-typedef struct st_gft_node *dss_dir_item_handle;
 
 #define DSSAPI_BLOCK_SIZE 512
 #define DSS_HOME "DSS_HOME"
@@ -66,7 +65,7 @@ void dss_disconnect_ex(dss_conn_t *conn);
 status_t dss_make_dir_impl(dss_conn_t *conn, const char *parent, const char *dir_name);
 status_t dss_remove_dir_impl(dss_conn_t *conn, const char *dir, bool recursive);
 dss_dir_t *dss_open_dir_impl(dss_conn_t *conn, const char *dir_path, bool32 refresh_recursive);
-dss_dir_item_handle dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 skip_delete);
+gft_node_t * dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 skip_delete);
 status_t dss_close_dir_impl(dss_conn_t *conn, dss_dir_t *dir);
 status_t dss_create_file_impl(dss_conn_t *conn, const char *file_path, int flag);
 status_t dss_remove_file_impl(dss_conn_t *conn, const char *file_path);

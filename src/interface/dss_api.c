@@ -267,7 +267,7 @@ int dss_dread(dss_dir_handle dir, dss_dir_item_t item, dss_dir_item_t *result)
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("dread get conn error."));
 
-    gft_node_t *node = (dss_dir_item_handle)dss_read_dir_impl(conn, (dss_dir_t *)dir, CM_TRUE);
+    gft_node_t *node = dss_read_dir_impl(conn, (dss_dir_t *)dir, CM_TRUE);
     if (node == NULL) {
         *result = NULL;
         return DSS_SUCCESS;
