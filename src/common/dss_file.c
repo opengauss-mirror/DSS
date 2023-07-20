@@ -901,9 +901,9 @@ void dss_free_fs_block_addr(dss_session_t *session, dss_vg_info_item_t *vg_item,
     fs_block->head.next = block_id;
     fs_block->head.common.version++;
     fs_block->head.common.checksum = dss_get_checksum(block, DSS_FILE_SPACE_BLOCK_SIZE);
-    root->free.first = fs_block->head.id;
+    root->free.first = fs_block->head.common.id;
     if (dss_cmp_blockid(block_id, CM_INVALID_ID64)) {
-        root->free.last = fs_block->head.id;
+        root->free.last = fs_block->head.common.id;
         CM_ASSERT(root->free.count == 0);
     }
     root->free.count++;
@@ -917,7 +917,7 @@ void dss_free_fs_block_addr(dss_session_t *session, dss_vg_info_item_t *vg_item,
 
     dss_update_core_ctrl(session, vg_item, &vg_item->dss_ctrl->core, 0, CM_TRUE);
     DSS_LOG_DEBUG_OP("Free file space meta block,v:%u,au:%llu,block:%u,item:%u, next:%llu,count:%llu. ",
-        fs_block->head.id.volume, (uint64)fs_block->head.id.au, fs_block->head.id.block, fs_block->head.id.item,
+        fs_block->head.common.id.volume, (uint64)fs_block->head.common.id.au, fs_block->head.common.id.block, fs_block->head.common.id.item,
         *(uint64 *)&fs_block->head.next, root->free.count);
 }
 
@@ -945,14 +945,14 @@ status_t dss_init_file_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_i
     }
 
     block_header = (dss_fs_block_header *)block;
-    fs_entry_block->bitmap[0] = block_header->id;
-    *block_id = ((dss_fs_block_header *)fs_entry_block)->id;
+    fs_entry_block->bitmap[0] = block_header->common.id;
+    *block_id = ((dss_fs_block_header *)fs_entry_block)->common.id;
     fs_entry_block->head.used_num = 1;
 
     dss_redo_init_fs_block_t redo;
-    redo.id = fs_entry_block->head.id;
+    redo.id = fs_entry_block->head.common.id;
     redo.index = 0;
-    redo.second_id = block_header->id;
+    redo.second_id = block_header->common.id;
     redo.used_num = 1;
     dss_put_log(session, vg_item, DSS_RT_INIT_FILE_FS_BLOCK, &redo, sizeof(redo));
 
@@ -1359,8 +1359,8 @@ status_t dss_init_ft_block(dss_vg_info_item_t *vg_item, char *block, uint32_t bl
 
     dss_ft_block_t *ft_block = (dss_ft_block_t *)block;
     ft_block->node_num = (DSS_BLOCK_SIZE - sizeof(dss_ft_block_t)) / sizeof(gft_node_t);
-    ft_block->id = auid;
-    ft_block->id.block = block_id;
+    ft_block->common.id = auid;
+    ft_block->common.id.block = block_id;
     ft_block->common.type = DSS_BLOCK_TYPE_FT;
 
     gft_node_t *first_node = (gft_node_t *)(block + sizeof(dss_ft_block_t));
@@ -1389,7 +1389,7 @@ status_t dss_init_ft_block(dss_vg_info_item_t *vg_item, char *block, uint32_t bl
         gft->free_list.first.block = block_id;
         gft->free_list.first.item = 0;
     }
-    DSS_LOG_DEBUG_OP("dss_init_ft_block blockid:%llu.", DSS_ID_TO_U64(ft_block->id));
+    DSS_LOG_DEBUG_OP("dss_init_ft_block blockid:%llu.", DSS_ID_TO_U64(ft_block->common.id));
     return CM_SUCCESS;
 }
 
@@ -1404,22 +1404,22 @@ void dss_init_bitmap_block(dss_ctrl_t *dss_ctrl, char *block, uint32_t block_id,
     fs_block->common.version = 0;
     fs_block->used_num = 0;
     fs_block->total_num = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(uint64);
-    fs_block->id.au = auid.au;
-    fs_block->id.volume = auid.volume;
-    fs_block->id.block = block_id;
-    fs_block->id.item = 0;
+    fs_block->common.id.au = auid.au;
+    fs_block->common.id.volume = auid.volume;
+    fs_block->common.id.block = block_id;
+    fs_block->common.id.item = 0;
 
     block_root->free.count++;
     dss_block_id_t first = block_root->free.first;
-    block_root->free.first = fs_block->id;
+    block_root->free.first = fs_block->common.id;
     fs_block->next = first;
 
     bool32 cmp = dss_cmp_auid(block_root->free.last, DSS_INVALID_64);
     if (cmp) {
-        block_root->free.last = fs_block->id;
+        block_root->free.last = fs_block->common.id;
     }
     LOG_DEBUG_INF("Init bitmap block, free count:%llu, first:%llu, id:%llu.", block_root->free.count,
-        DSS_ID_TO_U64(first), DSS_ID_TO_U64(fs_block->id));
+        DSS_ID_TO_U64(first), DSS_ID_TO_U64(fs_block->common.id));
 }
 
 status_t dss_update_au_disk(
@@ -1463,29 +1463,29 @@ status_t dss_format_ft_node_core(dss_vg_info_item_t *vg_item, ga_queue_t queue, 
         block = (dss_ft_block_t *)ga_object_addr(GA_8K_POOL, obj_id);
         errno_t err = memset_sp((char *)block, DSS_BLOCK_SIZE, 0, DSS_BLOCK_SIZE);
         cm_panic(err == EOK);
-        block->id = auid;
-        block->id.block = i;
+        block->common.id = auid;
+        block->common.id.block = i;
         if (i != block_num - 1) {
             block->next = auid;
             block->next.block = i + 1;
         } else {
             dss_set_blockid(&block->next, CM_INVALID_ID64);
         }
-        gft->last = block->id;
+        gft->last = block->common.id;
 
         ga_obj_id.obj_id = obj_id;
         do {
             status = dss_register_buffer_cache(
-                vg_item, &block->id, ga_obj_id, (dss_block_ctrl_t *)((char *)block + DSS_BLOCK_SIZE));
+                vg_item, &block->common.id, ga_obj_id, (dss_block_ctrl_t *)((char *)block + DSS_BLOCK_SIZE));
             if (status != CM_SUCCESS) {
                 rollback_count = i;
-                DSS_BREAK_IFERR2(status, LOG_DEBUG_ERR("Failed to register block:%llu.", DSS_ID_TO_U64(block->id)));
+                DSS_BREAK_IFERR2(status, LOG_DEBUG_ERR("Failed to register block:%llu.", DSS_ID_TO_U64(block->common.id)));
             }
 
             status = dss_init_ft_block(vg_item, (char *)block, i, auid);
             if (status != CM_SUCCESS) {
                 rollback_count = i + 1;
-                DSS_BREAK_IFERR2(status, LOG_DEBUG_ERR("Failed to initialize block:%llu.", DSS_ID_TO_U64(block->id)));
+                DSS_BREAK_IFERR2(status, LOG_DEBUG_ERR("Failed to initialize block:%llu.", DSS_ID_TO_U64(block->common.id)));
             }
         } while (0);
         if (status != CM_SUCCESS) {
@@ -1557,15 +1557,15 @@ status_t dss_format_bitmap_node(dss_session_t *session, dss_vg_info_item_t *vg_i
     ga_obj_id.pool_id = GA_16K_POOL;
     for (uint32 i = 0; i < block_num; i++) {
         block = (dss_fs_block_header *)ga_object_addr(GA_16K_POOL, obj_id);
-        block->id = auid;
-        block->id.block = i;
-        block->id.item = 0;
+        block->common.id = auid;
+        block->common.id.block = i;
+        block->common.id.item = 0;
         ga_obj_id.obj_id = obj_id;
 
         status = dss_register_buffer_cache(
-            vg_item, &block->id, ga_obj_id, (dss_block_ctrl_t *)((char *)block + DSS_FILE_SPACE_BLOCK_SIZE));
+            vg_item, &block->common.id, ga_obj_id, (dss_block_ctrl_t *)((char *)block + DSS_FILE_SPACE_BLOCK_SIZE));
         DSS_RETURN_IFERR2(status,
-            LOG_DEBUG_ERR("Failed to register block, block id is %llu, obj is is %u.", *(uint64 *)&block->id, obj_id));
+            LOG_DEBUG_ERR("Failed to register block, block id is %llu, obj is is %u.", *(uint64 *)&block->common.id, obj_id));
 
         dss_init_bitmap_block(dss_ctrl, (char *)block, i, auid);
         obj_id = ga_next_object(GA_16K_POOL, obj_id);
@@ -1670,8 +1670,8 @@ static status_t format_ft_au_when_create_vg(dss_vg_info_item_t *vg_item, auid_t 
 
     for (uint32 i = 0; i < blk_count; i++) {
         block = (dss_ft_block_t *)(au_buf + (i * DSS_BLOCK_SIZE));
-        block->id = auid;
-        block->id.block = i;
+        block->common.id = auid;
+        block->common.id.block = i;
 
         // set ft block next
         if (i == blk_count - 1) {
@@ -1687,15 +1687,15 @@ static status_t format_ft_au_when_create_vg(dss_vg_info_item_t *vg_item, auid_t 
 
     dss_root_ft_block_t *root_ft = DSS_GET_ROOT_BLOCK(dss_ctrl);
     gft_root_t *root_gft = &root_ft->ft_root;
-    root_ft->ft_block.next = ((dss_ft_block_t *)au_buf)->id;                       // first block
-    root_gft->last = ((dss_ft_block_t *)(au_buf + au_size - DSS_BLOCK_SIZE))->id;  // last block
+    root_ft->ft_block.next = ((dss_ft_block_t *)au_buf)->common.id;                       // first block
+    root_gft->last = ((dss_ft_block_t *)(au_buf + au_size - DSS_BLOCK_SIZE))->common.id;  // last block
 
     // link the gft_node and free_list
     root_gft->free_list = new_list;
     // flush ft block to disk manually
     block = (dss_ft_block_t *)(au_buf);
-    offset = dss_get_ft_block_offset(vg_item, block->id);
-    status = dss_check_write_volume(vg_item, block->id.volume, offset, au_buf, (uint32)au_size);
+    offset = dss_get_ft_block_offset(vg_item, block->common.id);
+    status = dss_check_write_volume(vg_item, block->common.id.volume, offset, au_buf, (uint32)au_size);
     if (status != CM_SUCCESS) {
         free(au_buf);
         return status;
@@ -2508,8 +2508,8 @@ status_t dss_update_fs_bitmap_block_disk(
 {
     CM_ASSERT(item != NULL);
     CM_ASSERT(block != NULL);
-    uint32 volume_id = (uint32)block->head.id.volume;
-    int64 offset = dss_get_fs_block_offset(item, block->head.id);
+    uint32 volume_id = (uint32)block->head.common.id.volume;
+    int64 offset = dss_get_fs_block_offset(item, block->head.common.id);
 
     if (!had_checksum) {
         block->head.common.version++;
@@ -2517,7 +2517,7 @@ status_t dss_update_fs_bitmap_block_disk(
     }
 
     DSS_LOG_DEBUG_OP("update_fs_bitmap_block_disk checksum:%u,%llu, version:%llu, size:%u.",
-        block->head.common.checksum, DSS_ID_TO_U64(block->head.id), block->head.common.version, size);
+        block->head.common.checksum, DSS_ID_TO_U64(block->head.common.id), block->head.common.version, size);
 
     CM_ASSERT(item->volume_handle[volume_id].handle != DSS_INVALID_HANDLE);
     status_t status = dss_check_write_volume(item, volume_id, offset, block, size);
@@ -2632,16 +2632,16 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
                 char *err_msg = "Failed to alloc file space meta block,vg name";
                 DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("%s %s.", err_msg, vg_item->dss_ctrl->vg_info.vg_name));
             }
-            second_block_id = second_block->head.id;
+            second_block_id = second_block->head.common.id;
             DSS_LOG_DEBUG_OP("Allocate second level block:%llu.", DSS_ID_TO_U64(second_block_id));
             uint16 old_used_num = entry_fs_block->head.used_num;
             dss_block_id_t old_id = entry_fs_block->bitmap[block_count];
-            entry_fs_block->bitmap[block_count] = second_block->head.id;
+            entry_fs_block->bitmap[block_count] = second_block->head.common.id;
             entry_fs_block->head.used_num++;
             dss_redo_set_fs_block_t redo;
             redo.id = node->entry;
             redo.index = (uint16)block_count;
-            redo.value = second_block->head.id;
+            redo.value = second_block->head.common.id;
             redo.used_num = entry_fs_block->head.used_num;
             redo.old_used_num = old_used_num;
             redo.old_value = old_id;
@@ -2780,8 +2780,8 @@ static void dss_transfer_remaining_au(dss_session_t *session, dss_fs_block_t *sr
 
     LOG_DEBUG_INF("Begin to transfer the partial FSB, src_au_idx:%u, %u AUs to xfer, dst_au_idx:%u, au_idx_limit:%u, "
                   "dst SFSB:%llu, used num:%hu, src SFSB:%llu, used num:%hu.",
-        src_au_idx, ((au_idx_limit - src_au_idx) + 1), dst_au_idx, au_idx_limit, DSS_ID_TO_U64(dst_sfsb->head.id),
-        dst_sfsb->head.used_num, DSS_ID_TO_U64(src_partial_sfsb->head.id), src_partial_sfsb->head.used_num);
+        src_au_idx, ((au_idx_limit - src_au_idx) + 1), dst_au_idx, au_idx_limit, DSS_ID_TO_U64(dst_sfsb->head.common.id),
+        dst_sfsb->head.used_num, DSS_ID_TO_U64(src_partial_sfsb->head.common.id), src_partial_sfsb->head.used_num);
 
     // after whole FSB transfer, dst SFSB's remaning space might < src SFSB's AUs that need transfer
     // dst_second_sfsb should've been prepped in caller dss_build_truncated_ftn
@@ -2791,7 +2791,7 @@ static void dss_transfer_remaining_au(dss_session_t *session, dss_fs_block_t *sr
             dst_sfsb = dst_second_sfsb;
             dst_au_idx = 0;
             LOG_DEBUG_INF("Utilizing the second SFSB:%llu during xferring partial SFSB.",
-                DSS_ID_TO_U64(dst_second_sfsb->head.id));
+                DSS_ID_TO_U64(dst_second_sfsb->head.common.id));
         }
 
         CM_ASSERT(src_partial_sfsb->head.used_num > 0);
@@ -2806,7 +2806,7 @@ static void dss_transfer_remaining_au(dss_session_t *session, dss_fs_block_t *sr
         src_partial_sfsb->head.used_num--;
 
         dss_redo_set_fs_block_t redo;
-        redo.id = dst_sfsb->head.id;
+        redo.id = dst_sfsb->head.common.id;
         CM_ASSERT(!dss_cmp_blockid(redo.id, DSS_INVALID_64));
         redo.index = (uint16)dst_au_idx;
         redo.value = auid;
@@ -2815,7 +2815,7 @@ static void dss_transfer_remaining_au(dss_session_t *session, dss_fs_block_t *sr
         redo.old_used_num = dst_old_used_num;
         dss_put_log(session, vg_item, DSS_RT_SET_FILE_FS_BLOCK, &redo, sizeof(redo));
 
-        redo.id = src_partial_sfsb->head.id;
+        redo.id = src_partial_sfsb->head.common.id;
         CM_ASSERT(!dss_cmp_blockid(redo.id, DSS_INVALID_64));
         redo.index = (uint16)src_au_idx;
         redo.value = src_partial_sfsb->bitmap[src_au_idx];
@@ -2857,7 +2857,7 @@ static void dss_transfer_second_level_fsb(dss_session_t *session, dss_vg_info_it
         DSS_LOG_DEBUG_OP("Transferring second level fs block:%llu.", DSS_ID_TO_U64(src_old_id));
 
         dss_redo_set_fs_block_t redo;
-        redo.id = dst_entry_fsb->head.id;
+        redo.id = dst_entry_fsb->head.common.id;
         CM_ASSERT(!dss_cmp_blockid(redo.id, DSS_INVALID_64));
         redo.index = (uint16)(*dst_sfsb_idx);
         redo.value = dst_entry_fsb->bitmap[*dst_sfsb_idx];
@@ -2866,7 +2866,7 @@ static void dss_transfer_second_level_fsb(dss_session_t *session, dss_vg_info_it
         redo.old_value = dst_old_id;
         dss_put_log(session, vg_item, DSS_RT_SET_FILE_FS_BLOCK, &redo, sizeof(redo));
 
-        redo.id = src_entry_fsb->head.id;
+        redo.id = src_entry_fsb->head.common.id;
         CM_ASSERT(!dss_cmp_blockid(redo.id, DSS_INVALID_64));
         redo.index = (uint16)curr_src_idx;
         redo.value = src_entry_fsb->bitmap[curr_src_idx];
@@ -2878,8 +2878,8 @@ static void dss_transfer_second_level_fsb(dss_session_t *session, dss_vg_info_it
 
         LOG_DEBUG_INF("Success to transfer intact SFSB:%llu, from src EFSB:%llu[%u], to dst EFSB:%llu[%d], "
                       "curr src EFSB used num:%d, curr dst EFSB used num:%d.",
-            DSS_ID_TO_U64(dst_entry_fsb->bitmap[*dst_sfsb_idx]), DSS_ID_TO_U64(src_entry_fsb->head.id), curr_src_idx,
-            DSS_ID_TO_U64(dst_entry_fsb->head.id), *dst_sfsb_idx, src_entry_fsb->head.used_num,
+            DSS_ID_TO_U64(dst_entry_fsb->bitmap[*dst_sfsb_idx]), DSS_ID_TO_U64(src_entry_fsb->head.common.id), curr_src_idx,
+            DSS_ID_TO_U64(dst_entry_fsb->head.common.id), *dst_sfsb_idx, src_entry_fsb->head.used_num,
             dst_entry_fsb->head.used_num);
 
         curr_src_idx++;
@@ -2942,7 +2942,7 @@ static void dss_build_truncated_ftn(dss_session_t *session, dss_vg_info_item_t *
             cm_assert(!dss_cmp_blockid(cache_first_sfsb, DSS_INVALID_64));
 
             dss_redo_set_fs_block_t redo;
-            redo.id = dst_entry_fsb->head.id;
+            redo.id = dst_entry_fsb->head.common.id;
             redo.index = idx_for_cached_sfsb;
             redo.value = dst_entry_fsb->bitmap[idx_for_cached_sfsb];
             redo.used_num = dst_entry_fsb->head.used_num;

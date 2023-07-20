@@ -1374,7 +1374,7 @@ static status_t ls_proc(void)
     (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
     gft_node_t *node;
     char time[512];
-    while ((node = (dss_dir_item_handle)dss_read_dir_impl(&connection, dir, CM_TRUE)) != NULL) {
+    while ((node = dss_read_dir_impl(&connection, dir, CM_TRUE)) != NULL) {
         if (cm_time2str(node->create_time, "YYYY-MM-DD HH24:mi:ss", time, sizeof(time)) != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to get create time of node %s.\n", node->name);
             (void)dss_close_dir_impl(&connection, dir);

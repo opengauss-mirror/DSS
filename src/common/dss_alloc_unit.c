@@ -122,7 +122,7 @@ static status_t dss_alloc_au_from_recycle(
             if (!entry_changed) {
                 dss_redo_set_fs_block_t redo;
                 redo.index = sec_index;
-                redo.id = block->head.id;
+                redo.id = block->head.common.id;
                 redo.used_num = block->head.used_num;
                 redo.value = block->bitmap[sec_index];
                 redo.old_used_num = old_sec_used_num;
@@ -143,7 +143,7 @@ static status_t dss_alloc_au_from_recycle(
                 dss_free_ft_node(session, vg_item, root_node, node, CM_TRUE, CM_TRUE);
             } else {
                 redo.index = index;
-                redo.id = entry_block->id;
+                redo.id = entry_block->common.id;
                 redo.used_num = entry_block->used_num;
                 redo.value = entry_fs_block->bitmap[index];
                 redo.old_used_num = old_used_num;
