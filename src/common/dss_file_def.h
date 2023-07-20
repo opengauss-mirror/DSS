@@ -313,25 +313,27 @@ typedef struct st_zft_list {
     ftid_t last;
 } gft_list_t;
 
-typedef struct st_gft_node {
-    gft_item_type_t type;
-    time_t create_time;
-    time_t update_time;
-    uint32 software_version;
-    uint32 flags;
-    atomic_t size;    //Actually uint64, use atomic_get for client read and atomic_set for server modify.
-    union {
-        dss_block_id_t entry;  // for file and link
-        gft_list_t items;      // for dir
+typedef union st_gft_node {
+    struct {
+        gft_item_type_t type;
+        time_t create_time;
+        time_t update_time;
+        uint32 software_version;
+        uint32 flags;
+        atomic_t size;    //Actually uint64, use atomic_get for client read and atomic_set for server modify.
+        union {
+            dss_block_id_t entry;  // for file and link
+            gft_list_t items;      // for dir
+        };
+        ftid_t id;
+        ftid_t next;
+        ftid_t prev;
+        char name[DSS_MAX_NAME_LEN];
+        uint64 fid;
+        uint64 written_size;
+        ftid_t parent;
     };
-    ftid_t id;
-    ftid_t next;
-    ftid_t prev;
-    char name[DSS_MAX_NAME_LEN];
-    uint64 fid;
-    uint64 written_size;
-    ftid_t parent;
-    char reserve2[76];
+    char ft_node[256];  // to ensure that the structure size is 256
 } gft_node_t;
 
 typedef struct st_gft_block_info {
@@ -368,6 +370,7 @@ typedef struct st_dss_common_block_t {
     uint32_t checksum;
     uint32_t type;
     uint64 version;
+    dss_block_id_t id;
 } dss_common_block_t;
 
 typedef struct st_dss_block_ctrl {
@@ -379,13 +382,14 @@ typedef struct st_dss_block_ctrl {
     bool32 has_prev;
 } dss_block_ctrl_t;
 
-typedef struct st_dss_ft_block {
-    dss_common_block_t common;
-    dss_block_id_t id;
-    uint32_t node_num;
-    uint32_t reserve;
-    dss_block_id_t next;
-    char reserver2[216];
+typedef union st_dss_ft_block {
+    struct {
+        dss_common_block_t common;
+        uint32_t node_num;
+        uint32_t reserve;
+        dss_block_id_t next;
+    };
+    char ft_block[256];  // to ensure that the structure size is 256
 } dss_ft_block_t;
 
 typedef struct st_dss_fs_block_list_t {
@@ -401,7 +405,6 @@ typedef struct st_dss_fs_root_t {
 
 typedef struct st_dss_block_header {
     dss_common_block_t common;
-    dss_block_id_t id;
     dss_block_id_t next;
     uint16_t used_num;
     uint16_t total_num;
@@ -431,10 +434,12 @@ typedef struct st_dss_root_ft_header {
     char reserver2[8];
 } dss_root_ft_header_t;
 
-typedef struct st_dss_root_ft_block {
-    dss_root_ft_header_t ft_block;
-    gft_root_t ft_root;
-    char reserve[136];
+typedef union st_dss_root_ft_block {
+    struct {
+        dss_root_ft_header_t ft_block;
+        gft_root_t ft_root;
+    };
+    char root_ft_block[256];  // to ensure that the structure size is 256
 } dss_root_ft_block_t;
 
 #define DSS_FILE_CONTEXT_FLAG_USED 1

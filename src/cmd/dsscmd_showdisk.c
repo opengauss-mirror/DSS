@@ -79,7 +79,7 @@ static status_t printf_dss_vg_header(const dss_vg_info_item_t *vg_item, dss_volu
     return status;
 }
 
-static void printf_auid(auid_t *first)
+static void printf_auid(const auid_t *first)
 {
     printf("        volume = %llu\n", (uint64)first->volume);
     printf("        au = %llu\n", (long long unsigned int)(first->au));
@@ -258,6 +258,9 @@ static void printf_common_block_t(const dss_common_block_t *common)
     printf("      checksum = %u\n", common->checksum);
     printf("      type = %u\n", common->type);
     printf("      version = %llu\n", common->version);
+    printf("      block_id = {\n");
+    printf_auid(&common->id);
+    printf("      }\n");
 }
 
 static void printf_ft_block(dss_ft_block_t *ft_block)
@@ -267,11 +270,7 @@ static void printf_ft_block(dss_ft_block_t *ft_block)
     dss_common_block_t *common = &ft_block->common;
     printf_common_block_t(common);
     printf("    }\n");
-    printf("    block_id = {\n");
 
-    dss_block_id_t *id = &ft_block->id;
-    printf_auid(id);
-    printf("    }\n");
     printf("    ft_block_node_num = %u\n", ft_block->node_num);
     printf("    ft_block_next = {\n");
 
@@ -326,11 +325,6 @@ static void printf_root_ft_header(dss_root_ft_header_t *root_ft_header)
 
     dss_common_block_t *common = &root_ft_header->common;
     printf_common_block_t(common);
-    printf("    }\n");
-    printf("    block_id = {\n");
-
-    dss_block_id_t *id = &root_ft_header->id;
-    printf_auid(id);
     printf("    }\n");
     printf("    ft_block_node_num = %u\n", root_ft_header->node_num);
     printf("    ft_block_next = {\n");
@@ -544,11 +538,6 @@ static void printf_fs_block_header(dss_fs_block_header *fs_block_header)
     printf("    block_common = {\n");
     dss_common_block_t *common = &fs_block_header->common;
     printf_common_block_t(common);
-    printf("    }\n");
-    printf("    block_id = {\n");
-
-    dss_block_id_t *id = &fs_block_header->id;
-    printf_auid(id);
     printf("    }\n");
     printf("    fs_block_next = {\n");
 

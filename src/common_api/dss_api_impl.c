@@ -768,7 +768,7 @@ dss_dir_t *dss_open_dir_impl(dss_conn_t *conn, const char *dir_path, bool32 refr
     return dss_open_dir_impl_core(conn, dir_path, dss_env);
 }
 
-dss_dir_item_handle dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 skip_delete)
+gft_node_t *dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 skip_delete)
 {
     if (!dir) {
         return NULL;
@@ -797,7 +797,7 @@ dss_dir_item_handle dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 s
         dir->cur_node = *node;
         if (!skip_delete || node->flags != DSS_FT_NODE_FLAG_DEL) {
             DSS_UNLOCK_VG_META_S(dir->vg_item, conn->session);
-            return (dss_dir_item_handle)&dir->cur_node;
+            return &dir->cur_node;
         }
         if (dss_cmp_auid(dir->cur_ftid, DSS_INVALID_ID64)) {
             DSS_UNLOCK_VG_META_S(dir->vg_item, conn->session);
@@ -1379,7 +1379,7 @@ static status_t dss_alloc_block_core(
             DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to extend file entry fs block."));
         }
 
-        status = dss_apply_refresh_file(conn, context, entry_fs_block->head.id);
+        status = dss_apply_refresh_file(conn, context, entry_fs_block->head.common.id);
         DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to refresh entry fs block."));
         DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
         second_block_id = entry_fs_block->bitmap[block_count];
@@ -1598,7 +1598,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
             }
             auid = second_block->bitmap[block_au_count];
             if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
-                status = dss_apply_refresh_file(conn, context, second_block->head.id);
+                status = dss_apply_refresh_file(conn, context, second_block->head.common.id);
                 DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to refresh second block."));
             }
             DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
@@ -2457,7 +2457,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
         }
         auid = second_block->bitmap[block_au_count];
         if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
-            status = dss_apply_refresh_file(conn, context, second_block->head.id);
+            status = dss_apply_refresh_file(conn, context, second_block->head.common.id);
             DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to refresh second block."));
         }
         DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);

@@ -557,23 +557,23 @@ static status_t rp_redo_free_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entr
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
         ga_obj_id_t obj_id;
         block = (dss_fs_block_t *)dss_find_block_in_shm(
-            NULL, vg_item, log_block->head.id, DSS_BLOCK_TYPE_FS, CM_TRUE, &obj_id, CM_FALSE);
+            NULL, vg_item, log_block->head.common.id, DSS_BLOCK_TYPE_FS, CM_TRUE, &obj_id, CM_FALSE);
         if (block == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
         }
         block->head.next = log_block->head.next;
         status = dss_update_fs_bitmap_block_disk(vg_item, block, DSS_DISK_UNIT_SIZE, CM_FALSE);
         DSS_RETURN_IF_ERROR(status);
-        dss_unregister_buffer_cache(vg_item, log_block->head.id);
+        dss_unregister_buffer_cache(vg_item, log_block->head.common.id);
         ga_free_object(obj_id.pool_id, obj_id.obj_id);
         return CM_SUCCESS;
     }
 
     status = dss_update_fs_bitmap_block_disk(vg_item, log_block, DSS_DISK_UNIT_SIZE, CM_TRUE);
     DSS_RETURN_IFERR2(
-        status, LOG_DEBUG_ERR("Failed to update fs bitmap block:%llu to disk.", DSS_ID_TO_U64(log_block->head.id)));
+        status, LOG_DEBUG_ERR("Failed to update fs bitmap block:%llu to disk.", DSS_ID_TO_U64(log_block->head.common.id)));
     DSS_LOG_DEBUG_OP(
-        "Succeed to replay free fs block:%llu, vg name:%s.", DSS_ID_TO_U64(log_block->head.id), vg_item->vg_name);
+        "Succeed to replay free fs block:%llu, vg name:%s.", DSS_ID_TO_U64(log_block->head.common.id), vg_item->vg_name);
     return CM_SUCCESS;
 }
 
@@ -585,7 +585,7 @@ status_t rb_redo_free_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *en
     dss_redo_free_fs_block_t *data = (dss_redo_free_fs_block_t *)entry->data;
     dss_fs_block_t *log_block = (dss_fs_block_t *)data->head;
 
-    return dss_load_fs_block_by_blockid(vg_item, log_block->head.id, (int32)DSS_FILE_SPACE_BLOCK_SIZE);
+    return dss_load_fs_block_by_blockid(vg_item, log_block->head.common.id, (int32)DSS_FILE_SPACE_BLOCK_SIZE);
 }
 
 static status_t rp_redo_alloc_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
@@ -643,7 +643,7 @@ static status_t rb_redo_alloc_fs_block(dss_vg_info_item_t *vg_item, dss_redo_ent
     dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
         NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, CM_FALSE, &obj_id, CM_FALSE);
     CM_ASSERT(block != NULL);
-    dss_unregister_buffer_cache(vg_item, block->head.id);
+    dss_unregister_buffer_cache(vg_item, block->head.common.id);
     ga_free_object(obj_id.pool_id, obj_id.obj_id);
     status = dss_load_vg_ctrl_part(
         vg_item, (int64)DSS_CTRL_CORE_OFFSET, vg_item->dss_ctrl->core_data, DSS_DISK_UNIT_SIZE, &remote);
@@ -1103,7 +1103,7 @@ void rb_redo_clean_resource(dss_vg_info_item_t *item, auid_t auid, ga_pool_id_e 
     for (uint32 i = 0; i < count; i++) {
         block = (dss_fs_block_header *)ga_object_addr(pool_id, obj_id);
         CM_ASSERT(block != NULL);
-        dss_unregister_buffer_cache(item, block->id);
+        dss_unregister_buffer_cache(item, block->common.id);
         if (i == count - 1) {
             last = obj_id;
         }
