@@ -320,6 +320,26 @@ static void printf_gft_root(gft_root_t *ft_root)
     printf("    }\n");
 }
 
+static void printf_root_ft_header(dss_root_ft_header_t *root_ft_header)
+{
+    printf("    block_common = {\n");
+
+    dss_common_block_t *common = &root_ft_header->common;
+    printf_common_block_t(common);
+    printf("    }\n");
+    printf("    block_id = {\n");
+
+    dss_block_id_t *id = &root_ft_header->id;
+    printf_auid(id);
+    printf("    }\n");
+    printf("    ft_block_node_num = %u\n", root_ft_header->node_num);
+    printf("    ft_block_next = {\n");
+
+    dss_block_id_t *next = &root_ft_header->next;
+    printf_auid(next);
+    printf("    }\n");
+}
+
 static status_t printf_root_ft_block(const dss_vg_info_item_t *vg_item, dss_volume_t *volume)
 {
     status_t status;
@@ -345,9 +365,9 @@ static status_t printf_root_ft_block(const dss_vg_info_item_t *vg_item, dss_volu
     dss_root_ft_block_t *root_ft_block = (dss_root_ft_block_t *)(root);
     printf("root_ft_block = {\n");
 
-    dss_ft_block_t *ft_block = &root_ft_block->ft_block;
+    dss_root_ft_header_t *ft_block = &root_ft_block->ft_block;
     printf("  ft_block = {\n");
-    printf_ft_block(ft_block);
+    printf_root_ft_header(ft_block);
     printf("  }\n");
 
     gft_root_t *ft_root = &root_ft_block->ft_root;

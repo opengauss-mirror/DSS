@@ -1084,9 +1084,13 @@ static status_t dss_add_volume_vg_ctrl(
     vg_ctrl->volume.defs[id].id = id;
     vg_ctrl->core.volume_attrs[id].flag = VOLUME_OCCUPY;
     vg_ctrl->core.volume_attrs[id].id = id;
-    vg_ctrl->core.volume_attrs[id].hwm = dss_get_vg_au_size(vg_ctrl);
+    vg_ctrl->core.volume_attrs[id].hwm = CM_CALC_ALIGN(DSS_VOLUME_HEAD_SIZE, dss_get_vg_au_size(vg_ctrl));
     vg_ctrl->core.volume_attrs[id].size = vol_size;
-    vg_ctrl->core.volume_attrs[id].free = vg_ctrl->core.volume_attrs[id].size - dss_get_vg_au_size(vg_ctrl);
+    if (vol_size <= vg_ctrl->core.volume_attrs[id].hwm) {
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_ADD, volume_name, "volume size is too small");
+        return CM_ERROR;
+    }
+    vg_ctrl->core.volume_attrs[id].free = vol_size - vg_ctrl->core.volume_attrs[id].hwm;
     LOG_RUN_INF("Add volume refresh core, old core version:%llu, volume version:%llu, volume def version:%llu.",
         vg_ctrl->core.version, vg_ctrl->volume.version, vg_ctrl->volume.defs[id].version);
     vg_ctrl->volume.defs[id].version++;
@@ -1224,12 +1228,6 @@ static status_t dss_remove_volume_impl(
 {
     errno_t errcode;
     dss_ctrl_t *vg_ctrl = vg_item->dss_ctrl;
-
-    // IF the volume has data, it's forbidden to remove volume
-    if (dss_check_volume_is_used(vg_item, id)) {
-        DSS_THROW_ERROR(ERR_DSS_DIR_REMOVE_NOT_EMPTY);
-        return CM_ERROR;
-    }
 
     if (vg_item->volume_handle[id].handle != DSS_INVALID_HANDLE) {
         dss_close_volume(&vg_item->volume_handle[id]);
