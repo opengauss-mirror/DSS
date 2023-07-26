@@ -184,7 +184,7 @@ static status_t cmd_check_dss_home(const char *dss_home)
 static status_t cmd_check_uds(const char *uds)
 {
     const char *uds_prefix = "UDS:";
-    if (strlen(uds) < strlen(uds_prefix) + 1 || memcmp(uds, uds_prefix, strlen(uds_prefix)) != 0) {
+    if (strlen(uds) < strlen(uds_prefix) || memcmp(uds, uds_prefix, strlen(uds_prefix)) != 0) {
         DSS_PRINT_ERROR("uds name should start with %s.\n", uds_prefix);
         return CM_ERROR;
     }
