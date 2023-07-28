@@ -55,7 +55,7 @@ void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_it
 void dss_unlock_vg_mem_and_shm(dss_session_t *session, dss_vg_info_item_t *vg_item);
 
 status_t dss_create_file(dss_session_t *session, const char *parent, const char *name, int32_t flag);
-status_t dss_exist_item(dss_session_t *session, const char *item, gft_item_type_t type, bool32 *result);
+status_t dss_exist_item(dss_session_t *session, const char *item, bool32 *result, gft_item_type_t *output_type);
 status_t dss_open_file(dss_session_t *session, const char *file, int32_t flag);
 status_t dss_close_file(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid);
 status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data);
@@ -84,8 +84,7 @@ void dss_free_ft_node_inner(
 void dss_free_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node,
     bool32 real_del, bool32 latch_safe);
 gft_node_t *dss_find_ft_node(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, bool32 skip_del);
-char *dss_find_ft_block_latch(dss_vg_info_item_t *vg_item, ftid_t ftid, ga_obj_id_t *out_obj_id);
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, bool8 skip_del);
 gft_node_t *dss_get_ft_node_by_ftid(
     dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id, bool32 check_version, bool32 active_refresh);
 gft_node_t *dss_get_ft_node_by_ftid_no_refresh(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id);
@@ -133,6 +132,7 @@ status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_ty
 dss_env_t *dss_get_env(void);
 dss_config_t *dss_get_inst_cfg(void);
 status_t dss_get_root_version(dss_vg_info_item_t *vg_item, uint64 *version);
+bool32 dss_is_valid_link_path(const char *path);
 status_t dss_check_name(const char *name);
 status_t dss_check_path(const char *path);
 status_t dss_check_volume_path(const char *path);

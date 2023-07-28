@@ -334,48 +334,21 @@ static status_t dss_process_delete_file(dss_session_t *session)
     return dss_remove_file(session, (const char *)name);
 }
 
-static status_t dss_process_exist_dir(dss_session_t *session)
-{
-    bool32 result = CM_FALSE;
-    char *name = NULL;
-    dss_init_get(&session->recv_pack);
-    DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &name));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", name));
-    DSS_RETURN_IF_ERROR(dss_exist_item(session, (const char *)name, GFT_PATH, &result));
-
-    session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
-    session->send_info.len = sizeof(bool32);
-    *(bool32 *)session->send_info.str = result;
-    return CM_SUCCESS;
-}
-
-static status_t dss_process_islink(dss_session_t *session)
-{
-    bool32 result = CM_FALSE;
-    char *name = NULL;
-    dss_init_get(&session->recv_pack);
-    DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &name));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", name));
-    DSS_RETURN_IF_ERROR(dss_exist_item(session, (const char *)name, GFT_LINK, &result));
-
-    session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
-    session->send_info.len = sizeof(bool32);
-    *(bool32 *)session->send_info.str = result;
-    return CM_SUCCESS;
-}
-
 static status_t dss_process_exist(dss_session_t *session)
 {
     bool32 result = CM_FALSE;
+    gft_item_type_t type;
     char *name = NULL;
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &name));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", name));
-    DSS_RETURN_IF_ERROR(dss_exist_item(session, (const char *)name, GFT_FILE, &result));
+    DSS_RETURN_IF_ERROR(dss_exist_item(session, (const char *)name, &result, &type));
 
     session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
-    session->send_info.len = sizeof(bool32);
+    session->send_info.len = sizeof(bool32) + sizeof(uint32);
     *(bool32 *)session->send_info.str = result;
+    char *buf = session->send_info.str + sizeof(bool32);
+    *(uint32 *)buf = (uint32)type;
     return CM_SUCCESS;
 }
 
@@ -970,9 +943,7 @@ static dss_cmd_hdl_t g_dss_cmd_handle[] = {
     { DSS_CMD_SWITCH_LOCK, dss_process_switch_lock, NULL, CM_FALSE },
     // query
     { DSS_CMD_GET_HOME, dss_process_get_home, NULL, CM_FALSE },
-    { DSS_CMD_EXIST_FILE, dss_process_exist, NULL, CM_FALSE },
-    { DSS_CMD_EXIST_DIR, dss_process_exist_dir, NULL, CM_FALSE },
-    { DSS_CMD_ISLINK, dss_process_islink, NULL, CM_FALSE },
+    { DSS_CMD_EXIST, dss_process_exist, NULL, CM_FALSE },
     { DSS_CMD_READLINK, dss_process_readlink, NULL, CM_FALSE },
     { DSS_CMD_GET_FTID_BY_PATH, dss_process_get_ftid_by_path, NULL, CM_FALSE },
     { DSS_CMD_GETCFG, dss_process_getcfg, NULL, CM_FALSE },

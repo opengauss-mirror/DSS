@@ -120,6 +120,12 @@ static status_t dss_check_path_is_valid(const char *path, uint32 path_max_size)
     return CM_SUCCESS;
 }
 
+bool32 dss_is_valid_link_path(const char *path)
+{
+    size_t len = strlen(path);
+    return (len > 0 && path[len - 1] != '/');
+}
+
 status_t dss_check_name(const char *name)
 {
     if (name == NULL || strlen(name) == 0) {
@@ -235,7 +241,8 @@ status_t dss_find_vg_by_dir(const char *dir_path, char *name, dss_vg_info_item_t
     }
 
     if (name[0] == 0) {
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to get name from path %s.", dir_path));
+        DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, dir_path, ", get vg name is NULL.");
+        return CM_ERROR;
     }
 
     *vg_item = dss_find_vg_item(name);
@@ -419,8 +426,8 @@ static status_t dss_read_link_file(
     return CM_SUCCESS;
 }
 
-static status_t dss_check_dir_core(dss_session_t *session, const char *dir_path, gft_item_type_t type, char *name,
-    uint32_t *beg_pos, dss_check_dir_param_t *output_param);
+static status_t dss_check_dir_core(
+    dss_session_t *session, const char *dir_path, char *name, uint32_t *beg_pos, dss_check_dir_param_t *output_param);
 static status_t dss_open_link(
     dss_session_t *session, const char *link_path, dss_vg_info_item_t **vg_item, gft_node_t **out_node);
 
@@ -549,14 +556,17 @@ status_t dss_write_link_file(dss_session_t *session, char *link_path, char *dst_
     return CM_SUCCESS;
 }
 
-static status_t dss_check_link(dss_session_t *session, const char *dir_path, gft_item_type_t type, uint32_t *beg_pos,
-    dss_check_dir_param_t *output_param)
+static status_t dss_check_link(
+    dss_session_t *session, const char *dir_path, uint32_t *beg_pos, dss_check_dir_param_t *output_param)
 {
     // last node is a link
-    if (type == GFT_LINK && dir_path[*beg_pos] == 0) {
-        return CM_SUCCESS;
+    if (dir_path[*beg_pos] == 0 && !output_param->last_is_link) {
+        output_param->last_is_link = CM_TRUE;
+        if (output_param->is_find_link) {
+            return CM_SUCCESS;
+        }
+        output_param->link_node = output_param->last_node;
     }
-
 #ifndef WIN32
     char link_path[DSS_FILE_PATH_MAX_LENGTH] __attribute__((__aligned__(DSS_DISK_UNIT_SIZE))) = {0};
 #else
@@ -580,11 +590,11 @@ static status_t dss_check_link(dss_session_t *session, const char *dir_path, gft
     if (name[0] == 0) {
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to get name from path %s.", link_path));
     }
-    return dss_check_dir_core(session, link_path, type, name, beg_pos, output_param);
+    return dss_check_dir_core(session, link_path, name, beg_pos, output_param);
 }
 
-static status_t dss_check_dir_core(dss_session_t *session, const char *dir_path, gft_item_type_t type, char *name,
-    uint32_t *beg_pos, dss_check_dir_param_t *output_param)
+static status_t dss_check_dir_core(
+    dss_session_t *session, const char *dir_path, char *name, uint32_t *beg_pos, dss_check_dir_param_t *output_param)
 {
     uint32_t next_pos;
     status_t status;
@@ -607,21 +617,8 @@ static status_t dss_check_dir_core(dss_session_t *session, const char *dir_path,
         }
         output_param->last_node = dss_find_ft_node(
             session, output_param->vg_item, output_param->last_node, name, output_param->is_skip_delay_file);
-        if (output_param->last_node == NULL && type == GFT_PATH) {
-            if (output_param->is_throw_err) {
-                DSS_THROW_ERROR(ERR_DSS_DIR_NOT_EXIST, name, dir_path);
-            }
-            return ERR_DSS_DIR_NOT_EXIST;
-        } else if (output_param->last_node == NULL && type == GFT_FILE) {
-            if (output_param->is_throw_err) {
-                DSS_THROW_ERROR(ERR_DSS_FILE_NOT_EXIST, name, dir_path);
-            }
+        if (output_param->last_node == NULL) {
             return ERR_DSS_FILE_NOT_EXIST;
-        } else if (output_param->last_node == NULL && type == GFT_LINK) {
-            if (output_param->is_throw_err) {
-                DSS_THROW_ERROR(ERR_DSS_LINK_NOT_EXIST, name, dir_path);
-            }
-            return ERR_DSS_LINK_NOT_EXIST;
         }
 
         output_param->p_node = node;
@@ -634,9 +631,53 @@ static status_t dss_check_dir_core(dss_session_t *session, const char *dir_path,
 
         if (output_param->last_node->type == GFT_LINK) {
             LOG_DEBUG_INF("get dir is link name:%s.", output_param->last_node->name);
-            return dss_check_link(session, dir_path, type, beg_pos, output_param);
+            status = dss_check_link(session, dir_path, beg_pos, output_param);
+            if (status != CM_SUCCESS && output_param->last_is_link) {
+                output_param->last_node = output_param->link_node;
+                cm_reset_error();
+                return CM_SUCCESS;
+            }
+            return status;
         }
     } while (name[0] != 0);
+    return CM_SUCCESS;
+}
+
+static status_t dss_exist_item_core(
+    dss_session_t *session, const char *dir_path, bool32 *result, gft_item_type_t *output_type)
+{
+    char name[DSS_MAX_NAME_LEN];
+    uint32_t beg_pos = 0;
+    status_t status = dss_get_name_from_path(dir_path, &beg_pos, name);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to get name from path %s,%d.", dir_path, status));
+
+    if (name[0] == 0) {
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to get name from path %s.", dir_path));
+    }
+    dss_check_dir_param_t output_param = {NULL, NULL, NULL, NULL, CM_TRUE, CM_FALSE, CM_FALSE, CM_FALSE};
+    DSS_RETURN_IF_ERROR(dss_check_dir_core(session, dir_path, name, &beg_pos, &output_param));
+    if ((output_param.last_node == NULL) || (output_param.last_node->flags & DSS_FT_NODE_FLAG_DEL)) {
+        *result = CM_FALSE;
+    } else {
+        *result = CM_TRUE;
+        *output_type = output_param.last_node->type;
+        if (output_param.last_is_link) {
+            switch (output_param.last_node->type) {
+                case GFT_PATH:
+                    *output_type = GFT_LINK_TO_PATH;
+                    break;
+                case GFT_FILE:
+                    *output_type = GFT_LINK_TO_FILE;
+                    break;
+                case GFT_LINK:
+                    *output_type = GFT_LINK;
+                    break;
+                default:
+                    DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "node type");
+                    return ERR_DSS_INVALID_PARAM;
+            }
+        }
+    }
     return CM_SUCCESS;
 }
 
@@ -666,10 +707,13 @@ status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_ty
     if (name[0] == 0) {
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to get name from path %s.", dir_path));
     }
-    dss_check_dir_param_t output_param = {0};
-    output_param.is_throw_err = is_throw_err;
-    output_param.is_skip_delay_file = CM_TRUE;
-    DSS_RETURN_IF_ERROR(dss_check_dir_core(session, dir_path, type, name, &beg_pos, &output_param));
+    dss_check_dir_param_t output_param = {NULL, NULL, NULL, NULL, CM_TRUE, CM_FALSE, CM_FALSE, CM_FALSE};
+    output_param.is_find_link = (type == GFT_LINK);
+    status = dss_check_dir_core(session, dir_path, name, &beg_pos, &output_param);
+    if (status == ERR_DSS_FILE_NOT_EXIST && is_throw_err) {
+        DSS_THROW_ERROR(ERR_DSS_FILE_NOT_EXIST, name, dir_path);
+    }
+    DSS_RETURN_IF_ERROR(status);
     if (output_param.last_node->type != type) {
         if (is_throw_err) {
             DSS_THROW_ERROR(ERR_DSS_FILE_TYPE_MISMATCH, output_param.last_node->name);
@@ -753,7 +797,7 @@ status_t dss_open_dir(dss_session_t *session, const char *dir_path, bool32 is_re
             dss_lock_vg_mem_and_shm_s(session, vg_item);
         }
         if (node->flags & DSS_FT_NODE_FLAG_DEL) {
-            DSS_THROW_ERROR(ERR_DSS_DIR_NOT_EXIST, node->name, dir_path);
+            DSS_THROW_ERROR(ERR_DSS_FILE_NOT_EXIST, node->name, dir_path);
             status = CM_ERROR;
             break;
         }
@@ -961,11 +1005,10 @@ status_t dss_init_file_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_i
     return CM_SUCCESS;
 }
 
-status_t dss_exist_item(dss_session_t *session, const char *item, gft_item_type_t type, bool32 *result)
+status_t dss_exist_item(dss_session_t *session, const char *item, bool32 *result, gft_item_type_t *output_type)
 {
     CM_ASSERT(item != NULL);
     status_t status;
-    gft_node_t *out_node = NULL;
     *result = CM_FALSE;
     dss_vg_info_item_t *vg_item = NULL;
     char name[DSS_MAX_NAME_LEN];
@@ -975,22 +1018,18 @@ status_t dss_exist_item(dss_session_t *session, const char *item, gft_item_type_
     status = CM_ERROR;
     do {
         DSS_BREAK_IF_ERROR(dss_check_file(vg_item));
-        dss_check_dir_output_t output_info = {&out_node, NULL, NULL};
-        status = dss_check_dir(session, item, type, &output_info, CM_FALSE);
+        status = dss_exist_item_core(session, item, result, output_type);
         if (status != CM_SUCCESS) {
-            if ((type == GFT_FILE && status == ERR_DSS_FILE_NOT_EXIST) ||
-                (type == GFT_PATH && status == ERR_DSS_DIR_NOT_EXIST) ||
-                (type == GFT_LINK && status == ERR_DSS_LINK_NOT_EXIST) || (status == ERR_DSS_FILE_TYPE_MISMATCH)) {
+            if (status == ERR_DSS_FILE_NOT_EXIST) {
                 LOG_DEBUG_INF("Reset error %d when check dir failed.", status);
                 cm_reset_error();
             } else {
-                DSS_BREAK_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to check file dir or link,errcode:%d.", status));
+                DSS_BREAK_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to check item, errcode:%d.", status));
             }
         }
         status = CM_SUCCESS;
     } while (0);
 
-    *result = ((out_node == NULL) || (out_node->flags & DSS_FT_NODE_FLAG_DEL)) ? CM_FALSE : CM_TRUE;
     dss_unlock_vg_mem_and_shm(session, vg_item);
     return status;
 }
@@ -1027,16 +1066,8 @@ static status_t dss_check_node_delete(gft_node_t *node)
     if (node->flags != DSS_FT_NODE_FLAG_DEL) {
         return CM_SUCCESS;
     }
-    if (node->type == GFT_PATH) {
-        DSS_THROW_ERROR(ERR_DSS_DIR_NOT_EXIST, node->name, "dss");
-        LOG_DEBUG_ERR("dir: %s is deleted", node->name);
-    } else if (node->type == GFT_FILE) {
-        DSS_THROW_ERROR(ERR_DSS_FILE_NOT_EXIST, node->name, "dss");
-        LOG_DEBUG_ERR("file: %s is deleted", node->name);
-    } else {
-        DSS_THROW_ERROR(ERR_DSS_LINK_NOT_EXIST, node->name, "dss");
-        LOG_DEBUG_ERR("link: %s is deleted", node->name);
-    }
+    DSS_THROW_ERROR(ERR_DSS_FILE_NOT_EXIST, node->name, "dss");
+    LOG_DEBUG_ERR("The file node: %s is deleted", node->name);
     return CM_ERROR;
 }
 
@@ -1058,7 +1089,7 @@ status_t dss_get_ftid_by_path(dss_session_t *session, const char *path, ftid_t *
         dss_get_dir_path(dir_path, DSS_FILE_PATH_MAX_LENGTH, path);
         dss_check_dir_output_t output_info = {&parent_node, dir_vg_item, NULL};
         if (dss_check_dir(session, dir_path, GFT_PATH, &output_info, CM_TRUE) != CM_SUCCESS) {
-            if (cm_get_error_code() == ERR_DSS_DIR_NOT_EXIST) {
+            if (cm_get_error_code() == ERR_DSS_FILE_NOT_EXIST) {
                 DSS_BREAK_IFERR2(CM_ERROR, LOG_DEBUG_ERR("dir path: %s not exist", dir_path));
             }
         }
@@ -2137,7 +2168,7 @@ gft_node_t *dss_find_ft_node_core(
 }
 
 gft_node_t *dss_find_ft_node(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, bool32 skip_del)
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, bool8 skip_del)
 {
     CM_ASSERT(name != NULL);
     ftid_t id;
