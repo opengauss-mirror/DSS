@@ -445,6 +445,12 @@ typedef union st_dss_root_ft_block {
 #define DSS_FILE_CONTEXT_FLAG_USED 1
 #define DSS_FILE_CONTEXT_FLAG_FREE 0
 
+typedef enum en_dss_file_mode {
+    DSS_FILE_MODE_READ = 0x00000001,
+    DSS_FILE_MODE_WRITE = 0x00000002,
+    DSS_FILE_MODE_RDWR = DSS_FILE_MODE_READ | DSS_FILE_MODE_WRITE,
+} dss_file_mode_e;
+
 typedef struct st_dss_file_context {
     latch_t latch;
     gft_node_t *node;
@@ -459,6 +465,7 @@ typedef struct st_dss_file_context {
     char vg_name[DSS_MAX_NAME_LEN];
     uint32 vgid;
     uint32 id;
+    dss_file_mode_e mode;
 } dss_file_context_t;
 
 typedef struct st_dss_ft_au_list_t {

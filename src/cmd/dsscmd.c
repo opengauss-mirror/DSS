@@ -2051,7 +2051,7 @@ static status_t examine_proc(void)
         return status;
     }
     int32 handle;
-    status = dss_open_file_impl(&connection, path, 0, &handle);
+    status = dss_open_file_impl(&connection, path, O_RDWR, &handle);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to open dir, path is %s.\n", path);
         dss_disconnect_ex(&connection);
