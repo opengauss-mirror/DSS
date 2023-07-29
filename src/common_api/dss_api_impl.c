@@ -37,6 +37,8 @@
 extern "C" {
 #endif
 
+#define DSS_ACCMODE 00000003
+#define DSS_OPEN_MODE(flag)  ((flag + 1) & DSS_ACCMODE)
 status_t dss_apply_refresh_file_table(dss_conn_t *conn, dss_dir_t *dir);
 status_t dss_apply_extending_file(dss_conn_t *conn, int32 handle, int32 size, bool32 is_read, int64 offset)
 {
@@ -1028,7 +1030,7 @@ gft_node_t *dss_get_node_by_path_impl(dss_conn_t *conn, const char *path)
     return node;
 }
 
-status_t dss_init_file_context(dss_file_context_t *context, gft_node_t *out_node, dss_vg_info_item_t *vg_item)
+status_t dss_init_file_context(dss_file_context_t *context, gft_node_t *out_node, dss_vg_info_item_t *vg_item, dss_file_mode_e mode)
 {
     context->flag = DSS_FILE_CONTEXT_FLAG_USED;
     context->offset = 0;
@@ -1042,10 +1044,11 @@ status_t dss_init_file_context(dss_file_context_t *context, gft_node_t *out_node
     if (strcpy_s(context->vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name) != EOK) {
         return CM_ERROR;
     }
+    context->mode = mode;
     return CM_SUCCESS;
 }
 
-status_t dss_open_file_inner(dss_vg_info_item_t *vg_item, gft_node_t *ft_node, int *handle)
+status_t dss_open_file_inner(dss_vg_info_item_t *vg_item, gft_node_t *ft_node, dss_file_mode_e mode, int *handle)
 {
     dss_env_t *dss_env = dss_get_env();
     dss_latch_x(&dss_env->latch);
@@ -1061,7 +1064,7 @@ status_t dss_open_file_inner(dss_vg_info_item_t *vg_item, gft_node_t *ft_node, i
     dss_file_context_t *context = &dss_env->files[*handle];
     uint32 next = context->next;
 
-    status_t ret = dss_init_file_context(context, ft_node, vg_item);
+    status_t ret = dss_init_file_context(context, ft_node, vg_item, mode);
     DSS_RETURN_IFERR2(ret, dss_unlatch(&dss_env->latch));
     dss_env->file_free_first = next;
     dss_env->has_opened_files++;
@@ -1099,7 +1102,7 @@ status_t dss_open_file_impl(dss_conn_t *conn, const char *file_path, int flag, i
                 return status;
             }
         }
-        status = dss_open_file_inner(vg_item, ft_node, handle);
+        status = dss_open_file_inner(vg_item, ft_node, DSS_OPEN_MODE(flag), handle);
     } while (0);
     DSS_UNLOCK_VG_META_S(vg_item, conn->session);
 
@@ -1746,6 +1749,12 @@ status_t dss_read_write_file(dss_conn_t *conn, int32 handle, void *buf, int32 si
     LOG_DEBUG_INF("dss read write file entry, handle:%d, is_read:%u", handle, is_read);
 
     DSS_RETURN_IF_ERROR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_EXCLUSIVE));
+    bool mode_match = is_read ? (context->mode & DSS_FILE_MODE_READ) : (context->mode & DSS_FILE_MODE_WRITE);
+    if (!mode_match) {
+        dss_unlatch(&context->latch);
+        DSS_THROW_ERROR(ERR_DSS_FILE_RDWR_INSUFF_PER, is_read ? "read" : "write", context->mode);
+        return CM_ERROR;
+    }
     dss_init_rw_param(&param, conn, handle, context, context->offset, DSS_FALSE);
     param.is_read = is_read;
     status = dss_read_write_file_core(&param, buf, size, read_size);
@@ -1801,6 +1810,11 @@ status_t dss_pwrite_file_impl(dss_conn_t *conn, int handle, const void *buf, int
     
     CM_RETURN_IFERR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
     LOG_DEBUG_INF("dss pwrite file %s, handle:%d, offset:%lld", context->node->name, handle, offset);
+    if (!(context->mode & DSS_FILE_MODE_WRITE)) {
+        dss_unlatch(&context->latch);
+        DSS_THROW_ERROR(ERR_DSS_FILE_RDWR_INSUFF_PER, "pwrite", context->mode);
+        return CM_ERROR;
+    }
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
     param.is_read = DSS_FALSE;
@@ -1824,6 +1838,11 @@ status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, 
     CM_RETURN_IFERR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
     LOG_DEBUG_INF("dss pread file entry, name:%s, handle:%d, offset:%lld, size:%d", context->node->name,
         handle, offset, size);
+    if (!(context->mode & DSS_FILE_MODE_READ)) {
+        dss_unlatch(&context->latch);
+        DSS_THROW_ERROR(ERR_DSS_FILE_RDWR_INSUFF_PER, "pread", context->mode);
+        return CM_ERROR;
+    }
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
     param.is_read = DSS_TRUE;

@@ -60,6 +60,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_FILE_RENAME_EXIST] = "Rename failed, reason %s",
     [ERR_DSS_FILE_RENAME_OPENING_REMOTE] = "Failed to rename %s to %s, while source file is opend by other instance.",
     [ERR_DSS_FILE_CREATE] = "create file failed, reason %s",
+    [ERR_DSS_FILE_RDWR_INSUFF_PER] = "Insufficient permission to %s file, while the permission is %u.",
     [ERR_DSS_FILE_NOT_EXIST] = "The file %s of %s does not exist",
     [ERR_DSS_FILE_OPENING_REMOTE] = "The file is open in other inst: %d, command:%d exec failed.",
     [ERR_DSS_FILE_TYPE_MISMATCH] = "The type of directory link or file %s is not matched.",

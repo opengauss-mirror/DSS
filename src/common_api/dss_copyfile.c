@@ -177,7 +177,7 @@ static status_t dss_cp_dtod(dss_conn_t conn, const char *srcpath, const char *de
     int srchandle;
     int desthandle;
     status_t status;
-    status = dss_open_file_impl(&conn, srcpath, 0, &srchandle);
+    status = dss_open_file_impl(&conn, srcpath, O_RDONLY, &srchandle);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("The format of srcfile %s is false.\n", srcpath);
         return status;
@@ -188,7 +188,7 @@ static status_t dss_cp_dtod(dss_conn_t conn, const char *srcpath, const char *de
         dss_close_file_impl(&conn, srchandle);
         return status;
     }
-    status = dss_open_file_impl(&conn, destpath, 0, &desthandle);
+    status = dss_open_file_impl(&conn, destpath, O_RDWR, &desthandle);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("The format of destfile %s is false.\n", destpath);
         dss_close_file_impl(&conn, srchandle);
@@ -217,7 +217,7 @@ static status_t dss_cp_dtol(dss_conn_t conn, const char *srcpath, const char *de
     int srchandle;
     int desthandle;
     status_t status;
-    status = dss_open_file_impl(&conn, srcpath, 0, &srchandle);
+    status = dss_open_file_impl(&conn, srcpath, O_RDONLY, &srchandle);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("The format of srcfile %s is false.\n", srcpath);
         return status;
@@ -261,7 +261,7 @@ static status_t dss_cp_ltod(dss_conn_t conn, const char *srcpath, const char *de
         cm_close_file(srchandle);
         return status;
     }
-    status = dss_open_file_impl(&conn, destpath, 0, &desthandle);
+    status = dss_open_file_impl(&conn, destpath, O_RDWR, &desthandle);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("The format of destfile %s is false.\n", destpath);
         cm_close_file(srchandle);
