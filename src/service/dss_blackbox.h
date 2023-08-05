@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
+ * Copyright (c) 2023 Huawei Technologies Co.,Ltd.
  *
  * DSS is licensed under Mulan PSL v2.
  * You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -13,30 +13,19 @@
  * See the Mulan PSL v2 for more details.
  * -------------------------------------------------------------------------
  *
- * dss_signal.h
+ * dss_blackbox.h
  *
  *
  * IDENTIFICATION
- *    src/common/dss_signal.h
+ *    src/service/dss_blackbox.h
  *
  * -------------------------------------------------------------------------
  */
-#ifndef __DSS_SIGNAL_H_
-#define __DSS_SIGNAL_H_
-#ifndef WIN32
-#include <execinfo.h>
-#include "cm_signal.h"
-#ifdef __cplusplus
-extern "C" {
-#endif
 
-status_t dss_coredump_signal_proc(void);
-status_t dss_ignore_signal_proc(void);
-void dss_output_current_bt(void);
+#ifndef __DSS_BLACKBOX_H__
+#define __DSS_BLACKBOX_H__
 
-#ifdef __cplusplus
-}
-#endif
+#include "cm_blackbox.h"
+status_t dss_sigcap_handle_reg();
 
-#endif
 #endif

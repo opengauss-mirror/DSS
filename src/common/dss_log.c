@@ -28,7 +28,7 @@
 #include "dss_param.h"
 #include "dss_param_verify.h"
 #include "dss_session.h"
-#include "dss_system.h"
+#include "cm_system.h"
 
 /*
  * one error no corresponds to one error desc
@@ -286,7 +286,7 @@ static void sql_audit_init_assist(
     int32 ret, tz_hour, tz_min;
     const char *err_msg = NULL;
     char *user_name = cm_sys_user_name();
-    cm_save_remote_host(&session->pipe, assist->os_host);
+    cm_get_remote_host(&session->pipe, assist->os_host);
     MEMS_RETVOID_IFERR(strcpy_s(assist->db_user, CM_NAME_BUFFER_SIZE, (const char *)user_name));
 
     // DATE

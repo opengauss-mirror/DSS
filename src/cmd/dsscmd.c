@@ -31,7 +31,7 @@
 #include "cm_config.h"
 #include "cm_dlock.h"
 #include "cm_list.h"
-#include "dss_system.h"
+#include "cm_system.h"
 #include "cm_cipher.h"
 #include "cm_encrypt.h"
 #include "cm_utils.h"

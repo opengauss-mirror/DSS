@@ -538,12 +538,6 @@ time_t cm_date2time(date_t date);
 status_t cm_time2str(time_t time, const char *fmt, char *str, uint32 str_max_size);
 
 void cm_destroy_thread_lock(thread_lock_t *lock);
-#define DSS_MAX_REAL_INPUT_STRLEN (uint32)(1024)
-status_t cm_str2size(const char *str, int64 *value);
-status_t cm_str2int(const char *str, int32 *value);
-status_t cm_str2bigint(const char *str, int64 *value);
-status_t cm_text2bigint(const text_t *text_src, int64 *value);
-status_t cm_text2size(const text_t *text, int64 *value);
 char *dss_get_cmd_desc(dss_cmd_type_e cmd_type);
 
 #ifdef __cplusplus

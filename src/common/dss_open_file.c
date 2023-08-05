@@ -24,7 +24,7 @@
 
 #include "dss_open_file.h"
 #include "dss_malloc.h"
-#include "dss_system.h"
+#include "cm_system.h"
 
 static int32 of_sklist_file_key_cmp_proc(void *arg, void *left, void *right)
 {

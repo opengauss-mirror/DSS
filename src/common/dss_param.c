@@ -117,6 +117,8 @@ static config_item_t g_dss_params[] = {
         "GS_TYPE_INTEGER", NULL, 38, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "WORK_THREADS",       CM_TRUE, CM_FALSE, "16",   NULL, NULL, "-", "[16,128]",
         "GS_TYPE_INTEGER", NULL, 39, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "_BLACKBOX_DETAIL_ON",   CM_TRUE, CM_FALSE, "FALSE",  NULL, NULL, "-", "FALSE,TRUE",
+       "GS_TYPE_BOOLEAN", NULL, 40, EFFECT_REBOOT,  CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 // clang-format on
@@ -524,6 +526,21 @@ static status_t dss_load_shm_key(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
+static status_t dss_load_blackbox_detail_on(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "_BLACKBOX_DETAIL_ON");
+    if (cm_str_equal_ins(value, "TRUE")) {
+        inst_cfg->params.blackbox_detail_on = CM_TRUE;
+    } else if (cm_str_equal_ins(value, "FALSE")) {
+        inst_cfg->params.blackbox_detail_on = CM_FALSE;
+    } else {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_BLACKBOX_DETAIL_ON"));
+    }
+
+    LOG_RUN_INF("_BLACKBOX_DETAIL_ON = %u.", inst_cfg->params.blackbox_detail_on);
+    return CM_SUCCESS;
+}
+
 status_t dss_load_config(dss_config_t *inst_cfg)
 {
     char file_name[DSS_FILE_PATH_MAX_LENGTH];
@@ -555,6 +572,7 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_threadpool_cfg(inst_cfg));
     CM_RETURN_IFERR(dss_load_cephrbd_params(inst_cfg));
     CM_RETURN_IFERR(dss_load_cephrbd_config_file(inst_cfg));
+    CM_RETURN_IFERR(dss_load_blackbox_detail_on(inst_cfg));
     return CM_SUCCESS;
 }
 

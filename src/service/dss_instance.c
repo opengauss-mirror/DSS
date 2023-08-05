@@ -35,7 +35,6 @@
 #include "dss_lsnr.h"
 #include "dss_redo.h"
 #include "dss_service.h"
-#include "dss_signal.h"
 #include "dss_instance.h"
 #include "dss_simulation_cm.h"
 #include "dss_reactor.h"
@@ -51,6 +50,7 @@ dss_log_def_t g_dss_instance_log[] = {
     {LOG_RUN, "run/dssinstance.rlog"},
     {LOG_ALARM, "alarm/dssinstance.alog"},
     {LOG_AUDIT, "audit/dssinstance.aud"},
+    {LOG_BLACKBOX, "blackbox/dssinstance.blog"},
 };
 
 static void instance_set_pool_def(ga_pool_id_e pool_id, uint32 obj_count, uint32 obj_size, uint32 ex_max)
