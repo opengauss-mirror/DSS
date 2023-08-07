@@ -53,7 +53,7 @@ typedef enum {
 
 /**
  * before pool operation should init operation context
- * ctx	handler of pool operation
+ * ctx    handler of pool operation
  * poolName ceph pool name
  * conf  path pf ceph cluster conf
  * timeout client keepalive timeout
@@ -76,7 +76,7 @@ void ceph_client_ctx_close(ceph_client_ctx ctx);
 
 /**
  * open a image
- * ctx	handler of pool operation
+ * ctx    handler of pool operation
  * imageName image name
  * fd image_handle
  * return 0 sucess, !0 failed
