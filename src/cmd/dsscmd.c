@@ -2770,12 +2770,13 @@ static status_t getstatus_proc(void)
     if (status != CM_SUCCESS) {
         return status;
     }
-    int server_status = 0;
-    status = dss_get_inst_status_on_server(&connection, &server_status);
+    dss_server_status_t dss_status;
+    status = dss_get_inst_status_on_server(&connection, &dss_status);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to get server status.\n");
     } else {
-        DSS_PRINT_INF("Server status is %d.\n", server_status);
+        DSS_PRINT_INF("Server status of instance %d is %s and %s.\nMaster id is %d .\n", dss_status.local_instance_id,
+            dss_status.instance_status, dss_status.server_status, dss_status.master_id);
     }
     dss_disconnect_ex(&connection);
     return status;

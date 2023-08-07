@@ -62,11 +62,14 @@ status_t dss_open_file_on_server(dss_conn_t *conn, const char *file_path, int fl
     return CM_SUCCESS;
 }
 
-status_t dss_get_inst_status_on_server(dss_conn_t *conn, int *status)
+status_t dss_get_inst_status_on_server(dss_conn_t *conn, dss_server_status_t *dss_status)
 {
     int32 errcode;
     char *errmsg = NULL;
-
+    if (dss_status == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "dss_dir_item_t");
+        return CM_ERROR;
+    }
     dss_init_packet(&conn->pack, conn->pipe.options);
     dss_init_set(&conn->pack);
     dss_packet_t *send_pack = &conn->pack;
@@ -88,13 +91,13 @@ status_t dss_get_inst_status_on_server(dss_conn_t *conn, int *status)
         LOG_DEBUG_ERR("get inst status error");
         return CM_ERROR;
     }
-    if (extra_info.len != sizeof(uint32)) {
+    if (extra_info.len != sizeof(dss_server_status_t)) {
         DSS_THROW_ERROR(
             ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_INST_STATUS), "get inst status length error");
         LOG_DEBUG_ERR("get inst status length error");
         return CM_ERROR;
     }
-    *status = *(int *)extra_info.str;
+    *dss_status = *(dss_server_status_t *)extra_info.str;
     return CM_SUCCESS;
 }
 

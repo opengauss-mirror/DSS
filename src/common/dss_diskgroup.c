@@ -59,7 +59,7 @@ dss_vg_info_t *g_vgs_info = NULL;
 dss_share_vg_info_t *g_dss_share_vg_info = NULL;
 
 bool32 g_is_dss_server = DSS_FALSE;
-static dss_server_status_t g_is_dss_readwrite = DSS_STATUS_NORMAL;
+static dss_rdwr_type_e g_is_dss_readwrite = DSS_STATUS_NORMAL;
 static uint32 g_master_instance_id = DSS_INVALID_ID32;
 static const char *const g_dss_lock_vg_file = "dss_vg.lck";
 static int32 g_dss_lock_vg_fd = CM_INVALID_INT32;

@@ -80,10 +80,29 @@ typedef struct st_dss_dirent {
     char d_name[DSS_MAX_NAME_LEN];
 } dss_dirent_t;
 
-typedef enum en_dss_server_status {
+typedef enum en_dss_rdwr_type_e {
     DSS_STATUS_NORMAL = 0,
     DSS_STATUS_READONLY,
     DSS_STATUS_READWRITE,
+    DSS_SERVER_STATUS_END,
+} dss_rdwr_type_e;
+
+typedef enum en_dss_instance_status {
+    DSS_STATUS_PREPARE = 0,
+    DSS_STATUS_RECOVERY,
+    DSS_STATUS_SWITCH,
+    DSS_STATUS_OPEN,
+    DSS_INSTANCE_STATUS_END,
+} dss_instance_status_e;
+
+#define DSS_MAX_STATUS_LEN 16
+typedef struct st_dss_server_status_t {
+    dss_instance_status_e instance_status_id;
+    char instance_status[DSS_MAX_STATUS_LEN];
+    dss_rdwr_type_e server_status_id;
+    char server_status[DSS_MAX_STATUS_LEN];
+    unsigned int local_instance_id;
+    unsigned int master_id;
 } dss_server_status_t;
 
 typedef struct st_dss_stat {
@@ -159,7 +178,7 @@ DSS_DECLARE int dss_set_svr_path(const char *conn_path);
 DSS_DECLARE int dss_set_conn_timeout(int timeout);
 // instance param
 DSS_DECLARE int dss_set_main_inst(void);
-DSS_DECLARE int dss_get_inst_status();
+DSS_DECLARE int dss_get_inst_status(dss_server_status_t *dss_status);
 
 DSS_DECLARE int dss_stat(const char *path, dss_stat_info_t item);
 DSS_DECLARE int dss_lstat(const char *path, dss_stat_info_t item);
