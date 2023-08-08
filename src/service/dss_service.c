@@ -746,16 +746,56 @@ static status_t dss_process_get_ftid_by_path(dss_session_t *session)
     return CM_SUCCESS;
 }
 
+#define DSS_SERVER_STATUS_OFFSET(i) ((uint32)(i) - (uint32)DSS_STATUS_NORMAL)
+static char *g_dss_instance_rdwr_type[DSS_SERVER_STATUS_OFFSET(DSS_SERVER_STATUS_END)] = {
+    [DSS_SERVER_STATUS_OFFSET(DSS_STATUS_NORMAL)] = "NORMAL",
+    [DSS_SERVER_STATUS_OFFSET(DSS_STATUS_READONLY)] = "READONLY",
+    [DSS_SERVER_STATUS_OFFSET(DSS_STATUS_READWRITE)] = "READWRITE",
+};
+
+char *dss_get_dss_server_status(int32 server_status)
+{
+    if (server_status < DSS_STATUS_NORMAL || server_status > DSS_STATUS_READWRITE) {
+        return "unknown";
+    }
+    return g_dss_instance_rdwr_type[DSS_SERVER_STATUS_OFFSET(server_status)];
+}
+
+#define DSS_INSTANCE_STATUS_OFFSET(i) ((uint32)(i) - (uint32)DSS_STATUS_PREPARE)
+static char *g_dss_instance_status_desc[DSS_INSTANCE_STATUS_OFFSET(DSS_INSTANCE_STATUS_END)] = {
+    [DSS_INSTANCE_STATUS_OFFSET(DSS_STATUS_PREPARE)] = "prepare",
+    [DSS_INSTANCE_STATUS_OFFSET(DSS_STATUS_RECOVERY)] = "recovery",
+    [DSS_INSTANCE_STATUS_OFFSET(DSS_STATUS_SWITCH)] = "switch",
+    [DSS_INSTANCE_STATUS_OFFSET(DSS_STATUS_OPEN)] = "open",
+};
+
+char *dss_get_dss_instance_status(int32 instance_status)
+{
+    if (instance_status < DSS_STATUS_PREPARE || instance_status > DSS_STATUS_OPEN) {
+        return "unknown";
+    }
+    return g_dss_instance_status_desc[DSS_INSTANCE_STATUS_OFFSET(instance_status)];
+}
+
 // get dssserver status:open, recovery or switch
 static status_t dss_process_get_inst_status(dss_session_t *session)
 {
-    dss_instance_status_e status = g_dss_instance.status;
     session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
-    *(uint32 *)session->send_info.str = (uint32)status;
-    session->send_info.len = sizeof(uint32);
-    DSS_RETURN_IF_ERROR(
-        dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "status:%u", (uint32)status));
-    DSS_LOG_DEBUG_OP("Server status is %u.", (uint32)status);
+    dss_server_status_t *dss_status = (dss_server_status_t *)session->send_info.str;
+    dss_status->instance_status_id = g_dss_instance.status;
+    dss_status->server_status_id = dss_get_server_status_flag();
+    dss_status->local_instance_id = g_dss_instance.inst_cfg.params.inst_id;
+    dss_status->master_id = dss_get_master_id();
+    char *dss_instance_status = dss_get_dss_instance_status(dss_status->instance_status_id);
+    uint32 errcode = strcpy_s(dss_status->instance_status, DSS_MAX_STATUS_LEN, dss_instance_status);
+    MEMS_RETURN_IFERR(errcode);
+    char *dss_server_status = dss_get_dss_server_status(dss_status->server_status_id);
+    errcode = strcpy_s(dss_status->server_status, DSS_MAX_STATUS_LEN, dss_server_status);
+    MEMS_RETURN_IFERR(errcode);
+    session->send_info.len = sizeof(dss_server_status_t);
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+        session->audit_info.resource, DSS_AUDIT_MODIFY, "status:%s", dss_status->instance_status));
+    DSS_LOG_DEBUG_OP("Server status is %s.", dss_status->instance_status);
     return CM_SUCCESS;
 }
 

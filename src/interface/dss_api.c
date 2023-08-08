@@ -387,12 +387,12 @@ int dss_fopen(const char *file, int flag, int *handle)
     return (int)ret;
 }
 
-int dss_get_inst_status(int *status)
+int dss_get_inst_status(dss_server_status_t *dss_status)
 {
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when get inst status"));
-    return (int)dss_get_inst_status_on_server(conn, status);
+    return (int)dss_get_inst_status_on_server(conn, dss_status);
 }
 
 int dss_set_main_inst(void)
