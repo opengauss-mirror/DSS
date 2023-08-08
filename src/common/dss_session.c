@@ -27,7 +27,7 @@
 #include "dss_malloc.h"
 #include "dss_file.h"
 #include "dss_redo.h"
-#include "dss_system.h"
+#include "cm_system.h"
 #include "dss_session.h"
 
 #ifdef __cplusplus

@@ -22,7 +22,7 @@
  * -------------------------------------------------------------------------
  */
 
-#include "dss_system.h"
+#include "cm_system.h"
 #include "dss_copyfile.h"
 #include "dss_defs.h"
 #include "dss_diskgroup.h"

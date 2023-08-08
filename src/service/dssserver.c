@@ -32,9 +32,9 @@
 #include "cm_signal.h"
 #include "cm_utils.h"
 #include "dss_errno.h"
-#include "dss_signal.h"
 #include "dss_instance.h"
 #include "dss_mes.h"
+#include "dss_blackbox.h"
 
 #ifndef _NSIG
 #define MAX_SIG_NUM 32
@@ -61,9 +61,7 @@ status_t dss_signal_proc_with_graceful_exit(void)
 
 status_t dss_signal_proc(void)
 {
-    DSS_RETURN_IF_ERROR(dss_ignore_signal_proc());
-    DSS_RETURN_IF_ERROR(cm_regist_signal(SIGINT, SIG_DFL));
-    DSS_RETURN_IF_ERROR(dss_coredump_signal_proc());
+    DSS_RETURN_IF_ERROR(dss_sigcap_handle_reg());
     return dss_signal_proc_with_graceful_exit();
 }
 #endif
@@ -138,6 +136,7 @@ static status_t dss_recovery_background_task(dss_instance_t *inst)
         return CM_SUCCESS;
     }
     LOG_RUN_INF("create dss recovery background task.");
+    cm_set_thread_name("recovery");
     uint32 recovery_thread_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
     status_t status = cm_create_thread(dss_get_cm_lock_and_recover, 0, inst, &(inst->threads[recovery_thread_id]));
     return status;

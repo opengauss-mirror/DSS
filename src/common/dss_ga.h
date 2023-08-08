@@ -121,6 +121,7 @@ typedef struct st_ga_obj_id_t {
     uint32 obj_id;
 } ga_obj_id_t;
 
+extern ga_pool_t g_app_pools[GA_APP_POOL_COUNT];
 void ga_set_pool_def(ga_pool_id_e pool_id, const ga_pool_def_t *def);
 status_t ga_create_global_area(void);
 void ga_destroy_global_area(void);

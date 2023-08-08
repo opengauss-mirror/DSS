@@ -22,7 +22,7 @@
  * -------------------------------------------------------------------------
  */
 
-#include "dss_system.h"
+#include "cm_system.h"
 #include "dss_instance.h"
 #include "dss_io_fence.h"
 #include "dss_malloc.h"
