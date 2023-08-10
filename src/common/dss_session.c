@@ -117,6 +117,9 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
     g_dss_session_ctrl.sessions[id].is_closed = CM_FALSE;
     g_dss_session_ctrl.sessions[id].proto_type = PROTO_TYPE_UNKNOWN;
     g_dss_session_ctrl.sessions[id].status = DSS_SESSION_STATUS_IDLE;
+    errcode = memset_s(g_dss_session_ctrl.sessions[id].dss_session_stat, DSS_EVT_COUNT * sizeof(dss_session_stat_t), 0,
+        DSS_EVT_COUNT * sizeof(dss_session_stat_t));
+    securec_check_ret(errcode);
     *session = &g_dss_session_ctrl.sessions[id];
     return CM_SUCCESS;
 }

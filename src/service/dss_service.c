@@ -799,6 +799,38 @@ static status_t dss_process_get_inst_status(dss_session_t *session)
     return CM_SUCCESS;
 }
 
+static status_t dss_process_get_time_stat(dss_session_t *session)
+{
+    uint64 size = sizeof(dss_session_stat_t) * DSS_EVT_COUNT;
+    session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
+    dss_session_stat_t *time_stat = (dss_session_stat_t *)session->send_info.str;
+    errno_t errcode = memset_s(time_stat, (size_t)size, 0,(size_t)size);
+    securec_check_ret(errcode);
+    uint32 max_cfg_sess = g_dss_instance.inst_cfg.params.cfg_session_num;
+    dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
+    cm_spin_lock(&session_ctrl->lock, NULL);
+    for (uint32 i = 0; i < max_cfg_sess; i++) {
+        if (session_ctrl->sessions[i].is_used && !session_ctrl->sessions[i].is_closed) {
+            for (uint32 j = 0; j < DSS_EVT_COUNT; j++) {
+                int64 count = (int64)session_ctrl->sessions[i].dss_session_stat[j].wait_count;
+                int64 total_time = (int64)session_ctrl->sessions[i].dss_session_stat[j].total_wait_time;
+                int64 max_sgl_time = (int64)session_ctrl->sessions[i].dss_session_stat[j].max_single_time;
+
+                time_stat[j].wait_count += count;
+                time_stat[j].total_wait_time += total_time;
+                time_stat[j].max_single_time += (atomic_t)MAX((int64)time_stat[j].max_single_time, max_sgl_time);
+
+                (void)cm_atomic_add(&session_ctrl->sessions[i].dss_session_stat[j].wait_count, -count);
+                (void)cm_atomic_add(&session_ctrl->sessions[i].dss_session_stat[j].total_wait_time, -total_time);
+                (void)cm_atomic_cas(&session_ctrl->sessions[i].dss_session_stat[j].max_single_time, max_sgl_time, 0);
+            }
+        }
+    }
+    cm_spin_unlock(&session_ctrl->lock);
+    session->send_info.len = (uint32)size;
+    return CM_SUCCESS;
+}
+
 void dss_wait_session_pause(dss_instance_t *inst)
 {
     uds_lsnr_t *lsnr = &inst->lsnr;
@@ -1017,6 +1049,7 @@ static dss_cmd_hdl_t g_dss_cmd_handle[] = {
     { DSS_CMD_GET_FTID_BY_PATH, dss_process_get_ftid_by_path, NULL, CM_FALSE },
     { DSS_CMD_GETCFG, dss_process_getcfg, NULL, CM_FALSE },
     { DSS_CMD_GET_INST_STATUS, dss_process_get_inst_status, NULL, CM_FALSE },
+    { DSS_CMD_GET_TIME_STAT, dss_process_get_time_stat, NULL, CM_FALSE },
 };
 
 dss_cmd_hdl_t g_dss_remote_handle = { DSS_CMD_EXEC_REMOTE, dss_process_remote, NULL, CM_FALSE };

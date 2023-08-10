@@ -114,6 +114,7 @@ typedef enum {
     DSS_CMD_GET_FTID_BY_PATH,
     DSS_CMD_GETCFG,
     DSS_CMD_GET_INST_STATUS,
+    DSS_CMD_GET_TIME_STAT,
     DSS_CMD_QUERY_END,
     DSS_CMD_EXEC_REMOTE = DSS_CMD_QUERY_END,
     DSS_CMD_END  // must be the last item
