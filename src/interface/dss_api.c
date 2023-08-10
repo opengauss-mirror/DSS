@@ -517,6 +517,8 @@ int dss_fread(int handle, void *buf, int size, int *read_size)
 
 int dss_pwrite(int handle, const void *buf, int size, long long offset)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     if (size < 0) {
         LOG_DEBUG_ERR("File size is invalid:%d.", size);
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "size must be a positive integer");
@@ -533,11 +535,18 @@ int dss_pwrite(int handle, const void *buf, int size, long long offset)
 
     ret = dss_pwrite_file_impl(conn, HANDLE_VALUE(handle), buf, size, offset);
     dss_get_api_volume_error();
+    if (ret == CM_SUCCESS) {
+        dss_end_stat(conn->session, &begin_tv, DSS_PWRITE);
+    }
+
     return (int)ret;
 }
 
 int dss_pread(int handle, void *buf, int size, long long offset, int *read_size)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
+
     if (read_size == NULL) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "read _size is NULL");
         return CM_ERROR;
@@ -558,6 +567,9 @@ int dss_pread(int handle, void *buf, int size, long long offset, int *read_size)
 
     ret = dss_pread_file_impl(conn, HANDLE_VALUE(handle), buf, size, offset, read_size);
     dss_get_api_volume_error();
+    if (ret == CM_SUCCESS) {
+        dss_end_stat(conn->session, &begin_tv, DSS_PREAD);
+    }
     return (int)ret;
 }
 

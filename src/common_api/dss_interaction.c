@@ -101,6 +101,38 @@ status_t dss_get_inst_status_on_server(dss_conn_t *conn, dss_server_status_t *ds
     return CM_SUCCESS;
 }
 
+status_t dss_get_time_stat_on_server(dss_conn_t * conn, dss_session_stat_t * time_stat, uint64 size)
+{
+    int32 errcode;
+    char *errmsg = NULL;
+
+    dss_init_packet(&conn->pack, conn->pipe.options);
+    dss_init_set(&conn->pack);
+    dss_packet_t *send_pack = &conn->pack;
+    send_pack->head->cmd = DSS_CMD_GET_TIME_STAT;
+    send_pack->head->flags = 0;
+
+    dss_packet_t *ack_pack = &conn->pack;
+    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
+
+    if (ack_pack->head->result != CM_SUCCESS) {
+        dss_cli_get_err(ack_pack, &errcode, &errmsg);
+        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
+        return CM_ERROR;
+    }
+    text_t stat_info = CM_NULL_TEXT;
+    dss_init_get(ack_pack);
+    if (dss_get_text(ack_pack, &stat_info) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_TIME_STAT), "get time stat error");
+        LOG_DEBUG_ERR("get time stat error");
+        return CM_ERROR;
+    }
+    for (uint64 i = 0; i < DSS_EVT_COUNT; i++) {
+        time_stat[i] = *(dss_session_stat_t *)(stat_info.str + i * (uint64)sizeof(dss_session_stat_t));
+    }
+    return CM_SUCCESS;
+}
+
 status_t dss_set_main_inst_on_server(dss_conn_t *conn)
 {
     int32 errcode;

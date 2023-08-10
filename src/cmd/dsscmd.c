@@ -1333,6 +1333,59 @@ static status_t touch_proc(void)
     return status;
 }
 
+static dss_args_t cmd_ts_args[] = {
+    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
+        0},
+};
+
+static dss_args_set_t cmd_ts_args_set = {
+    cmd_ts_args,
+    sizeof(cmd_ts_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+static void ts_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:%s ts [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("[client command]Show current API invoking time\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    help_param_uds();
+}
+
+static status_t ts_proc(void)
+{
+    dss_conn_t connection;
+    status_t status = get_connection_by_input_args(cmd_ts_args[DSS_ARG_IDX_0].input_args, &connection);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+
+    dss_session_stat_t time_stat[DSS_EVT_COUNT];
+    status = dss_get_time_stat_on_server(&connection, time_stat, DSS_EVT_COUNT);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to get time stat.\n");
+        dss_disconnect_ex(&connection);
+        return CM_ERROR;
+    }
+    char *time_stat_event[] = {"DSS_PREAD", "DSS_PWRITE"};
+    (void)printf("|      event     |   wait   | total_wait_time | avg_wait_time \n");
+    (void)printf("+----------------+----------+-----------------+--------------\n");
+    for (int i = 0; i < DSS_EVT_COUNT; i++) {
+        if (time_stat[i].wait_count == 0) {
+            (void)printf("|%-16s|%-10d|%-17d|%-15d|%-15d\n", time_stat_event[i], 0, 0, 0, 0);
+            continue;
+        }
+        (void)printf("|%-16s|%-10lld|%-17lld|%-15lld|%-15lld\n", time_stat_event[i], time_stat[i].wait_count,
+            time_stat[i].total_wait_time, time_stat[i].total_wait_time / time_stat[i].wait_count,
+            time_stat[i].max_single_time);
+    }
+    (void)printf("+----------------+----------+-----------------+--------------\n");
+    dss_disconnect_ex(&connection);
+    return CM_SUCCESS;
+}
+
 static dss_args_t cmd_ls_args[] = {
     {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
     {'m', "measure_type", CM_FALSE, CM_TRUE, cmd_check_measure_type, NULL, NULL, 0, NULL, NULL, 0},
@@ -3079,6 +3132,7 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set}
                                       {"adv", adv_help, adv_proc, &cmd_adv_args_set},
                                       {"mkdir", mkdir_help, mkdir_proc, &cmd_mkdir_args_set},
                                       {"touch", touch_help, touch_proc, &cmd_touch_args_set},
+                                      {"ts", ts_help, ts_proc, &cmd_ts_args_set},
                                       {"ls", ls_help, ls_proc, &cmd_ls_args_set},
                                       {"cp", cp_help, cp_proc, &cmd_cp_args_set},
                                       {"rm", rm_help, rm_proc, &cmd_rm_args_set},
