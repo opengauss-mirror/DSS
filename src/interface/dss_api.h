@@ -132,13 +132,11 @@ DSS_DECLARE int dss_dremove(const char *dir);
 DSS_DECLARE dss_dir_handle dss_dopen(const char *dir_path);
 DSS_DECLARE int dss_dread(dss_dir_handle dir, dss_dir_item_t item, dss_dir_item_t *result);
 DSS_DECLARE int dss_dclose(dss_dir_handle dir);
-DSS_DECLARE int dss_dexist(const char *name, bool *result);
 // file
 DSS_DECLARE int dss_fcreate(const char *name, int flag);
 DSS_DECLARE int dss_fremove(const char *file);
 DSS_DECLARE int dss_fopen(const char *file, int flag, int *handle);
 DSS_DECLARE int dss_fclose(int handle);
-DSS_DECLARE int dss_fexist(const char *name, bool *result);
 DSS_DECLARE long long dss_fseek(int handle, long long offset, int origin);
 DSS_DECLARE int dss_fwrite(int handle, const void *buf, int size);
 DSS_DECLARE int dss_fread(int handle, void *buf, int size, int *read_size);
@@ -159,7 +157,6 @@ DSS_DECLARE int dss_aio_post_pwrite(void *iocb, int handle, size_t count, long l
 
 // link
 DSS_DECLARE int dss_unlink(const char *link);
-DSS_DECLARE int dss_islink(const char *name, bool *result);
 DSS_DECLARE int dss_readlink(const char *link_path, char *buf, int bufsize);
 DSS_DECLARE int dss_symlink(const char *oldpath, const char *newpath);
 // au

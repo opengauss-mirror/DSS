@@ -70,54 +70,71 @@ static void find_traverse_node(
 
 static status_t find_try_match_link(dss_conn_t *conn, char *path, const char *name)
 {
-    size_t len = strlen(path);
-    if (len > 0 && path[len - 1] != '/') {
+    if (dss_is_valid_link_path(path)) {
         gft_node_t *node = NULL;
-
         dss_check_dir_output_t output_info = {&node, NULL, NULL};
-        dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE);
-        if (node) {  // check the link name
+        DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE));
+        if (node != NULL) {  // check the link name
             if (is_match(node->name, name)) {
                 printf("%s\n", path);
             }
             return CM_SUCCESS;
         }
     }
+    LOG_DEBUG_INF("Failed to try match path %s with the link type", path);
     return CM_ERROR;
 }
 
 status_t find_traverse_path(dss_conn_t *conn, char *path, size_t path_size, char *name, size_t name_size)
 {
     bool exist = false;
+    gft_item_type_t type;
     gft_node_t *node = NULL;
+    dss_vg_info_item_t *vg_item = NULL;
+    dss_check_dir_output_t output_info = {&node, NULL, NULL};
+    char vg_name[DSS_MAX_NAME_LEN] = {0};
     size_t len = strlen(path);
+    status_t status = CM_ERROR;
 
-    DSS_RETURN_IF_SUCCESS(find_try_match_link(conn, path, name));
-
-    dss_exist_file_impl(conn, path, &exist);
-    if (exist) {
-        dss_check_dir_output_t output_info = {&node, NULL, NULL};
-        dss_check_dir(conn->session, path, GFT_FILE, &output_info, CM_TRUE);
-        if (!node) {
-            LOG_DEBUG_ERR("Failed to check file node\n");
-            return CM_ERROR;
-        }
-        if (is_match(node->name, name)) {
-            printf("%s\n", path);
-        }
-        return CM_SUCCESS;
+    DSS_RETURN_IF_ERROR(dss_find_vg_by_dir(path, vg_name, &vg_item));
+    DSS_RETURN_IF_ERROR(dss_exist_impl(conn, path, &exist, &type));
+    if (!exist) {
+        DSS_PRINT_ERROR("The path %s is not exist.\n", path);
+        return CM_ERROR;
     }
-
+    if (type == GFT_FILE) {
+        DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
+        status = dss_check_dir(conn->session, path, GFT_FILE, &output_info, CM_FALSE);
+        if (status == CM_SUCCESS && node != NULL) {
+            if (is_match(node->name, name)) {
+                printf("%s\n", path);
+            }
+            DSS_UNLOCK_VG_META_S(vg_item, conn->session);
+            return CM_SUCCESS;
+        }
+        DSS_UNLOCK_VG_META_S(vg_item, conn->session);
+    } else if (type == GFT_LINK || type == GFT_LINK_TO_FILE || type == GFT_LINK_TO_PATH) {
+        DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
+        status = find_try_match_link(conn, path, name);
+        DSS_UNLOCK_VG_META_S(vg_item, conn->session);
+        if (status == CM_SUCCESS) {
+            return status;
+        }
+    }
     dss_dir_t *dir = dss_open_dir_impl(conn, path, CM_TRUE);
-
-    if (!dir) {
+    if (dir == NULL) {
         LOG_DEBUG_ERR("Failed to open dir %s.\n", path);
         return CM_ERROR;
     }
-    dss_check_dir_output_t output_info = {&node, NULL, NULL};
-    dss_check_dir(conn->session, path, GFT_PATH, &output_info, CM_TRUE);
-    if (!node) {
+
+    if (SECUREC_UNLIKELY(dss_lock_vg_s(dir->vg_item, conn->session) != CM_SUCCESS)) {
+        (void)dss_close_dir_impl(conn, dir);
+        return CM_ERROR;
+    }
+    status = dss_check_dir(conn->session, path, GFT_PATH, &output_info, CM_TRUE);
+    if (status != CM_SUCCESS || node == NULL) {
         LOG_DEBUG_ERR("Failed to check dir node\n");
+        DSS_UNLOCK_VG_META_S(dir->vg_item, conn->session);
         (void)dss_close_dir_impl(conn, dir);
         return CM_ERROR;
     }
@@ -129,6 +146,7 @@ status_t find_traverse_path(dss_conn_t *conn, char *path, size_t path_size, char
     }
     path[(strlen(path) - strlen(node->name)) - 1] = 0;
     find_traverse_node(conn, node, dir->vg_item, name, path);
+    DSS_UNLOCK_VG_META_S(dir->vg_item, conn->session);
     (void)dss_close_dir_impl(conn, dir);
     return CM_SUCCESS;
 }

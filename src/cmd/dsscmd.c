@@ -79,6 +79,7 @@ typedef enum en_dss_help_type {
 #define DSS_DEFAULT_MEASURE "B"
 #define DSS_SUBSTR_UDS_PATH "UDS:"
 #define DSS_DEFAULT_VG_TYPE 't' /* show vg information in table format by default */
+static const char dss_ls_print_flag[] = {'d', '-', 'l'};
 
 // clang-format off
 config_item_t g_dss_admin_parameters[] = {
@@ -1429,12 +1430,114 @@ static status_t ls_get_parameter(const char **path, const char **measure, char *
     return CM_SUCCESS;
 }
 
+static status_t dss_ls_print_node_info(gft_node_t *node, const char*measure)
+{
+    char time[512] = {0};
+    if (cm_time2str(node->create_time, "YYYY-MM-DD HH24:mi:ss", time, sizeof(time)) != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to get create time of node %s.\n", node->name);
+        return CM_ERROR;
+    }
+    double size = (double)node->size;
+    if (node->size != 0) {
+        size = dss_convert_size(size, measure);
+    }
+    if (node->type >GFT_LINK) {
+        DSS_PRINT_ERROR("Invalid node type %u.\n", node->type);
+        return CM_ERROR;
+    }
+    char type = dss_ls_print_flag[node->type];
+    double written_size = (double)node->written_size;
+    if (node->written_size != 0) {
+        written_size = dss_convert_size(written_size, measure);
+    }
+    (void)printf("%-5c%-20s%-14.05f %-14.05f %-64s\n", type, time, size, written_size, node->name);
+    return CM_SUCCESS;
+}
+
+static status_t dss_ls_print_file(dss_conn_t *conn, const char *path, const char*measure)
+{
+    gft_node_t *node = NULL;
+    dss_check_dir_output_t output_info = {&node, NULL, NULL};
+    DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_FILE, &output_info, CM_FALSE));
+    if (node == NULL) {
+        LOG_DEBUG_INF("Failed to find path %s with the file type", path);
+        return CM_ERROR;
+    }
+    (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
+    return dss_ls_print_node_info(node, measure);
+}
+
+static status_t dss_ls_try_print_link(dss_conn_t *conn, const char *path, const char*measure)
+{
+    if (dss_is_valid_link_path(path)) {
+        gft_node_t *node = NULL;
+        dss_check_dir_output_t output_info = {&node, NULL, NULL};
+        DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE));
+        if (node != NULL) {
+            (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
+            return dss_ls_print_node_info(node, measure);
+        }
+    }
+    LOG_DEBUG_INF("Failed to try print path %s with the link type", path);
+    return CM_ERROR;
+}
+
+static status_t ls_proc_core(dss_conn_t *conn, const char *path, const char*measure)
+{
+    gft_node_t *node = NULL;
+    dss_vg_info_item_t *vg_item = NULL;
+    char name[DSS_MAX_NAME_LEN] = {0};
+    status_t status = CM_ERROR;
+    bool exist = false;
+    gft_item_type_t type;
+    DSS_RETURN_IFERR2(
+        dss_find_vg_by_dir(path, name, &vg_item), DSS_PRINT_ERROR("Failed to find vg when ls the path %s.\n", path));
+    DSS_RETURN_IFERR2(
+        dss_exist_impl(conn, path, &exist, &type), DSS_PRINT_ERROR("Failed to check the path %s exists.\n", path));
+    if (!exist) {
+        DSS_PRINT_ERROR("The path %s is not exist.\n", path);
+        return CM_ERROR;
+    }
+    if (type == GFT_FILE) {
+        DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
+        status = dss_ls_print_file(conn, path, measure);
+        DSS_UNLOCK_VG_META_S(vg_item, conn->session);
+        if (status == CM_SUCCESS) {
+            DSS_PRINT_INF("Succeed to ls file info.\n");
+            return status;
+        }
+    } else if (type == GFT_LINK || type == GFT_LINK_TO_FILE || type == GFT_LINK_TO_PATH) {
+        DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
+        status = dss_ls_try_print_link(conn, path, measure);
+        DSS_UNLOCK_VG_META_S(vg_item, conn->session);
+        if (status == CM_SUCCESS) {
+            DSS_PRINT_INF("Succeed to ls link info.\n");
+            return status;
+        }
+    }
+    dss_dir_t *dir = dss_open_dir_impl(conn, path, CM_TRUE);
+    if (dir == NULL) {
+        DSS_PRINT_ERROR("Failed to open dir %s.\n", path);
+        return CM_ERROR;
+    }
+    (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
+    while ((node = dss_read_dir_impl(conn, dir, CM_TRUE)) != NULL) {
+        status = dss_ls_print_node_info(node, measure);
+        if (status != CM_SUCCESS) {
+            (void)dss_close_dir_impl(conn, dir);
+            return CM_ERROR;
+        }
+    }
+    (void)dss_close_dir_impl(conn, dir);
+    DSS_PRINT_INF("Succeed to ls dir info.\n");
+    return CM_SUCCESS;
+}
+
 static status_t ls_proc(void)
 {
     const char *path = NULL;
     char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
     const char *measure = NULL;
-
     status_t status = ls_get_parameter(&path, &measure, server_locator);
     if (status != CM_SUCCESS) {
         return status;
@@ -1447,38 +1550,9 @@ static status_t ls_proc(void)
         return status;
     }
 
-    dss_dir_t *dir = dss_open_dir_impl(&connection, path, CM_TRUE);
-    if (!dir) {
-        DSS_PRINT_ERROR("Failed to open dir %s.\n", path);
-        dss_disconnect_ex(&connection);
-        return CM_ERROR;
-    }
-    (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
-    gft_node_t *node;
-    char time[512];
-    while ((node = dss_read_dir_impl(&connection, dir, CM_TRUE)) != NULL) {
-        if (cm_time2str(node->create_time, "YYYY-MM-DD HH24:mi:ss", time, sizeof(time)) != CM_SUCCESS) {
-            DSS_PRINT_ERROR("Failed to get create time of node %s.\n", node->name);
-            (void)dss_close_dir_impl(&connection, dir);
-            dss_disconnect_ex(&connection);
-            return CM_ERROR;
-        }
-        double size = (double)node->size;
-        if (node->size != 0) {
-            size = dss_convert_size(size, measure);
-        }
-        char type = node->type == GFT_PATH ? 'd' : node->type == GFT_FILE ? '-' : 'l';
-        double written_size = (double)node->written_size;
-        if (node->written_size != 0) {
-            written_size = dss_convert_size(written_size, measure);
-        }
-        (void)printf("%-5c%-20s%-14.05f %-14.05f %-64s\n", type, time, size, written_size, node->name);
-    }
-
-    (void)dss_close_dir_impl(&connection, dir);
+    status = ls_proc_core(&connection, path, measure);
     dss_disconnect_ex(&connection);
-    DSS_PRINT_INF("Succeed to ls.\n");
-    return CM_SUCCESS;
+    return status;
 }
 
 static dss_args_t cmd_cp_args[] = {

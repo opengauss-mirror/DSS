@@ -304,7 +304,9 @@ typedef struct st_dss_share_vg_info_t {
 typedef enum en_zft_item_type {
     GFT_PATH,  // path
     GFT_FILE,
-    GFT_LINK
+    GFT_LINK,
+    GFT_LINK_TO_PATH,
+    GFT_LINK_TO_FILE
 } gft_item_type_t;
 
 typedef struct st_zft_list {
@@ -344,8 +346,11 @@ typedef struct st_dss_check_dir_param_t {
     dss_vg_info_item_t *vg_item;
     gft_node_t *p_node;
     gft_node_t *last_node;
-    bool32 is_throw_err;
-    bool32 is_skip_delay_file;
+    gft_node_t *link_node;
+    bool8 is_skip_delay_file;
+    bool8 not_exist_err;
+    bool8 is_find_link;
+    bool8 last_is_link;
 } dss_check_dir_param_t;
 
 typedef struct st_dss_check_dir_output_t {

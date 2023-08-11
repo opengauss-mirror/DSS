@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include "dss_errno.h"
 #include "dss_interaction.h"
+#include "dss_session.h"
 #include "dss_api.h"
 
 #ifdef __cplusplus
@@ -61,6 +62,7 @@ void dss_disconnect(dss_conn_t *conn);
 // NOTE:just for dsscmd because not support many threads in one process.
 status_t dss_connect_ex(const char *server_locator, dss_conn_opt_t options, char *user_name, dss_conn_t *conn);
 void dss_disconnect_ex(dss_conn_t *conn);
+status_t dss_lock_vg_s(dss_vg_info_item_t *vg_item, dss_session_t *session);
 
 status_t dss_make_dir_impl(dss_conn_t *conn, const char *parent, const char *dir_name);
 status_t dss_remove_dir_impl(dss_conn_t *conn, const char *dir, bool recursive);
@@ -71,8 +73,7 @@ status_t dss_create_file_impl(dss_conn_t *conn, const char *file_path, int flag)
 status_t dss_remove_file_impl(dss_conn_t *conn, const char *file_path);
 status_t dss_open_file_impl(dss_conn_t *conn, const char *file_path, int flag, int *handle);
 status_t dss_close_file_impl(dss_conn_t *conn, int handle);
-status_t dss_exist_file_impl(dss_conn_t *conn, const char *name, bool *result);
-status_t dss_exist_dir_impl(dss_conn_t *conn, const char *name, bool *result);
+status_t dss_exist_impl(dss_conn_t *conn, const char *path, bool *result, gft_item_type_t *type);
 status_t dss_islink_impl(dss_conn_t *conn, const char *name, bool *result);
 int64 dss_seek_file_impl(dss_conn_t *conn, int handle, int64 offset, int origin);
 status_t dss_write_file_impl(dss_conn_t *conn, int handle, const void *buf, int size);
@@ -120,6 +121,21 @@ status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long o
         }                                         \
     } while (0)
 
+#define DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, session)                          \
+    do {                                                                           \
+        if (SECUREC_UNLIKELY(dss_lock_vg_s((vg_item), (session)) != CM_SUCCESS)) { \
+            return CM_ERROR;                                                       \
+        }                                                                          \
+    } while (0)
+
+#define DSS_LOCK_VG_META_S_RETURN_NULL(vg_item, session)                           \
+    do {                                                                           \
+        if (SECUREC_UNLIKELY(dss_lock_vg_s((vg_item), (session)) != CM_SUCCESS)) { \
+            return NULL;                                                           \
+        }                                                                          \
+    } while (0)
+
+#define DSS_UNLOCK_VG_META_S(vg_item, session) dss_unlock_shm_meta((session), (vg_item)->vg_latch)
 #ifdef __cplusplus
 }
 #endif

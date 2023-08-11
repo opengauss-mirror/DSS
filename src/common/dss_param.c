@@ -285,7 +285,7 @@ static status_t dss_load_random_file(uchar *value, int32 value_len)
     PRTS_RETURN_IFERR(snprintf_s(
         dir_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/dss_protect", g_inst_cfg->home));
     if (!cm_dir_exist(dir_name)) {
-        DSS_THROW_ERROR(ERR_DSS_DIR_NOT_EXIST, "dss_protect", g_inst_cfg->home);
+        DSS_THROW_ERROR(ERR_DSS_FILE_NOT_EXIST, "dss_protect", g_inst_cfg->home);
         return CM_ERROR;
     }
     PRTS_RETURN_IFERR(snprintf_s(file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/dss_protect/%s",

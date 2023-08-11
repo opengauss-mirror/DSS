@@ -30,7 +30,6 @@
 #include "dss_file_def.h"
 #include "dss_latch.h"
 #include "dss_malloc.h"
-#include "dss_session.h"
 #include "dss_api_impl.h"
 
 #ifdef __cplusplus
@@ -226,22 +225,6 @@ status_t dss_lock_vg_s(dss_vg_info_item_t *vg_item, dss_session_t *session)
     latch_offset.offset.shm_offset = dss_get_vg_latch_shm_offset(vg_item);
     return dss_cli_lock_shm_meta_s(session, &latch_offset, vg_item->vg_latch, NULL);
 }
-
-#define DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, session)        \
-    do {                                                         \
-        if (dss_lock_vg_s((vg_item), (session)) != CM_SUCCESS) { \
-            return CM_ERROR;                                     \
-        }                                                        \
-    } while (0)
-
-#define DSS_LOCK_VG_META_S_RETURN_NULL(vg_item, session)        \
-    do {                                                        \
-        if (dss_lock_vg_s(vg_item, session) != CM_SUCCESS) {    \
-            return NULL;                                        \
-        }                                                       \
-    } while (0)
-
-#define DSS_UNLOCK_VG_META_S(vg_item, session) dss_unlock_shm_meta((session), (vg_item)->vg_latch)
 
 status_t dss_apply_refresh_file_table(dss_conn_t *conn, dss_dir_t *dir)
 {
@@ -772,7 +755,7 @@ dss_dir_t *dss_open_dir_impl(dss_conn_t *conn, const char *dir_path, bool32 refr
 
 gft_node_t *dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 skip_delete)
 {
-    if (!dir) {
+    if (dir == NULL) {
         return NULL;
     }
 
@@ -990,7 +973,7 @@ static status_t dss_get_ftid_by_path_on_server(dss_conn_t *conn, const char *pat
         LOG_DEBUG_ERR("get result connect error.");
         return CM_ERROR;
     }
-    if (extra_info.len == 0 || extra_info.len > sizeof(dss_find_node_t)) {
+    if (extra_info.len != sizeof(dss_find_node_t)) {
         DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_FTID_BY_PATH), "get result length error");
         LOG_DEBUG_ERR("get result length error.");
         return CM_ERROR;
@@ -1189,7 +1172,7 @@ status_t dss_close_file_impl(dss_conn_t *conn, int handle)
     return CM_SUCCESS;
 }
 
-status_t dss_exist_dir_or_file_impl(dss_conn_t *conn, const char *path, bool *result, uint8 cmd)
+status_t dss_exist_impl(dss_conn_t *conn, const char *path, bool *result, gft_item_type_t *type)
 {
     dss_packet_t *send_pack;
     dss_packet_t *ack_pack;
@@ -1202,7 +1185,7 @@ status_t dss_exist_dir_or_file_impl(dss_conn_t *conn, const char *path, bool *re
     dss_init_set(&conn->pack);
 
     send_pack = &conn->pack;
-    send_pack->head->cmd = cmd;
+    send_pack->head->cmd = DSS_CMD_EXIST;
     send_pack->head->flags = 0;
 
     DSS_RETURN_IF_ERROR(dss_check_device_path(path));
@@ -1222,24 +1205,20 @@ status_t dss_exist_dir_or_file_impl(dss_conn_t *conn, const char *path, bool *re
     text_t extra_info = CM_NULL_TEXT;
     dss_init_get(ack_pack);
     if (dss_get_text(ack_pack, &extra_info) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(cmd), "get result connect error");
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get result connect error");
         LOG_DEBUG_ERR("get result connect error.");
         return CM_ERROR;
     }
-    if (extra_info.len == 0 || extra_info.len > sizeof(bool32)) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(cmd), "get result length error");
+    if (extra_info.len != sizeof(bool32) + sizeof(uint32)) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get result length error");
         LOG_DEBUG_ERR("get result length error.");
         return CM_ERROR;
     }
     *result = *(bool32 *)extra_info.str;
+    *type = *(gft_item_type_t *)(extra_info.str + sizeof(bool32));
 
-    LOG_DEBUG_INF("dss exits file or dir leave, name:%s, result:%d", path, *result);
+    LOG_DEBUG_INF("dss exits file or dir leave, name:%s, result:%d, type:%u", path, *result, *type);
     return CM_SUCCESS;
-}
-
-status_t dss_exist_file_impl(dss_conn_t *conn, const char *name, bool *result)
-{
-    return dss_exist_dir_or_file_impl(conn, name, result, DSS_CMD_EXIST_FILE);
 }
 
 static status_t dss_validate_seek_origin(int origin, int64 offset, dss_file_context_t *context, int64 *new_offset)
@@ -1267,11 +1246,6 @@ static status_t dss_validate_seek_origin(int origin, int64 offset, dss_file_cont
         return CM_ERROR;
     }
     return CM_SUCCESS;
-}
-
-status_t dss_exist_dir_impl(dss_conn_t *conn, const char *name, bool *result)
-{
-    return dss_exist_dir_or_file_impl(conn, name, result, DSS_CMD_EXIST_DIR);
 }
 
 int64 dss_seek_file_impl_core(dss_rw_param_t *param, int64 offset, int origin)
@@ -2298,7 +2272,7 @@ status_t dss_islink_impl(dss_conn_t *conn, const char *path, bool *result)
     dss_init_set(&conn->pack);
 
     send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_ISLINK;
+    send_pack->head->cmd = DSS_CMD_EXIST;
     send_pack->head->flags = 0;
 
     DSS_RETURN_IF_ERROR(dss_check_device_path(path));
@@ -2319,12 +2293,17 @@ status_t dss_islink_impl(dss_conn_t *conn, const char *path, bool *result)
     dss_init_get(ack_pack);
     status_t ret = dss_get_text(ack_pack, &extra_info);
     DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("islink get result connect error"));
-    if (extra_info.len == 0 || extra_info.len > sizeof(bool32)) {
+    if (extra_info.len != sizeof(bool32) + sizeof(uint32)) {
         LOG_DEBUG_ERR("islink get result length error");
         return CM_ERROR;
     }
-    *result = *(bool32 *)extra_info.str;
-
+    bool32 is_find = *(bool32 *)extra_info.str;
+    gft_item_type_t type = *(gft_item_type_t *)(extra_info.str + sizeof(bool32));
+    if (is_find && (type == GFT_LINK || type == GFT_LINK_TO_FILE || type == GFT_LINK_TO_PATH)) {
+        *result = CM_TRUE;
+    } else {
+        *result = CM_FALSE;
+    }
     return CM_SUCCESS;
 }
 

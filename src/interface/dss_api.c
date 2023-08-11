@@ -262,8 +262,12 @@ dss_dir_handle dss_dopen(const char *dir_path)
 int dss_dread(dss_dir_handle dir, dss_dir_item_t item, dss_dir_item_t *result)
 {
     if (item == NULL || result == NULL) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "errcodss_dir_item_t");
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "dss_dir_item_t");
         return DSS_ERROR;
+    }
+    *result = NULL;
+    if (dir == NULL) {
+        return DSS_SUCCESS;
     }
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
@@ -271,7 +275,6 @@ int dss_dread(dss_dir_handle dir, dss_dir_item_t item, dss_dir_item_t *result)
 
     gft_node_t *node = dss_read_dir_impl(conn, (dss_dir_t *)dir, CM_TRUE);
     if (node == NULL) {
-        *result = NULL;
         return DSS_SUCCESS;
     }
     item->d_type = node->type;
@@ -279,7 +282,6 @@ int dss_dread(dss_dir_handle dir, dss_dir_item_t item, dss_dir_item_t *result)
     int32 errcode = memcpy_s(item->d_name, DSS_MAX_NAME_LEN, node->name, DSS_MAX_NAME_LEN);
     if (SECUREC_UNLIKELY(errcode != EOK)) {
         DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
-        *result = NULL;
         return DSS_ERROR;
     }
     *result = item;
@@ -414,28 +416,6 @@ int dss_fclose(int handle)
     return (int)ret;
 }
 
-int dss_fexist(const char *name, bool *result)
-{
-    dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fexist get conn error."));
-
-    ret = dss_exist_file_impl(conn, name, result);
-    dss_get_api_volume_error();
-    return (int)ret;
-}
-
-int dss_dexist(const char *name, bool *result)
-{
-    dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("dexist get conn error."));
-
-    ret = dss_exist_dir_impl(conn, name, result);
-    dss_get_api_volume_error();
-    return (int)ret;
-}
-
 int dss_symlink(const char *oldpath, const char *newpath)
 {
     dss_conn_t *conn = NULL;
@@ -443,18 +423,6 @@ int dss_symlink(const char *oldpath, const char *newpath)
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("symlink get conn error."));
 
     return (int)dss_symlink_impl(conn, oldpath, newpath);
-}
-
-int dss_islink(const char *name, bool *result)
-{
-    dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
-    if (ret != CM_SUCCESS) {
-        LOG_RUN_ERR("islink get conn error.");
-        return ret;
-    }
-
-    return (int)dss_islink_impl(conn, name, result);
 }
 
 int dss_readlink(const char *link_path, char *buf, int bufsize)
