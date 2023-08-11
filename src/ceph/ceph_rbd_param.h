@@ -27,6 +27,7 @@
 
 #include "cm_config.h"
 #include "dss_defs.h"
+#include "ceph_interface.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,6 +40,9 @@ typedef struct rbd_config_param_t {
     char image_name[DSS_MAX_NAME_LEN];
     char entry_path[DSS_MAX_NAME_LEN];
     uint16 vg_type;
+    rados_cluster cluster;
+    ceph_client_ctx *rados_handle;
+    image_handle *rbd_handle;
 } rbd_config_param;
 
 typedef enum RBD_CONFIG_VALUE_TYPE {
@@ -57,6 +61,8 @@ status_t dss_load_cephrbd_params(dss_config_t *inst_cfg);
 status_t dss_load_cephrbd_config_file(dss_config_t *inst_cfg);
 
 rbd_config_param *ceph_parse_rbd_configs(const char *name);
+
+void open_global_rbd_handle();
 
 #ifdef __cplusplus
 }

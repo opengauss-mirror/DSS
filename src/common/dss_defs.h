@@ -44,6 +44,7 @@ extern "C" {
 
 #define DSS_FILE_NAME_BUFFER_SIZE (uint32)256
 #define DSS_FILE_PATH_MAX_LENGTH (SIZE_K(1) + 1)
+#define DSS_FKEY_FILENAME "server.key.rand"
 
 /* invalid id */
 #define DSS_INVALID_INT8 ((int8)(-1))
@@ -150,6 +151,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_MAX_SHM_KEY_BITS 8
 
 #define DSS_MAX_NAME_LEN 64
+#define DSS_MAX_VOLUME_PATH_LEN 64
 
 #define DSS_BLOCK_SIZE 512
 #define DSS_ROOT_FT_DISK_SIZE SIZE_K(8)
@@ -237,6 +239,10 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_SEEK_MAXWR 3                       /* Used for seek actual file size for openGauss */
 
 #define DSS_BASE_YEAR 1900
+#define DSS_MIN_IOTHREADS_CFG 1
+#define DSS_MAX_IOTHREADS_CFG 8
+#define DSS_MIN_WORKTHREADS_CFG 16
+#define DSS_MAX_WORKTHREADS_CFG 128
 
 #define DSS_RETURN_IF_ERROR(ret)      \
     do {                              \

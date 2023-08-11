@@ -66,6 +66,8 @@ typedef enum en_dss_log_id {
 #define DSS_SEEK_MAXWR 3                         /* Used for seek actual file size for openGauss */
 #define DSS_MAX_NAME_LEN 64                      /* Consistent with dss_defs.h */
 #define DSS_FILE_PATH_MAX_LENGTH (SIZE_K(1) + 1) /* Consistent with dss_defs.h */
+#define DSS_MAX_VOLUME_PATH_LEN 64               /* Consistent with dss_defs.h */
+
 /* make the dss handle start from this value, to be distinguished from file system handle value */
 #define DSS_HANDLE_BASE 0x20000000
 #define DSS_CONN_NEVER_TIMEOUT (-1)
@@ -97,7 +99,7 @@ typedef struct st_dss_stat {
 #define DSS_LOCAL_MINOR_VER_WEIGHT 1000
 #define DSS_LOCAL_MAJOR_VERSION 0
 #define DSS_LOCAL_MINOR_VERSION 0
-#define DSS_LOCAL_VERSION 3
+#define DSS_LOCAL_VERSION 5
 
 typedef struct st_dss_dirent *dss_dir_item_t;
 typedef struct st_dss_stat *dss_stat_info_t;
@@ -124,14 +126,18 @@ DSS_DECLARE int dss_fread(int handle, void *buf, int size, int *read_size);
 DSS_DECLARE int dss_fcopy(const char *src_path, const char *dest_path);
 DSS_DECLARE int dss_frename(const char *src, const char *dst);
 DSS_DECLARE int dss_ftruncate(int handle, long long length);
-DSS_DECLARE void dss_fsize(const char *fname, long long *fsize);
+DSS_DECLARE int dss_fsize_physical(int handle, long long *fsize);
 DSS_DECLARE void dss_fsize_maxwr(const char *fname, long long *fsize);
 DSS_DECLARE int dss_pwrite(int handle, const void *buf, int size, long long offset);
 DSS_DECLARE int dss_pread(int handle, void *buf, int size, long long offset, int *read_size);
+DSS_DECLARE int dss_get_addr(int handle, long long offset, char *pool_name, char *image_name, char *obj_addr,
+    unsigned int *obj_id, unsigned long int *obj_offset);
 DSS_DECLARE int dss_get_fname(int handle, char *fname, int fname_size);
 // aio
 DSS_DECLARE int dss_aio_prep_pread(void *iocb, int handle, void *buf, size_t count, long long offset);
 DSS_DECLARE int dss_aio_prep_pwrite(void *iocb, int handle, void *buf, size_t count, long long offset);
+DSS_DECLARE int dss_aio_post_pwrite(void *iocb, int handle, size_t count, long long offset);
+
 // link
 DSS_DECLARE int dss_unlink(const char *link);
 DSS_DECLARE int dss_islink(const char *name, bool *result);
@@ -141,9 +147,11 @@ DSS_DECLARE int dss_symlink(const char *oldpath, const char *newpath);
 DSS_DECLARE int dss_check_size(int size);
 DSS_DECLARE int dss_align_size(int size);
 DSS_DECLARE int dss_get_au_size(int handle, long long *au_size);
+DSS_DECLARE int dss_compare_size_equal(const char *vg_name, long long *au_size);
 // log
 DSS_DECLARE void dss_get_error(int *errcode, const char **errmsg);
-DSS_DECLARE void dss_register_log_callback(dss_log_output cb_log_output);
+DSS_DECLARE void dss_register_log_callback(dss_log_output cb_log_output, unsigned int log_level);
+DSS_DECLARE void dss_set_log_level(unsigned int log_level);
 DSS_DECLARE int dss_init_logger(char *log_home, unsigned int log_level, unsigned int log_backup_file_count, unsigned long long log_max_file_size);
 DSS_DECLARE void dss_refresh_logger(char *log_field, unsigned long long *value);
 // connection

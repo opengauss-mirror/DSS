@@ -52,6 +52,8 @@ void dss_set_session_running(dss_instance_t *inst);
 status_t dss_process_command(dss_session_t *session);
 void dss_session_entry(thread_t *thread);
 status_t dss_proc_standby_req(dss_session_t *session);
+status_t dss_process_single_cmd(dss_session_t *session);
+void dss_release_session_res(dss_session_t *session);
 
 #ifdef __cplusplus
 }

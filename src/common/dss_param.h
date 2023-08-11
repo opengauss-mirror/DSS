@@ -28,9 +28,7 @@
 #include "dss_defs.h"
 #include "cm_config.h"
 #include "cs_pipe.h"
-#ifdef ENABLE_GLOBAL_CACHE
 #include "ceph_rbd_param.h"
-#endif
 #include "mes_metadata.h"
 #include "mes.h"
 #include "dss_errno.h"
@@ -71,10 +69,10 @@ typedef struct st_dss_params {
     bool32 elapsed_switch;
     uint32 shm_key;
     uint32 ssl_detect_day;
-#ifdef ENABLE_GLOBAL_CACHE
+    uint32 iothread_count;
+    uint32 workthread_count;
     rbd_config_params_t rbd_config_params;
     char ceph_config[DSS_FILE_NAME_BUFFER_SIZE];
-#endif
 } dss_params_t;
 
 typedef struct st_dss_config {
@@ -82,8 +80,16 @@ typedef struct st_dss_config {
     config_t config;
     dss_params_t params;
 } dss_config_t;
-
 extern dss_config_t *g_inst_cfg;
+
+typedef enum en_dss_instance_status {
+    DSS_STATUS_PREPARE = 0,
+    DSS_STATUS_RECOVERY,
+    DSS_STATUS_SWITCH,
+    DSS_STATUS_OPEN,
+} dss_instance_status_e;
+extern dss_instance_status_e *g_dss_instance_status;
+
 #define DSS_UNIX_DOMAIN_SOCKET_NAME ".dss_unix_d_socket"
 #define DSS_MAX_SSL_PERIOD_DETECTION 180
 #define DSS_MIN_SSL_PERIOD_DETECTION 1
@@ -116,7 +122,7 @@ status_t dss_set_ssl_param(const char *param_name, const char *param_value);
  * @[out]param value--ssl cert or ssl key
  * @* @return CM_SUCCESS - success;otherwise: failed
  */
-status_t inline dss_get_ssl_param(const char *param_name, char *param_value, uint32 size)
+inline status_t dss_get_ssl_param(const char *param_name, char *param_value, uint32 size)
 {
     if (param_name == NULL) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "the ssl param name should not be null.");

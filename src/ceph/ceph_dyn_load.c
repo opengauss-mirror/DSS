@@ -22,7 +22,6 @@
  * -------------------------------------------------------------------------
  */
 
-#ifdef ENABLE_GLOBAL_CACHE
 #include <dlfcn.h>
 #include "ceph_dyn_load.h"
 
@@ -143,13 +142,6 @@ void dyn_rados_ioctx_destroy(rados_ioctx_t ioctx)
     (*func)(ioctx);
 }
 
-status_t dyn_rbd_create2(rados_ioctx_t ioctx, const char *name, uint64_t size, uint64_t features, int *order)
-{
-    status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_create2");
-    DYN_LOAD_FUNC_RTN_ERROR(func);
-    return (*func)(ioctx, name, size, features, order);
-}
-
 status_t dyn_rbd_open(rados_ioctx_t ioctx, const char *name, rbd_image_t *image, const char *snap_name)
 {
     status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_open");
@@ -164,34 +156,25 @@ status_t dyn_rbd_close(rbd_image_t image)
     return (*func)(image);
 }
 
-int32_t dyn_rbd_write(rbd_image_t image, uint64_t ofs, int32_t len, const char *buf)
-{
-    status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_write");
-    DYN_LOAD_FUNC_RTN_ERROR(func);
-    return (*func)(image, ofs, len, buf);
-}
-
-int32_t dyn_rbd_read(rbd_image_t image, uint64_t ofs, int32_t len, char *buf)
-{
-    status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_read");
-    DYN_LOAD_FUNC_RTN_ERROR(func);
-    return (*func)(image, ofs, len, buf);
-}
-
-status_t dyn_rbd_get_size(rbd_image_t image, int64_t *size)
-{
-    status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_get_size");
-    DYN_LOAD_FUNC_RTN_ERROR(func);
-    return (*func)(image, size);
-}
-
 void dyn_rados_conf_set(rados_t cluster, const char *option, const char *value)
 {
-    status_t (*func)() = dss_dlsym(g_rbd_handle, "rados_conf_set");
+    status_t (*func)() = dss_dlsym(g_rados_handle, "rados_conf_set");
     (void)(*func)(cluster, option, value);
+}
+
+void dyn_rbd_get_data_addr(rbd_image_t image, rados_ioctx_t ioctx, uint64_t offset, uint64_t *obj_offset,
+    char *obj_addr, uint32_t *obj_id)
+{
+    status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_get_data_dts_addr");
+    (void)(*func)(image, ioctx, offset, obj_offset, obj_addr, obj_id);
+}
+
+void dyn_rbd_stat(rbd_image_t image, rbd_image_info_t *info, size_t infosize)
+{
+    status_t (*func)() = dss_dlsym(g_rbd_handle, "rbd_stat");
+    (void)(*func)(image, info, infosize);
 }
 
 #ifdef __cplusplus
 }
 #endif
-#endif  // ENABLE_GLOBAL_CACHE

@@ -104,7 +104,7 @@ int32 shm_hashmap_init(shm_hashmap_t *map, uint32 init_bucket_capacity, uint32 i
     addr = cm_get_shm(SHM_TYPE_HASH, id, size, CM_SHM_ATTACH_RW);
     if (addr == NULL) {
         LOG_DEBUG_ERR("db_get_shm failed");
-        return ERR_ALLOC_MEMORY;
+        return CM_ERROR;
     }
     shm_key = cm_shm_key_of(SHM_TYPE_HASH, id);
 

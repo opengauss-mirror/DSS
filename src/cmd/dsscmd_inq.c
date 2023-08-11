@@ -103,58 +103,6 @@ static void print_reg_info(ptlist_t *regs)
     }
 }
 
-status_t inq_lun(void)
-{
-    status_t status;
-    ptlist_t devlist;
-
-    cm_ptlist_init(&devlist);
-    status = dss_inquiry_luns(&devlist, DSS_FALSE);
-    if (status != CM_SUCCESS) {
-        dss_destroy_ptlist(&devlist);
-        return status;
-    }
-    print_dev_info(&devlist);
-    dss_destroy_ptlist(&devlist);
-
-    return CM_SUCCESS;
-}
-
-status_t inq_regs(void)
-{
-    status_t status;
-    ptlist_t reg_info;
-    dss_env_t *dss_env = dss_get_env();
-
-    cm_ptlist_init(&reg_info);
-    status = dss_iof_inql_regs(dss_env->dss_vg_info, &reg_info);
-    if (status != CM_SUCCESS) {
-        dss_destroy_ptlist(&reg_info);
-        return status;
-    }
-
-    print_reg_info(&reg_info);
-    dss_destroy_ptlist(&reg_info);
-
-    return CM_SUCCESS;
-}
-
-bool32 is_register(iof_reg_in_t *reg, int64 host_id, int64 *iofence_key)
-{
-    for (int32 i = 0; i < reg->key_count; i++) {
-        if (reg->reg_keys[i] < 1 || reg->reg_keys[i] > CM_MAX_INSTANCES) {
-            continue;
-        }
-        iofence_key[reg->reg_keys[i] - 1]++;
-    }
-    for (int32 i = 0; i < reg->key_count; i++) {
-        if (reg->reg_keys[i] == host_id + 1) {
-            return DSS_TRUE;
-        }
-    }
-    return DSS_FALSE;
-}
-
 // get the non-entry disk information of vg.
 static status_t dss_get_vg_non_entry_info(dss_config_t *inst_cfg, dss_vg_info_item_t *vg_item, bool32 is_lock)
 {
@@ -192,7 +140,7 @@ static status_t dss_get_vg_non_entry_info(dss_config_t *inst_cfg, dss_vg_info_it
     return CM_SUCCESS;
 }
 
-static status_t dss_init_vg_info(dss_vg_info_t *vg_info)
+static status_t dss_alloc_volume_group(dss_vg_info_t *vg_info)
 {
     uint32 len = DSS_MAX_STACK_BUF_SIZE + DSS_MAX_STACK_BUF_SIZE + DSS_MAX_STACK_BUF_SIZE + sizeof(dss_ctrl_t);
     char *buf = (char *)cm_malloc_align(DSS_ALIGN_SIZE, vg_info->group_num * len);
@@ -214,6 +162,12 @@ static status_t dss_init_vg_info(dss_vg_info_t *vg_info)
     return CM_SUCCESS;
 }
 
+static void dss_free_volume_group(dss_vg_info_t *vg_info)
+{
+    // This memory is applied for together, only hthe header needs to be released.
+    DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+}
+
 // get the entry disk information of vg from config.
 static status_t dss_get_vg_entry_info(const char *home, dss_config_t *inst_cfg, dss_vg_info_t *vg_info)
 {
@@ -223,7 +177,124 @@ static status_t dss_get_vg_entry_info(const char *home, dss_config_t *inst_cfg, 
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load parameters."));
     status = dss_load_vg_conf_inner(vg_info, inst_cfg);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load vg conf inner."));
-    return dss_init_vg_info(vg_info);
+    return CM_SUCCESS;
+}
+
+static status_t dss_inq_alloc_vg_info(const char *home, dss_config_t *inst_cfg, dss_vg_info_t **vg_info)
+{
+    *vg_info = cm_malloc(sizeof(dss_vg_info_t));
+    if (*vg_info == NULL) {
+        DSS_PRINT_ERROR("Failed to malloc vg_info when alloc vg info.\n");
+        return CM_ERROR;
+    }
+    errno_t errcode = memset_s(*vg_info, sizeof(dss_vg_info_t), 0, sizeof(dss_vg_info_t));
+    if (errcode != EOK) {
+        DSS_FREE_POINT(*vg_info);
+        DSS_PRINT_ERROR("Failed to memset vg_info when alloc vg info.\n");
+        return CM_ERROR;
+    }
+
+    status_t status = dss_get_vg_entry_info(home, inst_cfg, *vg_info);
+    if (status != CM_SUCCESS) {
+        DSS_FREE_POINT(*vg_info);
+        DSS_PRINT_ERROR("Failed to get vg entry info when alloc vg info.\n");
+        return CM_ERROR;
+    }
+
+    status = dss_alloc_volume_group(*vg_info);
+    if (status != CM_SUCCESS) {
+        DSS_FREE_POINT(*vg_info);
+        DSS_PRINT_ERROR("Failed to alloc volume group when alloc vg info.\n");
+        return CM_ERROR;
+    }
+
+    return CM_SUCCESS;
+}
+
+static void dss_inq_free_vg_info(dss_vg_info_t *vg_info)
+{
+    dss_free_volume_group(vg_info);
+    DSS_FREE_POINT(vg_info);
+}
+
+status_t dss_inq_lun(const char *home)
+{
+#ifndef WIN32
+    status_t status;
+    dss_config_t inst_cfg;
+    dss_vg_info_t *vg_info = NULL;
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
+
+    for (uint32 i = 0; i < vg_info->group_num; i++) {
+        status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], CM_TRUE);
+        if (status != CM_SUCCESS) {
+            dss_inq_free_vg_info(vg_info);
+            DSS_PRINT_ERROR("Failed to get vg non entry info when inq lun.\n");
+            return status;
+        }
+    }
+    ptlist_t devlist;
+    cm_ptlist_init(&devlist);
+    status = dss_inquiry_luns(vg_info, &devlist);
+    if (status != CM_SUCCESS) {
+        dss_destroy_ptlist(&devlist);
+        dss_inq_free_vg_info(vg_info);
+        return status;
+    }
+    print_dev_info(&devlist);
+    dss_destroy_ptlist(&devlist);
+    dss_inq_free_vg_info(vg_info);
+#endif
+    return CM_SUCCESS;
+}
+
+status_t dss_inq_reg(const char *home)
+{
+#ifndef WIN32
+    status_t status;
+    dss_config_t inst_cfg;
+    dss_vg_info_t *vg_info = NULL;
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
+
+    for (uint32 i = 0; i < vg_info->group_num; i++) {
+        status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], CM_TRUE);
+        if (status != CM_SUCCESS) {
+            dss_inq_free_vg_info(vg_info);
+            DSS_PRINT_ERROR("Failed to get vg non entry info when inq reg.\n");
+            return status;
+        }
+    }
+
+    ptlist_t reg_info;
+    cm_ptlist_init(&reg_info);
+    status = dss_iof_inql_regs(vg_info, &reg_info);
+    if (status != CM_SUCCESS) {
+        dss_destroy_ptlist(&reg_info);
+        dss_inq_free_vg_info(vg_info);
+        return status;
+    }
+
+    print_reg_info(&reg_info);
+    dss_destroy_ptlist(&reg_info);
+    dss_inq_free_vg_info(vg_info);
+#endif
+    return CM_SUCCESS;
+}
+
+bool32 is_register(iof_reg_in_t *reg, int64 host_id, int64 *iofence_key)
+{
+    for (int32 i = 0; i < reg->key_count; i++) {
+        if (reg->reg_keys[i] < 1 || reg->reg_keys[i] > CM_MAX_INSTANCES) {
+            continue;
+        }
+        iofence_key[reg->reg_keys[i] - 1]++;
+    }
+    for (int32 i = 0; i < reg->key_count; i++) {
+        if (reg->reg_keys[i] == host_id + 1) {
+            return DSS_TRUE;
+        }
+    }
+    return DSS_FALSE;
 }
 
 status_t dss_check_volume_register(char *entry_path, int64 host_id, bool32 *is_reg, int64 *iofence_key)
@@ -286,34 +357,35 @@ static void dss_printf_iofence_key(int64 *iofence_key)
  * 3. get vg non entry info
  * 4. register vg non entry disk
  */
-status_t dss_reghl_core(const char *home, dss_vg_info_t *vg_info)
+status_t dss_reghl_core(const char *home)
 {
 #ifndef WIN32
+    status_t status;
     dss_config_t inst_cfg;
-    status_t status = dss_get_vg_entry_info(home, &inst_cfg, vg_info);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg entry info when reghl, errcode is %d.\n", status));
+    dss_vg_info_t *vg_info = NULL;
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
 
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         status = dss_iof_register_single(inst_cfg.params.inst_id, vg_info->volume_group[i].entry_path);
         if (status != CM_SUCCESS) {
-            DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+            dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to register vg entry disk when reghl, errcode is %d.\n", status);
             return status;
         }
         status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], CM_TRUE);
         if (status != CM_SUCCESS) {
-            DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+            dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to get vg non entry info when reghl, errcode is %d.\n", status);
             return status;
         }
         status = dss_reghl_inner(&vg_info->volume_group[i], inst_cfg.params.inst_id);
         if (status != CM_SUCCESS) {
-            DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+            dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to reghl, errcode is %d.\n", status);
             return status;
         }
     }
-    DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+    dss_inq_free_vg_info(vg_info);
 #endif
     return CM_SUCCESS;
 }
@@ -336,20 +408,21 @@ static status_t dss_unreghl_inner(dss_vg_info_item_t *item, int64 host_id)
  * 4. unregister vg non entry disk
  * 5. unregister vg entry disk
  */
-status_t dss_unreghl_core(const char *home, dss_vg_info_t *vg_info, bool32 is_lock)
+status_t dss_unreghl_core(const char *home, bool32 is_lock)
 {
 #ifndef WIN32
     bool32 is_reg;
+    status_t status;
     dss_config_t inst_cfg;
+    dss_vg_info_t *vg_info = NULL;
     int64 iofence_key[DSS_MAX_INSTANCES] = {0};
-    status_t status = dss_get_vg_entry_info(home, &inst_cfg, vg_info);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg entry info, errcode is %d.\n", status));
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
 
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         status = dss_check_volume_register(
             vg_info->volume_group[i].entry_path, inst_cfg.params.inst_id, &is_reg, iofence_key);
         if (status != CM_SUCCESS) {
-            DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+            dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to check volume register when unreghl, errcode is %d.\n", status);
             return CM_ERROR;
         }
@@ -358,18 +431,18 @@ status_t dss_unreghl_core(const char *home, dss_vg_info_t *vg_info, bool32 is_lo
         }
         status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], is_lock);
         if (status != CM_SUCCESS) {
-            DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+            dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to get vg entry info when unreghl, errcode is %d.\n", status);
             return status;
         }
         status = dss_unreghl_inner(&vg_info->volume_group[i], inst_cfg.params.inst_id);
         if (status != CM_SUCCESS) {
-            DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+            dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to unreghl, errcode is %d.\n", status);
             return status;
         }
     }
-    DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+    dss_inq_free_vg_info(vg_info);
 #endif
     return CM_SUCCESS;
 }
@@ -403,20 +476,21 @@ static status_t dss_inq_reg_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg
  * 3. get vg non entry info
  * 4. check vg non entry disk is register. If all are registered, return 2, else return 1.
  */
-status_t dss_inq_reg_core(const char *home, int64 host_id, dss_vg_info_t *vg_info)
+status_t dss_inq_reg_core(const char *home, int64 host_id)
 {
 #ifndef WIN32
     bool32 is_reg;
     uint32 count = 0;
+    status_t status;
     dss_config_t inst_cfg;
+    dss_vg_info_t *vg_info = NULL;
     int64 iofence_key[DSS_MAX_INSTANCES] = {0};
-    status_t status = dss_get_vg_entry_info(home, &inst_cfg, vg_info);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg entry info when inq reg, errcode is %d.\n", status));
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
 
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         status = dss_check_volume_register(vg_info->volume_group[i].entry_path, host_id, &is_reg, iofence_key);
         if (status != CM_SUCCESS) {
-            DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+            dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to check vg entry info when inq reg, errcode is %d.\n", status);
             return CM_ERROR;
         }
@@ -426,18 +500,18 @@ status_t dss_inq_reg_core(const char *home, int64 host_id, dss_vg_info_t *vg_inf
     }
     if (count == vg_info->group_num) {
         dss_printf_iofence_key(iofence_key);
-        DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+        dss_inq_free_vg_info(vg_info);
         DSS_PRINT_INF("The node %lld is not registered, inq_result = 0.\n", host_id);
         return CM_SUCCESS;
     }
     if (count != 0 && count != vg_info->group_num) {
         dss_printf_iofence_key(iofence_key);
-        DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+        dss_inq_free_vg_info(vg_info);
         DSS_PRINT_INF("The node %lld is registered partially, inq_result = 1.\n", host_id);
         return CM_TIMEDOUT;
     }
     status = dss_inq_reg_inner(vg_info, &inst_cfg, host_id, iofence_key);
-    DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
+    dss_inq_free_vg_info(vg_info);
     if (status == CM_ERROR) {
         DSS_PRINT_ERROR("Failed to check vg entry info when inq reg, errcode is %d.\n", status);
         return CM_ERROR;
@@ -481,33 +555,17 @@ status_t dss_clean_vg_lock(const char *home, int64 inst_id)
 {
 #ifndef WIN32
     dss_config_t inst_cfg;
-    dss_vg_info_t *vg_info = cm_malloc(sizeof(dss_vg_info_t));
-    if (vg_info == NULL) {
-        DSS_PRINT_ERROR("Failed to malloc vg_info when clean.\n");
-        return CM_ERROR;
-    }
-    errno_t errcode = memset_s(vg_info, sizeof(vg_info), 0, sizeof(vg_info));
-    if (errcode != EOK) {
-        DSS_FREE_POINT(vg_info);
-        DSS_PRINT_ERROR("Failed to memset vg_info when clean.\n");
-        return CM_ERROR;
-    }
-    status_t status = dss_get_vg_entry_info(home, &inst_cfg, vg_info);
-    if (status != CM_SUCCESS) {
-        DSS_FREE_POINT(vg_info);
-        DSS_PRINT_ERROR("Failed to get vg entry info when clean.\n");
-        return CM_ERROR;
-    }
+    dss_vg_info_t *vg_info = NULL;
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
+
     int32 dss_mode = dss_storage_mode(&inst_cfg);
     if (dss_mode == DSS_MODE_DISK) {
-        DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
-        DSS_FREE_POINT(vg_info);
+        dss_inq_free_vg_info(vg_info);
         return CM_SUCCESS;
     }
 
-    status = dss_clean_inner(vg_info, &inst_cfg, inst_id);
-    DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
-    DSS_FREE_POINT(vg_info);
+    status_t status = dss_clean_inner(vg_info, &inst_cfg, inst_id);
+    dss_inq_free_vg_info(vg_info);
     return status;
 #endif
     return CM_SUCCESS;
@@ -522,13 +580,12 @@ static status_t dss_kickh_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, 
             DSS_PRINT_ERROR("Failed to get vg non entry info when kickh.\n");
             return CM_ERROR;
         }
-
-        status = dss_iof_kick_all(vg_info, inst_cfg, inst_cfg->params.inst_id, host_id);
-        if (status != CM_SUCCESS) {
-            DSS_PRINT_ERROR(
-                "Failed to kick host, curr hostid %lld, kick hostid %lld.\n", inst_cfg->params.inst_id, host_id);
-            return CM_ERROR;
-        }
+    }
+    status = dss_iof_kick_all(vg_info, inst_cfg, inst_cfg->params.inst_id, host_id);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR(
+            "Failed to kick host, curr hostid %lld, kick hostid %lld.\n", inst_cfg->params.inst_id, host_id);
+        return CM_ERROR;
     }
     return CM_SUCCESS;
 }
@@ -542,43 +599,25 @@ status_t dss_kickh_core(const char *home, int64 host_id)
 {
 #ifndef WIN32
     dss_config_t inst_cfg;
-    dss_vg_info_t *vg_info = cm_malloc(sizeof(dss_vg_info_t));
-    if (vg_info == NULL) {
-        DSS_PRINT_ERROR("Failed to malloc vg_info when kickh.\n");
-        return CM_ERROR;
-    }
-    errno_t errcode = memset_s(vg_info, sizeof(vg_info), 0, sizeof(vg_info));
-    if (errcode != EOK) {
-        DSS_FREE_POINT(vg_info);
-        DSS_PRINT_ERROR("Failed to memset vg_info when kickh.\n");
-        return CM_ERROR;
-    }
-    status_t status = dss_get_vg_entry_info(home, &inst_cfg, vg_info);
-    if (status != CM_SUCCESS) {
-        DSS_FREE_POINT(vg_info);
-        DSS_PRINT_ERROR("Failed to get vg entry info when kickh.\n");
-        return CM_ERROR;
-    }
+    dss_vg_info_t *vg_info = NULL;
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
 
-    status = dss_kickh_inner(vg_info, &inst_cfg, host_id, CM_FALSE);
+    status_t status = dss_kickh_inner(vg_info, &inst_cfg, host_id, CM_FALSE);
     if (status != CM_SUCCESS) {
-        DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
-        DSS_FREE_POINT(vg_info);
+        dss_inq_free_vg_info(vg_info);
         DSS_PRINT_ERROR("Failed to kickh without lock.\n");
         return CM_ERROR;
     }
 
     status = dss_clean_vg_lock(home, host_id);
     if (status != CM_SUCCESS) {
-        DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
-        DSS_FREE_POINT(vg_info);
+        dss_inq_free_vg_info(vg_info);
         DSS_PRINT_ERROR("Failed to clean when kickh.\n");
         return CM_ERROR;
     }
 
     status = dss_kickh_inner(vg_info, &inst_cfg, host_id, CM_TRUE);
-    DSS_FREE_POINT(vg_info->volume_group[0].buffer_cache);
-    DSS_FREE_POINT(vg_info);
+    dss_inq_free_vg_info(vg_info);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to kickh with lock.\n");
     }

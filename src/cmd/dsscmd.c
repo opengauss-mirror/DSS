@@ -36,6 +36,7 @@
 #include "cm_encrypt.h"
 #include "cm_utils.h"
 #include "cm_signal.h"
+#include "cm_sec_file.h"
 
 #include "dss_errno.h"
 #include "dss_defs.h"
@@ -83,19 +84,19 @@ config_item_t g_dss_admin_parameters[] = {
     /* log */
     { "LOG_HOME",                  CM_TRUE, CM_TRUE,  "",      NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL, 0,
         EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_BACKUP_FILE_COUNT",    CM_TRUE, CM_FALSE, "10",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL, 1,
+    { "_LOG_BACKUP_FILE_COUNT",    CM_TRUE, CM_FALSE, "20",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL, 1,
         EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_MAX_FILE_SIZE",        CM_TRUE, CM_FALSE, "10M",   NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL, 2,
+    { "_LOG_MAX_FILE_SIZE",        CM_TRUE, CM_FALSE, "256M",  NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL, 2,
         EFFECT_REBOOT, CFG_INS, NULL, NULL },
     { "_LOG_FILE_PERMISSIONS",     CM_TRUE, CM_FALSE, "600",   NULL, NULL, "-", "[600-777]", "GS_TYPE_INTEGER", NULL, 3,
         EFFECT_REBOOT, CFG_INS, NULL, NULL },
     { "_LOG_PATH_PERMISSIONS",     CM_TRUE, CM_FALSE, "700",   NULL, NULL, "-", "[700-777]", "GS_TYPE_INTEGER", NULL, 4,
         EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_LEVEL",                CM_TRUE, CM_FALSE, "7",     NULL, NULL, "-", "[0,4087]",  "GS_TYPE_INTEGER", NULL, 5,
+    { "_LOG_LEVEL",                CM_TRUE, CM_FALSE, "519",     NULL, NULL, "-", "[0,4087]",  "GS_TYPE_INTEGER", NULL, 5,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_AUDIT_BACKUP_FILE_COUNT",  CM_TRUE, CM_FALSE, "10",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL, 6,
+    { "_AUDIT_BACKUP_FILE_COUNT",  CM_TRUE, CM_FALSE, "20",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL, 6,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_AUDIT_MAX_FILE_SIZE",      CM_TRUE, CM_FALSE, "10M",   NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL, 7,
+    { "_AUDIT_MAX_FILE_SIZE",      CM_TRUE, CM_FALSE, "256M",  NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL, 7,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "LSNR_PATH",                 CM_TRUE, CM_FALSE, "/tmp/", NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL, 8,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
@@ -376,11 +377,17 @@ static status_t cmd_check_inq_type(const char *inq_type)
 
 static status_t cmd_check_disk_id(const char *id_str)
 {
-    for (uint32 i = 0; i < strlen(id_str); i++) {
-        if (!isdigit((int)id_str[i])) {
-            DSS_PRINT_ERROR("The name's letter of disk id should be digit.\n");
-            return CM_ERROR;
-        }
+    uint64 id = 0;
+    status_t status = cm_str2uint64(id_str, &id);
+    if (status == CM_ERROR) {
+        DSS_PRINT_ERROR("id_str:%s is not a valid uint64\n", id_str);
+        return CM_ERROR;
+    }
+    dss_block_id_t *block_id = (dss_block_id_t *)&id;
+    printf("id = %llu: \n", id);
+    if (block_id->volume >= DSS_MAX_VOLUMES) {
+        DSS_PRINT_ERROR("block_id is invalid, volume:%u.\n", (uint32)block_id->volume);
+        return CM_ERROR;
     }
     return CM_SUCCESS;
 }
@@ -678,7 +685,7 @@ static status_t cmd_parse_args(int argc, char **argv, dss_args_set_t *args_set)
 
 static dss_args_t cmd_cv_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
-    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
     {'s', "au_size", CM_FALSE, CM_TRUE, cmd_check_au_size, NULL, NULL, 0, NULL, NULL, 0},
     {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
         NULL, NULL, 0},
@@ -832,7 +839,7 @@ static status_t dss_load_volumes(vg_vlm_space_info_t *volume_space, dss_volume_d
             continue;
         }
 
-        if (strcpy_s(volume_space->volume_space_info[vol_id].volume_name, DSS_MAX_NAME_LEN, defs[vol_id].name) != EOK) {
+        if (strcpy_s(volume_space->volume_space_info[vol_id].volume_name, DSS_MAX_VOLUME_PATH_LEN, defs[vol_id].name) != EOK) {
             return CM_ERROR;
         }
 
@@ -1021,7 +1028,7 @@ static status_t lsvg_info(dss_conn_t *connection, const char *measure, bool32 de
         LOG_DEBUG_ERR("Malloc failed.\n");
         return CM_ERROR;
     }
-    memset_s(allvg_vlm_space_info, sizeof(dss_allvg_vlm_space_t), 0, sizeof(dss_allvg_vlm_space_t));
+    (void)memset_s(allvg_vlm_space_info, sizeof(dss_allvg_vlm_space_t), 0, sizeof(dss_allvg_vlm_space_t));
     status = dss_load_vginfo_sync(connection, allvg_vlm_space_info);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load vg information.\n");
@@ -1159,7 +1166,7 @@ static status_t dss_load_local_server_config(
 
 static dss_args_t cmd_adv_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
-    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -1364,16 +1371,13 @@ static status_t ls_proc(void)
         dss_disconnect_ex(&connection);
         return CM_ERROR;
     }
-#ifndef OPENGAUSS
-    (void)printf("%-5s%-20s%-14s %-64s\n", "type", "time", "size", "name");
-#else
     (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
-#endif
     gft_node_t *node;
     char time[512];
-    while ((node = (dss_dir_item_handle)dss_read_dir_impl(&connection, dir, CM_TRUE)) != NULL) {
+    while ((node = dss_read_dir_impl(&connection, dir, CM_TRUE)) != NULL) {
         if (cm_time2str(node->create_time, "YYYY-MM-DD HH24:mi:ss", time, sizeof(time)) != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to get create time of node %s.\n", node->name);
+            (void)dss_close_dir_impl(&connection, dir);
             dss_disconnect_ex(&connection);
             return CM_ERROR;
         }
@@ -1382,15 +1386,11 @@ static status_t ls_proc(void)
             size = dss_convert_size(size, measure);
         }
         char type = node->type == GFT_PATH ? 'd' : node->type == GFT_FILE ? '-' : 'l';
-#ifndef OPENGAUSS
-        (void)printf("%-5c%-20s%-14.05f %-64s\n", type, time, size, node->name);
-#else
         double written_size = (double)node->written_size;
         if (node->written_size != 0) {
             written_size = dss_convert_size(written_size, measure);
         }
         (void)printf("%-5c%-20s%-14.05f %-14.05f %-64s\n", type, time, size, written_size, node->name);
-#endif
     }
 
     (void)dss_close_dir_impl(&connection, dir);
@@ -1485,7 +1485,7 @@ static status_t rm_proc(void)
 
 static dss_args_t cmd_rmv_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
-    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -1569,6 +1569,8 @@ static status_t rmdir_proc(void)
 
 static dss_args_t cmd_inq_args[] = {
     {'t', "inq_type", CM_TRUE, CM_TRUE, cmd_check_inq_type, NULL, NULL, 0, NULL, NULL, 0},
+    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
 };
 static dss_args_set_t cmd_inq_args_set = {
     cmd_inq_args,
@@ -1578,28 +1580,25 @@ static dss_args_set_t cmd_inq_args_set = {
 
 static void inq_help(char *prog_name)
 {
-    (void)printf("\nUsage:%s inq <-t inq_type>\n", prog_name);
+    (void)printf("\nUsage:%s inq <-t inq_type> [-D DSS_HOME]\n", prog_name);
     (void)printf("[raid command] inquiry LUN information or reservations\n");
     (void)printf("-t/--type <inq_type>, <required>, the type need to inquiry, values [lun|reg]"
                  "lun :inquiry LUN information, reg:inquiry reservations\n");
+    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
 }
 
 static status_t inq_proc(void)
 {
-    status_t status = dss_init(DSS_OPEN_FILES_NUM, NULL);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to initialize, errcode is %d.\n", status);
-        return status;
-    }
-
+    status_t status;
+    char *home = cmd_inq_args[DSS_ARG_IDX_1].input_args;
     if (cm_strcmpi(cmd_inq_args[DSS_ARG_IDX_0].input_args, "lun") == 0) {
-        status = inq_lun();
+        status = dss_inq_lun(home);
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to inquire lun info, status is %d.\n", status);
             return status;
         }
     } else if (cm_strcmpi(cmd_inq_args[DSS_ARG_IDX_0].input_args, "reg") == 0) {
-        status = inq_regs();
+        status = dss_inq_reg(home);
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to inquire reg info, status is %d.\n", status);
             return status;
@@ -1633,26 +1632,13 @@ static void inq_reg_help(char *prog_name)
 static status_t inq_reg_proc(void)
 {
     int64 host_id = atoll(cmd_inq_req_args[DSS_ARG_IDX_0].input_args);
-    char *home = cmd_inq_req_args[DSS_ARG_IDX_1].input_args != NULL ? cmd_inq_req_args[DSS_ARG_IDX_1].input_args : NULL;
-
-    dss_vg_info_t *vg_info = cm_malloc(sizeof(dss_vg_info_t));
-    if (vg_info == NULL) {
-        DSS_PRINT_ERROR("Failed to malloc vg_info when inq reg.\n");
-        return CM_ERROR;
-    }
-    errno_t errcode = memset_s(vg_info, sizeof(vg_info), 0, sizeof(vg_info));
-    if (errcode != EOK) {
-        DSS_FREE_POINT(vg_info);
-        DSS_PRINT_ERROR("Failed to memset vg_info when inq reg.\n");
-        return CM_ERROR;
-    }
-    status_t status = dss_inq_reg_core(home, host_id, vg_info);
+    char *home = cmd_inq_req_args[DSS_ARG_IDX_1].input_args;
+    status_t status = dss_inq_reg_core(home, host_id);
     if (status == CM_ERROR) {
         DSS_PRINT_ERROR("Failed to inq reg host %lld.\n", host_id);
     } else {
         DSS_PRINT_INF("Succeed to inq reg host %lld.\n", host_id);
     }
-    DSS_FREE_POINT(vg_info);
     return status;
 }
 
@@ -1710,7 +1696,7 @@ static void kickh_help(char *prog_name)
 static status_t kickh_proc(void)
 {
     int64 kick_hostid = atoll(cmd_kickh_args[DSS_ARG_IDX_0].input_args);
-    char *home = cmd_kickh_args[DSS_ARG_IDX_1].input_args != NULL ? cmd_kickh_args[DSS_ARG_IDX_1].input_args : NULL;
+    char *home = cmd_kickh_args[DSS_ARG_IDX_1].input_args;
 
     status_t status = dss_kickh_core(home, kick_hostid);
     if (status != CM_SUCCESS) {
@@ -1740,26 +1726,13 @@ static void reghl_help(char *prog_name)
 
 static status_t reghl_proc(void)
 {
-    char *home = cmd_reghl_args[DSS_ARG_IDX_0].input_args != NULL ? cmd_reghl_args[DSS_ARG_IDX_0].input_args : NULL;
-
-    dss_vg_info_t *vg_info = cm_malloc(sizeof(dss_vg_info_t));
-    if (vg_info == NULL) {
-        DSS_PRINT_ERROR("Failed to malloc vg_info when register.\n");
-        return CM_ERROR;
-    }
-    errno_t errcode = memset_s(vg_info, sizeof(vg_info), 0, sizeof(vg_info));
-    if (errcode != EOK) {
-        DSS_FREE_POINT(vg_info);
-        DSS_PRINT_ERROR("Failed to memset vg_info when register.\n");
-        return CM_ERROR;
-    }
-    status_t status = dss_reghl_core(home, vg_info);
+    char *home = cmd_reghl_args[DSS_ARG_IDX_0].input_args;
+    status_t status = dss_reghl_core(home);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to register.\n");
     } else {
         DSS_PRINT_INF("Succeed to register.\n");
     }
-    DSS_FREE_POINT(vg_info);
     return status;
 }
 
@@ -1794,25 +1767,13 @@ static status_t unreghl_proc(void)
         }
     }
 
-    char *home = cmd_unreghl_args[DSS_ARG_IDX_1].input_args != NULL ? cmd_unreghl_args[DSS_ARG_IDX_1].input_args : NULL;
-    dss_vg_info_t *vg_info = cm_malloc(sizeof(dss_vg_info_t));
-    if (vg_info == NULL) {
-        DSS_PRINT_ERROR("Failed to malloc vg_info when unregister.\n");
-        return CM_ERROR;
-    }
-    errno_t errcode = memset_s(vg_info, sizeof(vg_info), 0, sizeof(vg_info));
-    if (errcode != EOK) {
-        DSS_FREE_POINT(vg_info);
-        DSS_PRINT_ERROR("Failed to memset vg_info when unregister.\n");
-        return CM_ERROR;
-    }
-    status = dss_unreghl_core(home, vg_info, (type == 0) ? CM_FALSE : CM_TRUE);
+    char *home = cmd_unreghl_args[DSS_ARG_IDX_1].input_args;
+    status = dss_unreghl_core(home, (type == 0) ? CM_FALSE : CM_TRUE);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to unregister.\n");
     } else {
         DSS_PRINT_INF("Succeed to unregister.\n");
     }
-    DSS_FREE_POINT(vg_info);
     return status;
 }
 
@@ -2125,7 +2086,7 @@ static status_t examine_proc(void)
 }
 
 static dss_args_t cmd_dev_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
     {'o', "offset", CM_TRUE, CM_TRUE, cmd_check_offset, NULL, NULL, 0, NULL, NULL, 0},
     {'f', "format", CM_TRUE, CM_TRUE, cmd_check_format, NULL, NULL, 0, NULL, NULL, 0},
 };
@@ -2137,7 +2098,7 @@ static dss_args_set_t cmd_dev_args_set = {
 
 static void dev_help(char *prog_name)
 {
-    (void)printf("\nUsage:%s dev <-p path> <-o offset> <-f format> [-D DSS_HOME]\n", prog_name);
+    (void)printf("\nUsage:%s dev <-p path> <-o offset> <-f format> \n", prog_name);
     (void)printf("[client command] display dev file content\n");
     (void)printf("-p/--path <path>, <required>, the path of the host need to display\n");
     (void)printf("-o/--offset <offset>, <required>, the offset of the dev need to display\n");
@@ -2165,6 +2126,7 @@ static status_t dev_proc(void)
     int64 offset = 0;
     status = cm_str2bigint(cmd_dev_args[DSS_ARG_IDX_1].input_args, &offset);
     if (status != CM_SUCCESS) {
+        dss_close_volume(&volume);
         DSS_PRINT_ERROR("The value of offset is invalid");
         return CM_ERROR;
     }
@@ -2172,6 +2134,7 @@ static status_t dev_proc(void)
     (void)printf("filename is %s, offset is %lld.\n", path, offset);
     status = dss_read_volume(&volume, offset, o_buf, (int32)DSS_CMD_PRINT_BLOCK_SIZE);
     if (status != CM_SUCCESS) {
+        dss_close_volume(&volume);
         DSS_PRINT_ERROR("Failed to read file %s.\n", path);
         return status;
     }
@@ -2624,6 +2587,30 @@ static void encrypt_help(char *prog_name)
     (void)printf("[client command] password encrypt\n");
 }
 
+static status_t dss_save_random_file(const uchar *value, int32 value_len)
+{
+    char file_name[CM_FILE_NAME_BUFFER_SIZE];
+    char dir_name[CM_FILE_NAME_BUFFER_SIZE];
+    int32 handle;
+    PRTS_RETURN_IFERR(snprintf_s(
+        dir_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/dss_protect", g_inst_cfg->home));
+    PRTS_RETURN_IFERR(snprintf_s(file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/dss_protect/%s",
+        g_inst_cfg->home, DSS_FKEY_FILENAME));
+    if (!cm_dir_exist(dir_name)) {
+        DSS_RETURN_IF_ERROR(cm_create_dir(dir_name));
+    }
+    if (access(file_name, R_OK | F_OK) == 0) {
+        (void)chmod(file_name, S_IRUSR | S_IWUSR);
+        DSS_RETURN_IF_ERROR(cm_overwrite_file(file_name));
+        DSS_RETURN_IF_ERROR(cm_remove_file(file_name));
+    }
+    DSS_RETURN_IF_ERROR(
+        cm_open_file_ex(file_name, O_SYNC | O_CREAT | O_RDWR | O_TRUNC | O_BINARY, S_IRUSR | S_IWUSR, &handle));
+    status_t ret = cm_write_file(handle, value, value_len);
+    cm_close_file(handle);
+    return ret;
+}
+
 static status_t encrypt_proc(void)
 {
     status_t status;
@@ -2642,6 +2629,12 @@ static status_t encrypt_proc(void)
         return CM_ERROR;
     }
     (void)(memset_s(plain, CM_PASSWD_MAX_LEN + 1, 0, CM_PASSWD_MAX_LEN + 1));
+    status = dss_save_random_file(cipher.rand, RANDOM_LEN + 1);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to save random component");
+        return CM_ERROR;
+    }
+    (void)(memset_s(cipher.rand, RANDOM_LEN + 1, 0, RANDOM_LEN + 1));
     char buf[CM_MAX_SSL_CIPHER_LEN] = {0};
     uint32_t buf_len = CM_MAX_SSL_CIPHER_LEN;
     status = cm_base64_encode((uchar *)&cipher, (uint32)sizeof(cipher_t), buf, &buf_len);
@@ -2827,7 +2820,7 @@ static status_t stopdss_proc(void)
 static const char command_injection_check_list[] = {
     '|', ';', '&', '$', '<', '>', '`', '\\', '\'', '\"', '{', '}', '(', ')', '[', ']', '~', '*', '?', ' ', '!', '\n'};
 
-static status_t cmd_check_command_injection(const char *param)
+static status_t dss_check_command_injection(const char *param)
 {
     if (param == NULL) {
         DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, "[null]", "param cannot be a null string.");
@@ -2846,6 +2839,36 @@ static status_t cmd_check_command_injection(const char *param)
     return CM_SUCCESS;
 }
 
+static status_t cmd_check_user_or_group_name(const char *param)
+{
+    status_t status = dss_check_command_injection(param);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to check name %s.\n", param);
+        return CM_ERROR;
+    }
+    status = dss_check_name(param);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to check name %s.\n", param);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t cmd_check_scandisk_path(const char *param)
+{
+    status_t status = dss_check_command_injection(param);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to check path %s.\n", param);
+        return CM_ERROR;
+    }
+    status = dss_check_volume_path(param);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to check name %s.\n", param);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
 static status_t cmd_check_file_type(const char *type)
 {
     if (strcmp(type, "block") == 0) {
@@ -2857,9 +2880,9 @@ static status_t cmd_check_file_type(const char *type)
 
 static dss_args_t cmd_scandisk_args[] = {
     {'t', "type", CM_TRUE, CM_TRUE, cmd_check_file_type, NULL, NULL, 0, NULL, NULL, 0},
-    {'p', "path", CM_TRUE, CM_TRUE, cmd_check_command_injection, NULL, NULL, 0, NULL, NULL, 0},
-    {'u', "user_name", CM_TRUE, CM_TRUE, cmd_check_command_injection, NULL, NULL, 0, NULL, NULL, 0},
-    {'g', "group_name", CM_TRUE, CM_TRUE, cmd_check_command_injection, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, cmd_check_scandisk_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'u', "user_name", CM_TRUE, CM_TRUE, cmd_check_user_or_group_name, NULL, NULL, 0, NULL, NULL, 0},
+    {'g', "group_name", CM_TRUE, CM_TRUE, cmd_check_user_or_group_name, NULL, NULL, 0, NULL, NULL, 0},
 };
 
 static dss_args_set_t cmd_scandisk_args_set = {
@@ -2890,8 +2913,8 @@ static status_t scandisk_proc(void)
 
     char cmd[DSS_PARAM_BUFFER_SIZE] = {0};
     int ret = snprintf_s(cmd, DSS_PARAM_BUFFER_SIZE, DSS_PARAM_BUFFER_SIZE - 1,
-        "ls -l %s* |grep ' %s \\+%s '|grep '^b'| awk -F\" %s\" '{print \"%s\" $2}' | awk '{print $1}'", path, user_name,
-        group_name, path, path);
+        "ls -l %s* 2>/dev/null |grep ' %s \\+%s '|grep '^b'| awk -F\" %s\" '{print \"%s\" $2}' | awk '{print $1}'",
+        path, user_name, group_name, path, path);
     if (ret < 0) {
         DSS_PRINT_ERROR("snprintf_s query cmd failed.\n");
         return CM_ERROR;
@@ -2949,9 +2972,7 @@ static void clean_vglock_help(char *prog_name)
 
 static status_t clean_vglock_proc(void)
 {
-    char *home = cmd_clean_vglock_args[DSS_ARG_IDX_0].input_args != NULL ?
-                    cmd_clean_vglock_args[DSS_ARG_IDX_0].input_args :
-                    NULL;
+    char *home = cmd_clean_vglock_args[DSS_ARG_IDX_0].input_args;
     status_t status = dss_clean_vg_lock(home, DSS_MAX_INST_ID);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to clean vg lock.\n");
@@ -3040,7 +3061,6 @@ static status_t dss_cmd_append_oper_log(char *log_buf, void *buf, uint32 *offset
 
 static void dss_cmd_oper_log(int argc, char **argv, status_t status)
 {
-    char date[CM_MAX_TIME_STRLEN] = {0};
     char log_buf[CM_MAX_LOG_CONTENT_LENGTH] = {0};
     uint32 offset = 0;
 
@@ -3048,20 +3068,20 @@ static void dss_cmd_oper_log(int argc, char **argv, status_t status)
         return;
     }
 
-    (void)cm_date2str(g_timer()->now, "yyyy-mm-dd hh24:mi:ss.ff3", date, CM_MAX_TIME_STRLEN);
-    DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, date, &offset));
-    DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, "|dsscmd", &offset));
+    DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, "dsscmd", &offset));
 
     for (int i = 1; i < argc; i++) {
         DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, " ", &offset));
         DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, argv[i], &offset));
     }
 
-    if (status != CM_SUCCESS) {
-        DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, ". execute result error.", &offset));
-    } else {
-        DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, ". execute result success.", &offset));
+    char result[DSS_MAX_PATH_BUFFER_SIZE];
+    int32 ret = snprintf_s(
+        result, DSS_MAX_PATH_BUFFER_SIZE, DSS_MAX_PATH_BUFFER_SIZE - 1, ". execute result %d.", (int32)status);
+    if (ret == -1) {
+        return;
     }
+    DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, result, &offset));
 
     if (offset + 1 > CM_MAX_LOG_CONTENT_LENGTH) {
         DSS_PRINT_ERROR("Oper log len %u exceeds max %u.\n", offset, CM_MAX_LOG_CONTENT_LENGTH);

@@ -79,7 +79,7 @@ static status_t printf_dss_vg_header(const dss_vg_info_item_t *vg_item, dss_volu
     return status;
 }
 
-static void printf_auid(auid_t *first)
+static void printf_auid(const auid_t *first)
 {
     printf("        volume = %llu\n", (uint64)first->volume);
     printf("        au = %llu\n", (long long unsigned int)(first->au));
@@ -258,6 +258,9 @@ static void printf_common_block_t(const dss_common_block_t *common)
     printf("      checksum = %u\n", common->checksum);
     printf("      type = %u\n", common->type);
     printf("      version = %llu\n", common->version);
+    printf("      block_id = {\n");
+    printf_auid(&common->id);
+    printf("      }\n");
 }
 
 static void printf_ft_block(dss_ft_block_t *ft_block)
@@ -267,11 +270,7 @@ static void printf_ft_block(dss_ft_block_t *ft_block)
     dss_common_block_t *common = &ft_block->common;
     printf_common_block_t(common);
     printf("    }\n");
-    printf("    block_id = {\n");
 
-    dss_block_id_t *id = &ft_block->id;
-    printf_auid(id);
-    printf("    }\n");
     printf("    ft_block_node_num = %u\n", ft_block->node_num);
     printf("    ft_block_next = {\n");
 
@@ -320,6 +319,21 @@ static void printf_gft_root(gft_root_t *ft_root)
     printf("    }\n");
 }
 
+static void printf_root_ft_header(dss_root_ft_header_t *root_ft_header)
+{
+    printf("    block_common = {\n");
+
+    dss_common_block_t *common = &root_ft_header->common;
+    printf_common_block_t(common);
+    printf("    }\n");
+    printf("    ft_block_node_num = %u\n", root_ft_header->node_num);
+    printf("    ft_block_next = {\n");
+
+    dss_block_id_t *next = &root_ft_header->next;
+    printf_auid(next);
+    printf("    }\n");
+}
+
 static status_t printf_root_ft_block(const dss_vg_info_item_t *vg_item, dss_volume_t *volume)
 {
     status_t status;
@@ -345,9 +359,9 @@ static status_t printf_root_ft_block(const dss_vg_info_item_t *vg_item, dss_volu
     dss_root_ft_block_t *root_ft_block = (dss_root_ft_block_t *)(root);
     printf("root_ft_block = {\n");
 
-    dss_ft_block_t *ft_block = &root_ft_block->ft_block;
+    dss_root_ft_header_t *ft_block = &root_ft_block->ft_block;
     printf("  ft_block = {\n");
-    printf_ft_block(ft_block);
+    printf_root_ft_header(ft_block);
     printf("  }\n");
 
     gft_root_t *ft_root = &root_ft_block->ft_root;
@@ -483,12 +497,6 @@ static status_t print_ftn_by_id(dss_volume_t volume, char *block, uint64 node_id
 status_t printf_dss_file_table_block(
     dss_volume_ctrl_t *volume_ctrl, dss_core_ctrl_t *core_ctrl, dss_block_id_t *id, uint64 node_id)
 {
-    if (id->volume >= DSS_MAX_VOLUMES) {
-        LOG_DEBUG_ERR("block_id is invalid, volume:%u.", (uint32)id->volume);
-        DSS_PRINT_ERROR("block_id is invalid, volume:%u.\n", (uint32)id->volume);
-        return CM_ERROR;
-    }
-
     int64 offset;
     dss_volume_t volume;
     status_t status = dss_open_volume(volume_ctrl->defs[id->volume].name, NULL, DSS_CLI_OPEN_FLAG, &volume);
@@ -531,11 +539,6 @@ static void printf_fs_block_header(dss_fs_block_header *fs_block_header)
     dss_common_block_t *common = &fs_block_header->common;
     printf_common_block_t(common);
     printf("    }\n");
-    printf("    block_id = {\n");
-
-    dss_block_id_t *id = &fs_block_header->id;
-    printf_auid(id);
-    printf("    }\n");
     printf("    fs_block_next = {\n");
 
     dss_block_id_t *next = &fs_block_header->next;
@@ -576,7 +579,7 @@ static status_t print_fsb_by_id(dss_volume_t volume, char *block, uint64 node_id
 
     if (node_id == DSS_DEFAULT_NODE_ID) {
         for (uint32 i = 0; i < size; ++i) {
-            node = (dss_block_id_t *)(block + sizeof(dss_ft_block_t) + i * sizeof(dss_block_id_t));
+            node = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + i * sizeof(dss_block_id_t));
             printf("bitmap[%u] = {\n", i);
             printf_auid(node);
             printf("}\n");
@@ -586,7 +589,7 @@ static status_t print_fsb_by_id(dss_volume_t volume, char *block, uint64 node_id
             DSS_PRINT_ERROR("node_id should be in range 0-%u.\n", size - 1);
             return CM_ERROR;
         }
-        node = (dss_block_id_t *)(block + sizeof(dss_ft_block_t) + node_id * sizeof(dss_block_id_t));
+        node = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + node_id * sizeof(dss_block_id_t));
         printf("bitmap[%llu] = {\n", node_id);
         printf_auid(node);
         printf("}\n");
@@ -598,12 +601,6 @@ static status_t print_fsb_by_id(dss_volume_t volume, char *block, uint64 node_id
 static status_t printf_dss_file_space_block(
     dss_volume_ctrl_t *volume_ctrl, dss_core_ctrl_t *core_ctrl, dss_block_id_t *id, uint64 node_id)
 {
-    if (id->volume >= DSS_MAX_VOLUMES) {
-        LOG_DEBUG_ERR("block_id is invalid, volume:%u.", (uint32)id->volume);
-        DSS_PRINT_ERROR("block_id is invalid, volume is:%u.\n", (uint32)id->volume);
-        return CM_ERROR;
-    }
-
     status_t status;
     int64 offset;
     dss_volume_t volume;
@@ -641,11 +638,6 @@ static int64 dss_get_type_offset(const dss_core_ctrl_t *core_ctrl, const dss_blo
 static status_t dss_get_block_type(
     dss_volume_ctrl_t *volume_ctrl, dss_core_ctrl_t *core_ctrl, dss_block_id_t *id, uint32_t *type)
 {
-    if (id->volume >= DSS_MAX_VOLUMES) {
-        LOG_DEBUG_ERR("block_id is invalid, volume:%u.", (uint32)id->volume);
-        return CM_ERROR;
-    }
-
     status_t status;
     int64 offset;
     dss_volume_t volume;

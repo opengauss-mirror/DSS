@@ -138,6 +138,31 @@ rbd_config_param *ceph_parse_rbd_configs(const char *name)
     return NULL;
 }
 
+void open_global_rbd_handle()
+{
+    rados_cluster cluster;
+    ceph_client_ctx iocxt;
+    image_handle image;
+
+    for (int i = 0; i < g_inst_cfg->params.rbd_config_params.num; i++) {
+        rbd_config_param rbdconf = g_inst_cfg->params.rbd_config_params.rbd_config[i];
+        if (g_inst_cfg->params.rbd_config_params.rbd_config[i].rados_handle &&
+            g_inst_cfg->params.rbd_config_params.rbd_config[i].rbd_handle) {
+            continue;
+        }
+        if (ceph_client_ctx_init(&cluster, &iocxt, rbdconf.pool_name, g_inst_cfg->params.ceph_config,
+            CEPH_CLIENT_KEEPALIVE_TIMEOUT) != CM_SUCCESS) {
+            continue;
+        }
+        if (ceph_client_create_open(iocxt, rbdconf.image_name, &image) != CM_SUCCESS) {
+            continue;
+        }
+        g_inst_cfg->params.rbd_config_params.rbd_config[i].cluster = cluster;
+        g_inst_cfg->params.rbd_config_params.rbd_config[i].rados_handle = iocxt;
+        g_inst_cfg->params.rbd_config_params.rbd_config[i].rbd_handle = image;
+    }
+}
+
 #ifdef __cplusplus
 }
 #endif

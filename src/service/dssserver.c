@@ -68,20 +68,24 @@ status_t dss_signal_proc(void)
 }
 #endif
 
+static void dss_close_background_task(dss_instance_t *inst)
+{
+    if (!inst->is_maintain) {
+        uint32 recovery_thread_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
+        cm_close_thread(&inst->threads[recovery_thread_id]);
+    }
+}
+
 static void dss_close_thread(dss_instance_t *inst)
 {
     // pause lsnr thread
     uds_lsnr_t *lsnr = &inst->lsnr;
     cs_pause_uds_lsnr(lsnr);
     // close worker thread
-    uint32 cfg_session_num = inst->inst_cfg.params.cfg_session_num;
+    dss_destroy_reactors();
+
     if (inst->threads != NULL) {
-        for (uint32 i = 0; i < cfg_session_num; i++) {
-            inst->threads[i].closed = CM_TRUE;
-        }
-        while (inst->thread_cnt != 0) {
-            cm_sleep(1);
-        }
+        dss_close_background_task(inst);
         DSS_FREE_POINT(inst->threads);
     }
 
@@ -104,6 +108,7 @@ static void dss_clean_server()
         cm_close_file(g_dss_instance.lock_fd);
     }
     CM_FREE_PTR(cm_log_param_instance()->log_compress_buf);
+    dss_destroy_reactors();
 }
 
 static void handle_main_wait(void)
@@ -116,9 +121,6 @@ static void handle_main_wait(void)
         }
         if (!g_dss_instance.is_maintain) {
             dss_check_peer_inst(&g_dss_instance, DSS_INVALID_64);
-            if (g_dss_instance.cm_res.is_valid) {
-                dss_get_cm_lock_and_recover(&g_dss_instance);
-            }
         }
         if (periods == MILLISECS_PER_SECOND * SECONDS_PER_DAY / interval) {
             periods = 0;
@@ -128,6 +130,26 @@ static void handle_main_wait(void)
         periods++;
     } while (CM_TRUE);
     dss_clean_server();
+}
+
+static status_t dss_recovery_background_task(dss_instance_t *inst)
+{
+    if (inst->is_maintain) {
+        return CM_SUCCESS;
+    }
+    LOG_RUN_INF("create dss recovery background task.");
+    uint32 recovery_thread_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
+    status_t status = cm_create_thread(dss_get_cm_lock_and_recover, 0, inst, &(inst->threads[recovery_thread_id]));
+    return status;
+}
+
+static status_t dss_init_background_tasks(void)
+{
+    status_t status = dss_recovery_background_task(&g_dss_instance);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("create dss recovery background task failed.");
+    }
+    return status;
 }
 
 typedef struct st_dss_srv_args {
@@ -241,6 +263,13 @@ int main(int argc, char **argv)
         return CM_ERROR;
     }
 #endif
+    if (dss_init_background_tasks() != CM_SUCCESS) {
+        (void)printf("DSS SERVER END.\n");
+        fflush(stdout);
+        dss_clean_server();
+        LOG_RUN_ERR("dss failed to startup.");
+        return CM_ERROR;
+    }
     (void)printf("DSS SERVER STARTED.\n");
     LOG_RUN_INF("DSS SERVER STARTED.\n");
     handle_main_wait();

@@ -24,7 +24,7 @@ function print_help()
     echo "Usage: $0 [OPTION]
     -h|--help              show help information.
     -3rd|--binarylib_dir   the directory of third party binarylibs.
-    -m|--version_mode      this values of paramenter is Debug, Release, DebugDssTest, ReleaseDssTest, the default value is Release.
+    -m|--version_mode      this values of paramenter is Debug, Release, DebugDsstest, ReleaseDsstest, the default value is Release.
     -t|--build_tool          this values of parameter is cmake, make, the default value is cmake.
     -s|--storage_mode      storage device type. values is disk, ceph. default is disk. 
 "
@@ -156,9 +156,6 @@ cd $PACKAGE
 if [ "$build_tool"x == "cmake"x ];then
     cmake_opts="-DCMAKE_BUILD_TYPE=${version_mode} -DENABLE_DSSTEST=${enable_dsstest} -DOPENGAUSS_FLAG=ON \
     -DENABLE_EXPORT_API=${export_api}"
-    if [ "${storage_mode}"x == "ceph"x ];then
-        cmake_opts="${cmake_opts} -DENABLE_GLOBAL_CACHE=ON"
-    fi
     cmake ${cmake_opts} CMakeLists.txt
     make all -sj 8
 else

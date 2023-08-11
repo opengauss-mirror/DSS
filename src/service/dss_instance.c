@@ -37,6 +37,8 @@
 #include "dss_service.h"
 #include "dss_signal.h"
 #include "dss_instance.h"
+#include "dss_simulation_cm.h"
+#include "dss_reactor.h"
 
 #define DSS_MAINTAIN_ENV "DSS_MAINTAIN"
 dss_instance_t g_dss_instance;
@@ -107,7 +109,7 @@ static status_t instance_init_ga(dss_instance_t *inst)
 
 static status_t dss_init_thread(dss_instance_t *inst)
 {
-    uint32 size = inst->inst_cfg.params.cfg_session_num + dss_get_udssession_startid();
+    uint32 size = dss_get_udssession_startid();
     inst->threads = (thread_t *)cm_malloc(size * (uint32)sizeof(thread_t));
     if (inst->threads == NULL) {
         return CM_ERROR;
@@ -241,6 +243,7 @@ status_t dss_recover_from_instance(dss_instance_t *inst)
     }
     LOG_RUN_INF(
         "Flush assemble log, whose size is %u, maybe greater than %u in recovery", batch->size, DSS_LOG_BUFFER_SIZE);
+    batch->in_recovery = CM_TRUE;
     if (dss_flush_log(0, vg_item, log_buf) != CM_SUCCESS) {
         LOG_RUN_ERR("Flush log failed.");
         DSS_FREE_POINT(batch);
@@ -255,81 +258,78 @@ status_t dss_recover_from_instance(dss_instance_t *inst)
     }
     return status;
 }
-
-status_t dss_recover_when_change_status(dss_instance_t *inst)
-{
-    return dss_recover_from_instance(inst);
-}
-
 bool32 dss_config_cm()
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     char *value = cm_get_config_value(&inst_cfg->config, "DSS_CM_SO_NAME");
     if (value == NULL || strlen(value) == 0 || strlen(value) >= DSS_MAX_NAME_LEN) {
-        LOG_RUN_INF("dss cm config of DSS_CM_SO_NAME is invalid.");
+        LOG_RUN_INF("dss cm config of DSS_CM_SO_NAME is empty.");
         return CM_FALSE;
     }
     return CM_TRUE;
 }
-
-/* For startup:
-   (1) if master_id == cur_id and status is recovery,try to recover, then set status open;
-   (2) if master_id != cur_id and status is recovery, just set status open. When metadata needs to be modified,
-       just send messages to master_id, if master_id is in recovery, just reject;
-*/
-status_t dss_change_instance_status_to_open(dss_instance_t *cur_inst, uint32 curr_id, uint32 master_id)
-{
-    status_t ret;
-    if (curr_id == master_id) {
-        LOG_RUN_INF("instance [%u] begin to recover.", master_id);
-        ret = dss_recover_when_change_status(cur_inst);
-        if (ret != CM_SUCCESS) {
-            return ret;
-        }
-    }
-    cur_inst->status = ZFS_STATUS_OPEN;
-    return CM_SUCCESS;
-}
-
 /*
     1、NO CM:every node can do readwrite
     2、CM:get cm lock to be master
     3、ENABLE_DSSTEST: for test, select min id as master
 */
-status_t dss_get_instance_log_buf_no_cm(dss_instance_t *inst)
+status_t dss_recover_no_cm(dss_instance_t *inst)
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)inst_cfg->params.inst_id;
+    status_t ret;
     if (inst_cfg->params.inst_cnt <= 1) {
         dss_set_master_id(curr_id);
         dss_set_server_status_flag(DSS_STATUS_READWRITE);
-        return dss_change_instance_status_to_open(inst, curr_id, curr_id);
+        LOG_RUN_INF("inst %u set status flag %u when server start.", curr_id, DSS_STATUS_READWRITE);
+        ret = dss_recover_from_instance(inst);
+        if (ret == CM_SUCCESS) {
+            inst->status = DSS_STATUS_OPEN;
+        }
+        return ret;
     }
 #ifdef ENABLE_DSSTEST
-    uint32 i;
-    for (i = 0; i < DSS_MAX_INSTANCES; i++) {
-        if (inst_cfg->params.ports[i] != 0) {
-            dss_set_master_id(i);
-            LOG_RUN_INF("Set min id %u as master id.", i);
-            break;
+    if (!dss_config_cm()) {
+        uint32 master_id = 0;
+        uint32 i;
+        for (i = 0; i < DSS_MAX_INSTANCES; i++) {
+            if (inst_cfg->params.ports[i] != 0) {
+                master_id = i;
+                break;
+            }
         }
-    }
-    if (i == curr_id) {
-        dss_set_server_status_flag(DSS_STATUS_READWRITE);
-        return dss_change_instance_status_to_open(inst, curr_id, curr_id);
-    } else {
-        dss_set_server_status_flag(DSS_STATUS_READONLY);
-        inst->status = ZFS_STATUS_OPEN;
+        dss_set_master_id(master_id);
+        LOG_RUN_INF("Set min id %u as master id.", i);
+        if (master_id == curr_id) {
+            dss_set_server_status_flag(DSS_STATUS_READWRITE);
+            ret = dss_recover_from_instance(inst);
+            if (ret != CM_SUCCESS) {
+                LOG_RUN_ERR("[DSS] ABORT INFO: Fail to change status open without cm, exit.");
+                cm_fync_logfile();
+                _exit(1);
+            }
+            inst->status = DSS_STATUS_OPEN;
+        } else {
+            dss_set_server_status_flag(DSS_STATUS_READONLY);
+            inst->status = DSS_STATUS_OPEN;
+        }
+        return CM_SUCCESS;
     }
 #else
-    if (inst->is_maintain || !dss_config_cm()) {
+    if (inst->is_maintain) {
         dss_set_master_id(curr_id);
         dss_set_server_status_flag(DSS_STATUS_READWRITE);
-        return dss_change_instance_status_to_open(inst, curr_id, curr_id);
+        LOG_RUN_INF("inst %u set status flag %u when server start.", curr_id, DSS_STATUS_READWRITE);
+        ret = dss_recover_from_instance(inst);
+        if (ret == CM_SUCCESS) {
+            inst->status = DSS_STATUS_OPEN;
+        }
+        return ret;
     }
 #endif
     return CM_SUCCESS;
 }
+
 /*
    1、when create first vg, init global log buffer;
    2、when dss_server start up, init memory log buf;
@@ -340,7 +340,7 @@ status_t dss_get_instance_log_buf(dss_instance_t *inst)
     if (ret != CM_SUCCESS) {
         return ret;
     }
-    return dss_get_instance_log_buf_no_cm(inst);
+    return dss_recover_no_cm(inst);
 }
 
 static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
@@ -368,6 +368,8 @@ static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to startup mes"));
     status = dss_start_lsnr(inst);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to start lsnr!"));
+    status = dss_create_reactors();
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to start reactors!"));
     return CM_SUCCESS;
 }
 
@@ -412,6 +414,7 @@ status_t dss_startup(dss_instance_t *inst, char *home)
     securec_check_ret(errcode);
     inst->lock_fd = CM_INVALID_INT32;
     dss_set_server_flag();
+    g_dss_instance_status = &inst->status;
     status = dss_set_cfg_dir(home, &inst->inst_cfg);
     DSS_RETURN_IFERR2(status, (void)printf("Environment variant DSS_HOME not found!\n"));
     status = dss_load_config(&inst->inst_cfg);
@@ -437,8 +440,7 @@ static status_t dss_lsnr_proc(bool32 is_emerg, uds_lsnr_t *lsnr, cs_pipe_t *pipe
     status = dss_create_session(pipe, &session);
     DSS_RETURN_IFERR3(
         status, LOG_RUN_ERR("dss_lsnr_proc create session failed.\n"), cs_uds_disconnect(&pipe->link.uds));
-    LOG_DEBUG_INF("create client server thread.");
-    status = cm_create_thread(dss_session_entry, SIZE_K(512), session, &(g_dss_instance.threads[session->id]));
+    status = dss_reactors_add_session(session);
     DSS_RETURN_IFERR3(status, dss_destroy_session(session),
         LOG_RUN_ERR("Session:%u socket:%u closed.", session->id, pipe->link.uds.sock));
     return CM_SUCCESS;
@@ -456,6 +458,18 @@ status_t dss_start_lsnr(dss_instance_t *inst)
     return cs_start_uds_lsnr(&inst->lsnr, dss_lsnr_proc);
 }
 
+void dss_uninit_cm(dss_instance_t *inst)
+{
+    if (inst->cm_res.is_valid) {
+#ifdef ENABLE_DSSTEST
+        dss_simulation_cm_res_mgr_uninit(&inst->cm_res.mgr);
+#else
+        cm_res_mgr_uninit(&inst->cm_res.mgr);
+#endif
+        inst->cm_res.is_valid = CM_FALSE;
+    }
+}
+
 status_t dss_init_cm(dss_instance_t *inst)
 {
     inst->cm_res.is_valid = CM_FALSE;
@@ -464,30 +478,27 @@ status_t dss_init_cm(dss_instance_t *inst)
     char *value = cm_get_config_value(&inst_cfg->config, "DSS_CM_SO_NAME");
     if (value == NULL || strlen(value) == 0) {
         LOG_RUN_INF("dss cm config of DSS_CM_SO_NAME is empty.");
-        // if no cm, treat all nodes be ok
         return CM_SUCCESS;
     }
 
     if (strlen(value) >= DSS_MAX_NAME_LEN) {
         LOG_RUN_ERR("dss cm config of DSS_CM_SO_NAME is exceeds the max len %u.", DSS_MAX_NAME_LEN - 1);
-        return CM_SUCCESS;
+        return CM_ERROR;
     }
-
-    status_t status = cm_res_mgr_init(value, &inst->cm_res.mgr, NULL);
-    DSS_RETURN_IF_ERROR(status);
-    status =
+#ifdef ENABLE_DSSTEST
+    DSS_RETURN_IF_ERROR(dss_simulation_cm_res_mgr_init(value, &inst->cm_res.mgr, NULL));
+#else
+    DSS_RETURN_IF_ERROR(cm_res_mgr_init(value, &inst->cm_res.mgr, NULL));
+#endif
+    status_t status =
         (status_t)cm_res_init(&inst->cm_res.mgr, (unsigned int)inst->inst_cfg.params.inst_id, DSS_CMS_RES_TYPE, NULL);
+#ifdef ENABLE_DSSTEST
+    DSS_RETURN_IFERR2(status, dss_simulation_cm_res_mgr_uninit(&inst->cm_res.mgr));
+#else
     DSS_RETURN_IFERR2(status, cm_res_mgr_uninit(&inst->cm_res.mgr));
+#endif
     inst->cm_res.is_valid = CM_TRUE;
     return CM_SUCCESS;
-}
-
-void dss_uninit_cm(dss_instance_t *inst)
-{
-    if (inst->cm_res.is_valid) {
-        cm_res_mgr_uninit(&inst->cm_res.mgr);
-        inst->cm_res.is_valid = CM_FALSE;
-    }
 }
 
 void dss_free_log_ctrl(dss_instance_t *inst)
@@ -567,6 +578,20 @@ static void dss_check_peer_by_cm(dss_instance_t *inst)
     cm_res_uninit_memctx(&res_mem_ctx);
 }
 
+#ifdef ENABLE_DSSTEST
+static void dss_check_peer_by_simulation_cm(dss_instance_t *inst)
+{
+    if (g_simulation_cm.simulation) {
+        char *bitmap_online = inst->cm_res.mgr.cm_get_res_stat();
+        uint64 cur_inst_map = 0;
+        (void)cm_str2bigint(bitmap_online, (int64 *)&cur_inst_map);
+        dss_check_mes_conn(cur_inst_map);
+        return;
+    }
+    dss_check_peer_by_cm(inst);
+}
+#endif
+
 static void dss_check_peer_default(void)
 {
     dss_check_mes_conn(DSS_INVALID_64);
@@ -588,37 +613,23 @@ void dss_init_cm_res(dss_instance_t *inst)
     return;
 }
 
-#ifdef ENABLE_DSSTEST
-status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
-{
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    for (int i = 0; i < DSS_MAX_INSTANCES; i++) {
-        if (inst_cfg->params.ports[i] != 0) {
-            *master_id = i;
-            LOG_RUN_INF("Set min id %u as master id.", i);
-            break;
-        }
-    }
-    LOG_RUN_INF("master id is %u when get cm lock.", *master_id);
-    return CM_SUCCESS;
-}
-#else
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 {
     int ret = cm_res_get_lock_owner(&cm_res->mgr, DSS_CM_LOCK, master_id);
     if (ret == CM_RES_TIMEOUT) {
+        LOG_RUN_INF("Try to get lock owner failed, cm error : %d.", ret);
         return CM_ERROR;
     } else if (ret == CM_RES_SUCCESS) {
         return CM_SUCCESS;
     } else {
         *master_id = CM_INVALID_ID32;
+        LOG_RUN_INF("Try to get lock owner failed, cm error : %d.", ret);
     }
     return CM_SUCCESS;
 }
-#endif
 
 // get cm lock owner, if no owner, try to become.master_id can not be DSS_INVALID_ID32.
-uint32 dss_get_cm_lock_owner(dss_instance_t *inst)
+uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try_lock)
 {
     dss_cm_res *cm_res = &inst->cm_res;
     uint32 master_id = DSS_INVALID_ID32;
@@ -638,7 +649,16 @@ uint32 dss_get_cm_lock_owner(dss_instance_t *inst)
             continue;
         }
         if (master_id == DSS_INVALID_ID32) {
-            (void)cm_res_lock(&cm_res->mgr, DSS_CM_LOCK);
+            if (!try_lock) {
+                continue;
+            }
+            ret = cm_res_lock(&cm_res->mgr, DSS_CM_LOCK);
+            *grab_lock = ((int)ret == CM_RES_SUCCESS);
+            if (*grab_lock) {
+                master_id = (uint32)inst->inst_cfg.params.inst_id;
+                LOG_RUN_INF("inst id %u succeed to get lock owner.", master_id);
+                break;
+            }
             continue;
         }
         break;
@@ -646,56 +666,115 @@ uint32 dss_get_cm_lock_owner(dss_instance_t *inst)
     return master_id;
 }
 
-/*
-    1、old_master_id == master_id, just return;
-    2、old_master_id ！= master_id, just indicates that the master has been reselected.so to juge whether recover.
-*/
-void dss_get_cm_lock_and_recover(dss_instance_t *inst) 
+bool32 dss_check_whether_recovery(dss_instance_t *inst, uint32 curr_id)
 {
-    uint32 old_master_id = dss_get_master_id();
-    uint32 master_id = dss_get_cm_lock_owner(inst);
-    if (old_master_id == master_id) {
-        return;
+    uint32 lock_ownerid = dss_get_cm_lock_owner(inst, NULL, CM_FALSE);
+    if (lock_ownerid != curr_id) {
+        if (dss_is_readonly()) {
+            LOG_RUN_INF("inst %u is no need to do recovery for it has switched lock.", curr_id);
+            return CM_FALSE;
+        }
+        LOG_RUN_ERR("only masterid %u can be readwrite.", lock_ownerid);
+        cm_fync_logfile();
+        CM_ASSERT(0);
     }
-    dss_set_master_id(master_id);
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    uint32 curr_id = (uint32)inst_cfg->params.inst_id;
-    if (master_id != curr_id) {
-        dss_set_server_status_flag(DSS_STATUS_READONLY);
-        inst->status = ZFS_STATUS_OPEN;
-        return;
+    if (dss_is_readwrite()) {
+        LOG_RUN_INF("inst %u is no need to do recovery for it is to be set main.", curr_id);
+        return CM_FALSE;
     }
-    if (inst->status == ZFS_STATUS_SWITCH) {
-        return;
+    return CM_TRUE;
+}
+
+void dss_recovery_when_get_lock(dss_instance_t *inst, uint32 curr_id, bool32 grab_lock)
+{
+    cm_spin_lock(&g_dss_instance.switch_lock, NULL);
+    bool32 first_start = CM_FALSE;
+    if (!grab_lock) {
+        bool32 need_recovery = dss_check_whether_recovery(inst, curr_id);
+        if (!need_recovery) {
+            cm_spin_unlock(&g_dss_instance.switch_lock);
+            return;
+        }
+        first_start = (inst->status == DSS_STATUS_PREPARE);
     }
-    dss_wait_session_pause(inst);
-    cm_spin_lock(&inst->switch_lock, NULL);
-    inst->status = ZFS_STATUS_RECOVERY;
-    LOG_RUN_INF("master_id is %u when get cm lock to do recovery.", master_id);
-    status_t ret = dss_change_instance_status_to_open(inst, curr_id, master_id);
+    if (first_start) {
+        LOG_RUN_INF("inst %u is old main inst to do recovery.", curr_id);
+    } else {
+        LOG_RUN_INF("master_id is %u when get cm lock to do recovery.", curr_id);
+    }
+    dss_set_master_id(curr_id);
+    if (!first_start) {
+        dss_wait_session_pause(inst);
+    }
+    inst->status = DSS_STATUS_RECOVERY;
+    status_t ret = dss_recover_from_instance(inst);
     if (ret != CM_SUCCESS) {
-        cm_spin_unlock(&inst->switch_lock);
+        cm_spin_unlock(&g_dss_instance.switch_lock);
         LOG_RUN_ERR("[DSS] ABORT INFO: Recover failed when get cm lock.");
         cm_fync_logfile();
         _exit(1);
     }
-    dss_session_t *session = NULL;
-    if (dss_create_session(NULL, &session) != CM_SUCCESS) {
-        cm_spin_unlock(&inst->switch_lock);
-        LOG_RUN_ERR("[DSS] ABORT INFO: Refresh meta info failed when create session.");
-        cm_fync_logfile();
-        _exit(1);
+    if (!first_start) {
+        dss_session_t *session = NULL;
+        if (dss_create_session(NULL, &session) != CM_SUCCESS) {
+            cm_spin_unlock(&g_dss_instance.switch_lock);
+            LOG_RUN_ERR("[DSS] ABORT INFO: Refresh meta info failed when create session.");
+            cm_fync_logfile();
+            _exit(1);
+        }
+        if (dss_refresh_meta_info(session) != CM_SUCCESS) {
+            cm_spin_unlock(&g_dss_instance.switch_lock);
+            LOG_RUN_ERR("[DSS] ABORT INFO: Refresh meta info failed after recovery.");
+            cm_fync_logfile();
+            _exit(1);
+        }
+        dss_destroy_session(session);
+        dss_set_session_running(inst);
     }
-    if (dss_refresh_meta_info(session) != CM_SUCCESS) {
-        cm_spin_unlock(&inst->switch_lock);
-        LOG_RUN_ERR("[DSS] ABORT INFO: Refresh meta info failed after recovery.");
-        cm_fync_logfile();
-        _exit(1);
-    }
-    dss_destroy_session(session);
-    dss_set_session_running(inst);
     dss_set_server_status_flag(DSS_STATUS_READWRITE);
-    cm_spin_unlock(&inst->switch_lock);
+    LOG_RUN_INF("inst %u set status flag %u when get cm lock.", curr_id, DSS_STATUS_READWRITE);
+    inst->status = DSS_STATUS_OPEN;
+    cm_spin_unlock(&g_dss_instance.switch_lock);
+}
+/*
+    1、old_master_id == master_id, just return;
+    2、old_master_id ！= master_id, just indicates that the master has been reselected.so to juge whether recover.
+*/
+void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst) 
+{
+    if (!inst->cm_res.is_valid) {
+        return;
+    }
+    uint32 old_master_id = dss_get_master_id();
+    bool32 grab_lock = CM_FALSE;
+    uint32 master_id = dss_get_cm_lock_owner(inst, &grab_lock, CM_TRUE);
+    // master no change
+    if (old_master_id == master_id) {
+        return;
+    }
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    uint32 curr_id = (uint32)inst_cfg->params.inst_id;
+    // standby is started or masterid has been changed
+    if (master_id != curr_id) {
+        dss_set_master_id(master_id);
+        dss_set_server_status_flag(DSS_STATUS_READONLY);
+        LOG_RUN_INF("inst %u set status flag %u when not get cm lock.", curr_id, DSS_STATUS_READONLY);
+        inst->status = DSS_STATUS_OPEN;
+        return;
+    }
+    /*1、grab lock success 2、set main,other switch lock 3、restart, lock no transfer*/
+    dss_recovery_when_get_lock(inst, curr_id, grab_lock);
+    return;
+}
+
+#define DSS_RECOVERY_INTERVAL 500
+void dss_get_cm_lock_and_recover(thread_t *thread) 
+{
+    while (!thread->closed) {
+        dss_instance_t *inst = (dss_instance_t *)thread->argument;
+        dss_get_cm_lock_and_recover_inner(inst);
+        cm_sleep(DSS_RECOVERY_INTERVAL);
+    }
 }
 
 static void dss_check_peer_inst_inner(dss_instance_t *inst)
@@ -709,7 +788,11 @@ static void dss_check_peer_inst_inner(dss_instance_t *inst)
         dss_init_cm_res(inst);
     }
     if (inst->cm_res.is_valid) {
+#ifdef ENABLE_DSSTEST
+        dss_check_peer_by_simulation_cm(inst);
+#else
         dss_check_peer_by_cm(inst);
+#endif
         return;
     }
     dss_check_peer_default();

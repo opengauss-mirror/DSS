@@ -141,8 +141,8 @@ static status_t dss_initial_vg_ctrl(
     }
     vg_ctrl->vg_info.vol_type.id = 0;
     vg_ctrl->vg_info.vol_type.type = DSS_VOLUME_TYPE_MANAGER;
-    errcode =
-        strncpy_s(vg_ctrl->vg_info.vol_type.entry_volume_name, DSS_MAX_NAME_LEN, volume_name, strlen(volume_name));
+    errcode = strncpy_s(
+        vg_ctrl->vg_info.vol_type.entry_volume_name, DSS_MAX_VOLUME_PATH_LEN, volume_name, strlen(volume_name));
     if (errcode != EOK) {
         DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
         return CM_ERROR;
@@ -157,7 +157,7 @@ static status_t dss_initial_vg_ctrl(
     au_size = (size == 0 ? DSS_DEFAULT_AU_SIZE : SIZE_K(size));
     dss_set_vg_au_size(vg_ctrl, au_size);
 
-    errcode = strncpy_s(vg_ctrl->volume.defs[0].name, DSS_MAX_NAME_LEN, volume_name, strlen(volume_name));
+    errcode = strncpy_s(vg_ctrl->volume.defs[0].name, DSS_MAX_VOLUME_PATH_LEN, volume_name, strlen(volume_name));
     if (errcode != EOK) {
         DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
         return CM_ERROR;
@@ -169,13 +169,17 @@ static status_t dss_initial_vg_ctrl(
     vg_ctrl->core.volume_attrs[0].flag = 1;
     vg_ctrl->core.volume_attrs[0].id = 0;
 
-    vg_ctrl->core.volume_attrs[0].hwm = dss_get_vg_au_size(vg_ctrl);
+    vg_ctrl->core.volume_attrs[0].hwm = CM_CALC_ALIGN(DSS_VOLUME_HEAD_SIZE, au_size);
     vg_ctrl->core.volume_attrs[0].size = dss_get_volume_size(volume);
     if (vg_ctrl->core.volume_attrs[0].size == DSS_INVALID_64) {
-        LOG_DEBUG_ERR("Failed to get volume size when create vg %s.", vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VG_CREATE, vg_name, "failed to get volume size");
         return CM_ERROR;
     }
-    vg_ctrl->core.volume_attrs[0].free = vg_ctrl->core.volume_attrs[0].size - dss_get_vg_au_size(vg_ctrl);
+    if (vg_ctrl->core.volume_attrs[0].size <= vg_ctrl->core.volume_attrs[0].hwm) {
+        DSS_THROW_ERROR(ERR_DSS_VG_CREATE, vg_name, "volume size is too small");
+        return CM_ERROR;
+    }
+    vg_ctrl->core.volume_attrs[0].free = vg_ctrl->core.volume_attrs[0].size - vg_ctrl->core.volume_attrs[0].hwm;
     return CM_SUCCESS;
 }
 
@@ -218,6 +222,7 @@ static status_t dss_set_vg_ctrl(
     status_t status;
     dss_ctrl_t *vg_ctrl = (dss_ctrl_t *)cm_malloc_align(DSS_ALIGN_SIZE, sizeof(dss_ctrl_t));
     if (vg_ctrl == NULL) {
+        dss_free_vg_info(g_vgs_info);
         LOG_DEBUG_ERR("Failed to alloc memory, vg name is %s, volume name is %s.\n", vg_name, volume_name);
         DSS_THROW_ERROR(ERR_ALLOC_MEMORY, sizeof(dss_ctrl_t), "vg_ctrl");
         return CM_ERROR;

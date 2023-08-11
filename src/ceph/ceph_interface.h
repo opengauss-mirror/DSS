@@ -90,31 +90,19 @@ int ceph_client_create_open(ceph_client_ctx ctx, char *image_name, image_handle 
 void ceph_client_create_close(image_handle fd);
 
 /**
- * write data to image
- * fd image operation handler
- * offset write data to offset
- * buf data buf
- * size buf size
- * return 0 sucess, !0 failed
+ * get data addr
+ * fd     image operation handler
+ * ctx    handler of pool operation
+ * offset get from image offset
  */
-int32_t ceph_client_create_write(image_handle fd, uint64_t offset, char *buf, int32_t size);
+void ceph_client_get_data_addr(image_handle fd, ceph_client_ctx ctx, uint64_t offset, uint64_t *obj_offset,
+    char *obj_addr, uint32_t *obj_id);
 
 /**
- * read data from image
- * fd image operation handler
- * offset read from image offset
- * buf read data buf
- * size read data size
- * return  read size;
+ * get object size
+ * fd     image operation handler
  */
-int32_t ceph_client_create_read(image_handle fd, uint64_t offset, char *buf, int32_t size);
-
-/**
- * read image size
- * fd image operation handler
- * return image size;
- */
-int64_t ceph_client_read_size(image_handle fd);
+void ceph_client_get_object_size(image_handle fd, long long *obj_size);
 
 #ifdef __cplusplus
 }

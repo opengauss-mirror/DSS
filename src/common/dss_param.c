@@ -36,6 +36,7 @@ extern "C" {
 #endif
 
 dss_config_t *g_inst_cfg = NULL;
+dss_instance_status_e *g_dss_instance_status = NULL;
 // clang-format off
 static config_item_t g_dss_params[] = {
     /* name, isdefault, attr, default_value, value, runtime_value, description, range, datatype, comment,
@@ -56,7 +57,7 @@ static config_item_t g_dss_params[] = {
         6, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "STORAGE_MODE",              CM_TRUE, CM_FALSE, "DISK",  NULL, NULL, "-", "CLUSTER_RAID,RAID,DISK",
         "GS_TYPE_VARCHAR", NULL, 7, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_LOG_LEVEL",                CM_TRUE, CM_FALSE, "7",    NULL, NULL, "-", "[0,4087]",  "GS_TYPE_INTEGER", NULL,
+    { "_LOG_LEVEL",                CM_TRUE, CM_FALSE, "519",    NULL, NULL, "-", "[0,4087]",  "GS_TYPE_INTEGER", NULL,
         8, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_log_level, dss_notify_log_level, NULL, NULL},
     { "MAX_SESSION_NUMS",          CM_TRUE, CM_FALSE, "8192",   NULL, NULL, "-", "[16,16320]",    "GS_TYPE_INTEGER",
         NULL, 9, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
@@ -64,9 +65,9 @@ static config_item_t g_dss_params[] = {
         10, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "DLOCK_RETRY_COUNT",         CM_TRUE, CM_FALSE, "50",    NULL, NULL, "-", "[1,500000]", "GS_TYPE_INTEGER", NULL,
         11, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_AUDIT_BACKUP_FILE_COUNT",  CM_TRUE, CM_FALSE, "10",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL,
+    { "_AUDIT_BACKUP_FILE_COUNT",  CM_TRUE, CM_FALSE, "20",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL,
         12, EFFECT_REBOOT, CFG_INS, dss_verify_audit_backup_file_count, dss_notify_audit_backup_file_count, NULL, NULL},
-    { "_AUDIT_MAX_FILE_SIZE",      CM_TRUE, CM_FALSE, "10M",   NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL,
+    { "_AUDIT_MAX_FILE_SIZE",      CM_TRUE, CM_FALSE, "256M",   NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL,
         13, EFFECT_REBOOT, CFG_INS, dss_verify_audit_file_size, dss_notify_audit_file_size, NULL, NULL},
     { "_LOG_FILE_PERMISSIONS",     CM_TRUE, CM_FALSE, "600",   NULL, NULL, "-", "[600-777]", "GS_TYPE_INTEGER", NULL,
         14, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
@@ -100,7 +101,6 @@ static config_item_t g_dss_params[] = {
         "GS_TYPE_VARCHAR", NULL, 28, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "SSL_CIPHER", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
         "GS_TYPE_VARCHAR", NULL, 29, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-#ifdef ENABLE_GLOBAL_CACHE
     { "POOL_NAMES",           CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
         "GS_TYPE_VARCHAR", NULL, 30, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
     { "IMAGE_NAMES",           CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
@@ -109,16 +109,44 @@ static config_item_t g_dss_params[] = {
         "GS_TYPE_VARCHAR", NULL, 32, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
     { "VOLUME_TYPES",           CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
         "GS_TYPE_VARCHAR", NULL, 33, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
-#endif
     { "_AUDIT_LEVEL",           CM_TRUE, CM_FALSE, "1",    NULL, NULL, "-", "[0,255]",  "GS_TYPE_INTEGER", NULL,
         34, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_audit_level, dss_notify_audit_level, NULL, NULL},
     { "SSL_PERIOD_DETECTION", CM_TRUE, CM_FALSE, "7", NULL, NULL, "-", "[1,180]",
         "GS_TYPE_INTEGER", NULL, 35, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "IO_THREADS",       CM_TRUE, CM_FALSE, "2",   NULL, NULL, "-", "[1,8]",
+        "GS_TYPE_INTEGER", NULL, 38, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "WORK_THREADS",       CM_TRUE, CM_FALSE, "16",   NULL, NULL, "-", "[16,128]",
+        "GS_TYPE_INTEGER", NULL, 39, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 // clang-format on
 static const char *g_dss_config_file = (const char *)"dss_inst.ini";
 #define DSS_PARAM_COUNT (sizeof(g_dss_params) / sizeof(config_item_t))
+
+static status_t dss_load_threadpool_cfg(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "IO_THREADS");
+    int32 count = 0;
+    status_t status = cm_str2int(value, &count);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "IO_THREADS"));
+
+    if (count < DSS_MIN_IOTHREADS_CFG || count > DSS_MAX_IOTHREADS_CFG) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "IO_THREADS");
+        return CM_ERROR;
+    }
+    inst_cfg->params.iothread_count = (uint32)count;
+
+    value = cm_get_config_value(&inst_cfg->config, "WORK_THREADS");
+    status = cm_str2int(value, &count);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "WORK_THREADS"));
+    if (count < DSS_MIN_WORKTHREADS_CFG || count > DSS_MAX_WORKTHREADS_CFG) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "WORK_THREADS");
+        return CM_ERROR;
+    }
+    inst_cfg->params.workthread_count = (uint32)count;
+
+    return CM_SUCCESS;
+}
 
 static status_t dss_load_session_cfg(dss_config_t *inst_cfg)
 {
@@ -246,6 +274,33 @@ static status_t dss_load_mes_elapsed_switch(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
+static status_t dss_load_random_file(uchar *value, int32 value_len)
+{
+    char file_name[CM_FILE_NAME_BUFFER_SIZE];
+    char dir_name[CM_FILE_NAME_BUFFER_SIZE];
+    int32 handle;
+    int32 file_size;
+    PRTS_RETURN_IFERR(snprintf_s(
+        dir_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/dss_protect", g_inst_cfg->home));
+    if (!cm_dir_exist(dir_name)) {
+        DSS_THROW_ERROR(ERR_DSS_DIR_NOT_EXIST, "dss_protect", g_inst_cfg->home);
+        return CM_ERROR;
+    }
+    PRTS_RETURN_IFERR(snprintf_s(file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/dss_protect/%s",
+        g_inst_cfg->home, DSS_FKEY_FILENAME));
+    DSS_RETURN_IF_ERROR(cs_ssl_verify_file_stat(file_name));
+    DSS_RETURN_IF_ERROR(
+        cm_open_file_ex(file_name, O_SYNC | O_RDONLY | O_BINARY, S_IRUSR, &handle));
+    status_t ret = cm_read_file(handle, value, value_len, &file_size);
+    cm_close_file(handle);
+    DSS_RETURN_IF_ERROR(ret);
+    if (file_size < RANDOM_LEN + 1) {
+        LOG_DEBUG_ERR("Random component file %s is invalid, size is %d.", file_name, file_size);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
 int32 dss_decrypt_pwd_cb(const char *cipher_text, uint32 cipher_len, char *plain_text, uint32 plain_len)
 {
     if (cipher_text == NULL) {
@@ -270,8 +325,10 @@ int32 dss_decrypt_pwd_cb(const char *cipher_text, uint32 cipher_len, char *plain
             LOG_DEBUG_ERR("[DSS] failed to decode SSL cipher."));
     }
     if (cipher.cipher_len > 0) {
-        status_t status = cm_decrypt_pwd(&cipher, (uchar *)plain_text, &plain_len);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[DSS] failed to decrypt ssl pwd."));
+        status_t status = dss_load_random_file(cipher.rand, (int32)sizeof(cipher.rand));
+        DSS_RETURN_IFERR2(status, CM_THROW_ERROR(ERR_VALUE_ERROR, "[DSS] load random component failed."));
+        status = cm_decrypt_pwd(&cipher, (uchar *)plain_text, &plain_len);
+        DSS_RETURN_IFERR2(status, CM_THROW_ERROR(ERR_VALUE_ERROR, "[DSS] failed to decrypt ssl pwd."));
     } else {
         CM_THROW_ERROR(ERR_INVALID_PARAM, "SSL_PWD_CIPHERTEXT");
         LOG_DEBUG_ERR("[DSS] failed to decrypt ssl pwd for the cipher len is invalid.");
@@ -305,7 +362,9 @@ status_t dss_load_mes_ssl(dss_config_t *inst_cfg)
     value = cm_get_config_value(&inst_cfg->config, "SSL_CERT_NOTIFY_TIME");
     status = dss_set_ssl_param("SSL_CERT_NOTIFY_TIME", value);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CERT_NOTIFY_TIME"));
-
+    uint32 alert_value;
+    status = cm_str2uint32(value, &alert_value);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_CERT_NOTIFY_TIME"));
     value = cm_get_config_value(&inst_cfg->config, "SSL_PERIOD_DETECTION");
     status = cm_str2uint32(value, &inst_cfg->params.ssl_detect_day);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_PERIOD_DETECTION"));
@@ -314,7 +373,13 @@ status_t dss_load_mes_ssl(dss_config_t *inst_cfg)
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_PERIOD_DETECTION");
         return CM_ERROR;
     }
-
+    if (inst_cfg->params.ssl_detect_day > alert_value) {
+        DSS_THROW_ERROR_EX(ERR_DSS_INVALID_PARAM,
+            "SSL disabled: the value of SSL_PERIOD_DETECTION which is %u is "
+            "bigger than the value of SSL_CERT_NOTIFY_TIME which is %u",
+            inst_cfg->params.ssl_detect_day, alert_value);
+        return CM_ERROR;
+    }
     value = cm_get_config_value(&inst_cfg->config, "SSL_PWD_CIPHERTEXT");
     status = dss_set_ssl_param("SSL_PWD_CIPHERTEXT", value);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "SSL_PWD_CIPHERTEXT"));
@@ -487,10 +552,9 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_dlock_retry_count(inst_cfg));
     CM_RETURN_IFERR(dss_load_mes_params(inst_cfg));
     CM_RETURN_IFERR(dss_load_shm_key(inst_cfg));
-#ifdef ENABLE_GLOBAL_CACHE
+    CM_RETURN_IFERR(dss_load_threadpool_cfg(inst_cfg));
     CM_RETURN_IFERR(dss_load_cephrbd_params(inst_cfg));
     CM_RETURN_IFERR(dss_load_cephrbd_config_file(inst_cfg));
-#endif
     return CM_SUCCESS;
 }
 

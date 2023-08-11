@@ -28,6 +28,7 @@
 #include "dss_defs.h"
 #include "cm_date.h"
 #include "dss_file_def.h"
+#include "ceph_rbd_param.h"
 
 #ifdef __cplusplus
 extern "C" {

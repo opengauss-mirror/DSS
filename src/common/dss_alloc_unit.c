@@ -59,24 +59,24 @@ static status_t dss_alloc_au_from_recycle(
     dss_au_root_t *dss_au_root = DSS_GET_AU_ROOT(dss_ctrl);
     bool32 entry_changed = CM_FALSE;
     ftid_t free_root = *(ftid_t *)(&dss_au_root->free_root);
-    gft_node_t *root_node = dss_get_ft_node_by_ftid(vg_item, free_root, DSS_TRUE, CM_FALSE);
+    gft_node_t *root_node = dss_get_ft_node_by_ftid(session, vg_item, free_root, DSS_TRUE, CM_FALSE);
     CM_ASSERT(root_node != NULL);
     if (dss_can_alloc_from_recycle(root_node, is_before)) {
         ftid_t id = root_node->items.first;
-        gft_node_t *node = dss_get_ft_node_by_ftid(vg_item, id, DSS_TRUE, CM_FALSE);
+        gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, id, DSS_TRUE, CM_FALSE);
         if (node == NULL) {
             LOG_DEBUG_ERR("Failed to get ft node %llu,%llu, maybe no memory.", (uint64)(id.au), (uint64)(id.volume));
-            return ERR_ALLOC_MEMORY;
+            return CM_ERROR;
         }
 
         CM_ASSERT(node->type == GFT_FILE || node->type == GFT_LINK);
         ga_obj_id_t entry_objid;
         dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
-            vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, &entry_objid, CM_FALSE);
+            session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, &entry_objid, CM_FALSE);
         if (!entry_block) {
             LOG_DEBUG_ERR("Failed to get fs block %llu,%llu,%llu, maybe no memory.", (uint64)node->entry.au,
                 (uint64)node->entry.volume, (uint64)node->entry.block);
-            return ERR_ALLOC_MEMORY;
+            return CM_ERROR;
         }
 
         uint16 index;
@@ -86,11 +86,11 @@ static status_t dss_alloc_au_from_recycle(
 
         index = (uint16)(entry_block->used_num - 1);
         dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
-            vg_item, entry_fs_block->bitmap[index], DSS_BLOCK_TYPE_FS, DSS_TRUE, &sec_objid, CM_FALSE);
+            session, vg_item, entry_fs_block->bitmap[index], DSS_BLOCK_TYPE_FS, DSS_TRUE, &sec_objid, CM_FALSE);
         if (!block) {
             LOG_DEBUG_ERR("Failed to get fs block %llu,%llu,%llu, maybe no memory.", (uint64)node->entry.au,
                 (uint64)node->entry.volume, (uint64)node->entry.block);
-            return ERR_ALLOC_MEMORY;
+            return CM_ERROR;
         }
         CM_ASSERT(block->head.used_num > 0);
         uint16 old_used_num = entry_fs_block->head.used_num;
@@ -105,11 +105,11 @@ static status_t dss_alloc_au_from_recycle(
             block->head.used_num--;
             dss_set_blockid(&block->bitmap[sec_index], DSS_INVALID_64);
             dss_redo_set_file_size_t redo_size;
-            uint64 old_size = node->size;
+            uint64 old_size = (uint64)node->size;
             uint64 au_size = dss_get_vg_au_size(dss_ctrl);
-            node->size = node->size - au_size;
+            (void)cm_atomic_set(&node->size, (int64)((uint64)node->size - au_size));
             redo_size.ftid = node->id;
-            redo_size.size = node->size;
+            redo_size.size = (uint64)node->size;
             redo_size.oldsize = old_size;
             dss_put_log(session, vg_item, DSS_RT_SET_FILE_SIZE, &redo_size, sizeof(redo_size));
             if (block->head.used_num == 0) {
@@ -122,7 +122,7 @@ static status_t dss_alloc_au_from_recycle(
             if (!entry_changed) {
                 dss_redo_set_fs_block_t redo;
                 redo.index = sec_index;
-                redo.id = block->head.id;
+                redo.id = block->head.common.id;
                 redo.used_num = block->head.used_num;
                 redo.value = block->bitmap[sec_index];
                 redo.old_used_num = old_sec_used_num;
@@ -143,7 +143,7 @@ static status_t dss_alloc_au_from_recycle(
                 dss_free_ft_node(session, vg_item, root_node, node, CM_TRUE, CM_TRUE);
             } else {
                 redo.index = index;
-                redo.id = entry_block->id;
+                redo.id = entry_block->common.id;
                 redo.used_num = entry_block->used_num;
                 redo.value = entry_fs_block->bitmap[index];
                 redo.old_used_num = old_used_num;
@@ -213,6 +213,7 @@ status_t dss_alloc_au_core(
 status_t dss_refresh_core_and_volume(dss_vg_info_item_t *vg_item)
 {
     if (dss_is_readwrite()) {
+        DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
     status_t status;

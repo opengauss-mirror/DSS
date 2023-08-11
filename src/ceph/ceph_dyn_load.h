@@ -25,19 +25,25 @@
 #ifndef __DSS_CEPH_DYN_LOAD_H__
 #define __DSS_CEPH_DYN_LOAD_H__
 
-#ifdef ENABLE_GLOBAL_CACHE
-
 #include <stdbool.h>
 #include "cm_config.h"
-#ifndef ENABLE_GCOV
-#include "rados/librados.h"
-#include "rbd/librbd.h"
-#else
 typedef void *rados_t;
 typedef void *rados_ioctx_t;
 typedef void *rbd_image_t;
+
+#define RBD_MAX_IMAGE_NAME_SIZE 96
+#define RBD_MAX_BLOCK_NAME_SIZE 24
 #define RBD_FEATURE_LAYERING 10
-#endif  // ENABLE_GCOV
+
+typedef struct {
+    uint64_t size;
+    uint64_t obj_size;
+    uint64_t num_objs;
+    int order;
+    char block_name_prefix[RBD_MAX_BLOCK_NAME_SIZE]; /* deprecated */
+    int64_t parent_pool; /* deprecated */
+    char parent_name[RBD_MAX_IMAGE_NAME_SIZE]; /* deprecated */
+} rbd_image_info_t;
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,22 +71,18 @@ status_t dyn_rados_shutdown(rados_t cluster);
 
 void dyn_rados_ioctx_destroy(rados_ioctx_t ioctx);
 
-status_t dyn_rbd_create2(rados_ioctx_t ioctx, const char *name, uint64_t size, uint64_t features, int *order);
-
 status_t dyn_rbd_open(rados_ioctx_t io, const char *name, rbd_image_t *image, const char *snap_name);
 
 status_t dyn_rbd_close(rbd_image_t image);
 
-int32_t dyn_rbd_write(rbd_image_t image, uint64_t ofs, int32_t len, const char *buf);
-
-int32_t dyn_rbd_read(rbd_image_t image, uint64_t ofs, int32_t len, char *buf);
-
-status_t dyn_rbd_get_size(rbd_image_t image, int64_t *size);
-
 void dyn_rados_conf_set(rados_t cluster, const char *option, const char *value);
+
+void dyn_rbd_get_data_addr(rbd_image_t image, rados_ioctx_t ioctx, uint64_t offset, uint64_t *obj_offset,
+    char *obj_addr, uint32_t *obj_id);
+
+void dyn_rbd_stat(rbd_image_t image, rbd_image_info_t *info, size_t infosize);
 
 #ifdef __cplusplus
 }
 #endif
-#endif  // ENABLE_GLOBAL_CACHE
 #endif  // __DSS_CEPH_DYN_LOAD_H__

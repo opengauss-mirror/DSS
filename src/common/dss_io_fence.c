@@ -406,24 +406,17 @@ status_t dss_inquiry_luns_from_ctrl(dss_vg_info_item_t *item, ptlist_t *lunlist)
     return CM_SUCCESS;
 }
 
-status_t dss_inquiry_luns(ptlist_t *lunlist, bool32 is_server)
+status_t dss_inquiry_luns(dss_vg_info_t *vg_info, ptlist_t *lunlist)
 {
 #ifdef WIN32
 #else
     status_t status = CM_SUCCESS;
-    dss_vg_info_t *dss_vg_info = NULL;
     dev_info_t *dev_info = NULL;
     errno_t ret;
 
-    LOG_DEBUG_INF("Begin inquiry luns, is server %u.", (uint32)is_server);
-    dss_get_vg_info_is_server(is_server, &dss_vg_info);
 
-    if (dss_vg_info == NULL) {
-        return CM_SUCCESS;
-    }
-
-    for (uint32 i = 0; i < (uint32)dss_vg_info->group_num; i++) {
-        dss_vg_info_item_t *item = &dss_vg_info->volume_group[i];
+    for (uint32 i = 0; i < (uint32)vg_info->group_num; i++) {
+        dss_vg_info_item_t *item = &vg_info->volume_group[i];
 
         dev_info = (dev_info_t *)malloc(sizeof(dev_info_t));
         bool32 result = (bool32)(dev_info != NULL);

@@ -256,11 +256,6 @@ status_t dss_init_vol_handle(dss_vg_info_item_t *vg_item, int32 flags, dss_vol_h
                 vol_handles->volume_handle[vid].handle = vol->handle;
                 vol_handles->volume_handle[vid].unaligned_handle = vol->unaligned_handle;
                 vol_handles->volume_handle[vid].id = vol->id;
-#ifdef ENABLE_GLOBAL_CACHE
-                vol_handles->volume_handle[vid].image = vol->image;
-                vol_handles->volume_handle[vid].ctx = vol->ctx;
-                vol_handles->volume_handle[vid].rds_cluster = vol->rds_cluster;
-#endif
                 vol_handles->volume_handle[vid].vg_type = vol->vg_type;
                 vol_handles->volume_handle[vid].version = vg_item->dss_ctrl->volume.defs[vid].version;
             }
@@ -448,7 +443,7 @@ status_t dss_parse_vg_config(dss_vg_info_t *config, char *buf, uint32 buf_len)
             return CM_ERROR;
         }
         CM_RETURN_IFERR(cm_text2str(&name, config->volume_group[vg_no].vg_name, DSS_MAX_NAME_LEN));
-        CM_RETURN_IFERR(cm_text2str(&value, config->volume_group[vg_no].entry_path, DSS_NAME_BUFFER_SIZE));
+        CM_RETURN_IFERR(cm_text2str(&value, config->volume_group[vg_no].entry_path, DSS_MAX_VOLUME_PATH_LEN));
         vg_no++;
 
         comment.str = text.str;
@@ -534,7 +529,8 @@ status_t dss_load_vg_ctrl_part(dss_vg_info_item_t *vg_item, int64 offset, void *
             return CM_ERROR;
         }
     }
-    LOG_DEBUG_INF("Begin to read volume %s,offset:%lld,size:%d.", vg_item->entry_path, offset, size);
+    LOG_DEBUG_INF(
+        "Begin to read volume %s when load vg ctrl part, offset:%lld,size:%d.", vg_item->entry_path, offset, size);
     if (dss_read_volume_inst(vg_item, &vg_item->volume_handle[0], offset, buf, size, remote) != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to read volume %s,offset:%lld,size:%d.", vg_item->entry_path, offset, size);
         return CM_ERROR;
@@ -918,9 +914,9 @@ status_t dss_check_lock_instid(dss_vg_info_item_t *vg_item, const char *entry_pa
 
     if (LOCKR_INST_ID(lock) != LOCKW_INST_ID(lock)) {
         (void)close(fd);
+        LOG_DEBUG_INF("another inst_id(disk) %lld, curr inst_id(lock) %lld.", LOCKR_INST_ID(lock), LOCKW_INST_ID(lock));
         cm_destory_dlock(&lock);
         dss_unlatch(&vg_item->disk_latch);
-        LOG_DEBUG_INF("another inst_id(disk) %lld, curr inst_id(lock) %lld.", LOCKR_INST_ID(lock), LOCKW_INST_ID(lock));
         return CM_SUCCESS;
     }
 
@@ -1046,7 +1042,7 @@ static status_t dss_gen_volume_head(
     dss_volume_header_t *vol_head, dss_vg_info_item_t *vg_item, const char *volume_name, uint32 id)
 {
     vol_head->vol_type.id = id;
-    errno_t errcode = strcpy_s(vol_head->vol_type.entry_volume_name, DSS_MAX_NAME_LEN, volume_name);
+    errno_t errcode = strcpy_s(vol_head->vol_type.entry_volume_name, DSS_MAX_VOLUME_PATH_LEN, volume_name);
     DSS_SECUREC_SS_RETURN_IF_ERROR(errcode, CM_ERROR);
     vol_head->vol_type.type = DSS_VOLUME_TYPE_NORMAL;
     vol_head->valid_flag = DSS_CTRL_VALID_FLAG;
@@ -1082,15 +1078,19 @@ static status_t dss_add_volume_vg_ctrl(
     dss_session_t *session, uint32 id, uint64 vol_size, dss_vg_info_item_t *vg_item, const char *volume_name)
 {
     dss_ctrl_t *vg_ctrl = vg_item->dss_ctrl;
-    errno_t errcode = strcpy_s(vg_ctrl->volume.defs[id].name, DSS_MAX_NAME_LEN, volume_name);
+    errno_t errcode = strcpy_s(vg_ctrl->volume.defs[id].name, DSS_MAX_VOLUME_PATH_LEN, volume_name);
     DSS_SECUREC_SS_RETURN_IF_ERROR(errcode, CM_ERROR);
     vg_ctrl->volume.defs[id].flag = VOLUME_OCCUPY;
     vg_ctrl->volume.defs[id].id = id;
     vg_ctrl->core.volume_attrs[id].flag = VOLUME_OCCUPY;
     vg_ctrl->core.volume_attrs[id].id = id;
-    vg_ctrl->core.volume_attrs[id].hwm = dss_get_vg_au_size(vg_ctrl);
+    vg_ctrl->core.volume_attrs[id].hwm = CM_CALC_ALIGN(DSS_VOLUME_HEAD_SIZE, dss_get_vg_au_size(vg_ctrl));
     vg_ctrl->core.volume_attrs[id].size = vol_size;
-    vg_ctrl->core.volume_attrs[id].free = vg_ctrl->core.volume_attrs[id].size - dss_get_vg_au_size(vg_ctrl);
+    if (vol_size <= vg_ctrl->core.volume_attrs[id].hwm) {
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_ADD, volume_name, "volume size is too small");
+        return CM_ERROR;
+    }
+    vg_ctrl->core.volume_attrs[id].free = vol_size - vg_ctrl->core.volume_attrs[id].hwm;
     LOG_RUN_INF("Add volume refresh core, old core version:%llu, volume version:%llu, volume def version:%llu.",
         vg_ctrl->core.version, vg_ctrl->volume.version, vg_ctrl->volume.defs[id].version);
     vg_ctrl->volume.defs[id].version++;
@@ -1228,12 +1228,6 @@ static status_t dss_remove_volume_impl(
 {
     errno_t errcode;
     dss_ctrl_t *vg_ctrl = vg_item->dss_ctrl;
-
-    // IF the volume has data, it's forbidden to remove volume
-    if (dss_check_volume_is_used(vg_item, id)) {
-        DSS_THROW_ERROR(ERR_DSS_DIR_REMOVE_NOT_EMPTY);
-        return CM_ERROR;
-    }
 
     if (vg_item->volume_handle[id].handle != DSS_INVALID_HANDLE) {
         dss_close_volume(&vg_item->volume_handle[id]);
@@ -1493,6 +1487,7 @@ status_t dss_load_volume_ctrl(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *vo
 status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item)
 {
     if (dss_is_readwrite()) {
+        DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
 #ifndef WIN32
@@ -1657,6 +1652,7 @@ status_t dss_check_read_volume(
     dss_volume_t *volume;
     DSS_RETURN_IF_ERROR(dss_check_volume(vg_item, volumeid));
     volume = &vg_item->volume_handle[volumeid];
+    LOG_DEBUG_INF("Begin to read volume %s when check, offset:%lld,size:%d.", vg_item->entry_path, offset, size);
     return dss_read_volume_inst(vg_item, volume, offset, buf, size, remote);
 }
 
@@ -1668,7 +1664,7 @@ void regist_remote_read_proc(dss_remote_read_proc_t proc)
 
 static inline bool32 dss_need_load_remote(int size)
 {
-    return ((remote_read_proc != NULL) && (dss_is_readonly()) && (size <= (int32)DSS_LOADDISK_BUFFER_SIZE));
+    return ((remote_read_proc != NULL) && (!dss_need_exec_local()) && (size <= (int32)DSS_LOADDISK_BUFFER_SIZE));
 }
 
 /*
@@ -1704,8 +1700,15 @@ status_t dss_read_volume_inst(
     CM_ASSERT(((uint64)buf) % DSS_DISK_UNIT_SIZE == 0);
 
     while (dss_need_load_remote(size) == CM_TRUE && status != CM_SUCCESS) {
+        if (g_dss_instance_status != NULL && *g_dss_instance_status < DSS_STATUS_OPEN) {
+            break;
+        }
         status = remote_read_proc(vg_item->vg_name, volume, offset, buf, size);
         if (status != CM_SUCCESS) {
+            if (status == DSS_READ4STANDBY_ERR) {
+                LOG_RUN_ERR("Failed to load disk(%s) data from the active node, result:%d", volume->name_p, status);
+                return CM_ERROR;
+            }
             LOG_RUN_WAR("Failed to load disk(%s) data from the active node, result:%d", volume->name_p, status);
             if (dss_need_exec_local()) {
                 break;
@@ -1750,7 +1753,7 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volume_id, int64 o
     dss_volume_t *volume = &vg_item->volume_handle[volume_id];
     if (volume->handle == DSS_INVALID_HANDLE) {
         if (dss_open_volume(volume->name_p, NULL, DSS_INSTANCE_OPEN_FLAG, volume) != CM_SUCCESS) {
-            LOG_RUN_ERR("Failed to open volume(%s).", volume->name_p);
+            LOG_RUN_ERR("Read volume for standby fialed, failed to open volume(%s).", volume->name_p);
             return CM_ERROR;
         } 
     }
@@ -1764,7 +1767,7 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volume_id, int64 o
     
 
     if (dss_read_volume(volume, offset, buf, size) != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to load disk(%s) data.", volume->name_p);
+        LOG_RUN_ERR("Read volume for standby fialed, failed to load disk(%s) data.", volume->name_p);
         return CM_ERROR;
     }
 

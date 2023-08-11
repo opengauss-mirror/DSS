@@ -57,7 +57,9 @@ extern "C" {
 
 #define HANDLE_VALUE(handle) ((handle) - (DSS_HANDLE_BASE))
 #define DB_DSS_DEFAULT_UDS_PATH "UDS:/tmp/.dss_unix_d_socket"
-#define DSS_CONN_DEFAULT_TIME_OUT 30000
+/* A node is deleted only when it fails to be started for 5 consecutive times within 30 seconds.
+   Therefore, the startup failure time cannot exceed 6 seconds. */
+#define DSS_CONN_DEFAULT_TIME_OUT 3000
 #define DSS_CONN_RETRY_INTERVAL 5
 char g_dss_inst_path[CM_MAX_PATH_LEN] = {0};
 typedef struct st_dss_conn_info {
@@ -101,7 +103,7 @@ static void dss_clt_env_init(void)
         if (g_dss_conn_info.isinit == CM_FALSE) {
             status_t status = cm_launch_thv(GLOBAL_THV_OBJ0, NULL, dss_conn_create, dss_conn_release);
             if (status != CM_SUCCESS) {
-                DSS_THROW_ERROR(ERR_SYSTEM_CALL, "Dss client initialization failed.");
+                LOG_RUN_ERR("Dss client initialization failed.");
                 cm_unlatch(&g_dss_conn_info.conn_latch, NULL);
                 return;
             }
@@ -120,23 +122,20 @@ static status_t dss_conn_retry(dss_conn_t *conn)
         // avoid buffer leak when disconnect
         dss_free_packet_buffer(&conn->pack);
         status = dss_connect(dss_get_inst_path(), NULL, NULL, conn);
-        DSS_BREAK_IFERR2(status, DSS_THROW_ERROR(ERR_SYSTEM_CALL, "Dss client connet server failed."));
+        DSS_BREAK_IFERR2(status, LOG_RUN_ERR("Dss client connet server failed."));
         char *home = NULL;
         status = dss_get_home_sync(conn, &home);
-        DSS_BREAK_IFERR3(
-            status, DSS_THROW_ERROR(ERR_SYSTEM_CALL, "Dss client get home from server failed."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client get home from server failed."), dss_disconnect(conn));
 
         uint32 max_open_file = DSS_MAX_OPEN_FILES;
         status = dss_init(max_open_file, home);
-        DSS_BREAK_IFERR3(status, DSS_THROW_ERROR(ERR_SYSTEM_CALL, "Dss client init failed."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client init failed."), dss_disconnect(conn));
 
         status = dss_set_session_sync(conn);
-        DSS_BREAK_IFERR3(
-            status, DSS_THROW_ERROR(ERR_SYSTEM_CALL, "Dss client failed to initialize session."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client failed to initialize session."), dss_disconnect(conn));
 
         status = dss_init_vol_handle_sync(conn);
-        DSS_BREAK_IFERR3(
-            status, DSS_THROW_ERROR(ERR_SYSTEM_CALL, "Dss client init vol handle failed."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client init vol handle failed."), dss_disconnect(conn));
 
         g_dss_conn_info.conn_num++;
     } while (0);
@@ -152,6 +151,9 @@ status_t dss_conn_sync(dss_conn_t *conn)
     while (timeout == DSS_CONN_NEVER_TIMEOUT || timeout > wait_time) {
         ret = dss_conn_retry(conn);
         if (ret == CM_SUCCESS) {
+            break;
+        }
+        if (cm_get_os_error() == ENOENT) {
             break;
         }
         cm_sleep(DSS_CONN_RETRY_INTERVAL);
@@ -257,11 +259,15 @@ dss_dir_handle dss_dopen(const char *dir_path)
 
 int dss_dread(dss_dir_handle dir, dss_dir_item_t item, dss_dir_item_t *result)
 {
+    if (item == NULL || result == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "errcodss_dir_item_t");
+        return DSS_ERROR;
+    }
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("dread get conn error."));
 
-    gft_node_t *node = (dss_dir_item_handle)dss_read_dir_impl(conn, (dss_dir_t *)dir, CM_TRUE);
+    gft_node_t *node = dss_read_dir_impl(conn, (dss_dir_t *)dir, CM_TRUE);
     if (node == NULL) {
         *result = NULL;
         return DSS_SUCCESS;
@@ -275,21 +281,6 @@ int dss_dread(dss_dir_handle dir, dss_dir_item_t item, dss_dir_item_t *result)
         return DSS_ERROR;
     }
     *result = item;
-    return DSS_SUCCESS;
-}
-
-int dss_set_stat_info(dss_stat_info_t item, gft_node_t *node)
-{
-    item->type = node->type;
-    item->size = node->size;
-    item->written_size = node->written_size;
-    item->create_time = node->create_time;
-    item->update_time = node->update_time;
-    int32 errcode = memcpy_s(item->name, DSS_MAX_NAME_LEN, node->name, DSS_MAX_NAME_LEN);
-    if (SECUREC_UNLIKELY(errcode != EOK)) {
-        DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
-        return DSS_ERROR;
-    }
     return DSS_SUCCESS;
 }
 
@@ -346,12 +337,7 @@ int dss_fstat(int handle, dss_stat_info_t item)
     }
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fstat get conn error"));
-    gft_node_t *node = dss_get_node_by_handle_impl(conn, HANDLE_VALUE(handle));
-    if (node == NULL) {
-        LOG_DEBUG_ERR("fstat get node by handle error");
-        return DSS_ERROR;
-    }
-    return dss_set_stat_info(item, node);
+    return dss_fstat_impl(conn, HANDLE_VALUE(handle), item);
 }
 
 int dss_dclose(dss_dir_handle dir)
@@ -529,6 +515,16 @@ int dss_fread(int handle, void *buf, int size, int *read_size)
 
 int dss_pwrite(int handle, const void *buf, int size, long long offset)
 {
+    if (size < 0) {
+        LOG_DEBUG_ERR("File size is invalid:%d.", size);
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "size must be a positive integer");
+        return CM_ERROR;
+    }
+    if (offset > (int64)DSS_MAX_FILE_SIZE) {
+        LOG_DEBUG_ERR("Invalid parameter offset:%lld.", offset);
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "offset must less than DSS_MAX_FILE_SIZE");
+        return CM_ERROR;
+    }
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("pwrite get conn error."));
@@ -540,6 +536,20 @@ int dss_pwrite(int handle, const void *buf, int size, long long offset)
 
 int dss_pread(int handle, void *buf, int size, long long offset, int *read_size)
 {
+    if (read_size == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "read _size is NULL");
+        return CM_ERROR;
+    }
+    if (size < 0) {
+        LOG_DEBUG_ERR("File size is invalid:%d.", size);
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "size must be a positive integer");
+        return CM_ERROR;
+    }
+    if (offset > (int64)DSS_MAX_FILE_SIZE) {
+        LOG_DEBUG_ERR("Invalid parameter offset:%lld.", offset);
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "offset must less than DSS_MAX_FILE_SIZE");
+        return CM_ERROR;
+    }
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("pread get conn error."));
@@ -548,6 +558,20 @@ int dss_pread(int handle, void *buf, int size, long long offset, int *read_size)
     dss_get_api_volume_error();
     return (int)ret;
 }
+
+int dss_get_addr(int handle, long long offset, char *pool_name, char *image_name, char *obj_addr,
+    unsigned int *obj_id, unsigned long int *obj_offset)
+{
+    dss_conn_t *conn = NULL;
+    status_t ret = dss_get_conn(&conn);
+    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("get conn error when get ceph address."));
+
+    ret = dss_get_addr_impl(conn, HANDLE_VALUE(handle), offset, pool_name, image_name, obj_addr,
+        obj_id, obj_offset);
+    dss_get_api_volume_error();
+    return (int)ret;
+}
+
 
 int dss_fcopy(const char *src_path, const char *dest_path)
 {
@@ -636,9 +660,13 @@ static void dss_fsize_with_options(const char *fname, long long *fsize, int orig
     (void)dss_close_file_impl(conn, handle);
 }
 
-void dss_fsize(const char *fname, long long *fsize)
+int dss_fsize_physical(int handle, long long *fsize)
 {
-    dss_fsize_with_options(fname, fsize, SEEK_END);
+    dss_conn_t *conn = NULL;
+    status_t ret = dss_get_conn(&conn);
+    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("get conn error."));
+
+    return dss_get_phy_size_impl(conn, HANDLE_VALUE(handle), fsize);
 }
 
 void dss_fsize_maxwr(const char *fname, long long *fsize)
@@ -690,10 +718,15 @@ int dss_set_svr_path(const char *conn_path)
     return DSS_SUCCESS;
 }
 
-void dss_register_log_callback(dss_log_output cb_log_output)
+void dss_register_log_callback(dss_log_output cb_log_output, unsigned int log_level)
 {
     cm_log_param_instance()->log_write = (usr_cb_log_output_t)cb_log_output;
-    cm_log_param_instance()->log_level = MAX_LOG_LEVEL;
+    cm_log_param_instance()->log_level = log_level;
+}
+
+void dss_set_log_level(unsigned int log_level)
+{
+    cm_log_param_instance()->log_level = log_level;
 }
 
 int dss_set_conn_timeout(int32 timeout)
@@ -806,6 +839,11 @@ int32 dss_init_logger(char *log_home, unsigned int log_level, unsigned int log_b
 
 int dss_aio_prep_pread(void *iocb, int handle, void *buf, size_t count, long long offset)
 {
+    if (offset > (int64)DSS_MAX_FILE_SIZE) {
+        LOG_DEBUG_ERR("Invalid parameter offset:%lld.", offset);
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "offset must less than DSS_MAX_FILE_SIZE");
+        return CM_ERROR;
+    }
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IF_ERROR(ret);
@@ -821,6 +859,11 @@ int dss_aio_prep_pread(void *iocb, int handle, void *buf, size_t count, long lon
 
 int dss_aio_prep_pwrite(void *iocb, int handle, void *buf, size_t count, long long offset)
 {
+    if (offset > (int64)DSS_MAX_FILE_SIZE) {
+        LOG_DEBUG_ERR("Invalid parameter offset:%lld.", offset);
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "offset must less than DSS_MAX_FILE_SIZE");
+        return CM_ERROR;
+    }
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IF_ERROR(ret);
@@ -834,6 +877,21 @@ int dss_aio_prep_pwrite(void *iocb, int handle, void *buf, size_t count, long lo
     return CM_SUCCESS;
 }
 
+int dss_aio_post_pwrite(void *iocb, int handle, size_t count, long long offset)
+{
+    if (offset > (int64)DSS_MAX_FILE_SIZE) {
+        LOG_DEBUG_ERR("Invalid parameter offset:%lld.", offset);
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "offset must less than DSS_MAX_FILE_SIZE");
+        return CM_ERROR;
+    }
+
+    dss_conn_t *conn = NULL;
+    status_t ret = dss_get_conn(&conn);
+    DSS_RETURN_IF_ERROR(ret);
+
+    return (int)dss_aio_post_pwrite_file_impl(conn, HANDLE_VALUE(handle), offset, (int32)count);
+}
+
 int dss_get_au_size(int handle, long long *au_size)
 {
     dss_conn_t *conn = NULL;
@@ -842,6 +900,12 @@ int dss_get_au_size(int handle, long long *au_size)
 
     return get_au_size_impl(conn, HANDLE_VALUE(handle), au_size);
 }
+
+int dss_compare_size_equal(const char *vg_name, long long *au_size)
+{
+    return dss_compare_size_equal_impl(vg_name, au_size);
+}
+
 
 int dss_setcfg(const char *name, const char *value, const char *scope)
 {

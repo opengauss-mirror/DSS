@@ -70,9 +70,9 @@ dss_session_ctrl_t *dss_get_session_ctrl(void)
 uint32 dss_get_udssession_startid(void)
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
-    uint32 start_sid = 0;
+    uint32 start_sid = (uint32)DSS_BACKGROUND_TASK_NUM;
     if (inst_cfg->params.inst_cnt > 1) {
-        start_sid = inst_cfg->params.channel_num + inst_cfg->params.work_thread_cnt;
+        start_sid = start_sid + inst_cfg->params.channel_num + inst_cfg->params.work_thread_cnt;
     }
     return start_sid;
 }
@@ -115,6 +115,8 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
         g_dss_session_ctrl.sessions[id].connected = CM_TRUE;
     }
     g_dss_session_ctrl.sessions[id].is_closed = CM_FALSE;
+    g_dss_session_ctrl.sessions[id].proto_type = PROTO_TYPE_UNKNOWN;
+    g_dss_session_ctrl.sessions[id].status = DSS_SESSION_STATUS_IDLE;
     *session = &g_dss_session_ctrl.sessions[id];
     return CM_SUCCESS;
 }
@@ -264,6 +266,54 @@ static bool32 dss_is_timeout(int32 timeout, int32 sleep_times, int32 sleeps)
     return (bool32)(((timeout * 1000) / (sleeps)) < sleep_times);
 }
 
+status_t dss_lock_shm_meta_s_without_session(latch_t *latch, int32 timeout)
+{
+    int32 sleep_times = 0;
+    latch_statis_t *stat = NULL;
+    uint32 count = 0;
+    bool32 is_force = CM_FALSE;
+    uint32 invalid_sid = DSS_DEFAULT_SESSIONID;
+
+    do {
+        cm_spin_lock_by_sid(invalid_sid, &latch->lock, (stat != NULL) ? &stat->s_spin : NULL);
+
+        if (latch->stat == LATCH_STATUS_IDLE) {
+            latch->stat = LATCH_STATUS_S;
+            latch->shared_count = 1;
+            latch->sid = (uint16)invalid_sid;
+            cm_spin_unlock(&latch->lock);
+            cm_latch_stat_inc(stat, count);
+            return CM_SUCCESS;
+        }
+        if ((latch->stat == LATCH_STATUS_S) || (latch->stat == LATCH_STATUS_IX && is_force)) {
+            latch->shared_count++;
+            cm_spin_unlock(&latch->lock);
+            cm_latch_stat_inc(stat, count);
+            return CM_SUCCESS;
+        }
+        cm_spin_unlock(&latch->lock);
+        if (stat != NULL) {
+            stat->misses++;
+        }
+        while (latch->stat != LATCH_STATUS_IDLE && latch->stat != LATCH_STATUS_S) {
+            count++;
+            if (count < GS_SPIN_COUNT) {
+                continue;
+            }
+
+            SPIN_STAT_INC(stat, s_sleeps);
+            cm_usleep(SPIN_SLEEP_TIME);
+            sleep_times++;
+
+            if (dss_is_timeout(timeout, sleep_times, SPIN_SLEEP_TIME)) {
+                return CM_ERROR;
+            }
+            count = 0;
+        }
+    } while (1);
+    return CM_SUCCESS;
+}
+
 status_t dss_lock_shm_meta_s(dss_session_t *session, const dss_latch_offset_t *offset, latch_t *latch, int32 timeout)
 {
     CM_ASSERT(session->latch_stack.stack_top < DSS_MAX_LATCH_STACK_DEPTH);
@@ -309,9 +359,10 @@ status_t dss_lock_shm_meta_s(dss_session_t *session, const dss_latch_offset_t *o
             sleep_times++;
             if (session->is_closed) {
                 DSS_THROW_ERROR(ERR_DSS_SHM_LOCK, "uds connection is closed.");
-                LOG_RUN_ERR("Failed to lock vg share memery because uds connection is closed.");
+                LOG_RUN_ERR("[DSS] ABORT INFO: Failed to lock vg share memery because uds connection is closed.");
                 session->latch_stack.latch_offset_stack[session->latch_stack.stack_top].type = DSS_LATCH_OFFSET_INVALID;
-                return CM_ERROR;
+                cm_fync_logfile();
+                _exit(1);
             }
             if (dss_is_timeout(timeout, sleep_times, SPIN_SLEEP_TIME)) {
                 session->latch_stack.latch_offset_stack[session->latch_stack.stack_top].type = DSS_LATCH_OFFSET_INVALID;
@@ -323,14 +374,28 @@ status_t dss_lock_shm_meta_s(dss_session_t *session, const dss_latch_offset_t *o
     return CM_SUCCESS;
 }
 
+status_t dss_lock_shm_meta_bucket_s(dss_session_t *session, uint32 id, latch_t *latch)
+{
+    if (session != NULL) {
+        dss_latch_offset_t latch_offset;
+        latch_offset.type = DSS_LATCH_OFFSET_SHMOFFSET;
+        cm_shm_key_t key = cm_shm_key_of(SHM_TYPE_HASH, id);
+        latch_offset.offset.shm_offset = cm_trans_shm_offset(key, latch);
+        return dss_lock_shm_meta_s(session, &latch_offset, latch, SPIN_WAIT_FOREVER);
+    } else {
+        return dss_lock_shm_meta_s_without_session(latch, SPIN_WAIT_FOREVER);
+    }
+}
+
 status_t dss_cli_lock_shm_meta_s(
     dss_session_t *session, dss_latch_offset_t *offset, latch_t *latch, latch_should_exit should_exit)
 {
     for (int i = 0; i < DSS_CLIENT_TIMEOUT_COUNT; i++) {
         if (session->is_closed) {
             DSS_THROW_ERROR(ERR_DSS_SHM_LOCK, "uds connection is closed.");
-            LOG_RUN_ERR("Failed to lock vg share memery because uds connection is closed.");
-            return CM_ERROR;
+            LOG_RUN_ERR("[DSS] ABORT INFO: Failed to lock vg share memery because uds connection is closed.");
+            cm_fync_logfile();
+            _exit(1);
         }
         if (dss_lock_shm_meta_s(session, offset, latch, SPIN_WAIT_FOREVER) == CM_SUCCESS) {
             return CM_SUCCESS;
@@ -349,7 +414,7 @@ void dss_lock_shm_meta_x(const dss_session_t *session, latch_t *latch)
 {
     latch_statis_t *stat = NULL;
     uint32 count = 0;
-    uint32 sid = DSS_SESSIONID_IN_LOCK(session->id);
+    uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
 
     do {
         cm_spin_lock_by_sid(sid, &latch->lock, (stat != NULL) ? &stat->x_spin : NULL);
@@ -381,6 +446,29 @@ void dss_lock_shm_meta_x(const dss_session_t *session, latch_t *latch)
     } while (CM_TRUE);
 }
 
+void dss_lock_shm_meta_bucket_x(latch_t *latch)
+{
+    dss_lock_shm_meta_x(NULL, latch);
+}
+
+void dss_unlock_shm_meta_without_session(latch_t *latch)
+{
+    spin_statis_t *stat_spin = NULL;
+    uint32 invalid_sid = DSS_DEFAULT_SESSIONID;
+
+    cm_spin_lock_by_sid(invalid_sid, &latch->lock, stat_spin);
+
+    if (latch->shared_count > 0) {
+        latch->shared_count--;
+    }
+
+    if ((latch->stat == LATCH_STATUS_S || latch->stat == LATCH_STATUS_X) && (latch->shared_count == 0)) {
+        latch->stat = LATCH_STATUS_IDLE;
+    }
+
+    cm_spin_unlock(&latch->lock);
+}
+
 void dss_unlock_shm_meta(dss_session_t *session, latch_t *latch)
 {
     spin_statis_t *stat_spin = NULL;
@@ -400,6 +488,15 @@ void dss_unlock_shm_meta(dss_session_t *session, latch_t *latch)
 
     cm_spin_unlock(&latch->lock);
     session->latch_stack.latch_offset_stack[session->latch_stack.stack_top].type = DSS_LATCH_OFFSET_INVALID;
+}
+
+void dss_unlock_shm_meta_bucket(dss_session_t *session, latch_t *latch)
+{
+    if (session != NULL) {
+        dss_unlock_shm_meta(session, latch);
+    } else {
+        dss_unlock_shm_meta_without_session(latch);
+    }
 }
 
 #ifdef __cplusplus

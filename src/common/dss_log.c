@@ -47,6 +47,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_VOLUME_READ] = "Read volume '%s' failed, volume id %d, reason %d",
     [ERR_DSS_VOLUME_WRITE] = "Write volume '%s' failed, volume id %d, reason %d",
     [ERR_DSS_VOLUME_SEEK] = "Seek volume '%s' failed, volume id %d, reason %d",
+    [ERR_DSS_VOLUME_ADD] = "Failed to add volume %s, reason %s.",
     [ERR_DSS_VOLUME_ADD_EXISTED] = "Add an existed volume %s of volume-group %s failed",
     [ERR_DSS_VOLUME_REMOVE_NOEXIST] = "Remove a non-existent volume %s of volume-group %s failed",
     [ERR_DSS_VOLUME_REMOVE_NONEMPTY] = "Remove a nonempty volume %s failed",
@@ -63,6 +64,8 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_FILE_OPENING_REMOTE] = "The file is open in other inst: %d, command:%d exec failed.",
     [ERR_DSS_FILE_TYPE_MISMATCH] = "The type of directory link or file %s is not matched.",
     [ERR_DSS_FILE_PATH_ILL] = "Path %s decode error %s",
+    [ERR_DSS_FILE_INVALID_SIZE] = "Invalid extend offset %lld, size %d.",
+    [ERR_DSS_FILE_INVALID_WRITTEN_SIZE] = "Invalid written size %lld.",
     [ERR_DSS_DIR_REMOVE_NOT_EMPTY] = "The dir is not empty, can not remove.",
     [ERR_DSS_DIR_CREATE_DUPLICATED] = "Make dir or Create file failed, %s has already existed",
     [ERR_DSS_DIR_NOT_EXIST] = "The dir %s of %s is not existed.",
@@ -100,6 +103,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_RECV_MSG_FAILED] = "Recv msg failed, errcode:%d, inst:%u.",
     [ERR_DSS_LINK_NOT_EXIST] = "The link %s of %s does not exist.",
     [ERR_DSS_INVALID_ID] = "Invalid %s id : %llu.",
+    [ERR_DSS_PROCESS_REMOTE] = "Failed to process remote, errcode: %d, errmsg: %s.",
 };
 
 static status_t dss_init_log_file(log_param_t *log_param, dss_config_t *inst_cfg)
