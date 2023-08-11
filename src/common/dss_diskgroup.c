@@ -793,6 +793,10 @@ status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry
         flock(vglock_fp->_fileno, LOCK_EX);  // use flock to exclusive
         LOG_DEBUG_INF("DISK MODE, lock vg:%s, lock file:%s.", entry_path, lock_file);
     } else {
+        /* in standby cluster, we do not need try to lock(scsi3) xlog vg, xlog vg is a read only disk */
+        if (DSS_STANDBY_CLUSTER_XLOG_VG) {
+            return CM_SUCCESS;
+        }
         dss_latch_x(&vg_item->disk_latch);
         if (dss_lock_disk_vg(entry_path, inst_cfg) != CM_SUCCESS) {
             dss_unlatch(&vg_item->disk_latch);
@@ -1486,7 +1490,7 @@ status_t dss_load_volume_ctrl(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *vo
 
 status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item)
 {
-    if (dss_is_readwrite()) {
+    if (!DSS_STANDBY_CLUSTER && dss_is_readwrite()) {
         DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }

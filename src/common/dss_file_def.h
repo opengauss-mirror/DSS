@@ -71,6 +71,10 @@
 
 #define DSS_VG_IS_VALID(ctrl_p) ((ctrl_p)->vg_info.valid_flag == DSS_CTRL_VALID_FLAG)
 
+#define DSS_STANDBY_CLUSTER (g_inst_cfg->params.cluster_run_mode == CLUSTER_STANDBY)
+#define DSS_IS_XLOG_VG (g_inst_cfg->params.xlog_vg_id == vg_item->id)
+#define DSS_STANDBY_CLUSTER_XLOG_VG (DSS_STANDBY_CLUSTER && DSS_IS_XLOG_VG)
+
 #define DSS_FS_BLOCK_ROOT_SIZE 64
 #define DSS_AU_ROOT_SIZE (((DSS_DISK_UNIT_SIZE) - (24)) - (DSS_FS_BLOCK_ROOT_SIZE))
 

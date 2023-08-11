@@ -49,6 +49,12 @@ typedef enum en_dss_mode {
     DSS_MODE_DISK = 3           // A DATANODE's DISK
 } dss_mode_e;
 
+/* use for dorado cluster */
+typedef enum cluster_run_mode_t {
+    CLUSTER_PRIMARY = 0,
+    CLUSTER_STANDBY = 1
+} cluster_run_mode_t;
+
 typedef struct st_dss_params {
     char *root_name;  // root volume name
     int64 inst_id;
@@ -72,9 +78,11 @@ typedef struct st_dss_params {
     uint32 ssl_detect_day;
     uint32 iothread_count;
     uint32 workthread_count;
+    uint32 xlog_vg_id;
     rbd_config_params_t rbd_config_params;
     char ceph_config[DSS_FILE_NAME_BUFFER_SIZE];
     bool32 blackbox_detail_on;
+    cluster_run_mode_t cluster_run_mode;
 } dss_params_t;
 
 typedef struct st_dss_config {

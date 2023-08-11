@@ -119,6 +119,10 @@ static config_item_t g_dss_params[] = {
         "GS_TYPE_INTEGER", NULL, 39, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "_BLACKBOX_DETAIL_ON",   CM_TRUE, CM_FALSE, "FALSE",  NULL, NULL, "-", "FALSE,TRUE",
        "GS_TYPE_BOOLEAN", NULL, 40, EFFECT_REBOOT,  CFG_INS, NULL, NULL, NULL, NULL},
+    { "CLUSTER_RUN_MODE", CM_TRUE, CM_FALSE, "cluster_primary", NULL, NULL, "-", "-", 
+        "GS_TYPE_VARCHAR", NULL, 41, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "XLOG_VG_ID", CM_TRUE, CM_FALSE, "1", NULL, NULL, "-", "[1,64]",
+        "GS_TYPE_INTEGER", NULL, 42, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 // clang-format on
@@ -467,6 +471,39 @@ static status_t dss_load_disk_lock_file_path(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
+static status_t dss_load_cluster_run_mode(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "CLUSTER_RUN_MODE");
+
+    if (strcmp(value, "cluster_standby") == 0) {
+        inst_cfg->params.cluster_run_mode = CLUSTER_STANDBY;
+        LOG_RUN_INF("The cluster_run_mode is cluster_standby.");
+    } else if (strcmp(value, "cluster_primary") == 0) {
+        inst_cfg->params.cluster_run_mode = CLUSTER_PRIMARY;
+    } else {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid CLUSTER_RUN_MODE"));
+    }
+    
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_xlog_vg_id(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "XLOG_VG_ID");
+    int32 xlog_vg_id;
+    status_t status = cm_str2int(value, &xlog_vg_id);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "XLOG_VG_ID"));
+
+    /* the redo log of metadata in vg0, vg0 can not be synchronous copy disk */
+    if (xlog_vg_id < 1 || xlog_vg_id > 64) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "XLOG_VG_ID"));
+    }
+
+    inst_cfg->params.xlog_vg_id = (uint32)xlog_vg_id;
+    LOG_RUN_INF("The instanceid is %d.", inst_cfg->params.xlog_vg_id);
+    return CM_SUCCESS;
+}
+
 status_t dss_set_cfg_dir(const char *home, dss_config_t *inst_cfg)
 {
     char home_realpath[DSS_MAX_PATH_BUFFER_SIZE];
@@ -573,6 +610,8 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_cephrbd_params(inst_cfg));
     CM_RETURN_IFERR(dss_load_cephrbd_config_file(inst_cfg));
     CM_RETURN_IFERR(dss_load_blackbox_detail_on(inst_cfg));
+    CM_RETURN_IFERR(dss_load_cluster_run_mode(inst_cfg));
+    CM_RETURN_IFERR(dss_load_xlog_vg_id(inst_cfg));
     return CM_SUCCESS;
 }
 

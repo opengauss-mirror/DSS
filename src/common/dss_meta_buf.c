@@ -348,7 +348,7 @@ char *dss_find_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item,
     uint32 hash = cm_hash_int64(*(int64 *)&block_id);
     addr = dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
     if (addr != NULL) {
-        if (check_version && dss_is_server() && (!dss_is_readwrite() || active_refresh)) {
+        if (check_version && dss_is_server() && (DSS_STANDBY_CLUSTER || !dss_is_readwrite() || active_refresh)) {
             status = dss_check_block_version(vg_item, block_id, type, addr, NULL);
             if (status != CM_SUCCESS) {
                 return NULL;

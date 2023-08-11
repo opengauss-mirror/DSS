@@ -2167,7 +2167,7 @@ gft_node_t *dss_find_ft_node(
 
 status_t dss_refresh_root_ft(dss_vg_info_item_t *vg_item, bool32 check_version, bool32 active_refresh)
 {
-    if (dss_is_readwrite() && !active_refresh) {
+    if (!DSS_STANDBY_CLUSTER && dss_is_readwrite() && !active_refresh) {
         DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
@@ -2400,7 +2400,7 @@ status_t dss_update_ft_root(dss_vg_info_item_t *vg_item)
 status_t dss_check_refresh_fs_block(
     dss_vg_info_item_t *vg_item, dss_block_id_t blockid, char *block, bool32 *is_changed)
 {
-    if (dss_is_readwrite()) {
+    if (!DSS_STANDBY_CLUSTER && dss_is_readwrite()) {
         DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
@@ -2413,7 +2413,7 @@ status_t dss_check_refresh_fs_block(
 // refresh file table
 status_t dss_refresh_ft(dss_vg_info_item_t *vg_item)
 {
-    if (dss_is_readwrite()) {
+    if (!DSS_STANDBY_CLUSTER && dss_is_readwrite()) {
         DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
@@ -2464,7 +2464,7 @@ status_t dss_get_root_version(dss_vg_info_item_t *vg_item, uint64 *version)
 
 status_t dss_check_refresh_ft(dss_vg_info_item_t *vg_item)
 {
-    if (dss_is_readwrite()) {
+    if (!DSS_STANDBY_CLUSTER && dss_is_readwrite()) {
         DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
@@ -3233,7 +3233,7 @@ void dss_init_root_fs_block(dss_ctrl_t *dss_ctrl)
 
 status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32 vgid, uint32 volumeid)
 {
-    if (dss_is_readwrite()) {
+    if (!DSS_STANDBY_CLUSTER && dss_is_readwrite()) {
         DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
@@ -3251,7 +3251,7 @@ status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32
 
 status_t dss_refresh_vginfo(dss_vg_info_item_t *vg_item)
 {
-    if (dss_is_readwrite()) {
+    if (!DSS_STANDBY_CLUSTER && dss_is_readwrite()) {
         DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
