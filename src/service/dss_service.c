@@ -562,19 +562,7 @@ static status_t dss_process_rename(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &src));
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &dst));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s, %s", src, dst));
-    status_t ret = dss_rename_file(session, src, dst);
-    if (ret != CM_SUCCESS) {
-        // try delete exist dst file first, see posix rename
-        int32 err_code = cm_get_error_code();
-        if (err_code == ERR_DSS_FILE_RENAME_EXIST) {
-            cm_reset_error();
-            ret = dss_remove_file(session, dst);
-        }
-        if (ret == CM_SUCCESS) {
-            ret = dss_rename_file(session, src, dst);
-        }
-    }
-    return ret;
+    return dss_rename_file(session, src, dst);
 }
 
 static status_t dss_process_loadctrl(dss_session_t *session)
