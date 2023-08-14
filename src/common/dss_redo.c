@@ -1282,9 +1282,14 @@ static status_t dss_recover_root_ft_ctrlinfo(dss_vg_info_item_t *vg_item)
  * Check and recover dss ctrl info from backup area, including core ctrl, volume ctrl and root FTB ctrl.
  * Ctrl info that doesn't need recovery must be backed up.
  * Bug note 08272021: ctrl info that is recovered must be synced. Otherwise checksum would fail supposedly.
+ * In standby cluster, xlog vg is copy from primary cluster,
+ * we do not need to recover ctrlinfo in standby cluster before it promote
  */
 status_t dss_recover_ctrlinfo(dss_vg_info_item_t *vg_item)
 {
+    if (DSS_STANDBY_CLUSTER_XLOG_VG) {
+        return CM_SUCCESS;
+    }
     DSS_RETURN_IF_ERROR(dss_recover_core_ctrlinfo(vg_item));
     DSS_RETURN_IF_ERROR(dss_recover_volume_ctrlinfo(vg_item));
     DSS_RETURN_IF_ERROR(dss_recover_root_ft_ctrlinfo(vg_item));

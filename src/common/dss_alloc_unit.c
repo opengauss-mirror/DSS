@@ -212,7 +212,7 @@ status_t dss_alloc_au_core(
 
 status_t dss_refresh_core_and_volume(dss_vg_info_item_t *vg_item)
 {
-    if (dss_is_readwrite()) {
+    if (!DSS_STANDBY_CLUSTER && dss_is_readwrite()) {
         DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
