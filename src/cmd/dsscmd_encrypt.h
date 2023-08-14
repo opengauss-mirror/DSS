@@ -28,5 +28,5 @@
 #include "dss_param.h"
 
 status_t dss_catch_input_text(char *plain, uint32 plain_size);
-
+status_t dss_receive_info_from_terminal(char *buff, int32 buff_size, bool32 is_plain_text);
 #endif

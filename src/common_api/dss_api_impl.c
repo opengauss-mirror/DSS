@@ -176,7 +176,7 @@ status_t dss_apply_refresh_volume(dss_conn_t *conn, dss_file_context_t *context,
 status_t dss_refresh_volume_handle(dss_conn_t *conn, dss_file_context_t *context, auid_t auid)
 {
     dss_vg_info_item_t *vg_item = context->vg_item;
-    if (vg_item->dss_ctrl->volume.defs[auid.volume].flag == VOLUME_FREE) {
+    if (vg_item->dss_ctrl->volume.defs[auid.volume].flag != VOLUME_OCCUPY) {
         LOG_DEBUG_ERR("Refresh volume failed,vg:%s, volumeid:%u.", context->vg_name, auid.volume);
         return CM_ERROR;
     }

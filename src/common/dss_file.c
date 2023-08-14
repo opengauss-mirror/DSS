@@ -280,15 +280,23 @@ void dss_lock_vg_mem_and_shm_ix2x(dss_session_t *session, dss_vg_info_item_t *vg
 void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
     dss_lock_vg_mem_s(vg_item);
-    dss_latch_offset_t latch_offset;
-    latch_offset.type = DSS_LATCH_OFFSET_SHMOFFSET;
-    latch_offset.offset.shm_offset = dss_get_vg_latch_shm_offset(vg_item);
-    dss_lock_shm_meta_s(session, &latch_offset, vg_item->vg_latch, SPIN_WAIT_FOREVER);
+    if (session != NULL) {
+        dss_latch_offset_t latch_offset;
+        latch_offset.type = DSS_LATCH_OFFSET_SHMOFFSET;
+        latch_offset.offset.shm_offset = dss_get_vg_latch_shm_offset(vg_item);
+        (void)dss_lock_shm_meta_s(session, &latch_offset, vg_item->vg_latch, SPIN_WAIT_FOREVER);
+        return;
+    }
+    (void)dss_lock_shm_meta_s_without_session(vg_item->vg_latch, SPIN_WAIT_FOREVER);
 }
 
 void dss_unlock_vg_mem_and_shm(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-    dss_unlock_shm_meta(session, vg_item->vg_latch);
+    if (session != NULL) {
+        dss_unlock_shm_meta(session, vg_item->vg_latch);
+    } else {
+        dss_unlock_shm_meta_without_session(vg_item->vg_latch);
+    }
     dss_unlock_vg_mem(vg_item);
 }
 

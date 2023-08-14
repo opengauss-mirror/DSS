@@ -23,7 +23,6 @@
  */
 
 #include "dss_malloc.h"
-#include "dss_io_fence.h"
 #include "dsscmd_inq.h"
 
 #ifdef __cplusplus
@@ -103,8 +102,48 @@ static void print_reg_info(ptlist_t *regs)
     }
 }
 
+static status_t dss_modify_cluster_node_info(
+    dss_vg_info_item_t *vg_item, dss_config_t *inst_cfg, dss_inq_status_e inq_status, int64 host_id)
+{
+    if (dss_lock_vg_storage_w(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to lock vg:%s.", vg_item->entry_path);
+        return CM_ERROR;
+    }
+
+    bool32 remote = CM_FALSE;
+    dss_group_global_ctrl_t *global_ctrl  = &vg_item->dss_ctrl->global_ctrl;
+    status_t status = dss_load_vg_ctrl_part(
+        vg_item, (int64)(DSS_VOLUME_HEAD_SIZE - DSS_DISK_UNIT_SIZE), global_ctrl, DSS_DISK_UNIT_SIZE, &remote);
+    if (status != CM_SUCCESS) {
+        dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
+        LOG_DEBUG_ERR("Failed to load global ctrl part %s.", vg_item->entry_path);
+        return status;
+    }
+
+    bool32 is_reg = cm_bitmap64_exist(&global_ctrl->cluster_node_info, (uint8)host_id);
+    if (is_reg && inq_status == DSS_INQ_STATUS_REG) {
+        dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
+        return CM_SUCCESS;
+    }
+    if (!is_reg && inq_status == DSS_INQ_STATUS_UNREG) {
+        dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
+        return CM_SUCCESS;
+    }
+
+    if (inq_status == DSS_INQ_STATUS_REG) {
+        cm_bitmap64_set(&global_ctrl->cluster_node_info, (uint8)host_id);
+    } else {
+        cm_bitmap64_clear(&global_ctrl->cluster_node_info, (uint8)host_id);
+    }
+
+    status = dss_write_ctrl_to_disk(
+        vg_item, (int64)(DSS_VOLUME_HEAD_SIZE - DSS_DISK_UNIT_SIZE), global_ctrl, DSS_DISK_UNIT_SIZE);
+    dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
+    return status;
+}
+
 // get the non-entry disk information of vg.
-static status_t dss_get_vg_non_entry_info(dss_config_t *inst_cfg, dss_vg_info_item_t *vg_item, bool32 is_lock)
+status_t dss_get_vg_non_entry_info(dss_config_t *inst_cfg, dss_vg_info_item_t *vg_item, bool32 is_lock)
 {
     if (vg_item->vg_name[0] == '0' || vg_item->entry_path[0] == '0') {
         LOG_DEBUG_ERR("Failed to load vg ctrl, input parameter is invalid.");
@@ -112,7 +151,7 @@ static status_t dss_get_vg_non_entry_info(dss_config_t *inst_cfg, dss_vg_info_it
     }
 
     if (is_lock) {
-        if (dss_lock_vg_storage(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
+        if (dss_lock_vg_storage_r(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
           LOG_DEBUG_ERR("Failed to lock vg:%s.", vg_item->entry_path);
            return CM_ERROR;
         }
@@ -180,7 +219,7 @@ static status_t dss_get_vg_entry_info(const char *home, dss_config_t *inst_cfg, 
     return CM_SUCCESS;
 }
 
-static status_t dss_inq_alloc_vg_info(const char *home, dss_config_t *inst_cfg, dss_vg_info_t **vg_info)
+status_t dss_inq_alloc_vg_info(const char *home, dss_config_t *inst_cfg, dss_vg_info_t **vg_info)
 {
     *vg_info = cm_malloc(sizeof(dss_vg_info_t));
     if (*vg_info == NULL) {
@@ -211,7 +250,7 @@ static status_t dss_inq_alloc_vg_info(const char *home, dss_config_t *inst_cfg, 
     return CM_SUCCESS;
 }
 
-static void dss_inq_free_vg_info(dss_vg_info_t *vg_info)
+void dss_inq_free_vg_info(dss_vg_info_t *vg_info)
 {
     dss_free_volume_group(vg_info);
     DSS_FREE_POINT(vg_info);
@@ -320,7 +359,7 @@ status_t dss_check_volume_register(char *entry_path, int64 host_id, bool32 *is_r
 static status_t dss_reghl_inner(dss_vg_info_item_t *item, int64 host_id)
 {
     for (uint32 j = 1; j < DSS_MAX_VOLUMES; j++) {
-        if (item->dss_ctrl->core.volume_attrs[j].flag == VOLUME_FREE) {
+        if (item->dss_ctrl->volume.defs[j].flag == VOLUME_FREE) {
             continue;
         }
         CM_RETURN_IFERR(dss_iof_register_single(host_id, item->dss_ctrl->volume.defs[j].name));
@@ -378,6 +417,15 @@ status_t dss_reghl_core(const char *home)
             DSS_PRINT_ERROR("Failed to get vg non entry info when reghl, errcode is %d.\n", status);
             return status;
         }
+        if (i == 0) {
+            status = dss_modify_cluster_node_info(
+                &vg_info->volume_group[i], &inst_cfg, DSS_INQ_STATUS_REG, inst_cfg.params.inst_id);
+            if (status != CM_SUCCESS) {
+                dss_inq_free_vg_info(vg_info);
+                DSS_PRINT_ERROR("Failed to modify node cluster info, errcode is %d.\n", status);
+                return status;
+            }
+        }
         status = dss_reghl_inner(&vg_info->volume_group[i], inst_cfg.params.inst_id);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
@@ -393,7 +441,7 @@ status_t dss_reghl_core(const char *home)
 static status_t dss_unreghl_inner(dss_vg_info_item_t *item, int64 host_id)
 {
     for (uint32 j = 1; j < DSS_MAX_VOLUMES; j++) {
-        if (item->dss_ctrl->core.volume_attrs[j].flag == VOLUME_FREE) {
+        if (item->dss_ctrl->volume.defs[j].flag == VOLUME_FREE) {
             continue;
         }
         CM_RETURN_IFERR(dss_iof_unregister_single(host_id, item->dss_ctrl->volume.defs[j].name));
@@ -435,6 +483,15 @@ status_t dss_unreghl_core(const char *home, bool32 is_lock)
             DSS_PRINT_ERROR("Failed to get vg entry info when unreghl, errcode is %d.\n", status);
             return status;
         }
+        if (i == 0 && is_lock) {
+            status = dss_modify_cluster_node_info(
+                &vg_info->volume_group[i], &inst_cfg, DSS_INQ_STATUS_UNREG, inst_cfg.params.inst_id);
+            if (status != CM_SUCCESS) {
+                dss_inq_free_vg_info(vg_info);
+                DSS_PRINT_ERROR("Failed to modify node cluster info, errcode is %d.\n", status);
+                return status;
+            }
+        }
         status = dss_unreghl_inner(&vg_info->volume_group[i], inst_cfg.params.inst_id);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
@@ -455,7 +512,7 @@ static status_t dss_inq_reg_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg
         CM_RETURN_IFERR(dss_get_vg_non_entry_info(inst_cfg, &vg_info->volume_group[i], CM_TRUE));
         item = &vg_info->volume_group[i];
         for (uint32 j = 1; j < DSS_MAX_VOLUMES; j++) {
-            if (item->dss_ctrl->core.volume_attrs[j].flag == VOLUME_FREE) {
+            if (item->dss_ctrl->volume.defs[j].flag == VOLUME_FREE) {
                 continue;
             }
             CM_RETURN_IFERR(
@@ -579,6 +636,14 @@ static status_t dss_kickh_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, 
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to get vg non entry info when kickh.\n");
             return CM_ERROR;
+        }
+    }
+
+    if (is_lock) {
+        status = dss_modify_cluster_node_info(&vg_info->volume_group[0], inst_cfg, DSS_INQ_STATUS_UNREG, host_id);
+        if (status != CM_SUCCESS) {
+            DSS_PRINT_ERROR("Failed to modify node cluster info, errcode is %d.\n", status);
+            return status;
         }
     }
     status = dss_iof_kick_all(vg_info, inst_cfg, inst_cfg->params.inst_id, host_id);

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
  *
  * DSS is licensed under Mulan PSL v2.
@@ -26,6 +26,7 @@
 #include "dss_shm.h"
 #include "cm_timer.h"
 #include "cm_error.h"
+#include "cm_iofence.h"
 #include "dss_errno.h"
 #include "dss_defs.h"
 #include "dss_api.h"
@@ -876,4 +877,79 @@ bool32 dss_check_join_cluster()
     }
 
     return CM_TRUE;
+}
+
+static bool32 dss_find_unreg_volume(char **dev, uint8 *vg_idx, uint8 *volume_id)
+{
+    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+        dss_lock_vg_mem_and_shm_s(NULL, &g_vgs_info->volume_group[i]);
+        for (uint32 j = 0; j < DSS_MAX_VOLUMES; j++) {
+            if (g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].flag == VOLUME_PREPARE) {
+                *dev = g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].name;
+                *vg_idx = (uint8)i;
+                *volume_id = (uint8)j;
+                dss_unlock_vg_mem_and_shm(NULL, &g_vgs_info->volume_group[i]);
+                return CM_TRUE;
+            }
+        }
+        dss_unlock_vg_mem_and_shm(NULL, &g_vgs_info->volume_group[i]);
+    }
+    return CM_FALSE;
+}
+
+static bool32 dss_is_register(iof_reg_in_t *reg_info, int64 host_id)
+{
+    for (int32 i = 0; i < reg_info->key_count; i++) {
+        if (reg_info->reg_keys[i] == host_id + 1) {
+            return CM_TRUE;
+        }
+    }
+    return CM_FALSE;
+}
+
+void dss_check_unreg_volume(void)
+{
+    uint8 vg_idx, volume_id;
+    iof_reg_in_t reg_info;
+    (void)memset_s(&reg_info, sizeof(reg_info), 0 ,sizeof(reg_info));
+
+    bool32 is_unreg = dss_find_unreg_volume(&reg_info.dev, &vg_idx, &volume_id);
+    if (!is_unreg) {
+        return;
+    }
+    status_t ret = cm_iof_inql(&reg_info);
+    if (ret != CM_SUCCESS) {
+        return;
+    }
+    bool32 remote = CM_FALSE;
+    dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[0];
+    dss_lock_vg_mem_and_shm_s(NULL, vg_item);
+    ret = dss_load_vg_ctrl_part(vg_item, (int64)(DSS_VOLUME_HEAD_SIZE - DSS_DISK_UNIT_SIZE),
+        &vg_item->dss_ctrl->global_ctrl, DSS_DISK_UNIT_SIZE, &remote);
+    dss_unlock_vg_mem_and_shm(NULL, vg_item);
+    if (ret != CM_SUCCESS) {
+        return;
+    }
+
+    bool32 is_reg = CM_FALSE;
+    for (uint8 i = 0; i < CM_MAX_INSTANCES; i++) {
+        is_reg = cm_bitmap64_exist(&vg_item->dss_ctrl->global_ctrl.cluster_node_info, i);
+        if (is_reg && !dss_is_register(&reg_info, i)) {
+            return;
+        }
+    }
+
+    vg_item = &g_vgs_info->volume_group[vg_idx];
+    dss_lock_vg_mem_and_shm_x(NULL, vg_item);
+    if (vg_item->dss_ctrl->volume.defs[volume_id].flag == VOLUME_FREE) {
+        dss_unlock_vg_mem_and_shm(NULL, vg_item);
+        return;
+    }
+    vg_item->dss_ctrl->volume.defs[volume_id].flag = VOLUME_OCCUPY;
+    ret = dss_update_volume_ctrl(vg_item);
+    dss_unlock_vg_mem_and_shm(NULL, vg_item);
+    if (ret != CM_SUCCESS) {
+        return;
+    }
+    (void)cm_atomic32_dec(&g_dss_unreg_volume_count);
 }

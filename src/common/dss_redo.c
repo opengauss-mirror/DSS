@@ -1278,6 +1278,35 @@ static status_t dss_recover_root_ft_ctrlinfo(dss_vg_info_item_t *vg_item)
     return status;
 }
 
+static status_t dss_recover_volume_head(dss_vg_info_item_t* vg_item, const char *volume_name, uint32 id)
+{
+    if (strlen(volume_name) == 0) {
+        return CM_SUCCESS;
+    }
+#ifndef WIN32
+    char buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_ALIGN_SIZE)));
+#else
+    char buf[DSS_DISK_UNIT_SIZE];
+#endif
+    dss_volume_header_t *vol_head = (dss_volume_header_t *)buf;
+    CM_RETURN_IFERR(
+        dss_open_volume(vg_item->dss_ctrl->volume.defs[id].name, NULL, DSS_CLI_OPEN_FLAG, &vg_item->volume_handle[id]));
+    status_t ret = dss_read_volume(&vg_item->volume_handle[id], 0, vol_head, (int32)sizeof(dss_volume_header_t));
+    if (ret != CM_SUCCESS) {
+        dss_close_volume(&vg_item->volume_handle[id]);
+        return ret;
+    }
+    if (vol_head->valid_flag != DSS_CTRL_VALID_FLAG) {
+        dss_close_volume(&vg_item->volume_handle[id]);
+        return CM_SUCCESS;
+    }
+    vol_head->valid_flag = 0;
+    vol_head->software_version = 0;
+    ret = dss_write_volume(&vg_item->volume_handle[id], 0, vol_head, (int32)sizeof(dss_volume_header_t));
+    dss_close_volume(&vg_item->volume_handle[id]);
+    return ret;
+}
+
 /*
  * Check and recover dss ctrl info from backup area, including core ctrl, volume ctrl and root FTB ctrl.
  * Ctrl info that doesn't need recovery must be backed up.
@@ -1293,6 +1322,34 @@ status_t dss_recover_ctrlinfo(dss_vg_info_item_t *vg_item)
     DSS_RETURN_IF_ERROR(dss_recover_core_ctrlinfo(vg_item));
     DSS_RETURN_IF_ERROR(dss_recover_volume_ctrlinfo(vg_item));
     DSS_RETURN_IF_ERROR(dss_recover_root_ft_ctrlinfo(vg_item));
+
+    if (vg_item->dss_ctrl->core.volume_count == 1) {
+        return CM_SUCCESS;
+    }
+    uint32 volume_count = 1;
+    for (uint32 i = 1; i < DSS_MAX_VOLUMES; i++) {
+        // The adv is executed successfully, not need to be restored.
+        if (vg_item->dss_ctrl->volume.defs[i].flag != VOLUME_FREE) {
+            volume_count++;
+            continue;
+        }
+        // The volume has beeb flushed to disk, but core_ctrl has not been flushed to disk.
+        if (vg_item->dss_ctrl->volume.defs[i].id != vg_item->dss_ctrl->core.volume_attrs[i].id) {
+            continue;
+        }
+        // The volume has been removed.
+        if (vg_item->dss_ctrl->volume.defs[i].id == 0) {
+            continue;
+        }
+        vg_item->dss_ctrl->core.volume_attrs[i].id = 0;
+        DSS_RETURN_IF_ERROR(dss_recover_volume_head(
+            vg_item, vg_item->dss_ctrl->volume.defs[i].name, vg_item->dss_ctrl->volume.defs[i].id));
+    }
+
+    if (volume_count != vg_item->dss_ctrl->core.volume_count) {
+        vg_item->dss_ctrl->core.volume_count = volume_count;
+        DSS_RETURN_IF_ERROR(dss_update_core_ctrl_disk(vg_item));
+    }
     return CM_SUCCESS;
 }
 
