@@ -36,7 +36,6 @@ extern "C" {
 typedef enum en_dss_mes_command {
     DSS_CMD_REQ_BROADCAST = 0,
     DSS_CMD_ACK_BROADCAST_WITH_MSG,
-    DSS_CMD_ACK_BROADCAST,
     DSS_CMD_REQ_SYB2ACTIVE, /* Request command from the standby node to the active node */
     DSS_CMD_ACK_SYB2ACTIVE,
     DSS_CMD_REQ_LOAD_DISK,
@@ -48,7 +47,7 @@ typedef enum en_dss_mes_command {
 
 #define DSS_MES_THREAD_NUM 2
 #define DSS_MES_LONG_WAIT_TIMEOUT 5000  // 5s
-#define DSS_MES_WAIT_TIMEOUT 1000  // 1s
+#define DSS_MES_WAIT_TIMEOUT 2000  // 1s
 #define DSS_MES_TRY_TIMES 100
 #define DSS_BROADCAST_WAIT_INFINITE (0xFFFFFFFF)
 #define DSS_IS_INST_SEND(bits, id) (((bits) >> (id)) & 0x1)
@@ -75,6 +74,8 @@ typedef struct st_processor_func {
 typedef struct st_dss_processor {
     dss_message_proc_t proc;
     bool32 is_enqueue;
+    bool32 is_req;
+    mes_task_group_id_t group_id;
     char *name;
 } dss_processor_t;
 
@@ -89,21 +90,18 @@ typedef struct st_dss_mes_actlist {
     uint32 count;
     dss_mes_actnode_t node[0];
 } dss_mes_actlist_t;
-
+// clang-format off
 typedef enum st_dss_bcast_req_cmd {
-    BCAST_REQ_RENAME = 0,
-    BCAST_REQ_DEL_DIR_FILE,
-    BCAST_REQ_TRUNCATE_FILE,
+    BCAST_REQ_DEL_DIR_FILE = 0,
     BCAST_REQ_END
 } dss_bcast_req_cmd_t;
 
 typedef enum st_dss_bcast_ack_cmd {
-    BCAST_ACK_RENAME = 0,
-    BCAST_ACK_DEL_FILE,
-    BCAST_ACK_TRUNCATE_FILE,
+    BCAST_ACK_DEL_FILE = 0,
     BCAST_ACK_END
 } dss_bcast_ack_cmd_t;
 
+// clang-format on
 typedef struct st_dss_bcast_req {
     dss_bcast_req_cmd_t type;
     char buffer[4];
@@ -111,7 +109,7 @@ typedef struct st_dss_bcast_req {
 
 typedef struct st_dss_recv_msg {
     bool32 handle_recv_msg;
-    bool32 open_flag;
+    bool32 cmd_ack;
 } dss_recv_msg_t;
 
 typedef struct st_dss_mes_ack_with_data {
@@ -120,10 +118,10 @@ typedef struct st_dss_mes_ack_with_data {
     char data[4];
 } dss_mes_ack_with_data_t;
 
-typedef struct st_dss_check_file_open_param {
+typedef struct st_dss_notify_req_msg_t {
     uint64 ftid;
     char vg_name[DSS_MAX_NAME_LEN];
-} dss_check_file_open_param;
+} dss_notify_req_msg_t;
 
 typedef enum st_dss_distribute_locks_flag {
     DSS_DISTRIBUTE_LOCK_X = 0,
@@ -155,6 +153,9 @@ typedef struct st_loaddisk_req {
 status_t dss_notify_sync(
     dss_session_t *session, dss_bcast_req_cmd_t cmd, const char *buffer, uint32 size, dss_recv_msg_t *recv_msg);
 status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result);
+status_t dss_notify_expect_bool_ack(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *cmd_ack);
+
 void dss_check_mes_conn(uint64 cur_inst_map);
 status_t dss_startup_mes(void);
 void dss_stop_mes(void);

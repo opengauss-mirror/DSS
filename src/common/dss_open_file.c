@@ -274,7 +274,7 @@ static status_t dss_check_open_file_clean_list(
     }
 }
 
-status_t dss_check_open_file(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *is_open)
+status_t dss_check_open_file(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *is_open)
 {
     skip_list_t *list = &vg_item->open_file_list;
     skip_list_iterator_t itr;
@@ -299,7 +299,7 @@ status_t dss_check_open_file(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *i
     status_t status = CM_SUCCESS;
 
     sklist_create_iterator(list, &range, &itr);
-    dss_latch_x(&vg_item->open_file_latch);
+    dss_latch_x2(&vg_item->open_file_latch, session->id);
     int32 ret = sklist_fetch_next(&itr, (void **)&next_key, NULL, 0);
     if (ret == SKLIST_FETCH_END) {
         *is_open = CM_FALSE;

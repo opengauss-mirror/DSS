@@ -1341,7 +1341,7 @@ status_t dss_check_rm_file(
     }
 
     bool32 is_open;
-    status_t status = dss_check_open_file(vg_item, *(uint64 *)&(*file_node)->id, &is_open);
+    status_t status = dss_check_open_file(session, vg_item, *(uint64 *)&(*file_node)->id, &is_open);
     char *err_msg = "Failed to check open file, file";
     DSS_RETURN_IFERR2(
         status, LOG_DEBUG_ERR("%s: %s ftid:%llu.", err_msg, (*file_node)->name, *(uint64 *)&(*file_node)->id));
@@ -3336,7 +3336,7 @@ status_t dss_check_rename_path(dss_session_t *session, const char *src_path, con
     return CM_SUCCESS;
 }
 
-status_t dss_check_open_file_remote(const char *vg_name, uint64 ftid, bool32 *is_open)
+status_t dss_check_open_file_remote(dss_session_t *session, const char *vg_name, uint64 ftid, bool32 *is_open)
 {
     *is_open = CM_FALSE;
 
@@ -3347,7 +3347,7 @@ status_t dss_check_open_file_remote(const char *vg_name, uint64 ftid, bool32 *is
             LOG_DEBUG_ERR("Failed to find vg, %s.", vg_name));
     }
 
-    status_t status = dss_check_open_file(vg_item, ftid, is_open);
+    status_t status = dss_check_open_file(session, vg_item, ftid, is_open);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check open file, vg: %s, ftid:%llu.", vg_name, ftid));
     return CM_SUCCESS;
 }

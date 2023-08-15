@@ -39,6 +39,9 @@ extern "C" {
 
 #define DSS_MIN_WORK_THREAD_COUNT (2)
 #define DSS_MAX_WORK_THREAD_COUNT (64)
+// for most time, standby nodes rerad meta from primary
+#define DSS_WORK_THREAD_LOAD_DATA_PERCENT 0.5
+
 #define DSS_MIN_RECV_MSG_BUFF_SIZE (uint64) SIZE_M(1)
 #define DSS_MAX_RECV_MSG_BUFF_SIZE (uint64) SIZE_G(1)
 

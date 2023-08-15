@@ -179,6 +179,24 @@ static inline status_t dss_put_int32(dss_packet_t *pack, uint32 value)
     return CM_SUCCESS;
 }
 
+static inline status_t dss_reserv_text_buf(dss_packet_t *pack, uint32 size, char **data_buf)
+{
+    CM_ASSERT(pack != NULL);
+    CM_ASSERT(data_buf != NULL);
+    if (CM_ALIGN4(size) > DSS_REMAIN_SIZE(pack) - sizeof(uint32)) {
+        CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, size, DSS_REMAIN_SIZE(pack) - 1);
+        return CM_ERROR;
+    }
+
+    // record the size first
+    *(uint32 *)DSS_WRITE_ADDR(pack) = (CS_DIFFERENT_ENDIAN(pack->options) != 0) ? cs_reverse_int32(size) : size;
+    pack->head->size += (uint32)sizeof(uint32);
+
+    *data_buf = DSS_WRITE_ADDR(pack);
+    pack->head->size += CM_ALIGN4(size);
+    return CM_SUCCESS;
+}
+
 static inline status_t dss_pack_check_len(dss_packet_t *pack, uint32 inc)
 {
     if ((pack->offset + inc) > pack->head->size) {
