@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
+ * Copyright (c) 2023 Huawei Technologies Co.,Ltd.
  *
  * DSS is licensed under Mulan PSL v2.
  * You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -38,7 +38,7 @@ extern "C" {
 #endif
 
 int32 g_sign_array[] = {SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT, SIGBUS, SIGFPE,
-                        SIGSEGV, SIGUSR2, SIGALRM, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU,
+                        SIGSEGV, SIGUSR2, SIGALRM, SIGTERM, SIGSTKFLT, SIGTSTP, SIGTTIN, SIGTTOU,
                         SIGXCPU, SIGXFSZ, SIGVTALRM, SIGPROF, SIGIO, SIGPWR, SIGSYS};
 
 box_excp_item_t g_excep_info = {0};
@@ -54,9 +54,9 @@ sig_info_t g_known_signal_info[] = {
     {"Bus error", DUMP_SIG},
     {"Floating-point exception", DUMP_SIG},
     {"Forced-process termination", TERMINATE_SIG},
-    {"Available to processes", TERMINATE_SIG},
-    {"Invalid memory reference", DUMP_SIG},
     {"User use", STOP_SIG},
+    {"Invalid memory reference", DUMP_SIG},
+    {"Available to processes", TERMINATE_SIG},
     {"Write to pipe with no readers", TERMINATE_SIG},
     {"Real-timer clock", TERMINATE_SIG},
     {"Process termination", TERMINATE_SIG},
@@ -89,7 +89,7 @@ static inline bool8 need_dump(int signum)
 const char* const g_other_signal_format = "Real-time signal %d";
 const char* const g_unknown_signal_format = "Unknown signal %d";
 
-void get_signal_info(int signum, char *buf, uint32 buf_size)
+void dss_get_signal_info(int signum, char *buf, uint32 buf_size)
 {
     int len;
     sig_info_t *sig_info = NULL;
@@ -250,26 +250,24 @@ void dss_print_block_pool(int32 handle, ga_pool_id_e pool_id)
 
 void dss_print_share_vg_and_hashmap_info(int32 handle)
 {
-    char *buf = ga_object_addr(GA_INSTANCE_POOL, 0);
-    if (buf == NULL) {
-        LOG_BLACKBOX_INF("Failed to get share vg info\n.");
-    }
-    char explain_buf[CM_FILE_NAME_BUFFER_SIZE] = "\nshm vg info:\n";
-    status_t ret = cm_write_file(handle, explain_buf, CM_FILE_NAME_BUFFER_SIZE);
-    if (ret != CM_SUCCESS) {
-        LOG_BLACKBOX_INF("Failed to write share vg info explain\n.");
-    }
-    ret = cm_write_file(handle, buf, DSS_INS_SIZE);
-    if (ret != CM_SUCCESS) {
-        LOG_BLACKBOX_INF("Failed to write share vg info\n.");
-    }
-    dss_share_vg_info_t *share_vg_info = (dss_share_vg_info_t *)buf;
-    for (uint32 i = 0; i < share_vg_info->vg_num; i++) {
-        dss_share_vg_item_t *vg = &share_vg_info->vg[i];
-        shm_hashmap_t *map = &vg->buffer_cache;
+    char explain_buf[CM_FILE_NAME_BUFFER_SIZE] = {0};
+    status_t ret;
+    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+        (void)snprintf_s(explain_buf, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "shm ctrl info of vg %u:\n", i);
+        ret = cm_write_file(handle, explain_buf, CM_FILE_NAME_BUFFER_SIZE);
+        if (ret != CM_SUCCESS) {
+            LOG_BLACKBOX_INF("Failed to explain shm ctrl info of vg %u\n.", i);
+        }
+        dss_vg_info_item_t *vg = &g_vgs_info->volume_group[i];
+        ret = cm_write_file(handle, &vg->dss_ctrl, sizeof(dss_ctrl_t));
+        if (ret != CM_SUCCESS) {
+            LOG_BLACKBOX_INF("Failed to explain shm ctrl info of vg %u\n.", i);
+        }
+        shm_hashmap_t *map = vg->buffer_cache;
         uint64 size = map->num * (uint32)sizeof(shm_hashmap_bucket_t);
         shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
-        (void)snprintf_s(explain_buf, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "\nshm hashmap of vg %u:\n", i);
+        (void)snprintf_s(
+            explain_buf, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "\nshm hashmap of vg %u:\n", i);
         ret = cm_write_file(handle, explain_buf, CM_FILE_NAME_BUFFER_SIZE);
         if (ret != CM_SUCCESS) {
             LOG_BLACKBOX_INF("Failed to explain shm hashmap of vg %u\n.", i);
@@ -281,18 +279,19 @@ void dss_print_share_vg_and_hashmap_info(int32 handle)
     }
 }
 
-void dss_print_shm_memory(void) {
+void dss_print_shm_memory(void) 
+{
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     bool8 blackbox_detail_on = inst_cfg->params.blackbox_detail_on;
     if (!blackbox_detail_on) {
-        LOG_BLACKBOX_INF("_BLACKBOX_DETAIL_ON is FALSE, no need tp print shm_memory.");
+        LOG_BLACKBOX_INF("_BLACKBOX_DETAIL_ON is FALSE, no need to print shm_memory\n.");
         return;
     }
     int32 handle = 0;
     char timestamp[CM_MAX_NAME_LEN] = {0};
     char file_name[CM_FILE_NAME_BUFFER_SIZE] = {0};
     date_detail_t detail = g_timer()->detail;
-    errno_t errcode = snprintf_s(timestamp, sizeof(timestamp), sizeof(timestamp) - 1, "%4u%02u%02u%02u%02u%02u%03u",
+    errno_t errcode = snprintf_s(timestamp, CM_MAX_NAME_LEN, CM_MAX_NAME_LEN - 1, "%4u%02u%02u%02u%02u%02u%03u",
                          detail.year, detail.mon, detail.day,
                          detail.hour, detail.min, detail.sec, detail.millisec);
     if (SECUREC_UNLIKELY(errcode == -1)) {
@@ -324,12 +323,13 @@ static void sig_print_excep_info(box_excp_item_t *excep_info, int32 sig_num, sig
     (void)strncpy_s(excep_info->version, BOX_VERSION_LEN, version, strlen(version));
     char signal_name[CM_NAME_BUFFER_SIZE];
     signal_name[0] = 0x00;
-    get_signal_info(sig_num, signal_name, sizeof(signal_name) - 1);
+    dss_get_signal_info(sig_num, signal_name, sizeof(signal_name) - 1);
     int ret = strncpy_s(excep_info->sig_name, CM_NAME_BUFFER_SIZE, signal_name, strlen(signal_name));
     securec_check_panic(ret);
     cm_proc_get_register_info(&(excep_info->reg_info), (ucontext_t *)context);
     cm_print_sig_info(excep_info, (void *)&(excep_info->reg_info));
     cm_print_reg(&(excep_info->reg_info));
+    cm_print_assembly(&(excep_info->reg_info));
     cm_print_call_link(&(excep_info->reg_info));
     cm_save_proc_maps_file(excep_info);
     cm_save_proc_meminfo_file();
@@ -359,7 +359,7 @@ void dss_proc_sign_func(int32 sig_num, siginfo_t *sig_info, void *context)
 
     if (!need_dump(sig_num)) {
         loc_id = cm_sys_pid();
-        get_signal_info(sig_num, signal_name, sizeof(signal_name) - 1);
+        dss_get_signal_info(sig_num, signal_name, sizeof(signal_name) - 1);
         (void)cm_date2str(g_timer()->now, "yyyy-mm-dd hh24:mi:ss.ff3", date, CM_MAX_TIME_STRLEN);
         LOG_BLACKBOX_INF("Location[0x%016llx] has been terminated, signal name : %s, current data: %s\n",
             loc_id, signal_name, date);

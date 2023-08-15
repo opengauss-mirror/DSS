@@ -237,7 +237,6 @@ int main(int argc, char **argv)
             return CM_SUCCESS;
         }
     }
-
     dss_srv_args_t dss_args;
     errno_t errcode = memset_s(&dss_args, sizeof(dss_args), 0, sizeof(dss_args));
     securec_check_ret(errcode);
@@ -245,7 +244,11 @@ int main(int argc, char **argv)
         (void)fflush(stdout);
         return CM_ERROR;
     }
-
+#ifndef WIN32
+    sigset_t sign_old_mask;
+    (void)sigprocmask(0, NULL, &sign_old_mask);
+    (void)sigprocmask(SIG_UNBLOCK, &sign_old_mask, NULL);
+#endif  
     if (dss_startup(&g_dss_instance, dss_args.dss_home) != CM_SUCCESS) {
         printf("dss failed to startup.\n");
         fflush(stdout);
