@@ -480,10 +480,10 @@ static status_t dss_load_cluster_run_mode(dss_config_t *inst_cfg)
         LOG_RUN_INF("The cluster_run_mode is cluster_standby.");
     } else if (strcmp(value, "cluster_primary") == 0) {
         inst_cfg->params.cluster_run_mode = CLUSTER_PRIMARY;
+        LOG_RUN_INF("The cluster_run_mode is cluster_primary.");
     } else {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid CLUSTER_RUN_MODE"));
     }
-    
     return CM_SUCCESS;
 }
 
@@ -612,6 +612,25 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_blackbox_detail_on(inst_cfg));
     CM_RETURN_IFERR(dss_load_cluster_run_mode(inst_cfg));
     CM_RETURN_IFERR(dss_load_xlog_vg_id(inst_cfg));
+    return CM_SUCCESS;
+}
+
+status_t dss_reload_cluster_run_mode_param(dss_config_t *inst_cfg)
+{
+    char file_name[DSS_FILE_PATH_MAX_LENGTH];
+
+    // get config info
+    errno_t ret = snprintf_s(file_name, DSS_FILE_PATH_MAX_LENGTH, DSS_FILE_PATH_MAX_LENGTH - 1, "%s/cfg/%s", inst_cfg->home,
+        g_dss_config_file);
+    if (ret == -1) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid config file path"));
+    }
+
+    status_t status = cm_load_config(g_dss_params, DSS_PARAM_COUNT, file_name, &inst_cfg->config, CM_FALSE);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load config"));
+
+    CM_RETURN_IFERR(dss_load_cluster_run_mode(inst_cfg));
     return CM_SUCCESS;
 }
 
