@@ -544,9 +544,26 @@ void dss_lock_vg_mem_x(dss_vg_info_item_t *vg_item)
     dss_latch_x(&vg_item->disk_latch);
 }
 
+void dss_lock_vg_mem_x2ix(dss_vg_info_item_t *vg_item)
+{
+    latch_statis_t *stat = NULL;
+    dss_latch_x2ix(&vg_item->disk_latch, DSS_DEFAULT_SESSIONID, stat);
+}
+
+void dss_lock_vg_mem_ix2x(dss_vg_info_item_t *vg_item)
+{
+    latch_statis_t *stat = NULL;
+    dss_latch_ix2x(&vg_item->disk_latch, DSS_DEFAULT_SESSIONID, stat);
+}
+
 void dss_lock_vg_mem_s(dss_vg_info_item_t *vg_item)
 {
     dss_latch_s(&vg_item->disk_latch);
+}
+
+void dss_lock_vg_mem_s_force(dss_vg_info_item_t *vg_item)
+{
+    dss_latch_s2(&vg_item->disk_latch, DSS_DEFAULT_SESSIONID, CM_TRUE, NULL);
 }
 
 void dss_unlock_vg_mem(dss_vg_info_item_t *vg_item)
@@ -1670,15 +1687,6 @@ static inline bool32 dss_need_load_remote(int size)
 {
     return ((remote_read_proc != NULL) && (!dss_need_exec_local()) && (size <= (int32)DSS_LOADDISK_BUFFER_SIZE));
 }
-
-/*
-    1、when the node is standby, just send message to primary to read volume
-    2、if the primary is just in recovery or switch, may wait the read request
-    3、if read failed, just retry.
-    4、may be standby switch to primary, just read volume from self;
-    5、may be primary just change to standby, just read volume from new primary;
-*/
-#define DSS_READ_REMOTE_INTERVAL 50
 
 static bool32 dss_read_remote_checksum(void *buf, int32 size)
 {

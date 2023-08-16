@@ -412,6 +412,11 @@ typedef struct st_auid_t {  // id of allocation unit, 8 Bytes
 typedef auid_t dss_block_id_t;
 typedef auid_t ftid_t;
 
+extern auid_t dss_invalid_auid;
+#define DSS_INVALID_AUID (dss_invalid_auid)
+#define DSS_INVALID_BLOCK_ID (dss_invalid_auid)
+#define DSS_INVALID_FTID (dss_invalid_auid)
+
 typedef struct st_dss_addr_t {
     uint64 volumeid : 10;
     uint64 offset : 54;

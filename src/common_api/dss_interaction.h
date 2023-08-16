@@ -42,6 +42,9 @@ typedef struct st_dss_conn {
     void *cli_vg_handles;
     bool32 flag;
     void *session;
+#ifdef ENABLE_DSSTEST
+    pid_t conn_pid;
+#endif
 } dss_conn_t;
 
 void dss_cli_get_err(dss_packet_t *pack, int32 *errcode, char **errmsg);

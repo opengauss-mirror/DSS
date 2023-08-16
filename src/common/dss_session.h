@@ -160,6 +160,8 @@ status_t dss_lock_shm_meta_s(dss_session_t *session, const dss_latch_offset_t *o
 status_t dss_cli_lock_shm_meta_s(
     dss_session_t *session, dss_latch_offset_t *offset, latch_t *latch, latch_should_exit should_exit);
 void dss_lock_shm_meta_x(const dss_session_t *session, latch_t *latch);
+void dss_lock_shm_meta_x2ix(dss_session_t *session, latch_t *latch);
+void dss_lock_shm_meta_ix2x(dss_session_t *session, latch_t *latch);
 void dss_unlock_shm_meta(dss_session_t *session, latch_t *latch);
 status_t dss_lock_shm_meta_bucket_s(dss_session_t *session, uint32 id, latch_t *latch);
 void dss_lock_shm_meta_bucket_x(latch_t *latch);

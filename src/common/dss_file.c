@@ -265,6 +265,18 @@ void dss_lock_vg_mem_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_it
     dss_lock_shm_meta_x(session, vg_item->vg_latch);
 }
 
+void dss_lock_vg_mem_and_shm_x2ix(dss_session_t *session, dss_vg_info_item_t *vg_item)
+{
+    dss_lock_vg_mem_x2ix(vg_item);
+    dss_lock_shm_meta_x2ix(session, vg_item->vg_latch);
+}
+
+void dss_lock_vg_mem_and_shm_ix2x(dss_session_t *session, dss_vg_info_item_t *vg_item)
+{
+    dss_lock_vg_mem_ix2x(vg_item);
+    dss_lock_shm_meta_ix2x(session, vg_item->vg_latch);
+}
+
 void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
     dss_lock_vg_mem_s(vg_item);
@@ -3385,34 +3397,29 @@ status_t dss_update_file_written_size(
         DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("Failed to find vg,vg name %s.", vg_name),
             DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name));
     }
-    dss_lock_vg_mem_x(vg_item);
+    dss_lock_vg_mem_and_shm_x(session, vg_item);
     LOG_DEBUG_INF("Begin to update file written_size:%llu.", written_size);
 
     gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, blockid, CM_TRUE, CM_FALSE);
     if (!node) {
-        DSS_RETURN_IFERR3(CM_ERROR, dss_unlock_vg_mem(vg_item),
+        DSS_RETURN_IFERR3(CM_ERROR, dss_unlock_vg_mem_and_shm(session, vg_item),
             LOG_DEBUG_ERR("Failed to find FTN, ftid: %llu.", *(uint64 *)&blockid));
-    }
-    if (written_size > (uint64)node->size) {
-        DSS_THROW_ERROR(ERR_DSS_FILE_INVALID_WRITTEN_SIZE, written_size);
-        LOG_DEBUG_ERR(
-            "Invalid written size:%llu, bigger than file:%s size: %llu", written_size, node->name, (uint64)node->size);
-        dss_unlock_vg_mem(vg_item);
-        return CM_ERROR;
     }
 
     if (node->written_size >= written_size) {
         LOG_DEBUG_INF("No need to update written_size:%llu of file:%s, node size:%llu.", node->written_size, node->name,
             node->size);
-        dss_unlock_vg_mem(vg_item);
+        dss_unlock_vg_mem_and_shm(session, vg_item);
         return CM_SUCCESS;
     }
 
-    node->written_size = written_size;
+    // when both truncate to 0 and update to written)size reach primary form diff node, may truncat process at first
+    uint64 written_size_real = written_size > (uint64)node->size ? (uint64)node->size : written_size;
+    node->written_size = node->written_size > written_size_real ? node->written_size : written_size_real;
     dss_ft_block_t *cur_block = dss_get_ft_block_by_node(node);
     status_t status = dss_update_ft_block_disk(vg_item, cur_block, node->id);
     LOG_DEBUG_INF(
         "Success to update written_size:%llu of file:%s, node size:%llu.", node->written_size, node->name, node->size);
-    dss_unlock_vg_mem(vg_item);
+    dss_unlock_vg_mem_and_shm(session, vg_item);
     return status;
 }

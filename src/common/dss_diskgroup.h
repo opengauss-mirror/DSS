@@ -45,6 +45,15 @@ extern "C" {
 #define DSS_LOADDISK_BUFFER_SIZE SIZE_K(32)
 #define DSS_READ4STANDBY_ERR (int32)3
 
+/*
+    1、when the node is standby, just send message to primary to read volume
+    2、if the primary is just in recovery or switch, may wait the read request
+    3、if read failed, just retry.
+    4、may be standby switch to primary, just read volume from self;
+    5、may be primary just change to standby, just read volume from new primary;
+*/
+#define DSS_READ_REMOTE_INTERVAL 50
+
 // for lsvg
 typedef struct dss_volume_space_info_t {
     char volume_name[DSS_MAX_VOLUME_PATH_LEN];
@@ -85,7 +94,10 @@ status_t dss_load_vg_ctrl_part(dss_vg_info_item_t *vg_item, int64 offset, void *
 status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item);
 
 void dss_lock_vg_mem_x(dss_vg_info_item_t *vg_item);
+void dss_lock_vg_mem_x2ix(dss_vg_info_item_t *vg_item);
+void dss_lock_vg_mem_ix2x(dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_s(dss_vg_info_item_t *vg_item);
+void dss_lock_vg_mem_s_force(dss_vg_info_item_t *vg_item);
 void dss_unlock_vg_mem(dss_vg_info_item_t *vg_item);
 
 status_t dss_file_lock_vg_w(dss_config_t *inst_cfg);

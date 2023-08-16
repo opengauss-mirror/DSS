@@ -2115,7 +2115,19 @@ status_t dss_init(uint32 max_open_files, char *home)
 
     dss_latch_x(&dss_env->latch);
     if (dss_env->initialized) {
+#ifdef ENABLE_DSSTEST
+        if (dss_env->inittor_pid == getpid()) {
+#endif
         return dss_init_err_proc(dss_env, CM_FALSE, CM_FALSE, NULL, CM_SUCCESS);
+#ifdef ENABLE_DSSTEST
+        } else {
+            LOG_RUN_INF("Dss client need re-initalization dss env, last init pid:%llu.", (uint64)dss_env->inittor_pid);
+            (void)dss_init_err_proc(dss_env, CM_FALSE, CM_FALSE, "need reinit by a new process", CM_SUCCESS);
+        
+            dss_env->initialized = CM_FALSE;
+            dss_env->inittor_pid = 0;
+        }
+#endif
     }
 
     CM_RETURN_IFERR(dss_init_shm(dss_env, home));
@@ -2145,6 +2157,10 @@ status_t dss_init(uint32 max_open_files, char *home)
     if (status != CM_SUCCESS) {
         return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "DSS failed to create heartbeat thread", status);
     }
+
+#ifdef ENABLE_DSSTEST
+    dss_env->inittor_pid = getpid();
+#endif
 
     dss_env->initialized = CM_TRUE;
     dss_unlatch(&dss_env->latch);

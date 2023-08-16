@@ -496,6 +496,9 @@ typedef struct st_dss_env {
     void *session;
     thread_t thread_heartbeat;
     dss_config_t inst_cfg;
+#ifdef ENABLE_DSSTEST
+    pid_t inittor_pid;
+#endif
 } dss_env_t;
 
 typedef struct st_dss_dir_t {
@@ -510,97 +513,5 @@ typedef struct st_dss_find_node_t {
     ftid_t ftid;
     char vg_name[DSS_MAX_NAME_LEN];
 } dss_find_node_t;
-
-// redo struct allocate file table node
-#define DSS_REDO_ALLOC_FT_NODE_NUM 3
-typedef struct st_dss_redo_alloc_ft_node_t {
-    gft_root_t ft_root;
-    gft_node_t node[DSS_REDO_ALLOC_FT_NODE_NUM];
-} dss_redo_alloc_ft_node_t;
-
-#define DSS_REDO_FREE_FT_NODE_NUM 4
-typedef struct st_dss_redo_free_ft_node_t {
-    gft_root_t ft_root;
-    gft_node_t node[DSS_REDO_FREE_FT_NODE_NUM];
-} dss_redo_free_ft_node_t;
-
-#define DSS_REDO_RECYCLE_FT_NODE_NUM 3
-typedef struct st_dss_redo_recycle_ft_node_t {
-    gft_node_t node[DSS_REDO_RECYCLE_FT_NODE_NUM];
-} dss_redo_recycle_ft_node_t;
-
-typedef struct st_dss_redo_format_ft_t {
-    auid_t auid;
-    uint32 obj_id;
-    uint32 count;
-    dss_block_id_t old_last_block;
-    gft_list_t old_free_list;
-} dss_redo_format_ft_t;
-
-typedef struct st_dss_redo_free_fs_block_t {
-    char head[DSS_DISK_UNIT_SIZE];
-} dss_redo_free_fs_block_t;
-
-typedef struct st_dss_redo_alloc_fs_block_t {
-    dss_block_id_t id;
-    dss_fs_block_root_t root;
-} dss_redo_alloc_fs_block_t;
-
-typedef struct st_dss_redo_rename_t {
-    gft_node_t node;
-    char name[DSS_MAX_NAME_LEN];
-    char old_name[DSS_MAX_NAME_LEN];
-} dss_redo_rename_t;
-
-typedef struct st_dss_redo_volhead_t {
-    char head[DSS_DISK_UNIT_SIZE];
-    char name[DSS_MAX_NAME_LEN];
-} dss_redo_volhead_t;
-
-typedef struct st_dss_redo_volop_t {
-    char attr[DSS_DISK_UNIT_SIZE];
-    char def[DSS_DISK_UNIT_SIZE];
-    bool32 is_add;
-    uint32 volume_count;
-    uint64 core_version;
-    uint64 volume_version;
-} dss_redo_volop_t;
-
-typedef struct st_dss_redo_format_fs_t {
-    auid_t auid;
-    uint32 obj_id;
-    uint32 count;
-    dss_fs_block_list_t old_free_list;
-} dss_redo_format_fs_t;
-
-typedef struct st_dss_redo_init_fs_block_t {
-    dss_block_id_t id;
-    dss_block_id_t second_id;
-    uint16 index;
-    uint16 used_num;
-    uint16 reserve[2];
-} dss_redo_init_fs_block_t;
-
-typedef struct st_dss_redo_set_fs_block_t {
-    dss_block_id_t id;
-    dss_block_id_t value;
-    dss_block_id_t old_value;
-    uint16 index;
-    uint16 used_num;
-    uint16 old_used_num;
-    uint16 reserve;
-} dss_redo_set_fs_block_t;
-
-typedef struct st_dss_redo_set_file_size_t {
-    ftid_t ftid;
-    uint64 size;
-    uint64 oldsize;  // old size
-} dss_redo_set_file_size_t;
-
-typedef struct st_dss_redo_set_fs_block_list_t {
-    dss_block_id_t id;
-    dss_block_id_t next;
-    uint16 reserve[4];
-} dss_redo_set_fs_block_list_t;
 
 #endif  // __DSS_FILE_DEF_H__
