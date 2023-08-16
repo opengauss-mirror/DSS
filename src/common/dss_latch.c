@@ -40,3 +40,8 @@ void dss_unlatch(latch_t *latch)
 {
     cm_unlatch(latch, NULL);
 }
+
+void dss_latch_x2(latch_t *latch, uint32 sid)
+{
+    cm_latch_x(latch, sid, NULL);
+}

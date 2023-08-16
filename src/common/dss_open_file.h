@@ -41,6 +41,6 @@ void dss_destroy_open_file_index(dss_vg_info_item_t *vg_item);
 
 status_t dss_insert_open_file_index(dss_vg_info_item_t *vg_item, uint64 ftid, uint64 pid, int64 start_time);
 status_t dss_delete_open_file_index(dss_vg_info_item_t *vg_item, uint64 ftid, uint64 pid, int64 start_time);
-status_t dss_check_open_file(dss_vg_info_item_t *vg_item, uint64 fid, bool32 *is_open);
+status_t dss_check_open_file(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 fid, bool32 *is_open);
 
 #endif

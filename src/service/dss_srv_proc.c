@@ -33,36 +33,6 @@
 extern "C" {
 #endif
 
-static status_t dss_notify_check_file_open(
-    dss_vg_info_item_t *vg_item, dss_session_t *session, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *is_open)
-{
-    if (g_dss_instance.is_maintain) {
-        return CM_SUCCESS;
-    }
-    dss_check_file_open_param check;
-    check.ftid = ftid;
-    *is_open = CM_FALSE;
-    errno_t err = strncpy_sp(check.vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name, DSS_MAX_NAME_LEN);
-    if (err != EOK) {
-        DSS_THROW_ERROR(ERR_SYSTEM_CALL, err);
-        return CM_ERROR;
-    }
-    LOG_DEBUG_INF("notify other dss instance to check file open, ftid:%llu in vg:%s.", ftid, vg_item->vg_name);
-    dss_recv_msg_t recv_msg = {CM_TRUE, CM_FALSE};
-    status_t status = dss_notify_sync(session, cmd, (char *)&check, sizeof(dss_check_file_open_param), &recv_msg);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("[DSS] ABORT INFO: Failed to notify other dss instance, cmd: %u, file: %llu, vg: %s, errcode:%d, "
-                    "OS errno:%d, OS errmsg:%s.",
-            cmd, ftid, vg_item->vg_name, cm_get_error_code(), errno, strerror(errno));
-        cm_fync_logfile();
-        _exit(1);
-    }
-    if (recv_msg.open_flag) {
-        *is_open = CM_TRUE;
-    }
-    return status;
-}
-
 static status_t dss_check_two_path_in_same_vg(const char *path1, const char *path2, char *vg_name)
 {
     uint32 beg_pos1 = 0;
@@ -176,7 +146,7 @@ static status_t dss_rm_dir_file_r(
         while (!dss_cmp_auid(sub_node->next, DSS_INVALID_ID64)) {
             gft_node_t *cur_sub_node = sub_node;
             bool32 is_open;
-            status_t status = dss_check_open_file(vg_item, *(uint64 *)&cur_sub_node->id, &is_open);
+            status_t status = dss_check_open_file(session, vg_item, *(uint64 *)&cur_sub_node->id, &is_open);
             if (status != CM_SUCCESS) {
                 LOG_DEBUG_ERR(
                     "Failed to check open file, file %s, ftid:%llu.", cur_sub_node->name, *(uint64 *)&cur_sub_node->id);
@@ -275,7 +245,7 @@ status_t dss_check_vg_ft_dir(dss_session_t *session, dss_vg_info_item_t **vg_ite
     }
 
     bool32 is_open;
-    status = dss_check_open_file(*vg_item, *(uint64 *)&(*node)->id, &is_open);
+    status = dss_check_open_file(session, *vg_item, *(uint64 *)&(*node)->id, &is_open);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to check open file, path %s, ftid:%llu.", path, *(uint64 *)&(*node)->id);
         return CM_ERROR;
@@ -334,7 +304,7 @@ static status_t dss_rm_dir_file_inner(dss_session_t *session, dss_vg_info_item_t
     gft_node_t *old_node = *node;
     dss_unlock_vg_mem_and_shm(session, vg_item);
     DSS_RETURN_IFERR2(
-        dss_notify_check_file_open(vg_item, session, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&(*node)->id, &is_open),
+        dss_notify_expect_bool_ack(session, vg_item, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&(*node)->id, &is_open),
         dss_lock_vg_mem_and_shm_x(session, vg_item));
     dss_lock_vg_mem_and_shm_x(session, vg_item);
 
@@ -525,7 +495,7 @@ static status_t dss_remove_dir_file_by_node_inner(
     gft_node_t *old_node = node;
     dss_unlock_vg_mem_and_shm(session, vg_item);
     DSS_RETURN_IFERR2(
-        dss_notify_check_file_open(vg_item, session, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&node->id, &is_open),
+        dss_notify_expect_bool_ack(session, vg_item, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&node->id, &is_open),
         dss_lock_vg_mem_and_shm_x(session, vg_item));
     dss_lock_vg_mem_and_shm_x(session, vg_item);
     DSS_RETURN_IF_ERROR(dss_remove_dir_file_by_node_inner_check(vg_item, node, parent_node));
@@ -685,6 +655,7 @@ static void dss_close_handle(dss_session_t *session, dss_vg_info_item_t *vg_item
                 "au:%llu, block:%u, item:%u.",
                 *(int64 *)&ftid, node->fid, vg_item->vg_name, session->cli_info.cli_pid, ftid.volume, (uint64)ftid.au,
                 ftid.block, ftid.item);
+            cm_reset_error();
             return;
         }
         LOG_DEBUG_INF(
@@ -692,9 +663,6 @@ static void dss_close_handle(dss_session_t *session, dss_vg_info_item_t *vg_item
             "au:%llu, block:%u, item:%u.",
             *(uint64 *)&ftid, node->fid, vg_item->vg_name, session->cli_info.cli_pid, ftid.volume, (uint64)ftid.au,
             ftid.block, ftid.item);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_INF("Failed to check remove delay file when session disconn close file, vg: %s.", vg_item->vg_name);
-        }
     }
 }
 

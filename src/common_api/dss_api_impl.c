@@ -477,17 +477,14 @@ status_t dss_set_session_sync(dss_conn_t *conn)
         return CM_ERROR;
     }
 
-    text_t extra_info = CM_NULL_TEXT;
     uint32 sid = DSS_INVALID_SESSIONID;
     dss_init_get(ack_pack);
-    if (dss_get_text(ack_pack, &extra_info) != CM_SUCCESS || extra_info.len != sizeof(uint32)) {
+    if (dss_get_int32(ack_pack, (int32 *)&sid) != CM_SUCCESS) {
         LOG_DEBUG_ERR("get sid info connect error");
         return ERR_DSS_CLI_EXEC_FAIL;
     }
 
-    sid = *(uint32 *)extra_info.str;
     dss_env_t *dss_env = dss_get_env();
-
     uint32 max_cfg_sess = dss_env->inst_cfg.params.cfg_session_num;
     if (dss_env->inst_cfg.params.inst_cnt > 1) {
         max_cfg_sess += dss_env->inst_cfg.params.channel_num + dss_env->inst_cfg.params.work_thread_cnt;
@@ -1202,20 +1199,17 @@ status_t dss_exist_impl(dss_conn_t *conn, const char *path, bool *result, gft_it
         return CM_ERROR;
     }
 
-    text_t extra_info = CM_NULL_TEXT;
     dss_init_get(ack_pack);
-    if (dss_get_text(ack_pack, &extra_info) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get result connect error");
-        LOG_DEBUG_ERR("get result connect error.");
+    if (dss_get_int32(ack_pack, (int32 *)result) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get result data error");
+        LOG_DEBUG_ERR("get result data error.");
         return CM_ERROR;
     }
-    if (extra_info.len != sizeof(bool32) + sizeof(uint32)) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get result length error");
-        LOG_DEBUG_ERR("get result length error.");
+    if (dss_get_int32(ack_pack, (int32 *)type) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get type data error");
+        LOG_DEBUG_ERR("get type data error.");
         return CM_ERROR;
     }
-    *result = *(bool32 *)extra_info.str;
-    *type = *(gft_item_type_t *)(extra_info.str + sizeof(bool32));
 
     LOG_DEBUG_INF("dss exits file or dir leave, name:%s, result:%d, type:%u", path, *result, *type);
     return CM_SUCCESS;
@@ -2289,17 +2283,19 @@ status_t dss_islink_impl(dss_conn_t *conn, const char *path, bool *result)
         return CM_ERROR;
     }
 
-    text_t extra_info = CM_NULL_TEXT;
     dss_init_get(ack_pack);
-    status_t ret = dss_get_text(ack_pack, &extra_info);
-    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("islink get result connect error"));
-    if (extra_info.len != sizeof(bool32) + sizeof(uint32)) {
-        LOG_DEBUG_ERR("islink get result length error");
+    gft_item_type_t type = GFT_PATH;
+     if (dss_get_int32(ack_pack, (int32 *)result) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get result data error");
+        LOG_DEBUG_ERR("get result data error.");
         return CM_ERROR;
     }
-    bool32 is_find = *(bool32 *)extra_info.str;
-    gft_item_type_t type = *(gft_item_type_t *)(extra_info.str + sizeof(bool32));
-    if (is_find && (type == GFT_LINK || type == GFT_LINK_TO_FILE || type == GFT_LINK_TO_PATH)) {
+    if (dss_get_int32(ack_pack, (int32 *)type) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get type data error");
+        LOG_DEBUG_ERR("get type data error.");
+        return CM_ERROR;
+    }
+    if (*result && (type == GFT_LINK || type == GFT_LINK_TO_FILE || type == GFT_LINK_TO_PATH)) {
         *result = CM_TRUE;
     } else {
         *result = CM_FALSE;
@@ -2650,17 +2646,16 @@ status_t dss_getcfg_impl(dss_conn_t *conn, const char *name, char *out_str, size
     status_t ret = dss_get_text(ack_pack, &extra_info);
     DSS_RETURN_IFERR2(
         ret, DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GETCFG), "get cfg connect error"));
-    if (extra_info.len < sizeof(uint32) || extra_info.len >= len) {
+    if (extra_info.len >= len) {
         DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GETCFG), "get cfg length error");
         return CM_ERROR;
     }
-    if (extra_info.len == sizeof(uint32)) {
+    if (extra_info.len == 0) {
         LOG_DEBUG_INF("Client get cfg is NULL.");
         return CM_SUCCESS;
     }
-    char *value_str = extra_info.str + sizeof(uint32);
-    value_str[extra_info.len - sizeof(uint32)] = '\0';
-    errno_t err = strcpy_s(out_str, str_len, value_str);
+
+    errno_t err = strncpy_s(out_str, str_len, extra_info.str, strlen(extra_info.str));
     if (SECUREC_UNLIKELY(err != EOK)) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "value of str_len is not large enough when getcfg.");
         return CM_ERROR;

@@ -239,17 +239,10 @@ static void dss_return_success(dss_session_t *session)
     status_t status;
     dss_packet_t *send_pack = NULL;
     send_pack = &session->send_pack;
-    dss_init_set(send_pack);
     send_pack->head->cmd = session->recv_pack.head->cmd;
     send_pack->head->result = (uint8)CM_SUCCESS;
     send_pack->head->flags = 0;
-    if (session->send_info.len > 0) {
-        status = dss_put_text(send_pack, &session->send_info);
-        if (status != CM_SUCCESS) {
-            return;
-        }
-        session->send_info.len = 0;
-    }
+
     status = dss_write(&session->pipe, send_pack);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to reply message,size:%u, cmd:%u.", send_pack->head->size, send_pack->head->cmd);
@@ -290,7 +283,7 @@ static status_t dss_process_rmdir(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &dir));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &recursive));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", dir));
-    return dss_remove_dir(session, (const char *)dir, (bool)recursive);
+    return dss_remove_dir(session, (const char *)dir, (bool32)recursive);
 }
 
 static status_t dss_process_create_file(dss_session_t *session)
@@ -344,11 +337,8 @@ static status_t dss_process_exist(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", name));
     DSS_RETURN_IF_ERROR(dss_exist_item(session, (const char *)name, &result, &type));
 
-    session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
-    session->send_info.len = sizeof(bool32) + sizeof(uint32);
-    *(bool32 *)session->send_info.str = result;
-    char *buf = session->send_info.str + sizeof(bool32);
-    *(uint32 *)buf = (uint32)type;
+    DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, (uint32)result));
+    DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, (uint32)type));
     return CM_SUCCESS;
 }
 
@@ -526,13 +516,11 @@ static status_t dss_process_get_home(dss_session_t *session)
 {
     char *server_home = dss_get_cfg_dir(ZFS_CFG);
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", server_home));
-    session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
-    int32 ret =
-        snprintf_s(session->send_info.str, DSS_MAX_PATH_BUFFER_SIZE, DSS_MAX_PATH_BUFFER_SIZE - 1, "%s", server_home);
-    DSS_SECUREC_SS_RETURN_IF_ERROR(ret, CM_ERROR);
-    session->send_info.len = (uint32)ret;
-    DSS_LOG_DEBUG_OP("Server home is %s, when get home.", session->send_info.str);
-    return CM_SUCCESS;
+    DSS_LOG_DEBUG_OP("Server home is %s, when get home.", server_home);
+    text_t data;
+    cm_str2text(server_home, &data);
+    data.len++; // for keeping the '\0'
+    return dss_put_text(&session->send_pack, &data);
 }
 
 static status_t dss_process_refresh_volume(dss_session_t *session)
@@ -588,13 +576,10 @@ static status_t dss_process_set_sessionid(dss_session_t *session)
     securec_check_ret(errcode);
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%u", session->id));
 
-    LOG_RUN_INF("The client has connected, pid:%llu, process name:%s.st_time:%lld", session->cli_info.cli_pid,
-        session->cli_info.process_name, session->cli_info.start_time);
+    LOG_RUN_INF("The client has connected, session id:%u, pid:%llu, process name:%s.st_time:%lld", session->id,
+        session->cli_info.cli_pid, session->cli_info.process_name, session->cli_info.start_time);
 
-    session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
-    *(uint32 *)session->send_info.str = session->id;
-    session->send_info.len = sizeof(uint32);
-    return CM_SUCCESS;
+    return dss_put_int32(&session->send_pack, session->id);
 }
 
 static status_t dss_process_refresh_file_table(dss_session_t *session)
@@ -646,16 +631,18 @@ static status_t dss_process_symlink(dss_session_t *session)
 static status_t dss_process_readlink(dss_session_t *session)
 {
     char *link_path = NULL;
+    char name[DSS_FILE_PATH_MAX_LENGTH];
     uint32 res_len = 0;
-    session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
 
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &link_path));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", link_path));
-    DSS_RETURN_IF_ERROR(dss_read_link(session, link_path, session->send_info.str, &res_len));
-
-    session->send_info.len = res_len;
-    return CM_SUCCESS;
+    DSS_RETURN_IF_ERROR(dss_read_link(session, link_path, name, &res_len));
+    DSS_LOG_DEBUG_OP("Link is %s, when read link.", link_path);
+    text_t data;
+    cm_str2text(name, &data);
+    data.len++; // for keeping the '\0'
+    return dss_put_text(&session->send_pack, &data);
 }
 
 static status_t dss_process_unlink(dss_session_t *session)
@@ -693,18 +680,14 @@ static status_t dss_process_get_ftid_by_path(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_ftid_by_path(session, path, &ftid, &vg_item));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", path));
 
-    session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
-    session->send_info.len = sizeof(dss_find_node_t);
     dss_find_node_t find_node;
     find_node.ftid = ftid;
     errno_t err = strncpy_sp(find_node.vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name, DSS_MAX_NAME_LEN);
     bool32 result = (bool32)(err == EOK);
     DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_SYSTEM_CALL, err));
 
-    err = memcpy_sp(session->send_info.str, sizeof(dss_find_node_t), (char *)&find_node, sizeof(dss_find_node_t));
-    result = (bool32)(err == EOK);
-    DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_SYSTEM_CALL, err));
-    return CM_SUCCESS;
+    text_t data = {(char *)&find_node, sizeof(dss_find_node_t)};
+    return dss_put_text(&session->send_pack, &data);
 }
 
 #define DSS_SERVER_STATUS_OFFSET(i) ((uint32)(i) - (uint32)DSS_STATUS_NORMAL)
@@ -741,8 +724,10 @@ char *dss_get_dss_instance_status(int32 instance_status)
 // get dssserver status:open, recovery or switch
 static status_t dss_process_get_inst_status(dss_session_t *session)
 {
-    session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
-    dss_server_status_t *dss_status = (dss_server_status_t *)session->send_info.str;
+    dss_server_status_t *dss_status = NULL;
+    DSS_RETURN_IF_ERROR(
+        dss_reserv_text_buf(&session->send_pack, (uint32)sizeof(dss_server_status_t), (char **)&dss_status));
+
     dss_status->instance_status_id = g_dss_instance.status;
     dss_status->server_status_id = dss_get_server_status_flag();
     dss_status->local_instance_id = g_dss_instance.inst_cfg.params.inst_id;
@@ -750,10 +735,11 @@ static status_t dss_process_get_inst_status(dss_session_t *session)
     char *dss_instance_status = dss_get_dss_instance_status(dss_status->instance_status_id);
     uint32 errcode = strcpy_s(dss_status->instance_status, DSS_MAX_STATUS_LEN, dss_instance_status);
     MEMS_RETURN_IFERR(errcode);
+ 
     char *dss_server_status = dss_get_dss_server_status(dss_status->server_status_id);
     errcode = strcpy_s(dss_status->server_status, DSS_MAX_STATUS_LEN, dss_server_status);
     MEMS_RETURN_IFERR(errcode);
-    session->send_info.len = sizeof(dss_server_status_t);
+ 
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(
         session->audit_info.resource, DSS_AUDIT_MODIFY, "status:%s", dss_status->instance_status));
     DSS_LOG_DEBUG_OP("Server status is %s.", dss_status->instance_status);
@@ -763,8 +749,9 @@ static status_t dss_process_get_inst_status(dss_session_t *session)
 static status_t dss_process_get_time_stat(dss_session_t *session)
 {
     uint64 size = sizeof(dss_session_stat_t) * DSS_EVT_COUNT;
-    session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
-    dss_session_stat_t *time_stat = (dss_session_stat_t *)session->send_info.str;
+    dss_session_stat_t *time_stat = NULL;
+    DSS_RETURN_IF_ERROR(dss_reserv_text_buf(&session->send_pack, size, (char **)&time_stat));
+
     errno_t errcode = memset_s(time_stat, (size_t)size, 0,(size_t)size);
     securec_check_ret(errcode);
     uint32 max_cfg_sess = g_dss_instance.inst_cfg.params.cfg_session_num;
@@ -788,7 +775,7 @@ static status_t dss_process_get_time_stat(dss_session_t *session)
         }
     }
     cm_spin_unlock(&session_ctrl->lock);
-    session->send_info.len = (uint32)size;
+
     return CM_SUCCESS;
 }
 
@@ -836,13 +823,14 @@ static status_t dss_process_getcfg(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", name));
 
     DSS_RETURN_IF_ERROR(dss_get_cfg_param(name, &value));
-    session->send_info.str = dss_init_sendinfo_buf(session->recv_pack.init_buf);
-    uint32_t len = DSS_MAX_PACKET_SIZE - sizeof(dss_packet_head_t) - sizeof(int32) - sizeof(uint32);
-    int32 ret = snprintf_s(session->send_info.str + sizeof(uint32), len, len - 1, "%s", value);
-    DSS_SECUREC_SS_RETURN_IF_ERROR(ret, CM_ERROR);
-    session->send_info.len = (uint32)ret + sizeof(uint32);
-    DSS_LOG_DEBUG_OP("Server value is %s, when get cfg.", session->send_info.str);
-    return CM_SUCCESS;
+    DSS_LOG_DEBUG_OP("Server value is %s, when get cfg.", value);
+    text_t data;
+    cm_str2text(value, &data);
+    // SSL default value is NULL
+    if (value != NULL) {
+        data.len++; // for keeping the '\0'
+    }
+    return dss_put_text(&session->send_pack, &data);
 }
 
 static status_t dss_process_stop_server(dss_session_t *session)
@@ -1043,7 +1031,6 @@ static dss_cmd_hdl_t *dss_get_cmd_handle(int32 cmd, bool32 local_req)
 
 static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
 {
-    session->send_info.len = 0;
     DSS_LOG_DEBUG_OP(
         "Receive command:%d, server status is %d.", session->recv_pack.head->cmd, (int32)g_dss_instance.status);
 
@@ -1080,7 +1067,7 @@ status_t dss_process_command(dss_session_t *session)
     if (ready == CM_FALSE) {
         return CM_SUCCESS;
     }
-
+    dss_init_set(&session->send_pack);
     status = dss_read(&session->pipe, &session->recv_pack, CM_FALSE);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to read message sent by %s.", session->cli_info.process_name);

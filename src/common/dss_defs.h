@@ -227,6 +227,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define CM_DEF_UDS_FILE_PERMISSIONS (uint16)600
 
 #define DSS_MAX_PACKET_SIZE (uint32) SIZE_K(1)
+#define DSS_MAX_PACKET_DATA_SIZE (((DSS_MAX_PACKET_SIZE) - sizeof(dss_packet_head_t)) - sizeof(uint32))
 
 #define DSS_PARAM_BUFFER_SIZE (uint32)1024
 #define DSS_ALIGN_SIZE (uint32)512
