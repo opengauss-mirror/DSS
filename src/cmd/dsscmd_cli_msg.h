@@ -29,6 +29,5 @@
 
 status_t dsscmd_adv_impl(dss_conn_t *conn, const char *vg_name, const char *volume_name);
 status_t dsscmd_rmv_impl(dss_conn_t *conn, const char *vg_name, const char *volume_name);
-status_t dss_kick_host_sync(dss_conn_t *connection, int64 kick_hostid);
 
 #endif

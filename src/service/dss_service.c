@@ -45,6 +45,17 @@ static inline bool32 dss_need_exec_remote(bool32 exec_on_active, bool32 local_re
     return ((curr_id != master_id) && (exec_on_active) && (local_req == CM_TRUE));
 }
 
+static uint32 dss_get_master_proto_ver(void)
+{
+    uint32 master_id = dss_get_master_id();
+    uint32 master_proto_ver = (uint32)cm_atomic32_get((atomic32_t *)&g_dss_instance.cluster_proto_vers[master_id]);
+    if (master_proto_ver == DSS_INVALID_VERSION) {
+        return DSS_PROTO_VERSION;
+    }
+    master_proto_ver = MIN(master_proto_ver, DSS_PROTO_VERSION);
+    return master_proto_ver;
+}
+
 #define DSS_PROCESS_GET_MASTER_ID 50
 void dss_get_exec_nodeid(dss_session_t *session, uint32 *currid, uint32 *remoteid)
 {
@@ -86,8 +97,8 @@ static status_t dss_process_remote(dss_session_t *session)
         }
         break;
     }
-    LOG_DEBUG_INF("The remote request(%d) is processed successfully, remote node(%u),current node(%u).",
-        session->recv_pack.head->cmd, remoteid, currid);
+    LOG_DEBUG_INF("The remote request(%d) is processed successfully, remote node(%u),current node(%u), result(%u).",
+        session->recv_pack.head->cmd, remoteid, currid, remote_result);
     return remote_result;
 }
 
@@ -213,7 +224,7 @@ static void dss_return_error(dss_session_t *session)
 
     CM_ASSERT(session != NULL);
     send_pack = &session->send_pack;
-    dss_init_set(send_pack);
+    dss_init_set(send_pack, session->proto_version);
     send_pack->head->cmd = session->recv_pack.head->cmd;
     send_pack->head->result = (uint8)CM_ERROR;
     send_pack->head->flags = 0;
@@ -514,6 +525,10 @@ static status_t dss_process_refresh_file(dss_session_t *session)
 
 static status_t dss_process_get_home(dss_session_t *session)
 {
+    dss_init_get(&session->recv_pack);
+    session->client_version = dss_get_version(&session->recv_pack);
+    uint32 current_proto_ver = dss_get_master_proto_ver();
+    session->proto_version = MIN(session->client_version, current_proto_ver);
     char *server_home = dss_get_cfg_dir(ZFS_CFG);
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", server_home));
     DSS_LOG_DEBUG_OP("Server home is %s, when get home.", server_home);
@@ -901,7 +916,8 @@ static status_t dss_process_switch_lock(dss_session_t *session)
 */
 static status_t dss_process_remote_switch_lock(dss_session_t *session, uint32 curr_id, uint32 master_id)
 {
-    dss_init_set(&session->recv_pack);
+    uint32 current_proto_ver = dss_get_master_proto_ver();
+    dss_init_set(&session->recv_pack, current_proto_ver);
     session->recv_pack.head->cmd = DSS_CMD_SWITCH_LOCK;
     session->recv_pack.head->flags = 0;
     LOG_DEBUG_INF("Try to switch lock to %u by %u.", curr_id, master_id);
@@ -1030,6 +1046,22 @@ static dss_cmd_hdl_t *dss_get_cmd_handle(int32 cmd, bool32 local_req)
     return handle;
 }
 
+static status_t dss_check_proto_version(dss_session_t *session)
+{
+    uint32 current_proto_ver = dss_get_master_proto_ver();
+    current_proto_ver = MIN(current_proto_ver, session->client_version);
+    session->proto_version = current_proto_ver;
+    if (session->recv_pack.head->cmd != DSS_CMD_GET_HOME &&
+        session->proto_version != dss_get_version(&session->recv_pack)) {
+        LOG_RUN_INF(
+            "The client protocol version need be changed, old protocol version is %u, new protocol version is %u.",
+            dss_get_version(&session->recv_pack), session->proto_version);
+        DSS_THROW_ERROR(ERR_DSS_VERSION_NOT_MATCH, dss_get_version(&session->recv_pack), session->proto_version);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
 static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
 {
     DSS_LOG_DEBUG_OP(
@@ -1037,6 +1069,13 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
 
     dss_cmd_hdl_t *handle = NULL;
     if (session->recv_pack.head->cmd < DSS_CMD_END) {
+        if (local_req) {
+            // check proto_version is or not need changed and try again
+            DSS_RETURN_IF_ERROR(dss_check_proto_version(session));
+        } else {
+            // remote req need process for proto_version
+            session->proto_version = dss_get_version(&session->recv_pack);
+        }
         handle = dss_get_cmd_handle(session->recv_pack.head->cmd, local_req);
     }
 
@@ -1068,7 +1107,7 @@ status_t dss_process_command(dss_session_t *session)
     if (ready == CM_FALSE) {
         return CM_SUCCESS;
     }
-    dss_init_set(&session->send_pack);
+    dss_init_set(&session->send_pack, session->proto_version);
     status = dss_read(&session->pipe, &session->recv_pack, CM_FALSE);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to read message sent by %s.", session->cli_info.process_name);

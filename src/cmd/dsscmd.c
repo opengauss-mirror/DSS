@@ -821,37 +821,6 @@ static void lsvg_help(const char *prog_name, int print_flag)
     help_param_uds();
 }
 
-static int dss_load_ctrl_sync(dss_conn_t *connection, const char *vg_name, uint32 index)
-{
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
-    // make up packet
-    dss_init_set(&connection->pack);
-    send_pack = &connection->pack;
-    send_pack->head->cmd = DSS_CMD_LOAD_CTRL;
-    send_pack->head->flags = 0;
-
-    // name
-    CM_RETURN_IFERR(dss_check_name(vg_name));
-    CM_RETURN_IFERR(dss_put_str(send_pack, vg_name));
-    CM_RETURN_IFERR(dss_put_int32(send_pack, index));
-
-    // send it and wait for ack
-    ack_pack = &connection->pack;
-    CM_RETURN_IFERR(dss_call_ex(&connection->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-    return CM_SUCCESS;
-}
-
 static status_t dss_load_volumes(vg_vlm_space_info_t *volume_space, dss_volume_def_t *defs, const dss_ctrl_t *dss_ctrl)
 {
     double dss_vg_free = 0;
