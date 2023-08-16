@@ -136,7 +136,6 @@ static status_t dss_recovery_background_task(dss_instance_t *inst)
         return CM_SUCCESS;
     }
     LOG_RUN_INF("create dss recovery background task.");
-    cm_set_thread_name("recovery");
     uint32 recovery_thread_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
     status_t status = cm_create_thread(dss_get_cm_lock_and_recover, 0, inst, &(inst->threads[recovery_thread_id]));
     return status;
