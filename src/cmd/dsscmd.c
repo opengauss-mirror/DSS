@@ -1488,7 +1488,7 @@ static status_t ls_proc_core(dss_conn_t *conn, const char *path, const char*meas
     dss_vg_info_item_t *vg_item = NULL;
     char name[DSS_MAX_NAME_LEN] = {0};
     status_t status = CM_ERROR;
-    bool exist = false;
+    bool32 exist = false;
     gft_item_type_t type;
     DSS_RETURN_IFERR2(
         dss_find_vg_by_dir(path, name, &vg_item), DSS_PRINT_ERROR("Failed to find vg when ls the path %s.\n", path));
@@ -1714,7 +1714,7 @@ static void rmdir_help(const char *prog_name, int print_flag)
 static status_t rmdir_proc(void)
 {
     const char *path = cmd_rmdir_args[DSS_ARG_IDX_0].input_args;
-    bool recursive = cmd_rmdir_args[DSS_ARG_IDX_1].inputed ? CM_TRUE : CM_FALSE;
+    bool32 recursive = cmd_rmdir_args[DSS_ARG_IDX_1].inputed ? CM_TRUE : CM_FALSE;
     dss_conn_t connection;
     status_t status = get_connection_by_input_args(cmd_rmdir_args[DSS_ARG_IDX_2].input_args, &connection);
     if (status != CM_SUCCESS) {
@@ -2712,7 +2712,7 @@ static status_t readlink_proc(void)
         return status;
     }
 
-    bool is_link = false;
+    bool32 is_link = false;
     status = dss_islink_impl(&connection, link_path, &is_link);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to confirm that the path %s is a soft link.\n", link_path);

@@ -65,7 +65,7 @@ void dss_disconnect_ex(dss_conn_t *conn);
 status_t dss_lock_vg_s(dss_vg_info_item_t *vg_item, dss_session_t *session);
 
 status_t dss_make_dir_impl(dss_conn_t *conn, const char *parent, const char *dir_name);
-status_t dss_remove_dir_impl(dss_conn_t *conn, const char *dir, bool recursive);
+status_t dss_remove_dir_impl(dss_conn_t *conn, const char *dir, bool32 recursive);
 dss_dir_t *dss_open_dir_impl(dss_conn_t *conn, const char *dir_path, bool32 refresh_recursive);
 gft_node_t * dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 skip_delete);
 status_t dss_close_dir_impl(dss_conn_t *conn, dss_dir_t *dir);
@@ -73,8 +73,8 @@ status_t dss_create_file_impl(dss_conn_t *conn, const char *file_path, int flag)
 status_t dss_remove_file_impl(dss_conn_t *conn, const char *file_path);
 status_t dss_open_file_impl(dss_conn_t *conn, const char *file_path, int flag, int *handle);
 status_t dss_close_file_impl(dss_conn_t *conn, int handle);
-status_t dss_exist_impl(dss_conn_t *conn, const char *path, bool *result, gft_item_type_t *type);
-status_t dss_islink_impl(dss_conn_t *conn, const char *name, bool *result);
+status_t dss_exist_impl(dss_conn_t *conn, const char *path, bool32 *result, gft_item_type_t *type);
+status_t dss_islink_impl(dss_conn_t *conn, const char *name, bool32 *result);
 int64 dss_seek_file_impl(dss_conn_t *conn, int handle, int64 offset, int origin);
 status_t dss_write_file_impl(dss_conn_t *conn, int handle, const void *buf, int size);
 status_t dss_read_file_impl(dss_conn_t *conn, int handle, void *buf, int size, int *read_size);

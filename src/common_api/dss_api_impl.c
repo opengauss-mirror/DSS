@@ -611,7 +611,7 @@ status_t dss_make_dir_impl(dss_conn_t *conn, const char *parent, const char *dir
     return CM_SUCCESS;
 }
 
-status_t dss_remove_dir_impl(dss_conn_t *conn, const char *dir, bool recursive)
+status_t dss_remove_dir_impl(dss_conn_t *conn, const char *dir, bool32 recursive)
 {
     dss_packet_t *send_pack;
     dss_packet_t *ack_pack;
@@ -1169,7 +1169,7 @@ status_t dss_close_file_impl(dss_conn_t *conn, int handle)
     return CM_SUCCESS;
 }
 
-status_t dss_exist_impl(dss_conn_t *conn, const char *path, bool *result, gft_item_type_t *type)
+status_t dss_exist_impl(dss_conn_t *conn, const char *path, bool32 *result, gft_item_type_t *type)
 {
     dss_packet_t *send_pack;
     dss_packet_t *ack_pack;
@@ -2271,7 +2271,7 @@ status_t dss_unlink_impl(dss_conn_t *conn, const char *link)
     return CM_SUCCESS;
 }
 
-status_t dss_islink_impl(dss_conn_t *conn, const char *path, bool *result)
+status_t dss_islink_impl(dss_conn_t *conn, const char *path, bool32 *result)
 {
     dss_packet_t *send_pack;
     dss_packet_t *ack_pack;

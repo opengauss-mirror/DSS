@@ -453,7 +453,7 @@ int dss_readlink(const char *link_path, char *buf, int bufsize)
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("readlink get conn error."));
 
-    bool is_link = false;
+    bool32 is_link = false;
     CM_RETURN_IFERR(dss_islink_impl(conn, link_path, &is_link));
     if (!is_link) {
         DSS_THROW_ERROR(ERR_DSS_LINK_READ_NOT_LINK, link_path);

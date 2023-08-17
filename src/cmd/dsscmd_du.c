@@ -134,7 +134,7 @@ static status_t du_try_print_link(dss_conn_t *conn, char *path, const char *para
 
 status_t du_traverse_path(char *path, size_t path_size, dss_conn_t *conn, const char *params, size_t params_size)
 {
-    bool exist = false;
+    bool32 exist = false;
     gft_item_type_t type;
     gft_node_t *node = NULL;
     dss_vg_info_item_t *vg_item = NULL;
