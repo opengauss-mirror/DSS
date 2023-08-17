@@ -83,6 +83,7 @@ typedef struct st_dss_instance {
     spinlock_t inst_work_lock;
     dss_kernel_instance_t *kernel_instance;
     bool8 is_maintain;
+    bool32 is_join_cluster;
 } dss_instance_t;
 
 status_t dss_lock_instance(void);
@@ -106,6 +107,7 @@ void dss_set_inst_work_status(uint64 cur_inst_map);
 uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try_lock);
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id);
 void dss_get_cm_lock_and_recover(thread_t *thread);
+bool32 dss_check_join_cluster();
 
 #ifdef __cplusplus
 }

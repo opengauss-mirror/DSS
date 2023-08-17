@@ -275,6 +275,8 @@ bool32 dss_config_cm()
 */
 status_t dss_recover_no_cm(dss_instance_t *inst)
 {
+    // when no cm, set in cluster
+    g_dss_instance.is_join_cluster = CM_TRUE;
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)inst_cfg->params.inst_id;
     status_t ret;
@@ -748,21 +750,38 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
     uint32 old_master_id = dss_get_master_id();
     bool32 grab_lock = CM_FALSE;
     uint32 master_id = dss_get_cm_lock_owner(inst, &grab_lock, CM_TRUE);
-    // master no change
-    if (old_master_id == master_id) {
-        return;
-    }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)inst_cfg->params.inst_id;
+    // master no change
+    if (old_master_id == master_id) {
+        // primary, no need check
+        if (master_id == curr_id) {
+            return;
+        }
+        if (inst->is_join_cluster) {
+            return;
+        }
+        // before set open, join to cluster
+        if (!dss_check_join_cluster()) {
+            return;
+        }
+        inst->status = DSS_STATUS_OPEN;
+    }
     // standby is started or masterid has been changed
     if (master_id != curr_id) {
         dss_set_master_id(master_id);
         dss_set_server_status_flag(DSS_STATUS_READONLY);
         LOG_RUN_INF("inst %u set status flag %u when not get cm lock.", curr_id, DSS_STATUS_READONLY);
+        // before set open, join to cluster
+        if (!dss_check_join_cluster()) {
+            return;
+        }
         inst->status = DSS_STATUS_OPEN;
         return;
     }
     /*1、grab lock success 2、set main,other switch lock 3、restart, lock no transfer*/
+    // when primary, no need to check result
+    (void)dss_check_join_cluster();
     dss_recovery_when_get_lock(inst, curr_id, grab_lock);
     return;
 }
@@ -828,4 +847,33 @@ uint64 dss_get_inst_work_status(void)
 void dss_set_inst_work_status(uint64 cur_inst_map)
 {
     (void)cm_atomic_set((atomic_t *)&g_dss_instance.inst_work_status_map, (int64)cur_inst_map);
+}
+
+bool32 dss_check_join_cluster()
+{
+    if (g_dss_instance.is_join_cluster) {
+        return CM_TRUE;
+    }
+
+    if (dss_get_master_id() == g_dss_instance.inst_cfg.params.inst_id) {
+        g_dss_instance.is_join_cluster = CM_TRUE;
+        LOG_RUN_INF("Join cluster success by primary.");
+    } else {
+        // try register to new master to join
+        bool32 join_succ = CM_FALSE;
+        status_t status = dss_join_cluster(&join_succ);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Joih cluster fail, wait next try.");
+            cm_reset_error();
+            return CM_FALSE;
+        }
+        LOG_DEBUG_INF("Join cluster result [%u].", (uint32)join_succ);
+        if (!join_succ) {
+            return CM_FALSE;
+        }
+        g_dss_instance.is_join_cluster = CM_TRUE;
+        LOG_RUN_INF("Join cluster success by standby.");
+    }
+
+    return CM_TRUE;
 }

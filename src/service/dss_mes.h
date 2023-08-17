@@ -42,6 +42,8 @@ typedef enum en_dss_mes_command {
     DSS_CMD_ACK_LOAD_DISK,
     DSS_CMD_REQ_LOCKS, /* Request command from the standby node to the active node */
     DSS_CMD_ACK_LOCKS,
+    DSS_CMD_REQ_JOIN_CLUSTER,
+    DSS_CMD_ACK_JOIN_CLUSTER,
     DSS_CMD_CEIL,
 } dss_mes_command_t;
 
@@ -150,6 +152,14 @@ typedef struct st_loaddisk_req {
     char vg_name[DSS_MAX_NAME_LEN];
 } dss_loaddisk_req_t;
 
+typedef struct st_join_cluster_req {
+    uint32 reg_id;
+} dss_join_cluster_req_t;
+
+typedef struct st_join_cluster_ack {
+    bool32 is_reg;
+} dss_join_cluster_ack_t;
+
 status_t dss_notify_sync(
     dss_session_t *session, dss_bcast_req_cmd_t cmd, const char *buffer, uint32 size, dss_recv_msg_t *recv_msg);
 status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result);
@@ -168,6 +178,7 @@ status_t dss_send2standby(
     dss_session_t *session, mes_message_head_t *reqhead, big_packets_ctrl_t *ctrl, const char *buf, uint16 size);
 int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, mes_message_head_t *reqhead);
 status_t dss_notify_online(dss_session_t *session);
+status_t dss_join_cluster(bool32 *join_succ);
 
 #ifdef __cplusplus
 }
