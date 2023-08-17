@@ -29,6 +29,8 @@
 
 dss_kernel_instance_t g_dss_kernel_instance;
 
+auid_t dss_invalid_auid = {.volume = 0x3ff, .au = 0x3ffffffff, .block = 0x1ffff, .item = 0x7};
+
 #define DSS_CMD_TYPE_OFFSET(i) ((uint32)(i) - (uint32)DSS_CMD_BEGIN)
 static char *g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_MKDIR)] = "mkdir",

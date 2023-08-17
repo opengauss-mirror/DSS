@@ -184,6 +184,9 @@ status_t dss_conn_create(pointer_t *result)
         DSS_FREE_POINT(conn);
         return CM_ERROR;
     }
+#ifdef ENABLE_DSSTEST
+    conn->conn_pid = getpid();
+#endif
     *result = conn;
     return CM_SUCCESS;
 }
@@ -195,6 +198,20 @@ static status_t dss_get_conn(dss_conn_t **conn)
     if (cm_get_thv(GLOBAL_THV_OBJ0, (pointer_t *)conn) != CM_SUCCESS) {
         return CM_ERROR;
     }
+
+#ifdef ENABLE_DSSTEST
+    if ((*conn)->flag && (*conn)->conn_pid != getpid()) {
+        LOG_RUN_INF("Dss client need re-connect, last conn pid:%llu.", (uint64)(*conn)->conn_pid);
+        dss_disconnect(*conn);
+        if (dss_conn_sync(*conn) != CM_SUCCESS) {
+            LOG_RUN_ERR("[DSS API] ABORT INFO: dss server stoped, application need restart.");
+            cm_fync_logfile();
+            _exit(1);
+        }
+        (*conn)->conn_pid = getpid();
+    }
+#endif
+
     if ((*conn)->pipe.link.uds.closed) {
         LOG_RUN_ERR("[DSS API] ABORT INFO : dss server stoped, application need restart.");
         cm_fync_logfile();
