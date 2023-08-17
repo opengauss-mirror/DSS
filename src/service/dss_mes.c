@@ -676,7 +676,9 @@ status_t dss_notify_sync(dss_session_t *session, char *buffer, uint32 size, dss_
 {
     CM_ASSERT(buffer != NULL);
     CM_ASSERT(size < SIZE_K(1));
-    status_t status = dss_broadcast_msg(session, buffer, size, recv_msg, DSS_MES_LONG_WAIT_TIMEOUT);
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    uint32 timeout = inst_cfg->params.mes_wait_timeout;
+    status_t status = dss_broadcast_msg(session, buffer, size, recv_msg, timeout);
     return status;
 }
 
@@ -794,6 +796,8 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
     dss_message_head_t dss_head;
     mes_message_t msg;
     dss_message_head_t *ack_head = NULL;
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    uint32 timeout = inst_cfg->params.mes_wait_timeout;
     uint32 new_proto_ver = dss_get_version(&session->recv_pack);
     do {
         uint32 buf_size = DSS_MES_MSG_HEAD_SIZE + session->recv_pack.head->size;
@@ -808,7 +812,7 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
         char *err_msg = "The dss server fails to send messages to the remote node";
         DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("%s, src node(%u), dst node(%u).", err_msg, currtid, remoteid));
         // 3. receive msg from remote
-        ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, DSS_MES_WAIT_TIMEOUT);
+        ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, timeout);
         DSS_RETURN_IFERR2(ret,
             LOG_RUN_ERR("dss server receive msg from remote failed, src node:%u, dst node:%u, cmd:%u, size:%lu.",
                 currtid, remoteid, session->recv_pack.head->cmd, dss_head.size - DSS_MES_MSG_HEAD_SIZE));
@@ -868,6 +872,8 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
     uint32 remoteid = DSS_INVALID_ID32;
     uint32 currid = DSS_INVALID_ID32;
     mes_message_t msg;
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    uint32 timeout = inst_cfg->params.mes_wait_timeout;
     if (dss_create_session(NULL, &session) != CM_SUCCESS) {
         LOG_RUN_ERR("Exec cmd:%u on remote node create session fail.", (uint32)cmd);
         return CM_ERROR;
@@ -890,9 +896,8 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
             dss_destroy_session(session);
             return ret;
         }
-
         // 3. receive msg from remote
-        ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, DSS_MES_WAIT_TIMEOUT);
+        ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, timeout);
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("Exec cmd:%u on remote node:%u  recv msg fail.", (uint32)cmd, remoteid);
             dss_destroy_session(session);
@@ -1138,12 +1143,14 @@ static status_t dss_rec_msgs(dss_session_t *session, void *buf, uint32 size)
     big_packets_ctrl_t lastctrl;
     (void)memset_s(&lastctrl, sizeof(big_packets_ctrl_t), 0, sizeof(big_packets_ctrl_t));
     big_packets_ctrl_t *ctrl;
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    uint32 timeout = inst_cfg->params.mes_wait_timeout;
     do {
         if (session && session->is_closed) {
             LOG_RUN_ERR("session:%u is closed.", session->id);
             return CM_ERROR;
         }
-        status_t ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, DSS_MES_WAIT_TIMEOUT);
+        status_t ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, timeout);
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("dss server receive msg from remote node failed, result:%d.", ret);
             return ret;

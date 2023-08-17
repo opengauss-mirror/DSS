@@ -123,6 +123,8 @@ static config_item_t g_dss_params[] = {
         "GS_TYPE_VARCHAR", NULL, 41, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "XLOG_VG_ID", CM_TRUE, CM_FALSE, "1", NULL, NULL, "-", "[1,64]",
         "GS_TYPE_INTEGER", NULL, 42, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "MES_WAIT_TIMEOUT",  CM_TRUE, CM_FALSE, "2000",  NULL, NULL, "-", "[500,10000]",
+        "GS_TYPE_INTEGER", NULL, 43, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 // clang-format on
@@ -396,6 +398,20 @@ status_t dss_load_mes_ssl(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
+static status_t dss_load_mes_wait_timeout(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "MES_WAIT_TIMEOUT");
+    int32 timeout = 0;
+    status_t status = cm_str2int(value, &timeout);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MES_WAIT_TIMEOUT"));
+    if (timeout < DSS_MES_MIN_WAIT_TIMEOUT || timeout > DSS_MES_MAX_WAIT_TIMEOUT) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MES_WAIT_TIMEOUT");
+        return CM_ERROR;
+    }
+    inst_cfg->params.mes_wait_timeout = (uint32)timeout;
+    return CM_SUCCESS;
+}
+
 static status_t dss_load_mes_params(dss_config_t *inst_cfg)
 {
     CM_RETURN_IFERR(dss_load_mes_url(inst_cfg));
@@ -405,6 +421,7 @@ static status_t dss_load_mes_params(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_mes_pool_size(inst_cfg));
     CM_RETURN_IFERR(dss_load_mes_elapsed_switch(inst_cfg));
     CM_RETURN_IFERR(dss_load_mes_ssl(inst_cfg));
+    CM_RETURN_IFERR(dss_load_mes_wait_timeout(inst_cfg));
     return CM_SUCCESS;
 }
 
