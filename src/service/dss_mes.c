@@ -95,6 +95,7 @@ static void dss_proc_broadcast_req_inner(dss_session_t *session, mes_message_t *
         LOG_DEBUG_ERR("Failed to find vg, %s.", check->vg_name);
         return;
     }
+
     bool32 cmd_ack = CM_FALSE;
     switch (bcast_op) {
         case BCAST_REQ_DEL_DIR_FILE:
