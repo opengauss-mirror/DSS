@@ -35,6 +35,7 @@ void dss_proc_broadcast_req(dss_session_t *session, mes_message_t *msg);
 void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg);
 void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg);
 void dss_proc_loaddisk_req(dss_session_t *session, mes_message_t *msg);
+void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_message_t *msg);
 void dss_proc_join_cluster_req(dss_session_t *session, mes_message_t *msg);
 
 void dss_proc_normal_ack(dss_session_t *session, mes_message_t *msg)
@@ -60,6 +61,10 @@ dss_processor_t g_dss_processors[DSS_CMD_CEIL] = {
         "dss standby join in cluster to active req"},
     [DSS_CMD_ACK_JOIN_CLUSTER] = {dss_proc_normal_ack, CM_FALSE, CM_FALSE, MES_TASK_GROUP_ZERO,
         "dss active proc join in cluster to standby ack"},
+    [DSS_CMD_REQ_REFRESH_FT] = {dss_proc_loaddisk_req, CM_TRUE, CM_TRUE, MES_TASK_GROUP_ZERO,
+        "dss standby refresh ft by primary req"},
+    [DSS_CMD_ACK_REFRESH_FT] = {dss_proc_normal_ack, CM_FALSE, CM_FALSE, MES_TASK_GROUP_ZERO,
+        "dss active refresh ft to standby ack"},
 };
 
 void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg)
@@ -72,6 +77,8 @@ static dss_bcast_ack_cmd_t dss_get_bcast_ack_cmd(dss_bcast_req_cmd_t bcast_op)
     switch (bcast_op) {
         case BCAST_REQ_DEL_DIR_FILE:
             return BCAST_ACK_DEL_FILE;
+        case BCAST_REQ_INVALIDATE_FS_META:
+            return BCAST_ACK_INVALIDATE_FS_META;
         default:
             LOG_RUN_ERR("Invalid broadcast request type");
             break;
@@ -107,6 +114,9 @@ static void dss_proc_broadcast_req_inner(dss_session_t *session, mes_message_t *
         case BCAST_REQ_DEL_DIR_FILE:
             status = dss_check_open_file_remote(session, check->vg_name, check->ftid, &cmd_ack);
             break;
+        case BCAST_REQ_INVALIDATE_FS_META:
+            status = dss_invalidate_fs_meta_remote(session, check->vg_name, check->ftid, &cmd_ack);
+            break;
         default:
             LOG_DEBUG_ERR("invalid broadcast req type");
             return;
@@ -135,11 +145,6 @@ static void dss_proc_broadcast_req_inner(dss_session_t *session, mes_message_t *
                      "dst_inst=%hhu, src_sid=%hu, dst_sid=%hu.",
         check->ftid, cmd_ack, ack->head.cmd, ack->head.rsn, ack->head.src_inst, ack->head.dst_inst, ack->head.src_sid,
         ack->head.dst_sid);
- 
-    // delay because exist the lock of vg and shm, may dead lock with the peer node
-    if (bcast_op == BCAST_REQ_DEL_DIR_FILE && !cmd_ack) {
-        dss_clean_file_meta(session, vg_item, check->ftid);
-    }
 }
 
 int32 dss_process_broadcast_ack(dss_session_t *session, char *data, unsigned int len, dss_recv_msg_t *recv_msg_output)
@@ -153,6 +158,7 @@ int32 dss_process_broadcast_ack(dss_session_t *session, char *data, unsigned int
     dss_bcast_ack_cmd_t bcast_op = *(dss_bcast_ack_cmd_t *)data;
     switch (bcast_op) {
         case BCAST_ACK_DEL_FILE:
+        case BCAST_ACK_INVALIDATE_FS_META:
             ret = *(int32 *)(data + sizeof(dss_bcast_ack_cmd_t));
             recv_msg_output->cmd_ack = *(bool32 *)(data + sizeof(dss_bcast_ack_cmd_t) + sizeof(int32));
             break;
@@ -601,7 +607,8 @@ status_t dss_startup_mes(void)
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("dss_set_mes_profile failed."));
 
     regist_remote_read_proc(dss_read_volume_remote);
-
+    regist_invalidate_other_nodes_proc(dss_invalidate_other_nodes);
+    regist_refresh_ft_by_primary_proc(dss_refresh_ft_by_primary);
     return mes_init(&profile);
 }
 
@@ -639,6 +646,11 @@ status_t dss_notify_sync(
     status_t status = dss_broadcast_msg(session, (void *)bcast_req, req_size, recv_msg, DSS_MES_LONG_WAIT_TIMEOUT);
     DSS_FREE_POINT(tmp);
     return status;
+}
+
+status_t dss_invalidate_other_nodes(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack)
+{
+    return dss_notify_expect_bool_ack(session, vg_item, BCAST_REQ_INVALIDATE_FS_META, ftid, cmd_ack);
 }
 
 static void dss_check_inst_conn(uint32_t id, uint64 old_inst_stat, uint64 cur_inst_stat)
@@ -782,7 +794,7 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
         code = *(int32 *)(msg.buffer + data_offset);
         // skip code
         data_offset += sizeof(int32);
-        cpsize = (msg.head->size - data_offset);
+        cpsize = (uint32)(msg.head->size - data_offset);
         cpybuffer = (msg.buffer + data_offset);
         DSS_THROW_ERROR(ERR_DSS_PROCESS_REMOTE, code, cpybuffer);
     } else {
@@ -790,7 +802,7 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
         data_offset += sizeof(int32);
         // skip length
         data_offset += sizeof(int32);
-        cpsize = (msg.head->size - data_offset);
+        cpsize = (uint32)(msg.head->size - data_offset);
         cpybuffer = (msg.buffer + data_offset);
         // do not parse the format
         errno_t err = memcpy_s(ack, (size_t)ack_size, cpybuffer, (size_t)cpsize);
@@ -875,7 +887,7 @@ static void dss_loaddisk_lock(char *vg_name)
 {
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item != NULL) {
-        dss_lock_vg_mem_s(vg_item);
+        dss_lock_vg_mem_s_force(vg_item);
     }
 }
 
@@ -1176,5 +1188,90 @@ void dss_proc_join_cluster_req(dss_session_t *session, mes_message_t *msg)
 
     LOG_DEBUG_INF("Proc join cluster from remote node:%u, reg node:%u send ack end.", (uint32)(msg->head->src_inst),
         join_cluster_req->reg_id);
+    mes_release_message_buf(msg);
+}
+
+status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg_name)
+{
+    LOG_DEBUG_INF("Try refresh ft by primary begin");
+
+    dss_refresh_ft_req_t req;
+
+    req.blockid = blockid;
+    req.vgid = vgid;
+
+    if (strncpy_s(req.vg_name, sizeof(req.vg_name), vg_name, strlen(vg_name)) != EOK) {
+        LOG_DEBUG_ERR("Try refresh ft by primary req vg_name fail.");
+        return CM_ERROR;
+    }
+
+    status_t remote_result;
+    dss_refresh_ft_ack_t ack;
+
+    status_t ret = dss_exec_on_remote(DSS_CMD_REQ_REFRESH_FT, (char *)&req, sizeof(dss_refresh_ft_req_t), (char *)&ack,
+        sizeof(dss_refresh_ft_ack_t), &remote_result);
+    if (ret != CM_SUCCESS || remote_result != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Try refresh ft by primary exec on remote fail.");
+        return CM_ERROR;
+    }
+
+    LOG_DEBUG_INF("Try refresh ft by primary result:%u.", ack.is_ok);
+    if (!ack.is_ok) {
+        LOG_DEBUG_ERR("Try refresh ft by priamry ack is not ok.");
+        return CM_ERROR;
+    }
+
+    return CM_SUCCESS;
+}
+
+void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_message_t *msg)
+{
+    uint32 size = msg->head->size - sizeof(mes_message_head_t);
+    if (size != sizeof(dss_refresh_ft_req_t)) {
+        LOG_RUN_ERR("Refresh ft by primary from remote node:%u check req msg fail.", (uint32)(msg->head->src_inst));
+        dss_proc_remote_req_err(session, msg->head, DSS_CMD_ACK_REFRESH_FT, CM_ERROR);
+        mes_release_message_buf(msg);
+        return;
+    }
+
+    dss_refresh_ft_req_t *refresh_ft_req = (dss_refresh_ft_req_t *)(msg->buffer + sizeof(mes_message_head_t));
+    LOG_DEBUG_INF("Refresh ft by primary from remote node:%u, blockid:%llu, vgid:%u, vg_name:%s begin.",
+        (uint32)(msg->head->src_inst), DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
+        refresh_ft_req->vg_name);
+    if (dss_refresh_ft_block(
+        session, refresh_ft_req->vg_name, refresh_ft_req->vgid, refresh_ft_req->blockid) != CM_SUCCESS) {
+        LOG_RUN_ERR("Refresh ft by primary from remote node:%u, blockid:%llu, vgid:%u, vg_name:%s refresh fail",
+            (uint32)(msg->head->src_inst), DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
+            refresh_ft_req->vg_name);
+        dss_proc_remote_req_err(session, msg->head, DSS_CMD_ACK_REFRESH_FT, CM_ERROR);
+        mes_release_message_buf(msg);
+        return;
+    }
+
+    dss_refresh_ft_ack_t refresh_ft_ack = {CM_TRUE};
+    text_t data = {(char *)&refresh_ft_ack, sizeof(dss_refresh_ft_ack_t)};
+    if (dss_put_text(&session->send_pack, &data) != CM_SUCCESS) {
+        LOG_RUN_ERR("Proc refresh ft by primary from remote node:%u, is_ok:%u ready ack fail.",
+            (uint32)(msg->head->src_inst), (uint32)refresh_ft_ack.is_ok);
+        dss_proc_remote_req_err(session, msg->head, DSS_CMD_ACK_REFRESH_FT, CM_ERROR);
+        mes_release_message_buf(msg);
+        return;
+    }
+
+    mes_message_head_t ack;
+    ack.size = (uint16)((session->send_pack.head->size - sizeof(dss_packet_head_t)) +sizeof(mes_message_head_t));
+    mes_init_ack_head(msg->head, &ack, DSS_CMD_ACK_REFRESH_FT, ack.size, session->id);
+    int send_ret = mes_send_data2(&ack, session->send_pack.buf + sizeof(dss_packet_head_t));
+    if (send_ret != CM_SUCCESS) {
+        LOG_RUN_ERR("Refresh ft by primary from remote node:%u, blockid:%llu, vgid:%u, vg_name:%s send ack fail",
+            (uint32)(msg->head->src_inst), DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
+            refresh_ft_req->vg_name);
+        mes_release_message_buf(msg);
+        return;
+    }
+
+    LOG_RUN_ERR("Refresh ft by primary from remote node:%u, blockid:%llu, vgid:%u, vg_name:%s refresh end",
+        (uint32)(msg->head->src_inst), DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
+        refresh_ft_req->vg_name);
     mes_release_message_buf(msg);
 }

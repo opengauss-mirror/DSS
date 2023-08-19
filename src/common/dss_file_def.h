@@ -41,6 +41,7 @@
 #define DSS_FT_NODE_FLAG_SYSTEM 0x00000001
 #define DSS_FT_NODE_FLAG_DEL 0x00000002
 #define DSS_FT_NODE_FLAG_NORMAL 0x00000004
+#define DSS_FT_NODE_FLAG_INVALID_FS_META 0x00000008
 
 #define DSS_GET_ROOT_BLOCK(dss_ctrl_p) ((dss_root_ft_block_t *)((dss_ctrl_p)->root))
 #define DSS_MAX_FT_AU_NUM 10
@@ -337,6 +338,8 @@ typedef union st_gft_node {
         uint64 fid;
         uint64 written_size;
         ftid_t parent;
+        uint64 file_ver; // the current ver of the file, when create, it's zero, when truncate the content of the file
+                         // to small size, update it by in old file_ver with step 1
     };
     char ft_node[256];  // to ensure that the structure size is 256
 } gft_node_t;
@@ -382,6 +385,9 @@ typedef struct st_dss_common_block_t {
 } dss_common_block_t;
 
 typedef struct st_dss_block_ctrl {
+    uint64 fid;             // it's the owner's gft_node_t.fid
+    uint64 file_ver;        // it's the owner's fgt_node_t.file_ver
+    bool32 is_refresh_ftid; // just for dss_ft_block_t
     latch_t latch;
     sh_mem_p hash_next;
     sh_mem_p hash_prev;

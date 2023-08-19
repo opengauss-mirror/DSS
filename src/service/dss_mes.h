@@ -44,6 +44,8 @@ typedef enum en_dss_mes_command {
     DSS_CMD_ACK_LOCKS,
     DSS_CMD_REQ_JOIN_CLUSTER,
     DSS_CMD_ACK_JOIN_CLUSTER,
+    DSS_CMD_REQ_REFRESH_FT,
+    DSS_CMD_ACK_REFRESH_FT,
     DSS_CMD_CEIL,
 } dss_mes_command_t;
 
@@ -95,11 +97,13 @@ typedef struct st_dss_mes_actlist {
 // clang-format off
 typedef enum st_dss_bcast_req_cmd {
     BCAST_REQ_DEL_DIR_FILE = 0,
+    BCAST_REQ_INVALIDATE_FS_META,
     BCAST_REQ_END
 } dss_bcast_req_cmd_t;
 
 typedef enum st_dss_bcast_ack_cmd {
     BCAST_ACK_DEL_FILE = 0,
+    BCAST_ACK_INVALIDATE_FS_META,
     BCAST_ACK_END
 } dss_bcast_ack_cmd_t;
 
@@ -151,7 +155,6 @@ typedef struct st_loaddisk_req {
     uint64 offset;
     char vg_name[DSS_MAX_NAME_LEN];
 } dss_loaddisk_req_t;
-
 typedef struct st_join_cluster_req {
     uint32 reg_id;
 } dss_join_cluster_req_t;
@@ -159,12 +162,22 @@ typedef struct st_join_cluster_req {
 typedef struct st_join_cluster_ack {
     bool32 is_reg;
 } dss_join_cluster_ack_t;
+typedef struct st_refresh_ft_req {
+    dss_block_id_t blockid;
+    uint32 vgid;
+    char vg_name[DSS_MAX_NAME_LEN];
+} dss_refresh_ft_req_t;
+
+typedef struct st_refresh_ft_ack {
+    bool32 is_ok;
+} dss_refresh_ft_ack_t;
 
 status_t dss_notify_sync(
     dss_session_t *session, dss_bcast_req_cmd_t cmd, const char *buffer, uint32 size, dss_recv_msg_t *recv_msg);
 status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result);
 status_t dss_notify_expect_bool_ack(
     dss_session_t *session, dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *cmd_ack);
+status_t dss_invalidate_other_nodes(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
 
 void dss_check_mes_conn(uint64 cur_inst_map);
 status_t dss_startup_mes(void);
@@ -179,6 +192,7 @@ status_t dss_send2standby(
 int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, mes_message_head_t *reqhead);
 status_t dss_notify_online(dss_session_t *session);
 status_t dss_join_cluster(bool32 *join_succ);
+status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg_name);
 
 #ifdef __cplusplus
 }
