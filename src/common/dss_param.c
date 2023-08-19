@@ -490,7 +490,7 @@ static status_t dss_load_cluster_run_mode(dss_config_t *inst_cfg)
 static status_t dss_load_xlog_vg_id(dss_config_t *inst_cfg)
 {
     char *value = cm_get_config_value(&inst_cfg->config, "XLOG_VG_ID");
-    int32 xlog_vg_id;
+    int32 xlog_vg_id = 0;
     status_t status = cm_str2int(value, &xlog_vg_id);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "XLOG_VG_ID"));
 
@@ -500,7 +500,7 @@ static status_t dss_load_xlog_vg_id(dss_config_t *inst_cfg)
     }
 
     inst_cfg->params.xlog_vg_id = (uint32)xlog_vg_id;
-    LOG_RUN_INF("The instanceid is %d.", inst_cfg->params.xlog_vg_id);
+    LOG_RUN_INF("The xlog vg id is %d.", inst_cfg->params.xlog_vg_id);
     return CM_SUCCESS;
 }
 

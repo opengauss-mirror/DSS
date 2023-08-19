@@ -806,7 +806,7 @@ status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry
         LOG_DEBUG_INF("DISK MODE, lock vg:%s, lock file:%s.", entry_path, lock_file);
     } else {
         /* in standby cluster, we do not need try to lock(scsi3) xlog vg, xlog vg is a read only disk */
-        if (DSS_STANDBY_CLUSTER_XLOG_VG) {
+        if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
             return CM_SUCCESS;
         }
         dss_latch_x(&vg_item->disk_latch);
