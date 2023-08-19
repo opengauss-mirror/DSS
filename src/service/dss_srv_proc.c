@@ -648,7 +648,7 @@ static void dss_close_handle(dss_session_t *session, dss_vg_info_item_t *vg_item
     if ((node->flags & DSS_FT_NODE_FLAG_DEL) != 0) {
         dss_unlatch(&vg_item->open_file_latch);
         status_t status = dss_remove_dir_file_by_node(session, vg_item, node);
-        dss_latch_x(&vg_item->open_file_latch);
+        dss_latch_x2(&vg_item->open_file_latch, session->id);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_INF(
                 "Failed to remove delay file when close file, ftid%llu, fid:%llu, vg: %s, session pid:%llu, v:%u, "
@@ -668,66 +668,28 @@ static void dss_close_handle(dss_session_t *session, dss_vg_info_item_t *vg_item
 
 void dss_clean_open_files_in_vg(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 pid)
 {
-    skip_list_t *list = &vg_item->open_pid_list;
-    skip_list_iterator_t itr;
-    skip_list_range_t range;
-    dss_open_file_info_t left_key;
-    left_key.ftid = 0;
-    left_key.pid = pid;
-    left_key.ref = 1;
-
-    dss_open_file_info_t right_key;
-    right_key.ftid = CM_INVALID_ID64;
-    right_key.pid = pid;
-    right_key.ref = 1;
-
-    range.is_left_include = CM_TRUE;
-    range.is_right_include = CM_FALSE;
-    range.left_key = &left_key;
-    range.left_value = NULL;
-    range.right_key = &right_key;
-    range.right_value = NULL;
-
-    uint32 count = 0;
-    uint32 count_fail = 0;
-    dss_open_file_info_t *next_key;
-    int32 ret = SKLIST_FETCH_END;
-    dss_latch_x(&vg_item->open_file_latch);
-
-    do {
-        sklist_create_iterator(list, &range, &itr);
-        ret = sklist_fetch_next(&itr, (void **)&next_key, NULL, 0);
-        if (ret != SKIP_LIST_FOUND) {
-            sklist_close_iterator(&itr);
-            LOG_DEBUG_INF("Not find skiplist index, ret:%d.", ret);
-            break;
+    dss_open_file_info_t *open_file = NULL;
+    dss_latch_x2(&vg_item->open_file_latch, session->id);
+    bilist_node_t *curr_node = cm_bilist_head(&vg_item->open_file_list);
+    bilist_node_t *next_node = NULL;
+    while (curr_node != NULL) {
+        next_node = curr_node->next;
+        open_file = BILIST_NODE_OF(dss_open_file_info_t, curr_node, link);
+        if (open_file->pid == pid) {
+            ftid_t ftid = *(ftid_t *)&open_file->ftid;
+            dss_free_open_file_node(curr_node, &vg_item->open_file_list);
+            if (dss_is_readwrite()) {
+                DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
+                dss_close_handle(session, vg_item, ftid);
+                // open_file_latch may has been released in dss_close_handle, the linked list may have been modified.
+                // In this case,you need to start traversing again.
+                curr_node = cm_bilist_head(&vg_item->open_file_list);
+                continue;
+            }
         }
-        sklist_close_iterator(&itr);
-        ftid_t ftid = *(ftid_t *)&next_key->ftid;
-        uint32 err = sklist_delete(&vg_item->open_file_list, next_key, next_key);
-        if (err != CM_SUCCESS) {
-            count_fail++;
-            LOG_DEBUG_INF("Failed to delete file skiplist index, ftid:%llu, pid:%llu.", next_key->ftid, next_key->pid);
-        }
-
-        err = sklist_delete(list, next_key, next_key);
-        if (err != CM_SUCCESS) {
-            count_fail++;
-            LOG_DEBUG_INF("Failed to delete pid skiplist index, ftid:%llu, pid:%llu.", next_key->ftid, next_key->pid);
-        }
-        if (dss_is_readwrite()) {
-            DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
-            dss_close_handle(session, vg_item, ftid);
-        }
-        DSS_LOG_DEBUG_OP(
-            "Succeed to close file, ftid:%llu, vg: %s, session pid:%llu, v:%u, au:%llu, block:%u, item:%u.",
-            *(uint64 *)&ftid, vg_item->vg_name, session->cli_info.cli_pid, ftid.volume, (uint64)ftid.au, ftid.block,
-            ftid.item);
-        count++;
-    } while (ret == SKIP_LIST_FOUND);
+        curr_node = next_node;
+    }
     dss_unlatch(&vg_item->open_file_latch);
-
-    LOG_RUN_INF("Succeed to clean open files, count:%u, fail count:%u.", count, count_fail);
 }
 
 #ifdef __cplusplus

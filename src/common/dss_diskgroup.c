@@ -310,15 +310,10 @@ static status_t dss_get_vg_info_core(uint32 i, dss_share_vg_info_t *share_vg_inf
     }
 
     dss_checksum_vg_ctrl(&g_vgs_info->volume_group[i]);
-    status = dss_init_open_file_index(&g_vgs_info->volume_group[i]);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("DSS instance failed to init volume handle vg:%s!", g_vgs_info->volume_group[i].vg_name);
-        return status;
-    }
+    cm_bilist_init(&g_vgs_info->volume_group[i].open_file_list);
 
     status = dss_init_vol_handle(&g_vgs_info->volume_group[i], flags, NULL);
     if (status != CM_SUCCESS) {
-        dss_destroy_open_file_index(&g_vgs_info->volume_group[i]);
         LOG_RUN_ERR("DSS instance failed to init volume handle vg:%s!", g_vgs_info->volume_group[i].vg_name);
         return status;
     }

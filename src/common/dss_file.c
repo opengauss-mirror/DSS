@@ -464,7 +464,7 @@ status_t dss_read_link(dss_session_t *session, char *link_path, char *out_filepa
     dss_unlock_vg_mem_and_shm(session, vg_item);
     if (status != CM_SUCCESS) {
         status = dss_delete_open_file_index(
-            vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
+            session, vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
         if (status == CM_SUCCESS) {
             LOG_RUN_INF("Success to delete open file index, ftid:%llu.", *(uint64 *)&node->id);
         }
@@ -475,7 +475,7 @@ status_t dss_read_link(dss_session_t *session, char *link_path, char *out_filepa
     securec_check_ret(errcode);
 
     status = dss_delete_open_file_index(
-        vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
+        session, vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to delete open file index."));
     DSS_LOG_DEBUG_OP("Succeed to close link, ftid:%llu, session id:%u.", *(uint64 *)&node->id, session->id);
     return CM_SUCCESS;
@@ -538,7 +538,7 @@ status_t dss_write_link_file(dss_session_t *session, char *link_path, char *dst_
     status = dss_extend(session, &node_data);
     if (status != CM_SUCCESS) {
         status = dss_delete_open_file_index(
-            vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
+            session, vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
         if (status == CM_SUCCESS) {
             LOG_RUN_INF("Success to delete open file index, ftid:%llu.", *(uint64 *)&node->id);
         }
@@ -548,13 +548,13 @@ status_t dss_write_link_file(dss_session_t *session, char *link_path, char *dst_
     status = dss_get_link_auid(session, vg_item, node, &auid, DSS_FALSE);
     if (status != CM_SUCCESS) {
         CM_RETURN_IFERR(dss_delete_open_file_index(
-            vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time));
+            session, vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time));
         return CM_ERROR;
     }
     status = dss_write_link_file_content(session, vg_item, auid, dst_path);
     if (status != CM_SUCCESS) {
         CM_RETURN_IFERR(dss_delete_open_file_index(
-            vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time));
+            session, vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time));
         if (status == CM_SUCCESS) {
             LOG_RUN_INF("Success to delete open file index, ftid:%llu.", *(uint64 *)&node->id);
         }
@@ -562,7 +562,7 @@ status_t dss_write_link_file(dss_session_t *session, char *link_path, char *dst_
     }
 
     status = dss_delete_open_file_index(
-        vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
+        session, vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to delete open file index."));
     DSS_LOG_DEBUG_OP("Succeed to close link, ftid:%llu, session id:%u.", *(uint64 *)&node->id, session->id);
     return CM_SUCCESS;
@@ -824,7 +824,7 @@ status_t dss_open_dir(dss_session_t *session, const char *dir_path, bool32 is_re
             }
         }
         status = dss_insert_open_file_index(
-            vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
+            session, vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to insert open file index vg:%s, ftid:%llu, pid:%llu.", vg_item->vg_name,
                 *(uint64 *)&node->id, session->cli_info.cli_pid);
@@ -846,7 +846,7 @@ void dss_close_dir(dss_session_t *session, char *vg_name, uint64 ftid)
     }
 
     status_t status =
-        dss_delete_open_file_index(vg_item, ftid, session->cli_info.cli_pid, session->cli_info.start_time);
+        dss_delete_open_file_index(session, vg_item, ftid, session->cli_info.cli_pid, session->cli_info.start_time);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to delete open file index.");
         return;
@@ -1193,7 +1193,7 @@ static status_t dss_open_file_find_block_and_insert_index(
     }
 
     status = dss_insert_open_file_index(
-        vg_item, *(uint64 *)&out_node->id, session->cli_info.cli_pid, session->cli_info.start_time);
+        session, vg_item, *(uint64 *)&out_node->id, session->cli_info.cli_pid, session->cli_info.start_time);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to insert open file index."));
     return CM_SUCCESS;
 }
@@ -1329,7 +1329,7 @@ gft_node_t *dss_find_parent_node_by_node(dss_vg_info_item_t *vg_item, gft_node_t
 status_t dss_close_file(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid)
 {
     status_t status =
-        dss_delete_open_file_index(vg_item, ftid, session->cli_info.cli_pid, session->cli_info.start_time);
+        dss_delete_open_file_index(session, vg_item, ftid, session->cli_info.cli_pid, session->cli_info.start_time);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to delete open file index."));
     return CM_SUCCESS;
 }

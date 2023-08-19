@@ -23,294 +23,102 @@
  */
 
 #include "dss_open_file.h"
-#include "dss_malloc.h"
 #include "cm_system.h"
 
-static int32 of_sklist_file_key_cmp_proc(void *arg, void *left, void *right)
+bilist_node_t *dss_find_open_file_node(bilist_t *open_file_list, uint64 ftid, uint64 pid, int64 start_time)
 {
-    CM_ASSERT(arg != NULL);
-    CM_ASSERT(left != NULL);
-    CM_ASSERT(right != NULL);
-    dss_open_file_info_t *left_key = (dss_open_file_info_t *)left;
-    dss_open_file_info_t *right_key = (dss_open_file_info_t *)right;
-    if (left_key->ftid == right_key->ftid) {
-        if (left_key->pid == right_key->pid) {
-            return 0;
-        } else if (left_key->pid > right_key->pid) {
-            return 1;
-        } else {
-            return -1;
+    dss_open_file_info_t *open_file = NULL;
+
+    bilist_node_t *node = cm_bilist_head(open_file_list);
+    for (; node != NULL; node = BINODE_NEXT(node)) {
+        open_file = BILIST_NODE_OF(dss_open_file_info_t, node, link);
+        if (open_file->ftid == ftid && open_file->pid == pid && open_file->start_time == start_time) {
+            return node;
         }
     }
-
-    if (left_key->ftid > right_key->ftid) {
-        return 1;
-    } else {
-        return -1;
-    }
+    return NULL;
 }
 
-static int32 of_sklist_pid_key_cmp_proc(void *arg, void *left, void *right)
+status_t dss_insert_open_file_index(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, uint64 pid, int64 start_time)
 {
-    CM_ASSERT(arg != NULL);
-    CM_ASSERT(left != NULL);
-    CM_ASSERT(right != NULL);
+    dss_open_file_info_t *open_file = NULL;
 
-    dss_open_file_info_t *left_key = (dss_open_file_info_t *)left;
-    dss_open_file_info_t *right_key = (dss_open_file_info_t *)right;
-    if (left_key->pid == right_key->pid) {
-        if (left_key->ftid == right_key->ftid) {
-            return 0;
-        } else if (left_key->ftid > right_key->ftid) {
-            return 1;
-        } else {
-            return -1;
-        }
-    }
-
-    if (left_key->pid > right_key->pid) {
-        return 1;
-    } else {
-        return -1;
-    }
-}
-
-static int32 of_sklist_value_cmp_proc(void *left, void *right)
-{
-    CM_ASSERT(left != NULL);
-    CM_ASSERT(right != NULL);
-
-    return 0;
-}
-
-static int32 of_sklist_value_get_proc(void *data, void *buf, uint16 len, void **out_data)
-{
-    CM_ASSERT(data != NULL);
-
-    if (buf) {
-        errno_t errcode = memcpy_s(buf, len, data, len);
-        securec_check_ret(errcode);
-    }
-
-    if (out_data) {
-        *out_data = data;
-    }
-
-    return CM_SUCCESS;
-}
-
-static void of_sklist_free_proc(void *arg, void *key)
-{
-    CM_ASSERT(arg != NULL);
-    CM_ASSERT(key != NULL);
-
-    DSS_FREE_POINT(key);
-}
-
-status_t dss_init_open_file_index(dss_vg_info_item_t *vg_item)
-{
-    skip_list_callback_t callback;
-    callback.callback_func_arg = vg_item;
-    callback.key_cmp_func = of_sklist_file_key_cmp_proc;
-    callback.value_cmp_func = of_sklist_value_cmp_proc;
-    callback.key_free_func = of_sklist_free_proc;
-    callback.value_get_func = of_sklist_value_get_proc;
-    callback.value_free_func = NULL;
-    uint32 ret = sklist_init(&vg_item->open_file_list, &callback);
-    if (ret != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to initialize skip list file index.");
-        return CM_ERROR;
-    }
-
-    callback.key_cmp_func = of_sklist_pid_key_cmp_proc;
-    ret = sklist_init(&vg_item->open_pid_list, &callback);
-    if (ret != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to initialize skip list pid index.");
-        return CM_ERROR;
-    }
-    LOG_RUN_INF("Succeed to initialize to open file index for vg:%s.", vg_item->vg_name);
-    return CM_SUCCESS;
-}
-
-void dss_destroy_open_file_index(dss_vg_info_item_t *vg_item)
-{
-    sklist_destroy(&vg_item->open_file_list);
-    sklist_destroy(&vg_item->open_pid_list);
-}
-
-static status_t dss_insert_skiplist_index(skip_list_t *list, uint64 ftid, uint64 pid, int64 start_time)
-{
-    dss_open_file_info_t key;
-    key.ftid = ftid;
-    key.pid = pid;
-    key.ref = 1;
-    key.start_time = start_time;
-
-    dss_open_file_info_t *out_data;
-    int32 ret = sklist_get_value(list, &key, CM_FALSE, NULL, 0, (void **)&out_data);
-    if (ret == ERR_DSS_SKLIST_NOT_EXIST) {
-        dss_open_file_info_t *key_ins = (dss_open_file_info_t *)cm_malloc(sizeof(dss_open_file_info_t));
-        if (key_ins == NULL) {
-            DSS_THROW_ERROR(ERR_ALLOC_MEMORY, sizeof(dss_open_file_info_t), "dss_insert_skiplist_index");
-            return CM_ERROR;
-        }
-        key_ins->ftid = ftid;
-        key_ins->pid = pid;
-        key_ins->ref = 1;
-        key_ins->start_time = start_time;
-        uint32 err = sklist_insert(list, key_ins, key_ins);
-        if (err != 0) {
-            LOG_DEBUG_ERR("Failed to insert open file index,ftid:%llu, pid:%llu.", key_ins->ftid, key_ins->pid);
-            DSS_THROW_ERROR(err);
-            return CM_ERROR;
-        }
-    } else if (ret == 0) {
-        out_data->ref++;
-    } else {
-        DSS_THROW_ERROR(ret, "Failed to insert open file, ftid:%llu, pid:%llu.", ftid, pid);
-        return CM_ERROR;
-    }
-    return CM_SUCCESS;
-}
-
-static status_t dss_delete_skiplist_index(skip_list_t *list, uint64 ftid, uint64 pid)
-{
-    dss_open_file_info_t key;
-    key.ftid = ftid;
-    key.pid = pid;
-    key.ref = 1;
-
-    dss_open_file_info_t *out_data;
-    int32 ret = sklist_get_value(list, &key, CM_FALSE, NULL, 0, (void **)&out_data);
-    if (ret == 0) {  // found
-        if (out_data->ref > 1) {
-            out_data->ref--;
-        } else {
-            uint32 err = sklist_delete(list, &key, &key);
-            if (err != CM_SUCCESS) {
-                DSS_THROW_ERROR(ret, "Failed to delete open file info, ftid:%llu, pid:%llu.", ftid, pid);
-                return CM_ERROR;
-            }
-        }
-    } else {
-        DSS_THROW_ERROR(ret, "Failed to delete open file info, ftid:%llu, pid:%llu.", ftid, pid);
-        return CM_ERROR;
-    }
-
-    return CM_SUCCESS;
-}
-
-status_t dss_insert_open_file_index(dss_vg_info_item_t *vg_item, uint64 ftid, uint64 pid, int64 start_time)
-{
-    dss_latch_x(&vg_item->open_file_latch);
-    status_t status = dss_insert_skiplist_index(&vg_item->open_file_list, ftid, pid, start_time);
-    DSS_RETURN_IFERR3(status, dss_unlatch(&vg_item->open_file_latch),
-        LOG_DEBUG_ERR("Failed to insert open file index,ftid:%llu, pid:%llu.", ftid, pid));
-
-    status = dss_insert_skiplist_index(&vg_item->open_pid_list, ftid, pid, start_time);
-    if (status != CM_SUCCESS) {
-        (void)dss_delete_skiplist_index(&vg_item->open_file_list, ftid, pid);
+    dss_latch_x2(&vg_item->open_file_latch, session->id);
+    bilist_node_t *node = dss_find_open_file_node(&vg_item->open_file_list, ftid, pid, start_time);
+    if (node != NULL) {
+        open_file = BILIST_NODE_OF(dss_open_file_info_t, node, link);
+        open_file->ref++;
         dss_unlatch(&vg_item->open_file_latch);
-        LOG_DEBUG_ERR("Failed to insert open pid index,ftid:%llu, pid:%llu.", ftid, pid);
-        return status;
+        return CM_SUCCESS;
     }
+
+    open_file = (dss_open_file_info_t *)cm_malloc(sizeof(dss_open_file_info_t));
+    if (open_file == NULL) {
+        dss_unlatch(&vg_item->open_file_latch);
+        DSS_THROW_ERROR(ERR_DSS_OUT_OF_MEM);
+        return CM_ERROR;
+    }
+    errno_t ret = memset_s(open_file, sizeof(dss_open_file_info_t), 0, sizeof(dss_open_file_info_t));
+    if (ret != EOK) {
+        dss_unlatch(&vg_item->open_file_latch);
+        CM_FREE_PTR(open_file);
+        return CM_ERROR;
+    }
+    open_file->ftid = ftid;
+    open_file->pid = pid;
+    open_file->start_time = start_time;
+    open_file->ref = 1;
+    cm_bilist_add_tail(&open_file->link, &vg_item->open_file_list);
     dss_unlatch(&vg_item->open_file_latch);
     LOG_DEBUG_INF("Succeed to insert open file index, ftid:%llu, pid:%llu.", ftid, pid);
     return CM_SUCCESS;
 }
 
-status_t dss_delete_open_file_index(dss_vg_info_item_t *vg_item, uint64 ftid, uint64 pid, int64 start_time)
+status_t dss_delete_open_file_index(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, uint64 pid, int64 start_time)
 {
     dss_latch_x(&vg_item->open_file_latch);
-    status_t status = dss_delete_skiplist_index(&vg_item->open_file_list, ftid, pid);
-    DSS_RETURN_IFERR3(status, dss_unlatch(&vg_item->open_file_latch),
-        LOG_DEBUG_ERR("Failed to delete open file index,ftid:%llu, pid:%llu.", ftid, pid));
-
-    status = dss_delete_skiplist_index(&vg_item->open_pid_list, ftid, pid);
-    if (status != CM_SUCCESS) {
-        (void)dss_insert_skiplist_index(&vg_item->open_file_list, ftid, pid, start_time);
+    bilist_node_t *node = dss_find_open_file_node(&vg_item->open_file_list, ftid, pid, start_time);
+    if (node == NULL) {
         dss_unlatch(&vg_item->open_file_latch);
-        LOG_DEBUG_ERR("Failed to delete open pid index,ftid:%llu, pid:%llu.", ftid, pid);
-        return status;
+        DSS_THROW_ERROR(ERR_DSS_FILE_CLOSE, "failed to delete open file info, ftid:%llu, pid:%llu.", ftid, pid);
+        return CM_ERROR;
+    }
+    dss_open_file_info_t *open_file = BILIST_NODE_OF(dss_open_file_info_t, node, link);
+    if (open_file->ref > 1) {
+        open_file->ref--;
+    } else {
+        dss_free_open_file_node(node, &vg_item->open_file_list);
     }
     dss_unlatch(&vg_item->open_file_latch);
     LOG_DEBUG_INF("Succeed to delete open file index, ftid:%llu, pid:%llu.", ftid, pid);
     return CM_SUCCESS;
 }
 
-static status_t dss_check_open_file_clean_list(
-    dss_vg_info_item_t *vg_item, dss_open_file_info_t *next_key, skip_list_iterator_t itr, bool32 *is_open)
-{
-    uint64 ftid = next_key->ftid;
-    uint64 pid = next_key->pid;
-    int64 start_time = next_key->start_time;
-    int32 ret = SKIP_LIST_FOUND;
-    while (CM_TRUE) {
-        if ((ret == SKIP_LIST_FOUND) && (!cm_sys_process_alived(pid, start_time))) {
-            status_t status = dss_delete_skiplist_index(&vg_item->open_file_list, ftid, pid);
-            if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("Failed to delete open file index when clean dead pid,ftid:%llu, pid:%llu.", ftid, pid);
-                return status;
-            }
-            status = dss_delete_skiplist_index(&vg_item->open_pid_list, ftid, pid);
-            if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("Failed to delete open pid index when clean dead pid,ftid:%llu, pid:%llu.", ftid, pid);
-                (void)dss_insert_skiplist_index(&vg_item->open_file_list, ftid, pid, start_time);
-                return status;
-            }
-        } else if (ret == SKLIST_FETCH_END) {
-            *is_open = CM_FALSE;
-            return CM_SUCCESS;
-        } else if (ret == SKIP_LIST_FOUND) {
-            *is_open = CM_TRUE;
-            return CM_SUCCESS;
-        } else {
-            return CM_ERROR;
-        }
-        ret = sklist_fetch_next(&itr, (void **)&next_key, NULL, 0);
-        ftid = next_key->ftid;
-        pid = next_key->pid;
-        start_time = next_key->start_time;
-    }
-}
-
 status_t dss_check_open_file(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *is_open)
 {
-    skip_list_t *list = &vg_item->open_file_list;
-    skip_list_iterator_t itr;
-    skip_list_range_t range;
-    dss_open_file_info_t left_key;
-    left_key.ftid = ftid;
-    left_key.pid = 0;
-    left_key.ref = 1;
+    *is_open = CM_FALSE;
+    dss_open_file_info_t *open_file = NULL;
 
-    dss_open_file_info_t right_key;
-    right_key.ftid = ftid;
-    right_key.pid = CM_INVALID_ID64;
-    right_key.ref = 1;
-
-    range.is_left_include = CM_FALSE;
-    range.is_right_include = CM_FALSE;
-    range.left_key = &left_key;
-    range.left_value = NULL;
-    range.right_key = &right_key;
-    range.right_value = NULL;
-    dss_open_file_info_t *next_key;
-    status_t status = CM_SUCCESS;
-
-    sklist_create_iterator(list, &range, &itr);
     dss_latch_x2(&vg_item->open_file_latch, session->id);
-    int32 ret = sklist_fetch_next(&itr, (void **)&next_key, NULL, 0);
-    if (ret == SKLIST_FETCH_END) {
-        *is_open = CM_FALSE;
-    } else if (ret == SKIP_LIST_FOUND) {
-        LOG_DEBUG_INF("Succeed to find open file index, ftid:%llu, pid:%llu.", ftid, next_key->pid);
-        status = dss_check_open_file_clean_list(vg_item, next_key, itr, is_open);
-    } else {
-        status = CM_ERROR;
+    bilist_node_t *curr_node = cm_bilist_head(&vg_item->open_file_list);
+    bilist_node_t *next_node = NULL;
+    while (curr_node != NULL) {
+        open_file = BILIST_NODE_OF(dss_open_file_info_t, curr_node, link);
+        next_node = curr_node->next;
+        if (!cm_sys_process_alived(open_file->pid, open_file->start_time)) {
+            dss_free_open_file_node(curr_node, &vg_item->open_file_list);
+            curr_node = next_node;
+            continue;
+        }
+        if (open_file->ftid == ftid) {
+            *is_open = CM_TRUE;
+            break;
+        }
+        curr_node = next_node;
     }
+    
     dss_unlatch(&vg_item->open_file_latch);
-    sklist_close_iterator(&itr);
-
-    return status;
+    return CM_SUCCESS;
 }

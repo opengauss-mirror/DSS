@@ -31,9 +31,9 @@
 #include "cm_latch.h"
 #include "dss_ga.h"
 #include "cm_date.h"
+#include "cm_bilist.h"
 #include "dss_shm_hashmap.h"
 #include "dss_param.h"
-#include "dss_skiplist.h"
 #include "dss_stack.h"
 #include "ceph_interface.h"
 
@@ -267,9 +267,8 @@ typedef struct st_dss_vg_info_item_t {
     char *align_buf;
     dss_stack stack;
     latch_t open_file_latch;
-    skip_list_t open_file_list;  // open file skip list index.
-    skip_list_t open_pid_list;   // process open file skip list index.
-    latch_t disk_latch;          // just for lock vg to lock the local instance.
+    bilist_t open_file_list;  // open file bilist.
+    latch_t disk_latch;       // just for lock vg to lock the local instance.
     latch_t latch[LATCH_COUNT];
 } dss_vg_info_item_t;
 
