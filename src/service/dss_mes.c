@@ -35,6 +35,7 @@ void dss_proc_broadcast_req(dss_session_t *session, mes_message_t *msg);
 void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg);
 void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg);
 void dss_proc_loaddisk_req(dss_session_t *session, mes_message_t *msg);
+void dss_proc_join_cluster_req(dss_session_t *session, mes_message_t *msg);
 
 void dss_proc_normal_ack(dss_session_t *session, mes_message_t *msg)
 {
@@ -54,7 +55,12 @@ dss_processor_t g_dss_processors[DSS_CMD_CEIL] = {
     [DSS_CMD_REQ_LOAD_DISK] = {dss_proc_loaddisk_req, CM_TRUE, CM_TRUE, MES_TASK_GROUP_ONE,
         "dss standby load disk to active req"},
     [DSS_CMD_ACK_LOAD_DISK] = {dss_proc_normal_ack, CM_FALSE, CM_FALSE, MES_TASK_GROUP_ONE,
-        "dss active load disk to standby ack"}};
+        "dss active load disk to standby ack"},
+    [DSS_CMD_REQ_JOIN_CLUSTER] = {dss_proc_join_cluster_req, CM_TRUE, CM_TRUE, MES_TASK_GROUP_ZERO,
+        "dss standby join in cluster to active req"},
+    [DSS_CMD_ACK_JOIN_CLUSTER] = {dss_proc_normal_ack, CM_FALSE, CM_FALSE, MES_TASK_GROUP_ZERO,
+        "dss active proc join in cluster to standby ack"},
+};
 
 void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg)
 {
@@ -299,9 +305,11 @@ static bool32 dss_check_srv_status(mes_message_t *msg)
     date_t time_start = g_timer()->now;
     date_t time_now = 0;
     mes_message_head_t head = *(msg->head);
-    while (g_dss_instance.status != DSS_STATUS_OPEN) {
+    while (g_dss_instance.status != DSS_STATUS_OPEN &&
+            (msg->head->cmd != DSS_CMD_REQ_JOIN_CLUSTER || msg->head->cmd != DSS_CMD_ACK_JOIN_CLUSTER)) {
         LOG_DEBUG_INF(
-            "Could not exec remote req for the dssserver is not open, src node:%u.", (uint32)(head.src_inst));
+            "Could not exec remote req for the dssserver is not open or msg not join cluster, src node:%u.",
+            (uint32)(head.src_inst));
         DSS_GET_CM_LOCK_LONG_SLEEP;
         time_now = g_timer()->now;
         if (time_now - time_start > DSS_MAX_FAIL_TIME_WITH_CM * MICROSECS_PER_SECOND) {
@@ -728,6 +736,7 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
     uint32 currid = DSS_INVALID_ID32;
     uint32 code;
     uint32 cpsize;
+    uint16 data_offset;
     char *cpybuffer = NULL;
 
     if (dss_create_session(NULL, &session) != CM_SUCCESS) {
@@ -739,7 +748,7 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
     LOG_DEBUG_INF("Exec cmd:%u on remote node:%u begin.", (uint32)cmd, remoteid);
 
     // 1. init msg head
-    MES_INIT_MESSAGE_HEAD(&head, DSS_CMD_REQ_SYB2ACTIVE, 0, currid, remoteid, session->id, CM_INVALID_ID16);
+    MES_INIT_MESSAGE_HEAD(&head, cmd, 0, currid, remoteid, session->id, CM_INVALID_ID16);
     head.size = (uint16)(req_size + sizeof(mes_message_head_t));
     head.rsn = mes_get_rsn(session->id);
  
@@ -763,17 +772,26 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
     // 4. attach remote execution result
     // remote_result|errcode|errmsg
     // remote result|data
-    *remote_result = *(int32 *)(msg.buffer + sizeof(mes_message_head_t));
+    data_offset = sizeof(mes_message_head_t);
+    *remote_result = *(int32 *)(msg.buffer + data_offset);
+    LOG_DEBUG_INF("dss server receive msg from remote node, src node:%u, dst node:%u cmd:%u, azk size:%lu, result:%u.", 
+        currid, remoteid, head.cmd, msg.head->size - sizeof(mes_message_head_t), (uint32)*remote_result);
     if (*remote_result != CM_SUCCESS) {
-        code = *(int32 *)(msg.buffer + sizeof(mes_message_head_t) + sizeof(int32));
-        cpsize = msg.head->size - sizeof(mes_message_head_t) - 2 * sizeof(int32);
-        cpybuffer = msg.buffer + sizeof(mes_message_head_t) + 2 * sizeof(int32);
+        // skip result
+        data_offset += sizeof(int32);
+        code = *(int32 *)(msg.buffer + data_offset);
+        // skip code
+        data_offset += sizeof(int32);
+        cpsize = (msg.head->size - data_offset);
+        cpybuffer = (msg.buffer + data_offset);
         DSS_THROW_ERROR(ERR_DSS_PROCESS_REMOTE, code, cpybuffer);
     } else {
-        cpsize = msg.head->size - sizeof(mes_message_head_t) - sizeof(int32);
-        cpybuffer = msg.buffer + sizeof(mes_message_head_t) + sizeof(int32);
-        LOG_DEBUG_INF("dss server receive msg from remote node, src node:%u, dst node:%u cmd:%u, azk size:%lu.", 
-            currid, remoteid, session->recv_pack.head->cmd, msg.head->size - sizeof(mes_message_head_t));
+        // skip result
+        data_offset += sizeof(int32);
+        // skip length
+        data_offset += sizeof(int32);
+        cpsize = (msg.head->size - data_offset);
+        cpybuffer = (msg.buffer + data_offset);
         // do not parse the format
         errno_t err = memcpy_s(ack, (size_t)ack_size, cpybuffer, (size_t)cpsize);
         if (err != EOK) {
@@ -1083,4 +1101,80 @@ status_t dss_read_volume_remote(const char *vg_name, dss_volume_t *volume, int64
 
     LOG_DEBUG_INF("load disk(%s) data from the active node success.", vg_name);
     return CM_SUCCESS;
+}
+
+status_t dss_join_cluster(bool32 *join_succ)
+{
+    *join_succ = CM_FALSE;
+
+    LOG_DEBUG_INF("Try join cluster begin.");
+
+    dss_join_cluster_req_t req;
+    dss_config_t *cfg = dss_get_inst_cfg();
+    req.reg_id = (uint32)(cfg->params.inst_id);
+
+    status_t remote_result;
+    dss_join_cluster_ack_t ack;
+    status_t ret = dss_exec_on_remote(DSS_CMD_REQ_JOIN_CLUSTER, (char *)&req, sizeof(dss_join_cluster_req_t),
+        (char *)&ack, sizeof(dss_join_cluster_ack_t), &remote_result);
+    if (ret != CM_SUCCESS || remote_result != CM_SUCCESS) {
+        LOG_RUN_ERR("Try join cluster exec fail.");
+        return CM_ERROR;
+    }
+    if (ack.is_reg) {
+        *join_succ = CM_TRUE;
+    }
+
+    LOG_DEBUG_INF("Try join cluster exec result:%u.", (uint32)*join_succ);
+    return CM_SUCCESS;
+}
+
+void dss_proc_join_cluster_req(dss_session_t *session, mes_message_t *msg)
+{
+    uint32 size = msg->head->size - sizeof(mes_message_head_t);
+    if (size != sizeof(dss_join_cluster_req_t)) {
+        LOG_RUN_ERR("Porc join cluster from remote node:%u check req msg fail.", (uint32)(msg->head->src_inst));
+        dss_proc_remote_req_err(session, msg->head, DSS_CMD_ACK_JOIN_CLUSTER, CM_ERROR);
+        mes_release_message_buf(msg);
+        return;
+    }
+
+    dss_join_cluster_req_t *join_cluster_req = (dss_join_cluster_req_t *)(msg->buffer + sizeof(mes_message_head_t));
+    LOG_DEBUG_INF("Proc join cluster from remote node:%u reg node:%u begin.", (uint32)(msg->head->src_inst),
+        join_cluster_req->reg_id);
+    
+    // only in the work_status map can join the cluster
+    dss_join_cluster_ack_t join_cluster_ack = {CM_FALSE};
+    uint64 work_status = dss_get_inst_work_status();
+    uint64 inst_mask = ((uint64)0x1 << join_cluster_req->reg_id);
+    if (work_status & inst_mask) {
+        join_cluster_ack.is_reg = CM_TRUE;
+    }
+
+    LOG_DEBUG_INF("Proc join cluster from remote node:%u, reg node:%u, is_reg:%u.", (uint32)(msg->head->src_inst),
+        join_cluster_req->reg_id, (uint32)join_cluster_ack.is_reg);
+
+    text_t data = {(char *)&join_cluster_ack, sizeof(dss_join_cluster_ack_t)};
+    if (dss_put_text(&session->send_pack, &data) != CM_SUCCESS) {
+        LOG_RUN_ERR("Proc join cluster from remote node:%u, reg node:%u, is_reg:%u ready ack fail.",
+            (uint32)(msg->head->src_inst), join_cluster_req->reg_id, (uint32)join_cluster_ack.is_reg);
+        dss_proc_remote_req_err(session, msg->head, DSS_CMD_ACK_JOIN_CLUSTER, CM_ERROR);
+        mes_release_message_buf(msg);
+        return;
+    }
+
+    mes_message_head_t ack;
+    ack.size = (uint16)((session->send_pack.head->size - sizeof(dss_packet_head_t)) +sizeof(mes_message_head_t));
+    mes_init_ack_head(msg->head, &ack, DSS_CMD_ACK_JOIN_CLUSTER, ack.size, session->id);
+    int send_ret = mes_send_data2(&ack, session->send_pack.buf + sizeof(dss_packet_head_t));
+    if (send_ret != CM_SUCCESS) {
+        LOG_RUN_ERR("Proc join cluster from remote node:%u, reg node:%u send ack fail.", (uint32)(msg->head->src_inst),
+            join_cluster_req->reg_id);
+        mes_release_message_buf(msg);
+        return;
+    }
+
+    LOG_DEBUG_INF("Proc join cluster from remote node:%u, reg node:%u send ack end.", (uint32)(msg->head->src_inst),
+        join_cluster_req->reg_id);
+    mes_release_message_buf(msg);
 }
