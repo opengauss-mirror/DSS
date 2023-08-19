@@ -766,7 +766,7 @@ static status_t dss_process_get_time_stat(dss_session_t *session)
 
                 time_stat[j].wait_count += count;
                 time_stat[j].total_wait_time += total_time;
-                time_stat[j].max_single_time += (atomic_t)MAX((int64)time_stat[j].max_single_time, max_sgl_time);
+                time_stat[j].max_single_time = (atomic_t)MAX((int64)time_stat[j].max_single_time, max_sgl_time);
 
                 (void)cm_atomic_add(&session_ctrl->sessions[i].dss_session_stat[j].wait_count, -count);
                 (void)cm_atomic_add(&session_ctrl->sessions[i].dss_session_stat[j].total_wait_time, -total_time);
