@@ -1578,35 +1578,26 @@ status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item)
 
 static status_t dss_init_volume_core(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume, uint32 i)
 {
-    status_t status;
+    if (volume->defs[i].flag == vg_item->dss_ctrl->volume.defs[i].flag) {
+        return CM_SUCCESS;
+    }
 
-    if (volume->defs[i].flag == VOLUME_OCCUPY && vg_item->dss_ctrl->volume.defs[i].flag == VOLUME_FREE) {
-        if (vg_item->volume_handle[i].handle != DSS_INVALID_HANDLE) {
+    if (vg_item->volume_handle[i].handle != DSS_INVALID_HANDLE) {
             dss_close_volume(&vg_item->volume_handle[i]);
-        }
+    }
 
-        status = dss_open_volume(
+    if (volume->defs[i].flag == VOLUME_OCCUPY) {
+        status_t status = dss_open_volume(
             volume->defs[i].name, volume->defs[i].code, DSS_INSTANCE_OPEN_FLAG, &vg_item->volume_handle[i]);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to open volume:%s.", volume->defs[i].name);
             return status;
         }
         vg_item->volume_handle[i].id = i;
-        vg_item->dss_ctrl->volume.defs[i] = volume->defs[i];
-
-        LOG_RUN_INF("Refresh volume, add id:%u, name:%s.", i, vg_item->dss_ctrl->volume.defs[i].name);
     }
 
-    if (volume->defs[i].flag == VOLUME_FREE && vg_item->dss_ctrl->volume.defs[i].flag == VOLUME_OCCUPY) {
-        if (vg_item->volume_handle[i].handle != DSS_INVALID_HANDLE) {
-            dss_close_volume(&vg_item->volume_handle[i]);
-        }
-
-        vg_item->dss_ctrl->volume.defs[i] = volume->defs[i];
-
-        LOG_RUN_INF("Refresh volume, remove id:%u, name:%s.", i, vg_item->dss_ctrl->volume.defs[i].name);
-    }
-
+    vg_item->dss_ctrl->volume.defs[i] = volume->defs[i];
+    LOG_RUN_INF("Refresh volume, remove id:%u, name:%s.", i, vg_item->dss_ctrl->volume.defs[i].name);
     return CM_SUCCESS;
 }
 
