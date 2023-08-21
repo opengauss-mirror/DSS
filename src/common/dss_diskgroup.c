@@ -63,6 +63,7 @@ static dss_rdwr_type_e g_is_dss_readwrite = DSS_STATUS_NORMAL;
 static uint32 g_master_instance_id = DSS_INVALID_ID32;
 static const char *const g_dss_lock_vg_file = "dss_vg.lck";
 static int32 g_dss_lock_vg_fd = CM_INVALID_INT32;
+atomic32_t g_dss_unreg_volume_count = 0;
 
 // CAUTION: dss_admin manager command just like dss_create_vg,cannot call it,
 bool32 dss_is_server(void)
@@ -210,7 +211,7 @@ status_t dss_load_ctrlinfo(uint32 index)
 {
     dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[index];
     dss_config_t *inst_cfg = dss_get_inst_cfg();
-    status_t status = dss_lock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
+    status_t status = dss_lock_vg_storage_w(vg_item, vg_item->entry_path, inst_cfg);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to lock vg:%s.", vg_item->entry_path);
         return status;
@@ -236,6 +237,9 @@ status_t dss_init_vol_handle(dss_vg_info_item_t *vg_item, int32 flags, dss_vol_h
         if ((vg_item->volume_handle[vid].handle != DSS_INVALID_HANDLE && !vol_handles) &&
             (vg_item->volume_handle[vid].unaligned_handle != DSS_INVALID_HANDLE && !vol_handles)) {
             continue;
+        }
+        if (dss_is_server() && vg_item->dss_ctrl->volume.defs[vid].flag == VOLUME_PREPARE) {
+            (void)cm_atomic32_inc(&g_dss_unreg_volume_count);
         }
         if (vol_handles) {
             if (!dss_check_volume_is_used(vg_item, vid)) {
@@ -479,7 +483,7 @@ status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock)
     LOG_RUN_INF("Begin to load vg %s ctrl.", vg_item->vg_name);
     status_t status;
     if (is_lock) {
-        if (dss_lock_vg_storage(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
+        if (dss_lock_vg_storage_r(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
             LOG_RUN_ERR("Failed to lock vg:%s.", vg_item->entry_path);
             return CM_ERROR;
         }
@@ -575,7 +579,12 @@ status_t dss_file_lock_vg_w(dss_config_t *inst_cfg)
 void dss_file_unlock_vg(void)
 {}
 
-status_t dss_lock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
+status_t dss_lock_vg_storage_r(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
+{
+    return CM_SUCCESS;
+}
+
+status_t dss_lock_vg_storage_w(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {
     return CM_SUCCESS;
 }
@@ -789,16 +798,13 @@ status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry
     LOG_DEBUG_INF("Lock vg storage, lock vg:%s.", entry_path);
     int32 dss_mode = dss_storage_mode(inst_cfg);
     if (dss_mode == DSS_MODE_DISK) {
-        dss_latch_x(&vg_item->disk_latch);
         char lock_file[DSS_MAX_FILE_LEN];
         if (dss_pre_lockfile_name(entry_path, lock_file, inst_cfg) != CM_SUCCESS) {
-            dss_unlatch(&vg_item->disk_latch);
             return CM_ERROR;
         }
 
         FILE *vglock_fp = dss_get_vglock_fp(lock_file, DSS_TRUE);
         if (vglock_fp == NULL) {
-            dss_unlatch(&vg_item->disk_latch);
             DSS_THROW_ERROR(ERR_DSS_VG_LOCK, entry_path);
             return CM_ERROR;
         }
@@ -809,9 +815,7 @@ status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry
         if (DSS_STANDBY_CLUSTER_XLOG_VG) {
             return CM_SUCCESS;
         }
-        dss_latch_x(&vg_item->disk_latch);
         if (dss_lock_disk_vg(entry_path, inst_cfg) != CM_SUCCESS) {
-            dss_unlatch(&vg_item->disk_latch);
             DSS_THROW_ERROR(ERR_DSS_VG_LOCK, entry_path);
             LOG_DEBUG_ERR("Failed to lock vg, entry path %s.", entry_path);
             return CM_ERROR;
@@ -820,9 +824,22 @@ status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry
     return CM_SUCCESS;
 }
 
-status_t dss_lock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
+status_t dss_lock_vg_storage_r(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {
     if (dss_file_lock_vg_r(inst_cfg) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+    if (dss_lock_vg_storage_core(vg_item, entry_path, inst_cfg) != CM_SUCCESS) {
+        dss_file_unlock_vg();
+        return CM_ERROR;
+    }
+
+    return CM_SUCCESS;
+}
+
+status_t dss_lock_vg_storage_w(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
+{
+    if (dss_file_lock_vg_w(inst_cfg) != CM_SUCCESS) {
         return CM_ERROR;
     }
     if (dss_lock_vg_storage_core(vg_item, entry_path, inst_cfg) != CM_SUCCESS) {
@@ -1044,17 +1061,17 @@ status_t dss_write_volume_inst(
     return dss_write_volume(volume, offset, temp_buf, (int32)size);
 }
 
-static uint32_t dss_find_free_volume_id(const dss_vg_info_item_t *vg_item)
+uint32_t dss_find_free_volume_id(const dss_vg_info_item_t *vg_item)
 {
     for (uint32_t i = 0; i < DSS_MAX_VOLUMES; i++) {
-        if (vg_item->dss_ctrl->core.volume_attrs[i].flag == VOLUME_FREE) {
+        if (vg_item->dss_ctrl->volume.defs[i].flag == VOLUME_FREE) {
             return i;
         }
     }
     return CM_INVALID_ID32;
 }
 
-static status_t dss_gen_volume_head(
+status_t dss_gen_volume_head(
     dss_volume_header_t *vol_head, dss_vg_info_item_t *vg_item, const char *volume_name, uint32 id)
 {
     vol_head->vol_type.id = id;
@@ -1065,11 +1082,12 @@ static status_t dss_gen_volume_head(
     errcode = strcpy_s(vol_head->vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name);
     DSS_SECUREC_SS_RETURN_IF_ERROR(errcode, CM_ERROR);
     vol_head->software_version = 0;
+    (void)cm_gettimeofday(&vol_head->create_time);
     vol_head->checksum = dss_get_checksum((char *)vol_head, DSS_VG_DATA_SIZE);
     return CM_SUCCESS;
 }
 
-static status_t dss_cmp_volume_head(dss_vg_info_item_t *vg_item, const char *volume_name, uint32 id)
+status_t dss_cmp_volume_head(dss_vg_info_item_t *vg_item, const char *volume_name, uint32 id)
 {
 #ifndef WIN32
     char buf[DSS_ALIGN_SIZE] __attribute__((__aligned__(DSS_DISK_UNIT_SIZE)));
@@ -1090,15 +1108,13 @@ static status_t dss_cmp_volume_head(dss_vg_info_item_t *vg_item, const char *vol
     return status;
 }
 
-static status_t dss_add_volume_vg_ctrl(
-    dss_session_t *session, uint32 id, uint64 vol_size, dss_vg_info_item_t *vg_item, const char *volume_name)
+status_t dss_add_volume_vg_ctrl(
+    dss_ctrl_t *vg_ctrl, uint32 id, uint64 vol_size, const char *volume_name, volume_slot_e volume_flag)
 {
-    dss_ctrl_t *vg_ctrl = vg_item->dss_ctrl;
     errno_t errcode = strcpy_s(vg_ctrl->volume.defs[id].name, DSS_MAX_VOLUME_PATH_LEN, volume_name);
     DSS_SECUREC_SS_RETURN_IF_ERROR(errcode, CM_ERROR);
-    vg_ctrl->volume.defs[id].flag = VOLUME_OCCUPY;
+    vg_ctrl->volume.defs[id].flag = volume_flag;
     vg_ctrl->volume.defs[id].id = id;
-    vg_ctrl->core.volume_attrs[id].flag = VOLUME_OCCUPY;
     vg_ctrl->core.volume_attrs[id].id = id;
     vg_ctrl->core.volume_attrs[id].hwm = CM_CALC_ALIGN(DSS_VOLUME_HEAD_SIZE, dss_get_vg_au_size(vg_ctrl));
     vg_ctrl->core.volume_attrs[id].size = vol_size;
@@ -1113,19 +1129,6 @@ static status_t dss_add_volume_vg_ctrl(
     vg_ctrl->core.volume_count++;
     vg_ctrl->core.version++;
     vg_ctrl->volume.version++;
-    LOG_RUN_INF("Refresh core, old version:%llu, disk version:%llu.", vg_ctrl->core.version - 1, vg_ctrl->core.version);
-    dss_redo_volop_t volop_redo;
-    volop_redo.volume_count = vg_ctrl->core.volume_count;
-    volop_redo.core_version = vg_ctrl->core.version;
-    volop_redo.volume_version = vg_ctrl->volume.version;
-    volop_redo.is_add = DSS_TRUE;
-
-    errcode =
-        memcpy_sp(volop_redo.attr, DSS_DISK_UNIT_SIZE, &vg_ctrl->core.volume_attrs[id], sizeof(dss_volume_attr_t));
-    DSS_SECUREC_RETURN_IF_ERROR(errcode, CM_ERROR);
-    errcode = memcpy_sp(volop_redo.def, DSS_DISK_UNIT_SIZE, &vg_ctrl->volume.defs[id], sizeof(dss_volume_def_t));
-    DSS_SECUREC_RETURN_IF_ERROR(errcode, CM_ERROR);
-    dss_put_log(session, vg_item, DSS_RT_ADD_OR_REMOVE_VOLUME, &volop_redo, sizeof(volop_redo));
     return CM_SUCCESS;
 }
 
@@ -1145,7 +1148,28 @@ static status_t dss_add_volume_impl_generate_redo(
     return CM_SUCCESS;
 }
 
-static status_t dss_add_volume_impl(dss_session_t *session, dss_vg_info_item_t *vg_item, const char *volume_name)
+static status_t dss_add_volume_record_log(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 id)
+{
+    dss_ctrl_t *vg_ctrl = vg_item->dss_ctrl;
+    dss_redo_volop_t volop_redo;
+    volop_redo.volume_count = vg_ctrl->core.volume_count;
+    volop_redo.core_version = vg_ctrl->core.version;
+    volop_redo.volume_version = vg_ctrl->volume.version;
+    volop_redo.is_add = DSS_TRUE;
+
+    LOG_RUN_INF("Refresh core, old version:%llu, disk version:%llu.", vg_ctrl->core.version - 1, vg_ctrl->core.version);
+
+    errno_t errcode =
+        memcpy_sp(volop_redo.attr, DSS_DISK_UNIT_SIZE, &vg_ctrl->core.volume_attrs[id], sizeof(dss_volume_attr_t));
+    DSS_SECUREC_RETURN_IF_ERROR(errcode, CM_ERROR);
+    errcode = memcpy_sp(volop_redo.def, DSS_DISK_UNIT_SIZE, &vg_ctrl->volume.defs[id], sizeof(dss_volume_def_t));
+    DSS_SECUREC_RETURN_IF_ERROR(errcode, CM_ERROR);
+    dss_put_log(session, vg_item, DSS_RT_ADD_OR_REMOVE_VOLUME, &volop_redo, sizeof(volop_redo));
+    return CM_SUCCESS;
+}
+
+static status_t dss_add_volume_impl(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, const char *volume_name, volume_slot_e volume_flag)
 {
     uint32 id = dss_find_free_volume_id(vg_item);
     bool32 result = (bool32)(id < DSS_MAX_VOLUMES);
@@ -1156,18 +1180,22 @@ static status_t dss_add_volume_impl(dss_session_t *session, dss_vg_info_item_t *
     uint64 vol_size = dss_get_volume_size(&vg_item->volume_handle[id]);
     dss_close_volume(&vg_item->volume_handle[id]);
     if (status != CM_SUCCESS) {
-        return CM_ERROR;
+        return status;
     }
 
     result = (bool32)(vol_size != DSS_INVALID_64);
     DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Failed to get volume size when add volume:%s.", volume_name));
-    return dss_add_volume_vg_ctrl(session, id, vol_size, vg_item, volume_name);
+    status = dss_add_volume_vg_ctrl(vg_item->dss_ctrl, id, vol_size, volume_name, volume_flag);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    return dss_add_volume_record_log(session, vg_item, id);
 }
 
-static uint32_t dss_find_volume(dss_vg_info_item_t *vg_item, const char *volume_name)
+uint32_t dss_find_volume(dss_vg_info_item_t *vg_item, const char *volume_name)
 {
     for (uint32_t i = 0; i < DSS_MAX_VOLUMES; i++) {
-        if (vg_item->dss_ctrl->core.volume_attrs[i].flag == VOLUME_FREE) {
+        if (vg_item->dss_ctrl->volume.defs[i].flag == VOLUME_FREE) {
             // not been used
             continue;
         }
@@ -1191,7 +1219,7 @@ status_t dss_add_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item
         DSS_THROW_ERROR(ERR_DSS_VOLUME_ADD_EXISTED, volume_name, vg_name);
         return CM_ERROR;
     }
-    if (dss_add_volume_impl(session, vg_item, volume_name) != CM_SUCCESS) {
+    if (dss_add_volume_impl(session, vg_item, volume_name, VOLUME_PREPARE) != CM_SUCCESS) {
         return CM_ERROR;
     }
 
@@ -1203,6 +1231,7 @@ status_t dss_add_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item
         cm_fync_logfile();
         _exit(1);
     }
+    (void)cm_atomic32_inc(&g_dss_unreg_volume_count);
     return CM_SUCCESS;
 }
 
@@ -1261,7 +1290,8 @@ static status_t dss_remove_volume_impl(
     }
 
     vg_ctrl->volume.defs[id].flag = VOLUME_FREE;
-    vg_ctrl->core.volume_attrs[id].flag = VOLUME_FREE;
+    vg_ctrl->volume.defs[id].id = 0;
+    vg_ctrl->core.volume_attrs[id].id = 0;
     vg_ctrl->core.volume_count--;
     LOG_RUN_INF("Remove volume refresh core, old core version:%llu, volume version:%llu, volume def version:%llu.",
         vg_ctrl->core.version, vg_ctrl->volume.version, vg_ctrl->volume.defs[id].version);
@@ -1337,18 +1367,18 @@ static status_t dss_modify_volume(dss_session_t *session, const char *vg_name, c
     }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
 
-    if (dss_lock_vg_storage(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
+    if (dss_lock_vg_storage_w(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
         DSS_THROW_ERROR(ERR_DSS_VG_CHECK, vg_name, "refresh volume group info before modify volume failed.");
         return CM_ERROR;
     }
 
-    dss_lock_shm_meta_x(session, vg_item->vg_latch);
+    dss_lock_vg_mem_and_shm_x(session, vg_item);
     if (cmd == (uint8)DSS_CMD_ADD_VOLUME) {
         status = dss_add_volume_core(session, vg_item, vg_name, volume_name, inst_cfg);
     } else {
         status = dss_remove_volume_core(session, vg_item, vg_name, volume_name, inst_cfg);
     }
-    dss_unlock_shm_meta(session, vg_item->vg_latch);
+    dss_unlock_vg_mem_and_shm(session, vg_item);
     dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
     return status;
 }
@@ -1441,15 +1471,15 @@ status_t dss_load_ctrl(dss_session_t *session, const char *vg_name, uint32 index
         return CM_ERROR;
     }
 
-    status = dss_lock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
+    status = dss_lock_vg_storage_r(vg_item, vg_item->entry_path, inst_cfg);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to lock vg:%s.", vg_item->entry_path);
         return status;
     }
 
-    dss_lock_shm_meta_x(session, vg_item->vg_latch);
+    dss_lock_vg_mem_and_shm_x(session, vg_item);
     status = dss_load_ctrl_core(vg_item, index);
-    dss_unlock_shm_meta(session, vg_item->vg_latch);
+    dss_unlock_vg_mem_and_shm(session, vg_item);
     dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
     if (status == CM_SUCCESS) {
         LOG_RUN_INF("Succeed to load ctrl data from disk, vg_name:%s.", vg_name);
@@ -1471,6 +1501,11 @@ status_t dss_refresh_meta_info(dss_session_t *session)
         status = dss_refresh_buffer_cache(&g_vgs_info->volume_group[i], g_vgs_info->volume_group[i].buffer_cache);
         if (status != CM_SUCCESS) {
             return status;
+        }
+        for (uint32 j = 0; j < DSS_MAX_VOLUMES; j++) {
+            if (g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].flag == VOLUME_PREPARE) {
+                (void)cm_atomic32_inc(&g_dss_unreg_volume_count);
+            }
         }
     }
     return CM_SUCCESS;
@@ -1590,7 +1625,7 @@ status_t dss_init_volume(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume)
 
 static status_t dss_check_free_volume(dss_vg_info_item_t *vg_item, uint32 volumeid)
 {
-    if (vg_item->dss_ctrl->volume.defs[volumeid].flag != VOLUME_FREE) {
+    if (vg_item->dss_ctrl->volume.defs[volumeid].flag == VOLUME_OCCUPY) {
         return CM_SUCCESS;
     }
 

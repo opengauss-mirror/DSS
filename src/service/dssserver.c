@@ -124,6 +124,10 @@ static void handle_main_wait(void)
             periods = 0;
             dss_ssl_ca_cert_expire();
         }
+        atomic32_t unreg_volume_count = cm_atomic32_get(&g_dss_unreg_volume_count);
+        if (dss_is_readwrite() && unreg_volume_count != 0) {
+            dss_check_unreg_volume();
+        }
         cm_sleep(interval);
         periods++;
     } while (CM_TRUE);

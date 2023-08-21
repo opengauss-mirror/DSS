@@ -43,7 +43,7 @@ extern "C" {
 
 #define DSS_LOADDISK_BUFFER_SIZE SIZE_K(32)
 #define DSS_READ4STANDBY_ERR (int32)3
-
+extern atomic32_t g_dss_unreg_volume_count;
 /*
     1、when the node is standby, just send message to primary to read volume
     2、if the primary is just in recovery or switch, may wait the read request
@@ -103,7 +103,8 @@ status_t dss_file_lock_vg_w(dss_config_t *inst_cfg);
 void dss_file_unlock_vg(void);
 status_t dss_lock_disk_vg(const char *entry_path, dss_config_t *inst_cfg);
 void dss_unlock_vg_raid(dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id);
-status_t dss_lock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
+status_t dss_lock_vg_storage_r(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
+status_t dss_lock_vg_storage_w(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
 void dss_unlock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
 status_t dss_check_lock_instid(dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id, bool32 *is_lock);
 
@@ -127,6 +128,10 @@ void dss_destroy_vol_handle(dss_vg_info_item_t *vg_item, dss_vol_handles_t *vol_
 extern dss_vg_info_t *g_vgs_info;
 #define VGS_INFO (g_vgs_info)
 status_t dss_check_volume(dss_vg_info_item_t *vg_item, uint32 volumeid);
+uint32_t dss_find_volume(dss_vg_info_item_t *vg_item, const char *volume_name);
+uint32_t dss_find_free_volume_id(const dss_vg_info_item_t *vg_item);
+status_t dss_cmp_volume_head(dss_vg_info_item_t *vg_item, const char *volume_name, uint32 id);
+
 
 static inline dss_vg_info_item_t *dss_get_first_vg_item()
 {
@@ -198,6 +203,10 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volum_id, int64 of
 status_t dss_remove_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item, const char *vg_name,
     const char *volume_name, dss_config_t *inst_cfg);
 status_t dss_load_ctrl_core(dss_vg_info_item_t *vg_item, uint32 index);
+status_t dss_add_volume_vg_ctrl(
+    dss_ctrl_t *vg_ctrl, uint32 id, uint64 vol_size, const char *volume_name, volume_slot_e volume_flag);
+status_t dss_gen_volume_head(
+    dss_volume_header_t *vol_head, dss_vg_info_item_t *vg_item, const char *volume_name, uint32 id);
 
 #ifdef __cplusplus
 }

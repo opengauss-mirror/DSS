@@ -47,7 +47,7 @@
 #include "dss_api_impl.h"
 #include "dsscmd_inq.h"
 #include "dsscmd_cli_msg.h"
-#include "dsscmd_create_vg.h"
+#include "dsscmd_volume.h"
 #include "dsscmd_showdisk.h"
 #include "dsscmd_du.h"
 #include "dsscmd_find.h"
@@ -857,7 +857,7 @@ static status_t dss_load_volumes(vg_vlm_space_info_t *volume_space, dss_volume_d
     double dss_vg_free = 0;
     double dss_vg_size = 0;
     for (uint32 vol_id = 0; vol_id < DSS_MAX_VOLUMES; vol_id++) {
-        if (defs[vol_id].flag != 1) {
+        if (defs[vol_id].flag == VOLUME_FREE) {
             continue;
         }
 
@@ -1189,6 +1189,8 @@ static status_t dss_load_local_server_config(
 static dss_args_t cmd_adv_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
     {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -1200,7 +1202,7 @@ static dss_args_set_t cmd_adv_args_set = {
 
 static void adv_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s adv <-g vg_name> <-v vol_name> [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("\nUsage:%s adv <-g vg_name> <-v vol_name> [-D DSS_HOME] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]add volume in volume group\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
@@ -1229,22 +1231,29 @@ static status_t get_connection_by_input_args(char *input_args, dss_conn_t *conne
 
 static status_t adv_proc(void)
 {
-    const char *path = cmd_adv_args[DSS_ARG_IDX_0].input_args;
-    const char *vol_name = cmd_adv_args[DSS_ARG_IDX_1].input_args;
+    const char *vg_name = cmd_adv_args[DSS_ARG_IDX_0].input_args;
+    const char *vol_path = cmd_adv_args[DSS_ARG_IDX_1].input_args;
+    const char *home = cmd_adv_args[DSS_ARG_IDX_2].input_args;
     dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_adv_args[DSS_ARG_IDX_2].input_args, &connection);
+    status_t status = get_connection_by_input_args(cmd_adv_args[DSS_ARG_IDX_3].input_args, &connection);
     if (status != CM_SUCCESS) {
+        status = dss_add_volume_offline(home, vg_name, vol_path);
+        if (status != CM_SUCCESS) {
+            DSS_PRINT_ERROR("Failed to add volume offline, vg_name is %s, volume path is %s.\n", vg_name, vol_path);
+        } else {
+            DSS_PRINT_INF("Succeed to add volume offline, vg_name is %s, volume path is %s.\n", vg_name, vol_path);
+        }
         return status;
     }
 
-    status = dsscmd_adv_impl(&connection, path, vol_name);
+    status = dsscmd_adv_impl(&connection, vg_name, vol_path);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to add volume, path is %s, volume name is %s.\n", path, vol_name);
+        DSS_PRINT_ERROR("Failed to add volume online, vg_name is %s, volume path is %s.\n", vg_name, vol_path);
     } else {
-        DSS_PRINT_INF("Succeed to add volume, path is %s, volume name is %s.\n", path, vol_name);
+        DSS_PRINT_INF("Succeed to add volume online, vg_name is %s, volume path is %s.\n", vg_name, vol_path);
     }
-    dss_disconnect_ex(&connection);
 
+    dss_disconnect_ex(&connection);
     return status;
 }
 

@@ -139,7 +139,6 @@ static void printf_dss_au_root(dss_au_root_t *au_root)
 
 static void printf_dss_volume_attr(const dss_volume_attr_t *volume_attrs)
 {
-    printf("    flag = %llu\n", (uint64)volume_attrs->flag);
     printf("    id = %llu\n", (uint64)volume_attrs->id);
     printf("    size = %llu\n", volume_attrs->size);
     printf("    hwm = %llu\n", volume_attrs->hwm);
@@ -187,7 +186,7 @@ status_t printf_dss_core_ctrl(const dss_vg_info_item_t *vg_item, dss_volume_t *v
 
     dss_volume_attr_t *volume_attrs = core_ctrl->volume_attrs;
     for (uint32 i = 0; i < DSS_MAX_VOLUMES; ++i) {
-        if (volume_attrs->flag == 1) {
+        if (i == 0 || volume_attrs->id != 0) {
             printf("  volume_attrs[%u] = {\n", i);
             printf_dss_volume_attr(volume_attrs);
             printf("  }\n");
@@ -239,7 +238,7 @@ static status_t printf_dss_volume_ctrl(const dss_vg_info_item_t *vg_item, dss_vo
     printf("  version = %llu\n", volume_ctrl->version);
     dss_volume_def_t *volume_defs = volume_ctrl->defs;
     for (uint32 i = 0; i < DSS_MAX_VOLUMES; ++i) {
-        if (volume_defs->flag == 1) {
+        if (volume_defs->flag != VOLUME_FREE) {
             printf("  volume_defs[%u] = {\n", i);
             printf_dss_volume_def(volume_defs);
             printf("  }\n");
@@ -675,7 +674,7 @@ static status_t print_block_by_type(
     dss_block_id_t *id = (dss_block_id_t *)&block_id;
     printf("id = %llu : \n", block_id);
 
-    if (volume_ctrl->defs[id->volume].flag != 1) {
+    if (volume_ctrl->defs[id->volume].flag == VOLUME_FREE) {
         DSS_PRINT_ERROR("volume doesn't exist,voleme_id:%llu.\n", (uint64)id->volume);
         return CM_ERROR;
     }

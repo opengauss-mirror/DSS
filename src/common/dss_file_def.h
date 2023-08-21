@@ -52,7 +52,7 @@
 #define DSS_RECYLE_DIR_NAME ".recycle"
 
 #define DSS_CTRL_RESERVE_SIZE1 (SIZE_K(727) + 512)
-#define DSS_CTRL_RESERVE_SIZE2 (SIZE_K(15))
+#define DSS_CTRL_RESERVE_SIZE2 (SIZE_K(15) -  512)
 
 #define DSS_CTRL_CORE_OFFSET OFFSET_OF(dss_ctrl_t, core_data)
 #define DSS_CTRL_VOLUME_OFFSET OFFSET_OF(dss_ctrl_t, volume_data)
@@ -107,8 +107,8 @@ typedef int32 volume_handle_t;
 
 typedef struct st_dss_volume_def {
     uint64 id : 16;
-    uint64 flag : 1;
-    uint64 reserve : 47;
+    uint64 flag : 3;
+    uint64 reserve : 45;
     uint64 version;
     char name[DSS_MAX_VOLUME_PATH_LEN];
     char code[DSS_VOLUME_CODE_SIZE];
@@ -117,13 +117,14 @@ typedef struct st_dss_volume_def {
 
 typedef enum en_volume_slot {
     VOLUME_FREE = 0,  // free
-    VOLUME_OCCUPY = 1
+    VOLUME_OCCUPY = 1,
+    VOLUME_PREPARE = 2, // not registered
 } volume_slot_e;
 
 typedef struct st_dss_volume_attr {
-    uint64 flag : 1;  // volume_slot_e
+    uint64 reverse1 : 1;
     uint64 id : 16;
-    uint64 reserve : 47;
+    uint64 reserve2 : 47;
     uint64 size;
     uint64 hwm;
     uint64 free;
@@ -217,6 +218,10 @@ typedef struct st_refvol_ctrl {  // UNUSED
     dss_volume_ctrl_t volume;
 } dss_refvol_ctrl_t;
 
+typedef struct st_dss_group_global_ctrl {
+    uint64 cluster_node_info;
+} dss_group_global_ctrl_t;
+
 typedef struct st_dss_ctrl {
     union {
         dss_vg_header_t vg_info;
@@ -236,6 +241,10 @@ typedef struct st_dss_ctrl {
     char reserve1[DSS_CTRL_RESERVE_SIZE1];   // 727K + 512
     char lock[DSS_DISK_LOCK_LEN];     // align with 16K
     char reserve2[DSS_CTRL_RESERVE_SIZE2];
+    union {
+        dss_group_global_ctrl_t global_ctrl;
+        char global_data[DSS_DISK_UNIT_SIZE]; // client disk info, size is 512
+    };
 } dss_ctrl_t;
 
 typedef enum en_dss_vg_status {
