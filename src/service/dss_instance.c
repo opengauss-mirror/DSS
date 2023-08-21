@@ -896,17 +896,21 @@ bool32 dss_check_join_cluster()
 static bool32 dss_find_unreg_volume(char **dev, uint8 *vg_idx, uint8 *volume_id)
 {
     for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
-        dss_lock_vg_mem_and_shm_s(NULL, &g_vgs_info->volume_group[i]);
         for (uint32 j = 0; j < DSS_MAX_VOLUMES; j++) {
-            if (g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].flag == VOLUME_PREPARE) {
-                *dev = g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].name;
-                *vg_idx = (uint8)i;
-                *volume_id = (uint8)j;
-                dss_unlock_vg_mem_and_shm(NULL, &g_vgs_info->volume_group[i]);
-                return CM_TRUE;
+            if (g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].flag != VOLUME_PREPARE) {
+                continue;
             }
+            dss_lock_vg_mem_and_shm_s(NULL, &g_vgs_info->volume_group[i]);
+            if (g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].flag != VOLUME_PREPARE) {
+                dss_unlock_vg_mem_and_shm(NULL, &g_vgs_info->volume_group[i]);
+                continue;
+            }
+            *dev = g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].name;
+            *vg_idx = (uint8)i;
+            *volume_id = (uint8)j;
+            dss_unlock_vg_mem_and_shm(NULL, &g_vgs_info->volume_group[i]);
+            return CM_TRUE;
         }
-        dss_unlock_vg_mem_and_shm(NULL, &g_vgs_info->volume_group[i]);
     }
     return CM_FALSE;
 }
@@ -937,10 +941,14 @@ void dss_check_unreg_volume(void)
     }
     bool32 remote = CM_FALSE;
     dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[0];
+    if (dss_lock_vg_storage_r(vg_item, vg_item->entry_path, g_inst_cfg) != CM_SUCCESS) {
+        return;
+    }
     dss_lock_vg_mem_and_shm_s(NULL, vg_item);
     ret = dss_load_vg_ctrl_part(vg_item, (int64)(DSS_VOLUME_HEAD_SIZE - DSS_DISK_UNIT_SIZE),
         &vg_item->dss_ctrl->global_ctrl, DSS_DISK_UNIT_SIZE, &remote);
     dss_unlock_vg_mem_and_shm(NULL, vg_item);
+    dss_unlock_vg_storage(vg_item, vg_item->entry_path, g_inst_cfg);
     if (ret != CM_SUCCESS) {
         return;
     }
@@ -965,5 +973,4 @@ void dss_check_unreg_volume(void)
     if (ret != CM_SUCCESS) {
         return;
     }
-    (void)cm_atomic32_dec(&g_dss_unreg_volume_count);
 }

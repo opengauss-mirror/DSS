@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
  *
  * DSS is licensed under Mulan PSL v2.
@@ -134,8 +134,7 @@ static void handle_main_wait(void)
             test_join = dss_check_join_cluster();
         }
 #endif
-        atomic32_t unreg_volume_count = cm_atomic32_get(&g_dss_unreg_volume_count);
-        if (dss_is_readwrite() && unreg_volume_count != 0) {
+        if (dss_is_readwrite()) {
             dss_check_unreg_volume();
         }
         cm_sleep(interval);

@@ -43,7 +43,6 @@ extern "C" {
 
 #define DSS_LOADDISK_BUFFER_SIZE SIZE_K(32)
 #define DSS_READ4STANDBY_ERR (int32)3
-extern atomic32_t g_dss_unreg_volume_count;
 /*
     1、when the node is standby, just send message to primary to read volume
     2、if the primary is just in recovery or switch, may wait the read request
