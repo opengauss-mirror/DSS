@@ -39,7 +39,11 @@ extern "C" {
 #define DSS_ACCMODE 00000003
 #define DSS_OPEN_MODE(flag)  ((flag + 1) & DSS_ACCMODE)
 status_t dss_apply_refresh_file_table(dss_conn_t *conn, dss_dir_t *dir);
-status_t dss_apply_extending_file(dss_conn_t *conn, int32 handle, int32 size, bool32 is_read, int64 offset)
+status_t dss_apply_refresh_volume(dss_conn_t *conn, dss_file_context_t *context, auid_t auid);
+status_t dss_refresh_volume_handle(dss_conn_t *conn, dss_file_context_t *context, auid_t auid);
+status_t dss_reopen_volume_handle(dss_conn_t *conn, dss_file_context_t *context, auid_t auid);
+
+status_t dss_apply_extending_file(dss_conn_t *conn, int32 handle, int32 size, int64 offset)
 {
     uint64 fid;
     ftid_t ftid;
@@ -133,6 +137,204 @@ status_t dss_apply_refresh_file(dss_conn_t *conn, dss_file_context_t *context, d
         dss_cli_get_err(ack_pack, &errcode, &errmsg);
         DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
         return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_check_apply_refresh_file(dss_conn_t *conn, dss_file_context_t *context, dss_block_id_t blockid)
+{
+    bool32 is_valid = CM_FALSE;
+    do {
+        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+        status_t status = dss_apply_refresh_file(conn, context, blockid);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to apply refresh file:%s, fid:%llu.", context->node->name, context->fid);
+            return CM_ERROR;
+        }
+        DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
+        is_valid = dss_is_fs_meta_valid(context->node);
+        if (is_valid) {
+            break;
+        }
+        LOG_DEBUG_INF("The node:%llu name:%s is invalid, need refresh from server again.",
+            *(uint64 *)&context->node->id, context->node->name);
+        cm_sleep(DSS_READ_REMOTE_INTERVAL);
+    } while(!is_valid);
+    return CM_SUCCESS;
+}
+
+static status_t dss_check_find_fs_block(
+    dss_conn_t *conn, dss_file_context_t *context, dss_block_id_t block_id, dss_fs_block_t **fs_block)
+{
+    if ((*fs_block) == NULL) {
+        *fs_block = (dss_fs_block_t *)dss_find_block_in_shm(
+            conn->session, context->vg_item, block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
+    }
+
+    if (*fs_block) {
+        if (dss_is_fs_block_valid(context->node, *fs_block)) {
+            return CM_SUCCESS;
+        }
+        LOG_DEBUG_INF("The block_id:%llu for node:%llu file name:%s is invalid, need refresh from server.",
+            *(uint64 *)&block_id, *(uint64 *)&context->node->id, context->node->name);
+    }
+    bool32 is_valid;
+    do {
+        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+        status_t status = dss_apply_refresh_file(conn, context, block_id);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to apply refresh file:%s, fid:%llu.", context->node->name, context->fid);
+            return CM_ERROR;
+        }
+        DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
+        is_valid = dss_is_fs_meta_valid(context->node);
+        if (is_valid) {
+            *fs_block = (dss_fs_block_t *)dss_find_block_in_shm(
+                conn->session, context->vg_item, block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
+            if ((*fs_block) == NULL) {
+                DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+                DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "fs_block", *(uint64 *)&block_id);
+                LOG_RUN_ERR("Failed to find block:%llu in mem.", DSS_ID_TO_U64(block_id));
+                return CM_ERROR;
+            }
+            break;
+        }
+        LOG_DEBUG_INF("The node:%llu name:%s is invalid, need refresh from server again.",
+            *(uint64 *)&context->node->id, context->node->name);
+        cm_sleep(DSS_READ_REMOTE_INTERVAL);
+    } while(!is_valid);
+    return CM_SUCCESS;
+}
+
+static status_t dss_check_refresh_file_by_size(
+    dss_conn_t *conn, dss_file_context_t *context, dss_rw_param_t *param, int32 *total_size)
+{
+    int64 offset = 0;
+    bool32 need_refresh = CM_FALSE;
+    uint32 tmp_total_size = (uint32) *total_size;
+    if (param->is_read) {
+        if (param->atom_oper) {
+            offset = param->offset;
+        } else {
+            offset = context->offset;
+        }
+        need_refresh = ((tmp_total_size + (uint64)offset) >= context->node->written_size);
+    }
+    if (!dss_is_fs_meta_valid(context->node)|| need_refresh) {
+        status_t status = dss_check_apply_refresh_file(conn, context, DSS_INVALID_BLOCK_ID);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to apply refresh file:%s, ftid:%llu.", context->node->name, context->fid);
+            return CM_ERROR;
+        }
+        // check if read data from offset with tmp_total_size more than the node->size
+        if (param->is_read && ((tmp_total_size + (uint64)offset) >= (uint64)context->node->size)) {
+            // no data to read
+            if ((uint64)offset >= (uint64)context->node->size) {
+                LOG_DEBUG_INF("Node:%llu has no data to read.", DSS_ID_TO_U64(context->node->id));
+                *total_size = 0;
+            // no enough data to read
+            } else {
+                LOG_DEBUG_INF("Node:%llu has no enough data to read form offset.", DSS_ID_TO_U64(context->node->id));
+                *total_size = (int32)((uint64)context->node->size - (uint64)offset);
+            }
+        }
+    }
+    return CM_SUCCESS;
+}
+
+static void dss_check_file_written_size(
+    dss_conn_t *conn, dss_file_context_t *context, uint32 start_offset, bool32 is_read, int32 *total_size)
+{
+    uint32 tmp_total_size = (uint32)*total_size;
+    if (is_read && ((tmp_total_size + start_offset) >= context->node->written_size)) {
+        // no data to read
+        if ((uint64)start_offset >= (uint64)context->node->written_size) {
+            LOG_DEBUG_INF("Node:%llu has node data to read.", DSS_ID_TO_U64(context->node->id));
+            *total_size = 0;
+        // no enough data to read
+        } else {
+            LOG_DEBUG_INF("Node:%llu has no enough data to read form offset.", DSS_ID_TO_U64(context->node->id));
+            *total_size = (int32)((uint64)context->node->written_size - (uint64)start_offset);
+        }
+        if (*total_size > 0) {
+            tmp_total_size = (uint32)*total_size;
+            // write can do write 513, but read can NOT read 513, only can read 512 + 512, need to fix
+            tmp_total_size = CM_CALC_ALIGN(tmp_total_size, DSS_BLOCK_SIZE);
+            *total_size = (int32)tmp_total_size;
+        }
+    }
+    LOG_DEBUG_INF("Success to refresh file:%s, written_size:%llu, size:%llu.", context->node->name,
+        context->node->written_size, context->node->size);
+}
+
+static status_t dss_check_refresh_file_by_offset(
+    dss_conn_t *conn, dss_file_context_t *context, int64 offset, bool32 is_read)
+{
+    // posix do pwrite if ofset more than node->size, pread return count 0 witch errno is success
+    if (!dss_is_fs_meta_valid(context->node) || (is_read && (uint64)offset >= context->node->written_size)) {
+        if (dss_check_apply_refresh_file(conn, context, DSS_INVALID_BLOCK_ID) != CM_SUCCESS) {
+            LOG_DEBUG_ERR("Failed to apply refresh file, fid:%llu.", context->fid);
+            return CM_ERROR;
+        }
+        LOG_DEBUG_INF("Apply to refresh file, offset:%lld, size:%lld", offset, context->node->written_size);
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_check_apply_extending_file(
+    dss_conn_t *conn, dss_file_context_t *context, int32 handle, int size, int64 offset, dss_block_id_t blockid)
+{
+    DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+    status_t status = dss_apply_extending_file(conn, handle, size, offset);
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to apply refresh file, fid:%llu.", context->fid);
+        return CM_ERROR;    
+    }
+    DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
+    return dss_check_apply_refresh_file(conn, context, blockid);
+}
+
+static status_t dss_check_refresh_volume(dss_conn_t *conn, dss_file_context_t *context, auid_t auid, bool32 *is_refresh)
+{
+    status_t status;
+    dss_vg_info_item_t *vg_item = context->vg_item;
+    dss_cli_vg_handles_t *dss_cli_vg_handles = (dss_cli_vg_handles_t *)(conn->cli_vg_handles);
+    dss_simple_volume_t *vol = &dss_cli_vg_handles->vg_vols[vg_item->id].volume_handle[auid.volume];
+
+    if (vol->handle == DSS_INVALID_HANDLE) {
+        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+        status = dss_apply_refresh_volume(conn, context, auid);
+        if (status != CM_SUCCESS) {
+            LOG_DEBUG_ERR("Failed to refresh volum, auid:%llu.", DSS_ID_TO_U64(auid));
+            return status;
+        }
+        DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
+        status = dss_refresh_volume_handle(conn, context, auid);
+        if (status != CM_SUCCESS) {
+            DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+            LOG_DEBUG_ERR("Failed to refresh volume handle, auid:%llu.", DSS_ID_TO_U64(auid));
+            return status;
+        }
+        *is_refresh = CM_TRUE;
+    }
+
+    // volume maybe be remove and add again
+    if (vol->version != vg_item->dss_ctrl->volume.defs[auid.volume].version) {
+        status = dss_reopen_volume_handle(conn, context, auid);
+        if (status != CM_SUCCESS) {
+            DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+            LOG_DEBUG_ERR("Failed to reopen volume handle, auid:%llu.", DSS_ID_TO_U64(auid));
+            return status;
+        }
+        *is_refresh = CM_TRUE;
+    }
+
+    if (!dss_is_fs_meta_valid(context->node)) {
+        if (dss_check_apply_refresh_file(conn, context, DSS_INVALID_BLOCK_ID) != CM_SUCCESS) {
+            LOG_DEBUG_ERR("Failed to apply refresh file, fid:%llu.", context->fid);
+            return status;
+        }
+        *is_refresh = CM_TRUE;
     }
     return CM_SUCCESS;
 }
@@ -1255,21 +1457,24 @@ int64 dss_seek_file_impl_core(dss_rw_param_t *param, int64 offset, int origin)
 
     CM_ASSERT(handle == (int32)context->id);
 
-    DSS_RETURN_IF_ERROR(dss_validate_seek_origin(origin, offset, context, &new_offset));
+    if(dss_validate_seek_origin(origin, offset, context, &new_offset) != CM_SUCCESS) {
+        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+        return CM_ERROR;
+    }
+
     size = cm_atomic_get(&context->node->size);
-    if (new_offset > size || need_refresh) {
-        dss_block_id_t blockid;
-        dss_set_blockid(&blockid, DSS_INVALID_ID64);
-        status = dss_apply_refresh_file(conn, context, blockid);
+    if (!dss_is_fs_meta_valid(context->node) || new_offset > size || need_refresh) {
+        status = dss_apply_refresh_file(conn, context, DSS_INVALID_BLOCK_ID);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to apply refresh file,fid:%llu.", context->fid));
         size = cm_atomic_get(&context->node->size);
 
-        if (offset > size) {
+        if (offset > size && param->is_read) {
             LOG_DEBUG_ERR("Invalid parameter offset is greater than size, offset:%lld, new_offset:%lld,"
                           " file size:%llu, vgid:%u, fid:%llu, node fid:%llu, need_refresh:%d.",
                 offset, new_offset, context->node->size, context->vg_item->id, context->fid, context->node->fid,
                 need_refresh);
             DSS_THROW_ERROR(ERR_DSS_FILE_SEEK, context->vg_item->id, context->fid, offset, context->node->size);
+            DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             return CM_ERROR;
         }
         LOG_DEBUG_INF("Apply to refresh file, offset:%lld, size:%lld, need_refresh:%d.", offset, size, need_refresh);
@@ -1281,6 +1486,7 @@ int64 dss_seek_file_impl_core(dss_rw_param_t *param, int64 offset, int origin)
     }
     if (new_offset < 0) {
         DSS_THROW_ERROR(ERR_DSS_FILE_SEEK, context->vg_item->id, context->fid, offset, context->node->size);
+        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
         return CM_ERROR;
     }
     if (new_offset == 0) {
@@ -1304,6 +1510,18 @@ void dss_init_rw_param(
     param->is_read = DSS_FALSE;
 }
 
+static int64 dss_seek_file_prepare(
+    dss_conn_t *conn, dss_file_context_t *context, dss_rw_param_t *param, int64 offset, int origin)
+{
+    DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
+    int64 ret = dss_seek_file_impl_core(param, offset, origin);
+    if (ret == CM_ERROR) {
+        return CM_ERROR;
+    }
+    DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+    return ret;
+}
+
 int64 dss_seek_file_impl(dss_conn_t *conn, int handle, int64 offset, int origin)
 {
     LOG_DEBUG_INF("dss seek file entry, handle:%d, offset:%lld, origin:%d", handle, offset, origin);
@@ -1313,7 +1531,7 @@ int64 dss_seek_file_impl(dss_conn_t *conn, int handle, int64 offset, int origin)
 
     dss_rw_param_t param;
     dss_init_rw_param(&param, conn, handle, context, context->offset, DSS_FALSE);
-    int64 new_offset = dss_seek_file_impl_core(&param, offset, origin);
+    int64 new_offset = dss_seek_file_prepare(conn, context, &param, offset, origin);
     dss_unlatch(&context->latch);
 
     LOG_DEBUG_INF("dss seek file leave, new_offset:%lld", new_offset);
@@ -1339,60 +1557,24 @@ static status_t dss_alloc_block_core(
     int32 handle = rw_ctx.handle;
     int32 size = rw_ctx.size;
     bool32 is_read = rw_ctx.read;
-    dss_vg_info_item_t *vg_item = context->vg_item;
+
     dss_block_id_t second_block_id = entry_fs_block->bitmap[block_count];
+    *second_block = NULL;
     if (dss_cmp_blockid(second_block_id, DSS_INVALID_ID64)) {
         // allocate block
-        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-
         if (!is_read) {
-            status = dss_apply_extending_file(conn, handle, size, is_read, rw_ctx.offset);
+            status = dss_check_apply_extending_file(conn, context, handle, size, rw_ctx.offset, second_block_id);
+            DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to extend file entry fs block."));
+        } else {
+            status = dss_check_apply_refresh_file(conn, context, entry_fs_block->head.common.id);
             DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to extend file entry fs block."));
         }
-
-        status = dss_apply_refresh_file(conn, context, entry_fs_block->head.common.id);
-        DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to refresh entry fs block."));
-        DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
         second_block_id = entry_fs_block->bitmap[block_count];
-        *second_block = (dss_fs_block_t *)dss_find_block_in_shm(
-            rw_ctx.conn->session, vg_item, second_block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
-        if ((*second_block) == NULL) {
-            DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-            status = dss_apply_refresh_file(conn, context, second_block_id);
-            DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to refresh second fs block."));
-            DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
-            *second_block = (dss_fs_block_t *)dss_find_block_in_shm(
-                rw_ctx.conn->session, vg_item, second_block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
-            if ((*second_block) == NULL) {
-                DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-                DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "fs_block", *(uint64 *)&second_block_id);
-                LOG_RUN_ERR("Failed to find block:%llu in mem.", DSS_ID_TO_U64(second_block_id));
-                return CM_ERROR;
-            }
-        }
+        status = dss_check_find_fs_block(rw_ctx.conn, context, second_block_id, second_block);
     } else {
-        *second_block = (dss_fs_block_t *)dss_find_block_in_shm(
-            rw_ctx.conn->session, vg_item, second_block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
-        if ((*second_block) == NULL) {
-            DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-
-            status = dss_apply_refresh_file(conn, context, second_block_id);
-            if (status != CM_SUCCESS) {
-                LOG_RUN_ERR("Failed to refresh file.");
-                return CM_ERROR;
-            }
-
-            DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
-            *second_block = (dss_fs_block_t *)dss_find_block_in_shm(
-                rw_ctx.conn->session, vg_item, second_block_id, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
-            if ((*second_block) == NULL) {
-                DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-                LOG_RUN_ERR("Failed to find block:%llu in mem.", DSS_ID_TO_U64(second_block_id));
-                return CM_ERROR;
-            }
-        }
+        status = dss_check_find_fs_block(rw_ctx.conn, context, second_block_id, second_block);
     }
-    return CM_SUCCESS;
+    return status;
 }
 
 // get secondary FSB, index of AU within FSB and offset within AU,
@@ -1418,34 +1600,6 @@ static status_t dss_alloc_block(files_rw_ctx_t rw_ctx, dss_fs_block_t *entry_fs_
     DSS_RETURN_IF_ERROR(dss_alloc_block_core(rw_ctx, entry_fs_block, block_count, &second_block));
     *au_count = block_au_count;
     *scnd_block = second_block;
-    return CM_SUCCESS;
-}
-
-static status_t dss_check_refresh_file(
-    dss_env_t *dss_env, dss_conn_t *conn, dss_file_context_t *context, bool32 is_read, int32 *total_size)
-{
-    uint32 tmp_total_size = (uint32)(*total_size);
-#ifdef OPENGAUSS
-    bool32 need_refresh = tmp_total_size > context->node->written_size;
-#else
-    bool32 need_refresh = tmp_total_size > context->node->size;
-#endif
-
-    if (is_read && need_refresh) {
-        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-        dss_block_id_t blockid;
-        dss_set_blockid(&blockid, DSS_INVALID_ID64);
-        status_t status = dss_apply_refresh_file(conn, context, blockid);
-        if (status != CM_SUCCESS) {
-            LOG_RUN_ERR("Failed to apply refresh file:%s, fid:%llu.", context->node->name, context->fid);
-            return CM_ERROR;
-        }
-        DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
-        if (tmp_total_size > context->node->size) {
-            *total_size = (int32)context->node->size;
-        }
-    }
-
     return CM_SUCCESS;
 }
 
@@ -1488,33 +1642,6 @@ static status_t dss_update_written_size(dss_env_t *dss_env, dss_conn_t *conn, ds
     return CM_SUCCESS;
 }
 
-static status_t dss_check_file_written_size(dss_env_t *dss_env, dss_conn_t *conn, dss_file_context_t *context,
-    uint32 start_offset, bool32 is_read, int32 *total_size)
-{
-    /* openGauss: 1. read ends at actual written size 2. writes does not stall reads. */
-    if (is_read && start_offset + *total_size > context->node->written_size) {
-        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-        dss_block_id_t blockid;
-        dss_set_blockid(&blockid, DSS_INVALID_ID64);
-        status_t status = dss_apply_refresh_file(conn, context, blockid);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to apply refresh file:%s, fid:%llu.", context->node->name, context->fid);
-            return CM_ERROR;
-        }
-        DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
-        if (start_offset > context->node->written_size) {
-            LOG_DEBUG_ERR("Failed to read beyond end of file:%s, written_size:%llu, size:%llu, start_offset:%u.",
-                context->node->name, context->node->written_size, context->node->size, start_offset);
-            DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-            return CM_ERROR;
-        } else {
-            LOG_DEBUG_INF("Success to refresh file:\"%s\", written_size:%llu, size:%llu.", context->node->name,
-                context->node->written_size, context->node->size);
-        }
-    }
-    return CM_SUCCESS;
-}
-
 status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, int32 *read_size)
 {
     status_t status = CM_SUCCESS;
@@ -1529,21 +1656,21 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
     DSS_SET_PTR_VALUE_IF_NOT_NULL(read_size, 0);
     DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
 
-    gft_node_t *node = context->node;
-    dss_vg_info_item_t *vg_item = context->vg_item;
-    dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
-        conn->session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
-    if (!entry_block) {
+    CM_RETURN_IFERR(dss_check_refresh_file_by_size(conn, context, param, &total_size));
+    // after refresh, still has no data, read return with 0, may truncate by others
+    if (param->is_read && total_size == 0) {
+        *read_size = 0;
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-        LOG_DEBUG_ERR("Can not find entry block in memory,entry blockid:%llu,nodeid:%llu.", DSS_ID_TO_U64(node->entry),
-            DSS_ID_TO_U64(node->id));
-        return CM_ERROR;
+        return CM_SUCCESS;
     }
 
-    CM_RETURN_IFERR(dss_check_refresh_file(dss_env, conn, context, param->is_read, &total_size));
+    gft_node_t *node = context->node;
+    dss_vg_info_item_t *vg_item = context->vg_item;
+    dss_fs_block_t *entry_fs_block = NULL;
 
-    dss_fs_block_t *entry_fs_block = (dss_fs_block_t *)entry_block;
     uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
+    uint32 retry_time = 0;
+
     do {
         files_rw_ctx_t rw_ctx;
         rw_ctx.conn = conn;
@@ -1554,9 +1681,25 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         rw_ctx.read = param->is_read;
         rw_ctx.offset = (param->atom_oper ? param->offset : context->offset);
 
+        // after refresh, still has no data, read return with 0, may truncate by others
+        dss_check_file_written_size(conn, context, rw_ctx.offset, param->is_read, &total_size);
+        if (param->is_read && total_size == 0) {
+            *read_size = 0;
+            DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+            return CM_SUCCESS;
+        }
+
+        status = dss_check_find_fs_block(conn, context, node->entry, &entry_fs_block);
+        if (status != CM_SUCCESS) {
+            LOG_DEBUG_ERR("Can not fund entry block in memory, entry blockid:%llu, nodeid:%llu.",
+                DSS_ID_TO_U64(node->entry), DSS_ID_TO_U64(node->id));
+            return CM_ERROR;
+        }
+
         dss_fs_block_t *second_block = NULL;
         uint32 block_au_count = 0;
         uint32 au_offset = 0;
+        // if the file not close, the entry_fs_block will not chang id, so not need to recheck from begin
         CM_RETURN_IFERR(dss_alloc_block(rw_ctx, entry_fs_block, &second_block, &block_au_count, &au_offset));
 
         auid_t auid = second_block->bitmap[block_au_count];
@@ -1564,27 +1707,20 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
             // allocate au or refresh second block
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             if (!param->is_read) {
-                status = dss_apply_extending_file(conn, handle, size, param->is_read, rw_ctx.offset);
+                status = dss_check_apply_extending_file(
+                    conn, context, handle, size, rw_ctx.offset, second_block->head.common.id);
                 DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to extend file second block."));
+            } else {
+                status = dss_check_apply_refresh_file(conn, context, second_block->head.common.id);
+                DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to refresh file second block."));
             }
-            auid = second_block->bitmap[block_au_count];
-            if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
-                status = dss_apply_refresh_file(conn, context, second_block->head.common.id);
-                DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to refresh second block."));
-            }
-            DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
-            auid = second_block->bitmap[block_au_count];
+            retry_time++;
+            LOG_DEBUG_INF("Node:%llu, name:%s, fsize:%llu, written_size:%llu, retry_time:%u.", DSS_ID_TO_U64(node->id),
+                node->name, node->size, node->written_size, retry_time);
+            continue;
         }
 
-        uint64 vol_offset = (uint64)dss_get_au_offset(vg_item, auid);
-        vol_offset = vol_offset + (uint64)au_offset;
-
         if (auid.volume >= DSS_MAX_VOLUMES) {
-            if (param->is_read && block_au_count == second_block->head.used_num && au_offset == 0) {
-                DSS_SET_PTR_VALUE_IF_NOT_NULL(read_size, 0);
-                DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-                return CM_SUCCESS;
-            }
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "au", *(uint64 *)&auid);
             DSS_ASSERT_LOG(0, "Auid is invalid, volume:%u, fname:%s, fsize:%llu, written_size:%llu.", (uint32)auid.volume,
@@ -1592,35 +1728,32 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
             return CM_ERROR;
         }
 
+        LOG_DEBUG_INF("Found auid:%llu for node:%llu, name:%s.", DSS_ID_TO_U64(auid), DSS_ID_TO_U64(context->node->id),
+            context->node->name);
+
+        bool32 is_refresh = CM_FALSE;
+        status = dss_check_refresh_volume(conn, context, auid, &is_refresh);
+        if (status != CM_SUCCESS) {
+            LOG_DEBUG_ERR("Refresh volume:%llu fail.", (uint64)auid.volume);
+            return CM_ERROR;
+        }
+        // so bad need start from begin again
+        if (is_refresh) {
+            // dss_check_refrsh_volume may unlock the vg, other task may truncate this file, need recheck from begin
+            retry_time++;
+            LOG_DEBUG_INF("Node:%llu, name:%s, fsize:%llu, written_size:%llu, retry_time:%u.", DSS_ID_TO_U64(node->id),
+                node->name, node->size, node->written_size, retry_time);
+            continue;
+        }
         dss_cli_vg_handles_t *cli_vg_handles = (dss_cli_vg_handles_t *)(conn->cli_vg_handles);
         dss_simple_volume_t *vol = &cli_vg_handles->vg_vols[vg_item->id].volume_handle[auid.volume];
-        if (vol->handle == DSS_INVALID_HANDLE) {
-            DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-            status = dss_apply_refresh_volume(conn, context, auid);
-            if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("Failed to refresh volume, auid:%llu.", DSS_ID_TO_U64(auid));
-                return status;
-            }
-            DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
-            status = dss_refresh_volume_handle(conn, context, auid);
-            if (status != CM_SUCCESS) {
-                DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-                LOG_DEBUG_ERR("Failed to refresh volume handle, auid:%llu.", DSS_ID_TO_U64(auid));
-                return status;
-            }
+        uint64 vol_offset = (uint64)dss_get_au_offset(vg_item, auid);
+        vol_offset = vol_offset + (uint64)au_offset;
+        // wrongly writing superau area
+        if (vol_offset < au_size) {
+            LOG_RUN_ERR("The volume offset:%llu is invalid!", vol_offset);
+            CM_ASSERT(0);
         }
-        // volume maybe be remove and add again.
-        if (vol->version != vg_item->dss_ctrl->volume.defs[auid.volume].version) {
-            status = dss_reopen_volume_handle(conn, context, auid);
-            if (status != CM_SUCCESS) {
-                DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-                LOG_DEBUG_ERR("Failed to reopen volume, auid:%llu.", DSS_ID_TO_U64(auid));
-                return status;
-            }
-        }
-
-        DSS_RETURN_IFERR2(dss_check_file_written_size(dss_env, conn, context, rw_ctx.offset, param->is_read, &total_size),
-            DSS_SET_PTR_VALUE_IF_NOT_NULL(read_size, read_cnt));
 #ifdef OPENGAUSS
         dss_vg_info_item_t *first_vg_item = dss_get_first_vg_item();
         if (strcmp(first_vg_item->vg_name, vg_item->vg_name) == 0 && auid.volume == 0) {
@@ -1643,12 +1776,6 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         } else {
             real_size = total_size;
             total_size = 0;
-        }
-
-        // wrongly writing superau area
-        if (vol_offset < au_size) {
-            LOG_RUN_ERR("The volume offset:%llu is invalid!", vol_offset);
-            CM_ASSERT(0);
         }
 
         dss_volume_t volume;
@@ -1746,27 +1873,14 @@ status_t dss_read_file_impl(dss_conn_t *conn, int handle, void *buf, int size, i
     return dss_read_write_file(conn, handle, buf, size, read_size, DSS_TRUE);
 }
 
-status_t dss_refresh_file_impl(dss_conn_t *conn, dss_file_context_t *context, int64 offset, bool32 is_read)
+static status_t dss_pwrite_file_prepare(dss_conn_t *conn, dss_file_context_t *context, long long offset)
 {
-    int64 size = cm_atomic_get(&context->node->size);
-    
-    if (offset >= size) {
-        dss_block_id_t blockid;
-        dss_set_blockid(&blockid, DSS_INVALID_ID64);
-        if (dss_apply_refresh_file(conn, context, blockid) != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to apply refresh file,fid:%llu.", context->fid);
-            return CM_ERROR;
-        }
-        size = cm_atomic_get(&context->node->size);
-        if (offset > size && is_read) {
-            LOG_DEBUG_ERR("Invalid parameter offset is greater than size, offset:%lld,"
-                          " file size:%llu, vgid:%u, fid:%llu, node fid:%llu.",
-                offset, context->node->size, context->vg_item->id, context->fid, context->node->fid);
-            DSS_THROW_ERROR(ERR_DSS_FILE_SEEK, context->vg_item->id, context->fid, offset, context->node->size);
-            return CM_ERROR;
-        }
-        LOG_DEBUG_INF("Apply to refresh file, offset:%lld, size:%lld.", offset, size);
+    DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
+    status_t status = dss_check_refresh_file_by_offset(conn, context, offset, CM_FALSE);
+    if (status != CM_SUCCESS) {
+        return status;
     }
+    DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
     return CM_SUCCESS;
 }
 
@@ -1786,7 +1900,7 @@ status_t dss_pwrite_file_impl(dss_conn_t *conn, int handle, const void *buf, int
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
     param.is_read = DSS_FALSE;
-    if (dss_refresh_file_impl(conn, context, offset, DSS_FALSE) != CM_SUCCESS) {
+    if (dss_pwrite_file_prepare(conn, context, offset) != CM_SUCCESS) {
         dss_unlatch(&context->latch);
         return CM_ERROR;
     }
@@ -1795,6 +1909,22 @@ status_t dss_pwrite_file_impl(dss_conn_t *conn, int handle, const void *buf, int
     LOG_DEBUG_INF("dss pwrite file leave, result: %d", status);
 
     return status;
+}
+
+static status_t dss_pread_file_prepare(
+    dss_conn_t *conn, dss_file_context_t *context, int size, long long offset, bool32 *read_end)
+{
+    *read_end = CM_FALSE;
+    DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
+    status_t status = dss_check_refresh_file_by_offset(conn, context, offset, CM_TRUE);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    if ((uint64)offset == context->node->size || size == 0) {
+        *read_end = CM_TRUE;
+    }
+    DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+    return CM_SUCCESS;
 }
 
 status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, long long offset, int *read_size)
@@ -1815,11 +1945,11 @@ status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
     param.is_read = DSS_TRUE;
     do {
-        status = dss_refresh_file_impl(conn, context, offset, DSS_TRUE);
+        bool32 read_end = CM_FALSE;
+        status = dss_pread_file_prepare(conn, context, size, offset, &read_end);
         DSS_BREAK_IF_ERROR(status);
-        if ((uint64)offset == context->node->size || size == 0) {
+        if (read_end) {
             *read_size = 0;
-            status = CM_SUCCESS;
             break;
         }
         status = dss_read_write_file_core(&param, buf, size, read_size);
@@ -1907,7 +2037,8 @@ status_t dss_get_addr_impl(dss_conn_t *conn, int32 handle, long long offset, cha
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
     param.is_read = DSS_TRUE;
-    if (dss_refresh_file_impl(conn, context, offset, DSS_TRUE) != CM_SUCCESS) {
+    bool32 read_end = CM_FALSE;
+    if (dss_pread_file_prepare(conn, context, offset, 0, &read_end) != CM_SUCCESS) {
         dss_unlatch(&context->latch);
         return CM_ERROR;
     }
@@ -2399,7 +2530,6 @@ status_t dss_get_fname_impl(int handle, char *fname, int fname_size)
 }
 
 static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_offset)
-
 {
     status_t status = CM_SUCCESS;
     dss_conn_t *conn = param->conn;
@@ -2409,117 +2539,122 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
     int32 total_size = size;
 
     DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
-
+    CM_RETURN_IFERR(dss_check_refresh_file_by_size(conn, context, param, &total_size));
+    // after refresh, still has no data, read return error, may truncate by others
+    if (param->is_read && total_size == 0) {
+        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+        return CM_ERROR;
+    }
     gft_node_t *node = context->node;
     dss_vg_info_item_t *vg_item = context->vg_item;
-    dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
-        conn->session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, DSS_FALSE, NULL, CM_FALSE);
-    if (!entry_block) {
-        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-        LOG_DEBUG_ERR("Can not find entry block in memory, entry blockid:%llu, nodeid:%llu.",
-            DSS_ID_TO_U64(node->entry), DSS_ID_TO_U64(node->id));
-        return CM_ERROR;
-    }
+    dss_fs_block_t *entry_fs_block = NULL;
 
-    CM_RETURN_IFERR(dss_check_refresh_file(dss_env, conn, context, param->is_read, &total_size));
-
-    dss_fs_block_t *entry_fs_block = (dss_fs_block_t *)entry_block;
     uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
+    uint32 retry_time = 0;
 
-    /* for aio, one IO needs to be in the same AU. */
-    uint32 start_block_count, start_block_au_count, end_block_count, end_block_au_count;
     do {
-        status =
-            dss_get_fs_block_info_by_offset(param->offset, au_size, &start_block_count, &start_block_au_count, NULL);
-        DSS_BREAK_IF_ERROR(status);
-        status = dss_get_fs_block_info_by_offset(
-            param->offset + size - 1, au_size, &end_block_count, &end_block_au_count, NULL);
-    } while (0);
+        files_rw_ctx_t rw_ctx;
+        rw_ctx.conn = conn;
+        rw_ctx.env = dss_env;
+        rw_ctx.file_ctx = context;
+        rw_ctx.handle = handle;
+        rw_ctx.size = size;
+        rw_ctx.read = param->is_read;
+        rw_ctx.offset = param->offset;
 
-    DSS_RETURN_IFERR2(status, DSS_UNLOCK_VG_META_S(context->vg_item, conn->session));
-
-    if (start_block_count != end_block_count || start_block_au_count != end_block_au_count) {
-        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-        return CM_ERROR;
-    }
-
-    files_rw_ctx_t rw_ctx;
-    rw_ctx.conn = conn;
-    rw_ctx.env = dss_env;
-    rw_ctx.file_ctx = context;
-    rw_ctx.handle = handle;
-    rw_ctx.size = size;
-    rw_ctx.read = param->is_read;
-    rw_ctx.offset = param->offset;
-
-    dss_fs_block_t *second_block = NULL;
-    uint32 block_au_count = 0;
-    uint32 au_offset = 0;
-    CM_RETURN_IFERR(dss_alloc_block(rw_ctx, entry_fs_block, &second_block, &block_au_count, &au_offset));
-
-    auid_t auid = second_block->bitmap[block_au_count];
-    if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
-        // allocate au
-        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-        if (!param->is_read) {
-            status = dss_apply_extending_file(conn, handle, size, param->is_read, rw_ctx.offset);
-            DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to extend file second block."));
+        // after refresh, still has no data, read return error, may truncate by others
+        dss_check_file_written_size(conn, context, rw_ctx.offset, param->is_read, &total_size);
+        if (param->is_read && total_size == 0) {
+            DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+            return CM_ERROR;
         }
-        auid = second_block->bitmap[block_au_count];
+
+        status = dss_check_find_fs_block(conn, context, node->entry, &entry_fs_block);
+        if (status != CM_SUCCESS) {
+            LOG_DEBUG_ERR("Can not fund entry block in memory, entry blockid:%llu, nodeid:%llu.",
+                DSS_ID_TO_U64(node->entry), DSS_ID_TO_U64(node->id));
+            return CM_ERROR;
+        }
+
+        /* for aio, one IO needs to be in the same AU. */
+        uint32 start_block_count, start_block_au_count, end_block_count, end_block_au_count;
+        do {
+            status =
+                dss_get_fs_block_info_by_offset(param->offset, au_size, &start_block_count, &start_block_au_count, NULL);
+            DSS_BREAK_IF_ERROR(status);
+            status = dss_get_fs_block_info_by_offset(
+                param->offset + size - 1, au_size, &end_block_count, &end_block_au_count, NULL);
+        } while (0);
+
+        DSS_RETURN_IFERR2(status, DSS_UNLOCK_VG_META_S(context->vg_item, conn->session));
+
+        if (start_block_count != end_block_count || start_block_au_count != end_block_au_count) {
+            DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+            return CM_ERROR;
+        }
+
+        // find the second block
+        dss_fs_block_t *second_block = NULL;
+        uint32 block_au_count = 0;
+        uint32 au_offset = 0;
+        // if the file not close, the entry_fs_block will not chang id, so not need to recheck from begin
+        CM_RETURN_IFERR(dss_alloc_block(rw_ctx, entry_fs_block, &second_block, &block_au_count, &au_offset));
+
+        auid_t auid = second_block->bitmap[block_au_count];
         if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
-            status = dss_apply_refresh_file(conn, context, second_block->head.common.id);
-            DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to refresh second block."));
-        }
-        DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
-        auid = second_block->bitmap[block_au_count];
-    }
-
-    *vol_offset = dss_get_au_offset(vg_item, auid);
-    *vol_offset = *vol_offset + (int64)au_offset;
-    cm_panic(*((uint64 *)vol_offset) >= au_size);  // wrongly writing superau area
-
-    if (auid.volume >= DSS_MAX_VOLUMES) {
-        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-        DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "au", *(uint64 *)&auid);
-        LOG_DEBUG_ERR("Auid is invalid, volume:%u, fname:%s, fsize:%llu, written_size:%llu.", (uint32)auid.volume,
-            node->name, node->size, node->written_size);
-        return CM_ERROR;
-    }
-
-    dss_cli_vg_handles_t *cli_vg_handles = (dss_cli_vg_handles_t *)(conn->cli_vg_handles);
-    dss_simple_volume_t *vol = &cli_vg_handles->vg_vols[vg_item->id].volume_handle[auid.volume];
-    if (vol->handle == DSS_INVALID_HANDLE) {
-        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-        status = dss_apply_refresh_volume(conn, context, auid);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to refresh volume, auid:%llu.", DSS_ID_TO_U64(auid));
-            return status;
-        }
-        DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
-        status = dss_refresh_volume_handle(conn, context, auid);
-        if (status != CM_SUCCESS) {
+            // allocate au or refresh second block
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-            LOG_DEBUG_ERR("Failed to refresh volume handle, auid:%llu.", DSS_ID_TO_U64(auid));
-            return status;
+            if (!param->is_read) {
+                status = dss_check_apply_extending_file(
+                    conn, context, handle, size, rw_ctx.offset, second_block->head.common.id);
+                DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to extend file second block."));
+            } else {
+                status = dss_check_apply_refresh_file(conn, context, second_block->head.common.id);
+                DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to refresh file second block."));
+            }
+            retry_time++;
+            LOG_DEBUG_INF("Node:%llu, name:%s, fsize:%llu, written_size:%llu, retry_time:%u.", DSS_ID_TO_U64(node->id),
+                node->name, node->size, node->written_size, retry_time);
+            continue;
         }
-    }
 
-    /* reopen */
-    if (vol->version != vg_item->dss_ctrl->volume.defs[auid.volume].version) {
-        status = dss_reopen_volume_handle(conn, context, auid);
-        if (status != CM_SUCCESS) {
+        if (auid.volume >= DSS_MAX_VOLUMES) {
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-            LOG_DEBUG_ERR("Failed to reopen volume, auid:%llu.", DSS_ID_TO_U64(auid));
-            return status;
+            DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "au", *(uint64 *)&auid);
+            DSS_ASSERT_LOG(0, "Auid is invalid, volume:%u, fname:%s, fsize:%llu, written_size:%llu.", (uint32)auid.volume,
+                           node->name, node->size, node->written_size);
+            return CM_ERROR;
         }
-    }
 
-    DSS_RETURN_IFERR2(dss_check_file_written_size(dss_env, conn, context, rw_ctx.offset, param->is_read, &total_size),
-        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session));
+        LOG_DEBUG_INF("Found auid:%llu for node:%llu, name:%s.", DSS_ID_TO_U64(auid), DSS_ID_TO_U64(context->node->id),
+            context->node->name);
 
-    /* get the real block device descriptor */
-    *fd = vol->handle;
+        bool32 is_refresh = CM_FALSE;
+        status = dss_check_refresh_volume(conn, context, auid, &is_refresh);
+        if (status != CM_SUCCESS) {
+            LOG_DEBUG_ERR("Refresh volume:%llu fail.", (uint64)auid.volume);
+            return CM_ERROR;
+        }
+        // so bad need start from begin again
+        if (is_refresh) {
+            // dss_check_refrsh_volume may unlock the vg, other task may truncate this file, need recheck from begin
+            retry_time++;
+            LOG_DEBUG_INF("Node:%llu, name:%s, fsize:%llu, written_size:%llu, retry_time:%u.", DSS_ID_TO_U64(node->id),
+                node->name, node->size, node->written_size, retry_time);
+            continue;
+        }
+        dss_cli_vg_handles_t *cli_vg_handles = (dss_cli_vg_handles_t *)(conn->cli_vg_handles);
+        dss_simple_volume_t *vol = &cli_vg_handles->vg_vols[vg_item->id].volume_handle[auid.volume];
+        cm_panic(*((uint64 *)vol_offset) >= au_size);  // wrongly writing superau area
 
+        *vol_offset = dss_get_au_offset(vg_item, auid);
+        *vol_offset = *vol_offset + (int64)au_offset;
+        
+        /* get the real block device descriptor */
+        *fd = vol->handle;
+        cm_panic(vol->handle > 0);
+        break;
+    } while (CM_TRUE);
     DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
 
 #ifdef OPENGAUSS
@@ -2535,6 +2670,18 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
     return status;
 }
 
+static status_t dss_get_fd_prepare(dss_conn_t *conn, dss_file_context_t *context, long long offset, bool32 is_read)
+{
+    DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
+    status_t status = dss_check_refresh_file_by_offset(conn, context, offset, is_read);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+    return CM_SUCCESS;
+}
+
+
 status_t dss_get_fd_by_offset(
     dss_conn_t *conn, int handle, long long offset, int32 size, bool32 is_read, int *fd, int64 *vol_offset)
 {
@@ -2549,8 +2696,10 @@ status_t dss_get_fd_by_offset(
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
     param.is_read = is_read;
-    status = dss_refresh_file_impl(conn, context, offset, is_read);
+
+    status = dss_get_fd_prepare(conn, context, offset, is_read);
     DSS_RETURN_IFERR2(status, dss_unlatch(&context->latch));
+
     status = get_fd(&param, size, fd, vol_offset);
 
     dss_unlatch(&context->latch);
@@ -2761,6 +2910,27 @@ status_t dss_get_phy_size_impl(dss_conn_t *conn, int handle, long long *size)
     dss_unlatch(&context->latch);
     return status;
 }
+static status_t dss_aio_post_pwrite_file_prepare(
+    dss_conn_t *conn, dss_file_context_t *context, long long offset, int32 size, bool32 *need_update, int64 *new_offset)
+{
+    *need_update = CM_FALSE;
+    *new_offset = 0;
+    DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
+    status_t status = dss_check_refresh_file_by_offset(conn, context, offset, CM_FALSE);
+    if (status != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+
+    *new_offset = offset + size;
+    *need_update = ((uint64)*new_offset > context->node->written_size);
+    if (*need_update) {
+        LOG_DEBUG_INF("Start update written size fo file:%s, cur offset:%llu, cur wrriten size:%llu.",
+            context->node->name, offset, context->node->written_size);
+    }
+    DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+    return CM_SUCCESS;
+}
+
 
 status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long offset, int32 size)
 {
@@ -2772,11 +2942,12 @@ status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long o
     LOG_DEBUG_INF("Begin get file fd in aio, filename:%s, handle:%d, offset:%lld", context->node->name, handle, offset);
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
-    status = dss_refresh_file_impl(conn, context, offset, DSS_TRUE);
+
+    bool32 need_update;
+    int64 new_offset;
+    status = dss_aio_post_pwrite_file_prepare(conn, context, offset, size, &need_update, &new_offset);
     DSS_RETURN_IFERR2(status, dss_unlatch(&context->latch));
 
-    int64 new_offset = offset + size;
-    bool32 need_update = new_offset > context->node->written_size;
     if (need_update) {
         LOG_DEBUG_INF("Start update_written_size for file:\"%s\", cur offset:%llu, cur written_size:%llu.",
             context->node->name, offset, context->node->written_size);

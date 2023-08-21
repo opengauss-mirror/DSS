@@ -912,7 +912,7 @@ status_t dss_alloc_fs_block_inter(
 }
 
 status_t dss_alloc_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, char **block, ga_obj_id_t *out_obj_id,
-    dss_alloc_fs_block_judge *judge)
+    dss_alloc_fs_block_judge *judge, gft_node_t *node)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(block != NULL);
@@ -946,7 +946,9 @@ status_t dss_alloc_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item,
         }
         status = dss_alloc_fs_block_inter(session, vg_item, CM_FALSE, block, out_obj_id);
     }
-
+    if (status == CM_SUCCESS) {
+        dss_set_fs_block_file_ver(node, (dss_fs_block_t *)(*block));
+    }
     return status;
 }
 
@@ -985,7 +987,8 @@ void dss_free_fs_block_addr(dss_session_t *session, dss_vg_info_item_t *vg_item,
         *(uint64 *)&fs_block->head.next, root->free.count);
 }
 
-status_t dss_init_file_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t *block_id)
+status_t dss_init_file_fs_block(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t *block_id, gft_node_t *node)
 {
     char *block;
     dss_fs_block_t *fs_entry_block;
@@ -996,13 +999,13 @@ status_t dss_init_file_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_i
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check and refresh core, vg %s.", vg_item->vg_name));
     dss_alloc_fs_block_judge judge = {CM_FALSE, CM_FALSE, CM_FALSE};
     // allocate the first level bitmap block
-    status = dss_alloc_fs_block(session, vg_item, &block, &objid, &judge);
+    status = dss_alloc_fs_block(session, vg_item, &block, &objid, &judge, node);
     if (status != CM_SUCCESS) {
         return status;
     }
     fs_entry_block = (dss_fs_block_t *)block;
 
-    status = dss_alloc_fs_block(session, vg_item, &block, NULL, &judge);
+    status = dss_alloc_fs_block(session, vg_item, &block, NULL, &judge, node);
     if (status != CM_SUCCESS) {
         // NOTE:can not free fs block, let rollback do it.
         return status;
@@ -1932,7 +1935,7 @@ gft_node_t *dss_alloc_ft_node_when_create_vg(
 status_t dss_init_ft_node_entry(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node)
 {
     dss_block_id_t block_id = {0};
-    status_t status = dss_init_file_fs_block(session, vg_item, &block_id);
+    status_t status = dss_init_file_fs_block(session, vg_item, &block_id, node);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to initialize the file space bitmap."));
     node->entry = block_id;
     return CM_SUCCESS;
@@ -2677,7 +2680,7 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
         if (dss_cmp_blockid(second_block_id, CM_INVALID_ID64)) {
             dss_alloc_fs_block_judge judge = {CM_TRUE, CM_FALSE, CM_TRUE};
             // allocate block
-            status = dss_alloc_fs_block(session, vg_item, (char **)&second_block, &sec_obj_id, &judge);
+            status = dss_alloc_fs_block(session, vg_item, (char **)&second_block, &sec_obj_id, &judge, node);
             if (!second_block) {
                 dss_rollback_mem_update(session->log_split, vg_item);
                 char *err_msg = "Failed to alloc file space meta block,vg name";
@@ -3111,6 +3114,83 @@ status_t truncate_to_extend(dss_session_t *session, dss_vg_info_item_t *vg_item,
     return status;
 }
 
+void dss_set_node_flag(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, bool32 is_set, uint32 flags)
+{
+    dss_redo_set_file_flag_t file_flag;
+    file_flag.ftid = node->id;
+    file_flag.old_flags = node->flags;
+
+    if (is_set) {
+        node->flags |= flags;
+    } else {
+        node->flags &= ~flags;
+    }
+    file_flag.flags = node->flags;
+    if (dss_need_exec_local()) {
+        dss_put_log(session, vg_item, DSS_RT_SET_NODE_FLAG, &file_flag, sizeof(dss_redo_set_file_flag_t));
+    }
+}
+
+void dss_validate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node)
+{
+    LOG_DEBUG_INF(
+        "[DSS] Try validate file:%s fid:%llu in vg:%s begin.", node->name, *(uint64 *)&node->id, vg_item->vg_name);
+    dss_set_node_flag(session, vg_item, node, CM_FALSE, DSS_FT_NODE_FLAG_INVALID_FS_META);
+    status_t status = dss_process_redo_log(session, vg_item);
+    if (status != CM_SUCCESS) {
+        dss_unlock_vg_mem_and_shm(session, vg_item);
+        LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
+            cm_get_error_code(), errno, strerror(errno));
+        cm_fync_logfile();
+        _exit(1);
+    }
+    LOG_DEBUG_INF(
+        "[DSS] Try validate file:%s fid:%llu in vg:%s done.", node->name, *(uint64 *)&node->id, vg_item->vg_name);
+}
+
+dss_invalidate_other_nodes_proc_t invalidate_other_nodes_proc;
+void regist_invalidate_other_nodes_proc(dss_invalidate_other_nodes_proc_t proc)
+{
+    invalidate_other_nodes_proc = proc;
+}
+
+status_t dss_invalidate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node)
+{
+    LOG_DEBUG_INF(
+        "[DSS] Try invalidate file:%s fid:%llu in vg:%s begin.", node->name, *(uint64 *)&node->id, vg_item->vg_name);
+    
+    dss_set_node_flag(session, vg_item, node, CM_TRUE, DSS_FT_NODE_FLAG_INVALID_FS_META);
+    status_t status = dss_process_redo_log(session, vg_item);
+    if (status != CM_SUCCESS) {
+        dss_unlock_vg_mem_and_shm(session, vg_item);
+        LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
+            cm_get_error_code(), errno, strerror(errno));
+        cm_fync_logfile();
+        _exit(1);
+    }
+
+    if (invalidate_other_nodes_proc) {
+        // notify other node to invalid node
+        bool32 invalid_ack = CM_FALSE;
+        // let others can read disk or mem by force dss_latch_s_force before notify other nodes
+        dss_lock_vg_mem_and_shm_x2ix(session, vg_item);
+        status = invalidate_other_nodes_proc(session, vg_item, *(uint64 *)&node->id, &invalid_ack);
+        // nned lock exec to finish truncate
+        dss_lock_vg_mem_and_shm_ix2x(session, vg_item);
+        if ( status != CM_SUCCESS || !invalid_ack) {
+            LOG_DEBUG_INF("[DSS] notify other nodes invalidate file:%s fid:%llu in vg:%s fail.", node->name,
+                *(uint64 *)&node->id, vg_item->vg_name);
+            dss_validate_fs_meta(session, vg_item, node);
+            return CM_ERROR;
+        }
+    }
+
+    LOG_DEBUG_INF(
+        "[DSS] Try invaliate file:%s fid:%llu in vg:%s done.", node->name, *(uint64 *)&node->id,vg_item->vg_name);
+    return CM_SUCCESS;
+}
+
 status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 offset, uint64 length, char *vg_name)
 {
     CM_RETURN_IFERR(dss_prepare_truncate(session, vg_name, length));
@@ -3140,6 +3220,14 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
         dss_unlock_vg_mem_and_shm(session, vg_item);
         return CM_SUCCESS;
     }
+
+    status = dss_invalidate_fs_meta(session, vg_item, node);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[DSS] Invalid file:%s in vg:%s fail.", node->name, vg_item->vg_name);
+        dss_unlock_vg_mem_and_shm(session, vg_item);
+        return CM_SUCCESS;
+    }
+
     /*
      * Key idea: what to check when determining that we've reached EOF during R/W? we must make sure no out-of-bound
      * R/W on truncated file. Answer is the second file space block id at the truncate point should be invalid64.
@@ -3153,12 +3241,21 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
     uint32 block_au_count = 0;
     uint32 au_offset = 0;
     status = dss_get_fs_block_info_by_offset((int64)align_length, au_size, &block_count, &block_au_count, &au_offset);
-    DSS_RETURN_IFERR3(status, dss_unlock_vg_mem_and_shm(session, vg_item),
-        LOG_DEBUG_ERR("The offset(%llu) is not correct, real block count:%u.", align_length, block_count));
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("The offset(%llu) is not correct, real block count:%u.", align_length, block_count);
+        dss_validate_fs_meta(session, vg_item, node);
+        dss_unlock_vg_mem_and_shm(session, vg_item);
+        return CM_ERROR;
+    }
+
     /* Perform truncating file space blocks. */
     gft_node_t *trunc_ftn;
-    DSS_RETURN_IFERR3(dss_init_trunc_ftn(session, vg_item, node, &trunc_ftn, align_length),
-        dss_unlock_shm_meta(session, vg_item->vg_latch), dss_unlock_vg_mem(vg_item));
+    status = dss_init_trunc_ftn(session, vg_item, node, &trunc_ftn, align_length);
+    if (status != CM_SUCCESS) {
+        dss_validate_fs_meta(session, vg_item, node);
+        dss_unlock_vg_mem_and_shm(session, vg_item);
+        return CM_ERROR;
+    }
 
     LOG_DEBUG_INF("Begin to truncate file:%s, length:%llu, align_length:%llu, SFSB idx:%u, AU idx:%u", node->name,
         length, align_length, block_count, block_au_count);
@@ -3168,6 +3265,7 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
     uint32 au_trunc_idx = au_offset == 0 ? block_au_count : block_au_count + 1;
     dss_build_truncated_ftn(session, vg_item, entry_fs_block, dst_entry_fsb, block_count, au_trunc_idx);
     dss_truncate_set_sizes(session, vg_item, node, trunc_ftn, length);
+ 
     /* Truncating file space block completed. */
     status = dss_process_redo_log(session, vg_item);
     if (status != CM_SUCCESS) {
@@ -3177,8 +3275,13 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
         cm_fync_logfile();
         _exit(1);
     }
-    // clean the truncate block shm info, at present, clean all first
-    dss_clean_file_meta_core(vg_item, *(uint64 *)&trunc_ftn->id);
+
+    // update the file ver for entry block
+    dss_set_fs_block_file_ver(node, entry_fs_block);
+
+    // re-valid the file after the truncate has been done
+    dss_validate_fs_meta(session, vg_item, node);
+
     // release resources
     dss_unlock_vg_mem_and_shm(session, vg_item);
     LOG_DEBUG_INF(
@@ -3186,32 +3289,112 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
     return CM_SUCCESS;
 }
 
-static status_t dss_refresh_file_core(dss_vg_info_item_t *vg_item, uint64 fid, ftid_t ftid, dss_block_id_t blockid)
+dss_refresh_ft_by_primary_proc_t dss_refresh_ft_by_primary_proc;
+void regist_refresh_ft_by_primary_proc(dss_refresh_ft_by_primary_proc_t proc)
 {
-    gft_node_t *node = dss_get_ft_node_by_ftid(NULL, vg_item, ftid, CM_TRUE, CM_FALSE);
-    if (!node) {
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find ftid,ftid: %llu.", *(uint64 *)&ftid));
-    }
-
-    if (node->fid != fid) {
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Fid is not match,(%llu,%llu).", node->fid, fid));
-    }
+    dss_refresh_ft_by_primary_proc = proc;
+}
+// return is true means need to retry again
+bool32 dss_try_revalidate_file(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node)
+{
     LOG_DEBUG_INF(
-        "Apply refresh file:%s, curr size:%llu, refresh ft id:%llu, refresh entry id:%llu, refresh block id:%llu.",
-        node->name, node->size, *(uint64 *)&ftid, *(uint64 *)&(node->entry), *(uint64 *)&blockid);
+        "Refresh file:%llu found node:%llu is invalid, need refresh from primary.", node->fid, *(uint64 *)&node->fid);
+
+    if (dss_need_exec_local()) {
+        dss_validate_fs_meta(session, vg_item, node);
+    } else {
+        if (dss_get_is_refresh_ftid(node)) {
+            return CM_TRUE;
+        }
+
+        dss_set_is_refresh_ftid(node, CM_TRUE);
+        dss_unlock_vg_mem_and_shm(session, vg_item);
+        status_t status = dss_refresh_ft_by_primary_proc(node->id, vg_item->id, vg_item->vg_name);
+        dss_lock_vg_mem_and_shm_x(session, vg_item);
+        dss_set_is_refresh_ftid(node, CM_FALSE);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Fail to apply refresh file:%s, curr size:%llu, ftid:%llu, entry id:%llu by session id:%u.",
+                node->name, node->size, *(uint64 *)&node->id, *(uint64 *)&(node->entry), session->id);
+            cm_reset_error();
+            return CM_TRUE;
+        }
+    }
+    return CM_FALSE;
+}
+
+static status_t dss_refresh_file_core(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 fid, ftid_t ftid, dss_block_id_t blockid)
+{
+    gft_node_t *node = NULL;
+    bool32 need_retry = CM_FALSE;
+    do {
+        if (session != NULL && session->is_closed) {
+            LOG_DEBUG_ERR("Session:%u is closed, fail to refresh :%llu.", session->id, *(uint64 *)&ftid);
+            return CM_ERROR;
+        }
+
+        node = dss_get_ft_node_by_ftid(NULL, vg_item, ftid, CM_TRUE, CM_FALSE);
+        if (!node) {
+            DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find ftid,ftid: %llu.", *(uint64 *)&ftid));
+        }
+
+        if (node->fid != fid) {
+            DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Fid is not match,(%llu,%llu).", node->fid, fid));
+        }
+
+        if (dss_is_fs_meta_valid(node)) {
+            break;
+        }
+        need_retry = dss_try_revalidate_file(session, vg_item, node);
+        if (need_retry) {
+            dss_unlock_vg_mem_and_shm(session, vg_item);
+            cm_sleep(DSS_READ_REMOTE_INTERVAL);
+            dss_lock_vg_mem_and_shm_x(session, vg_item);
+        }
+    } while (CM_TRUE);
+    
+    LOG_DEBUG_INF(
+        "Apply refresh file:%s, curr size:%llu, ftid:%llu, entry id:%llu, block id:%llu by session id:%u.",
+        node->name, node->size, *(uint64 *)&ftid, *(uint64 *)&(node->entry), *(uint64 *)&blockid, session->id);
+
     // check the entry and load
-    char *block = dss_find_block_in_shm(NULL, vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
+    dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
+        NULL, vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
     if (!block) {
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find block:%llu.", *(uint64 *)&node->entry));
+    }
+    if (!dss_is_fs_block_valid(node, block)) {
+        LOG_DEBUG_INF(
+            "block:%llu fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu by session id:%u",
+            DSS_ID_TO_U64(node->entry), dss_get_fs_block_fid(block), dss_get_fs_block_file_ver(block),
+            DSS_ID_TO_U64(node->id), node->fid, node->file_ver, session->id);
+            dss_set_fs_block_file_ver(node, block);
+        LOG_DEBUG_INF(
+            "block:%llu fid:%llu, file ver:%llu setted with node:%llu, fid:%llu, file ver:%llu by session id:%u",
+            DSS_ID_TO_U64(node->entry), dss_get_fs_block_fid(block), dss_get_fs_block_file_ver(block),
+            DSS_ID_TO_U64(node->id), node->fid, node->file_ver, session->id);
     }
 
     bool32 cmp = dss_cmp_blockid(blockid, CM_INVALID_ID64);
     if (cmp == 0) {
-        block = dss_find_block_in_shm(NULL, vg_item, blockid, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
+        block = (dss_fs_block_t *)dss_find_block_in_shm(
+            NULL, vg_item, blockid, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
         if (!block) {
             DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find block:%llu.", DSS_ID_TO_U64(blockid)));
         }
+        if (!dss_is_fs_block_valid(node, block)) {
+            LOG_DEBUG_INF(
+                "block:%llu fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu by session id:%u",
+                DSS_ID_TO_U64(blockid), dss_get_fs_block_fid(block), dss_get_fs_block_file_ver(block),
+                DSS_ID_TO_U64(node->id), node->fid, node->file_ver, session->id);
+            dss_set_fs_block_file_ver(node, block);
+            LOG_DEBUG_INF(
+                "block:%llu fid:%llu, file ver:%llu setted with node:%llu, fid:%llu, file ver:%llu by session id:%u",
+                DSS_ID_TO_U64(blockid), dss_get_fs_block_fid(block), dss_get_fs_block_file_ver(block),
+                DSS_ID_TO_U64(node->id), node->fid, node->file_ver, session->id);
+        }
     }
+
     return CM_SUCCESS;
 }
 
@@ -3224,52 +3407,9 @@ status_t dss_refresh_file(dss_session_t *session, uint64 fid, ftid_t ftid, char 
     }
 
     dss_lock_vg_mem_and_shm_x(session, vg_item);
-    status_t ret = dss_refresh_file_core(vg_item, fid, ftid, blockid);
+    status_t ret = dss_refresh_file_core(session, vg_item, fid, ftid, blockid);
     dss_unlock_vg_mem_and_shm(session, vg_item);
     return ret;
-}
-
-// no need to update meta from disk here
-void dss_clean_file_meta_core(dss_vg_info_item_t *vg_item, uint64 ftid)
-{
-    gft_node_t *node = dss_get_ft_node_by_ftid_no_refresh(NULL, vg_item, *(dss_block_id_t *)&ftid);
-    if (!node) {
-        LOG_DEBUG_INF("Failed to find ftid, ftid:%llu.", ftid);
-        return;
-    }
-    
-    // clean the fs block shm
-    ga_obj_id_t out_obj_id;
-    dss_fs_block_t *block =
-        (dss_fs_block_t *)dss_find_block_in_shm_no_refresh(NULL, vg_item, node->entry, DSS_BLOCK_TYPE_FS, &out_obj_id);
-    if (block != NULL) {
-        for (uint16 i = 0; i < block->head.used_num; i++) {
-            bool32 cmp = dss_cmp_blockid(block->bitmap[i], CM_INVALID_ID64);
-            if (cmp != 0) {
-                continue;
-            }
-            ga_obj_id_t out_obj_id2;
-            dss_fs_block_t *sec_block =
-                (dss_fs_block_t *)dss_find_block_in_shm_no_refresh(NULL, vg_item, block->bitmap[i], DSS_BLOCK_TYPE_FS, &out_obj_id2);
-            if (sec_block != NULL) {
-                dss_unregister_buffer_cache(vg_item, block->bitmap[i]);
-                ga_free_object(out_obj_id2.pool_id, out_obj_id2.obj_id);
-                LOG_DEBUG_INF("clean meta cache of file:%s, curr size:%llu, refresh ft id:%llu, second id:%llu", node->name,
-                    node->size, ftid, *(uint64 *)&(block->bitmap[i]));
-            }
-        }
-        dss_unregister_buffer_cache(vg_item, node->entry);
-        ga_free_object(out_obj_id.pool_id, out_obj_id.obj_id);
-        LOG_DEBUG_INF("clean meta cache of file:%s, curr size:%llu, refresh ft id:%llu, fs entry id:%llu", node->name,
-            node->size, ftid, *(uint64 *)&(node->entry));
-    }
-}
-
-void dss_clean_file_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid)
-{
-    dss_lock_vg_mem_s_and_shm_x(session, vg_item);
-    dss_clean_file_meta_core(vg_item, ftid);
-    dss_unlock_vg_mem_and_shm(session, vg_item);
 }
 
 void dss_init_root_fs_block(dss_ctrl_t *dss_ctrl)
@@ -3369,6 +3509,35 @@ status_t dss_check_open_file_remote(dss_session_t *session, const char *vg_name,
 
     status_t status = dss_check_open_file(session, vg_item, ftid, is_open);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check open file, vg: %s, ftid:%llu.", vg_name, ftid));
+    return CM_SUCCESS;
+}
+
+status_t dss_invalidate_fs_meta_remote(dss_session_t *session, const char *vg_name, uint64 ftid, bool32 *invalid_ack)
+{
+    *invalid_ack = CM_FALSE;
+
+    DSS_LOG_DEBUG_OP("[DSS_MES_CB] Begin to invalidate file:%llu.", ftid);
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
+    if (vg_item == NULL) {
+        DSS_RETURN_IFERR3(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name), LOG_DEBUG_ERR("Failed to find vg, %s.", vg_name));
+    }
+
+    dss_lock_shm_meta_x(session, vg_item->vg_latch);
+
+    ftid_t ftid2;
+    dss_set_auid(&ftid2, ftid);
+    gft_node_t *node = dss_get_ft_node_by_ftid_no_refresh(session, vg_item, ftid2);
+    if (node != NULL) {
+        // just update the local mem if exist
+        dss_set_node_flag(session, vg_item, node, CM_FALSE, DSS_FT_NODE_FLAG_INVALID_FS_META);
+    }
+
+    dss_unlock_shm_meta(session, vg_item->vg_latch);
+
+    *invalid_ack = CM_TRUE;
+    LOG_DEBUG_INF(
+        "Invalidate ack:%u when notify invalidate file, vg :%s, ftid:%llu.", (uint32)(*invalid_ack), vg_name, ftid);
     return CM_SUCCESS;
 }
 

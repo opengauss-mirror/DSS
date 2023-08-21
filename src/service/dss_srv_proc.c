@@ -368,7 +368,6 @@ static status_t dss_rm_dir_file(dss_session_t *session, const char *dir_name, gf
     }
 
     LOG_RUN_INF("Succeed to rm dir or file:%s in vg:%s.", dir_name, vg_item->vg_name);
-    dss_clean_file_meta_core(vg_item, *(uint64 *)&node->id);
     dss_unlock_vg_mem_and_shm(session, vg_item);
     return CM_SUCCESS;
 }
@@ -397,7 +396,6 @@ static status_t dss_rm_dir_file_in_rename(
     }
 
     LOG_RUN_INF("Succeed to rm dir or file:%s in vg:%s.", dir_name, vg_item->vg_name);
-    dss_clean_file_meta_core(vg_item, *(uint64 *)&node->id);
     return CM_SUCCESS;
 }
 
@@ -524,7 +522,6 @@ static status_t dss_remove_dir_file_by_node_inner(
         cm_fync_logfile();
         _exit(1);
     }
-    dss_clean_file_meta_core(vg_item, *(uint64 *)&node->id);
     DSS_LOG_DEBUG_OP("Succeed to rm %s in vg:%s.", node->name, vg_item->vg_name);
     return CM_SUCCESS;
 }

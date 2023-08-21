@@ -1007,7 +1007,8 @@ static status_t rp_redo_set_file_size_inner(dss_vg_info_item_t *vg_item, dss_red
     }
     gft_node_t *node;
     dss_ft_block_t *cur_block = NULL;
-    *ftid = ((dss_redo_set_file_size_t *)entry->data)->ftid;
+    dss_redo_set_file_size_t *set_file_size = (dss_redo_set_file_size_t *)entry->data;
+    *ftid = set_file_size->ftid;
     node = dss_get_ft_node_by_ftid(NULL, vg_item, *ftid, check_version, CM_FALSE);
     if (!node) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
@@ -1017,7 +1018,11 @@ static status_t rp_redo_set_file_size_inner(dss_vg_info_item_t *vg_item, dss_red
         size_info->size, size_info->oldsize, vg_item->vg_name);
 
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
-        node->size = ((dss_redo_set_file_size_t *)entry->data)->size;
+        node->size = set_file_size->size;
+    }
+    if (set_file_size->size < set_file_size->oldsize) {
+        node->file_ver++;
+        LOG_RUN_INF("Update ft block:%llu file_ver to:%llu.", DSS_ID_TO_U64(*ftid), node->file_ver);
     }
     cur_block = dss_get_ft_block_by_node(node);
     CM_RETURN_IFERR_EX(dss_update_ft_block_disk(vg_item, cur_block, *ftid),
@@ -1116,6 +1121,71 @@ void rb_redo_clean_resource(dss_vg_info_item_t *item, auid_t auid, ga_pool_id_e 
     ga_free_object_list(pool_id, &queue);
 }
 
+static status_t rp_redo_set_node_flag(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+{
+    CM_ASSERT(vg_item != NULL);
+    CM_ASSERT(entry != NULL);
+
+    if (entry->size == 0) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_REDO_ILL, "invalid entry log size 0."));
+    }
+    gft_node_t *node;
+    dss_ft_block_t *cur_block = NULL;
+    dss_redo_set_file_flag_t *file_flag = (dss_redo_set_file_flag_t *)entry->data;
+
+    bool32 check_version = CM_FALSE;
+    if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
+        check_version = CM_TRUE;
+    }
+    node = dss_get_ft_node_by_ftid(NULL, vg_item, file_flag->ftid, check_version, CM_FALSE);
+    if (!node) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
+    }
+    LOG_DEBUG_INF("Begin to replay set file:%llu, flags:%u, old_flags:%u, vg_name:%s.", DSS_ID_TO_U64(file_flag->ftid),
+        file_flag->flags, file_flag->old_flags, vg_item->vg_name);
+
+    if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
+        node->flags = file_flag->flags;
+    }
+    cur_block = dss_get_ft_block_by_node(node);
+    CM_RETURN_IFERR_EX(dss_update_ft_block_disk(vg_item, cur_block, file_flag->ftid),
+        LOG_DEBUG_ERR(
+            "Failed to update ft block:%llu, vg_name:%s to disk.", DSS_ID_TO_U64(file_flag->ftid), vg_item->vg_name));
+    LOG_DEBUG_INF("Success to replay set file:%llu, flags:%u, old_flag:%u, vg_name:%s.",
+        DSS_ID_TO_U64(file_flag->ftid), file_flag->flags, file_flag->old_flags, vg_item->vg_name);
+    return CM_SUCCESS;
+}
+
+static status_t rb_redo_set_node_flag(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+{
+    CM_ASSERT(vg_item != NULL);
+    CM_ASSERT(entry != NULL);
+
+    if (entry->size == 0) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_REDO_ILL, "invalid entry log size 0."));
+    }
+    gft_node_t *node;
+    dss_ft_block_t *cur_block = NULL;
+    dss_redo_set_file_flag_t *file_flag = (dss_redo_set_file_flag_t *)entry->data;
+
+    node = dss_get_ft_node_by_ftid(NULL, vg_item, file_flag->ftid, CM_FALSE, CM_FALSE);
+    if (!node) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
+    }
+    LOG_DEBUG_INF("Begin to replay  rollback set file:%llu, flags:%u, old_flags:%u, vg_name:%s.",
+        DSS_ID_TO_U64(file_flag->ftid), file_flag->flags, file_flag->old_flags, vg_item->vg_name);
+
+    node->flags = file_flag->old_flags;
+
+    cur_block = dss_get_ft_block_by_node(node);
+    CM_RETURN_IFERR_EX(dss_update_ft_block_disk(vg_item, cur_block, file_flag->ftid),
+        LOG_DEBUG_ERR(
+            "Failed to update ft block:%llu, vg_name:%s to disk.", DSS_ID_TO_U64(file_flag->ftid), vg_item->vg_name));
+    LOG_DEBUG_INF("Success to replay rollback set file:%llu, flags:%u, old_flag:%u, vg_name:%s.",
+        DSS_ID_TO_U64(file_flag->ftid), file_flag->flags, file_flag->old_flags, vg_item->vg_name);
+    return CM_SUCCESS;
+}
+
 status_t rb_redo_format_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
@@ -1159,7 +1229,9 @@ static dss_redo_handler_t g_dss_handlers[] = {{DSS_RT_UPDATE_CORE_CTRL, rp_updat
     // initialize fs_block on gft_node
     {DSS_RT_INIT_FILE_FS_BLOCK, rp_redo_init_fs_block, rb_redo_init_fs_block},
     // adds or removes a managed object of fs_block
-    {DSS_RT_SET_FILE_FS_BLOCK, rp_redo_set_fs_block, rb_redo_set_fs_block}};
+    {DSS_RT_SET_FILE_FS_BLOCK, rp_redo_set_fs_block, rb_redo_set_fs_block},
+    {DSS_RT_SET_NODE_FLAG, rp_redo_set_node_flag, rb_redo_set_node_flag},
+};
 
 static status_t dss_replay(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {

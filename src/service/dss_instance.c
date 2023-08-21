@@ -276,8 +276,6 @@ bool32 dss_config_cm()
 */
 status_t dss_recover_no_cm(dss_instance_t *inst)
 {
-    // when no cm, set in cluster
-    g_dss_instance.is_join_cluster = CM_TRUE;
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)inst_cfg->params.inst_id;
     status_t ret;
@@ -287,6 +285,8 @@ status_t dss_recover_no_cm(dss_instance_t *inst)
         LOG_RUN_INF("inst %u set status flag %u when server start.", curr_id, DSS_STATUS_READWRITE);
         ret = dss_recover_from_instance(inst);
         if (ret == CM_SUCCESS) {
+            // when no cm, set in cluster
+            g_dss_instance.is_join_cluster = CM_TRUE;
             inst->status = DSS_STATUS_OPEN;
         }
         return ret;
@@ -311,9 +311,13 @@ status_t dss_recover_no_cm(dss_instance_t *inst)
                 cm_fync_logfile();
                 _exit(1);
             }
+            // when no cm, set in cluster
+            g_dss_instance.is_join_cluster = CM_TRUE;
             inst->status = DSS_STATUS_OPEN;
         } else {
             dss_set_server_status_flag(DSS_STATUS_READONLY);
+            // when no cm, set in cluster
+            g_dss_instance.is_join_cluster = CM_TRUE;
             inst->status = DSS_STATUS_OPEN;
         }
         return CM_SUCCESS;
@@ -325,6 +329,8 @@ status_t dss_recover_no_cm(dss_instance_t *inst)
         LOG_RUN_INF("inst %u set status flag %u when server start.", curr_id, DSS_STATUS_READWRITE);
         ret = dss_recover_from_instance(inst);
         if (ret == CM_SUCCESS) {
+            // when no cm, set in cluster
+            g_dss_instance.is_join_cluster = CM_TRUE;
             inst->status = DSS_STATUS_OPEN;
         }
         return ret;
@@ -736,6 +742,8 @@ void dss_recovery_when_get_lock(dss_instance_t *inst, uint32 curr_id, bool32 gra
     }
     dss_set_server_status_flag(DSS_STATUS_READWRITE);
     LOG_RUN_INF("inst %u set status flag %u when get cm lock.", curr_id, DSS_STATUS_READWRITE);
+    // when primary, no need to check result
+    g_dss_instance.is_join_cluster = CM_TRUE;
     inst->status = DSS_STATUS_OPEN;
     cm_spin_unlock(&g_dss_instance.switch_lock);
 }
@@ -781,8 +789,6 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
         return;
     }
     /*1、grab lock success 2、set main,other switch lock 3、restart, lock no transfer*/
-    // when primary, no need to check result
-    (void)dss_check_join_cluster();
     dss_recovery_when_get_lock(inst, curr_id, grab_lock);
     return;
 }
@@ -864,7 +870,7 @@ bool32 dss_check_join_cluster()
         bool32 join_succ = CM_FALSE;
         status_t status = dss_join_cluster(&join_succ);
         if (status != CM_SUCCESS) {
-            LOG_RUN_ERR("Joih cluster fail, wait next try.");
+            LOG_RUN_ERR("Join cluster fail, wait next try.");
             cm_reset_error();
             return CM_FALSE;
         }

@@ -54,6 +54,9 @@ typedef enum en_dss_redo_type {
     DSS_RT_FREE_FS_BLOCK,
     DSS_RT_INIT_FILE_FS_BLOCK,
     DSS_RT_SET_FILE_FS_BLOCK,
+
+    // gft_node
+    DSS_RT_SET_NODE_FLAG,
 } dss_redo_type_t;
 
 // redo struct allocate file table node
@@ -147,6 +150,12 @@ typedef struct st_dss_redo_set_fs_block_list_t {
     dss_block_id_t next;
     uint16 reserve[4];
 } dss_redo_set_fs_block_list_t;
+
+typedef struct st_dss_redo_set_file_flag_t {
+    ftid_t ftid;
+    uint32 flags;
+    uint32 old_flags;
+} dss_redo_set_file_flag_t;
 
 typedef struct st_dss_redo_entry {
     dss_redo_type_t type;
