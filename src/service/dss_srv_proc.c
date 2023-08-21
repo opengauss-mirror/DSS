@@ -373,14 +373,10 @@ static status_t dss_rm_dir_file(dss_session_t *session, const char *dir_name, gf
 }
 
 static status_t dss_rm_dir_file_in_rename(
-    dss_session_t *session, const char *dir_name, gft_item_type_t type, bool32 recursive)
+    dss_session_t *session, dss_vg_info_item_t *vg_item, const char *dir_name, gft_item_type_t type, bool32 recursive)
 {
     CM_ASSERT(dir_name != NULL);
-
     gft_node_t *node = NULL;
-    char name[DSS_MAX_NAME_LEN];
-    dss_vg_info_item_t *vg_item = NULL;
-    CM_RETURN_IFERR(dss_find_vg_by_dir(dir_name, name, &vg_item));
 
     status_t status = dss_rm_dir_file_inner(session, vg_item, &node, dir_name, type, recursive);
     if (status != CM_SUCCESS) {
@@ -399,16 +395,16 @@ static status_t dss_rm_dir_file_in_rename(
     return CM_SUCCESS;
 }
 
-static status_t dss_rename_file_inner(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_config_t *inst_cfg,
+static status_t dss_rename_file_inner(dss_session_t *session, dss_vg_info_item_t **vg_item, dss_config_t *inst_cfg,
     const char *src, const char *dst, const char *dst_name)
 {
     gft_node_t *out_node = NULL;
-    status_t ret = dss_rename_file_check(session, src, dst, &vg_item, &out_node);
+    status_t ret = dss_rename_file_check(session, src, dst, vg_item, &out_node);
     if (ret != CM_SUCCESS) {
         return ret;
     }
 
-    return dss_rename_file_put_redo_log(session, out_node, dst_name, vg_item, inst_cfg);
+    return dss_rename_file_put_redo_log(session, out_node, dst_name, *vg_item, inst_cfg);
 }
 
 status_t dss_rename_file(dss_session_t *session, const char *src, const char *dst)
@@ -427,7 +423,7 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
     }    
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     dss_lock_vg_mem_and_shm_x(session, vg_item);
-    status_t ret = dss_rename_file_inner(session, vg_item, inst_cfg, src, dst, dst_name);
+    status_t ret = dss_rename_file_inner(session, &vg_item, inst_cfg, src, dst, dst_name);
     if (ret == CM_SUCCESS) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
         return ret;
@@ -442,13 +438,13 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
     }
 
     cm_reset_error();
-    ret = dss_rm_dir_file_in_rename(session, dst, GFT_FILE, CM_FALSE);
+    ret = dss_rm_dir_file_in_rename(session, vg_item, dst, GFT_FILE, CM_FALSE);
     if (ret != CM_SUCCESS) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
         return ret;
     }
 
-    ret = dss_rename_file_inner(session, vg_item, inst_cfg, src, dst, dst_name);
+    ret = dss_rename_file_inner(session, &vg_item, inst_cfg, src, dst, dst_name);
     if (ret != CM_SUCCESS) {
         dss_rollback_mem_update(session->log_split, vg_item);
     }
