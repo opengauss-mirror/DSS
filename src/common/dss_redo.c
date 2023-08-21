@@ -1242,6 +1242,9 @@ static status_t dss_replay(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
         // load vg_item
         actual_vg_item = &g_vgs_info->volume_group[entry->vg_id];
     }
+    if (DSS_STANDBY_CLUSTER_XLOG_VG(actual_vg_item->id)) {
+        return CM_SUCCESS;
+    }
     return handler->replay(actual_vg_item, entry);
 }
 
@@ -1388,7 +1391,7 @@ static status_t dss_recover_volume_head(dss_vg_info_item_t* vg_item, const char 
  */
 status_t dss_recover_ctrlinfo(dss_vg_info_item_t *vg_item)
 {
-    if (DSS_STANDBY_CLUSTER_XLOG_VG) {
+    if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
         return CM_SUCCESS;
     }
     DSS_RETURN_IF_ERROR(dss_recover_core_ctrlinfo(vg_item));
