@@ -1464,7 +1464,7 @@ int64 dss_seek_file_impl_core(dss_rw_param_t *param, int64 offset, int origin)
 
     size = cm_atomic_get(&context->node->size);
     if (!dss_is_fs_meta_valid(context->node) || new_offset > size || need_refresh) {
-        status = dss_apply_refresh_file(conn, context, DSS_INVALID_BLOCK_ID);
+        status = dss_check_apply_refresh_file(conn, context, DSS_INVALID_BLOCK_ID);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to apply refresh file,fid:%llu.", context->fid));
         size = cm_atomic_get(&context->node->size);
 
