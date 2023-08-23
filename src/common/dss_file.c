@@ -1111,11 +1111,8 @@ status_t dss_get_ftid_by_path(dss_session_t *session, const char *path, ftid_t *
 
         dss_get_dir_path(dir_path, DSS_FILE_PATH_MAX_LENGTH, path);
         dss_check_dir_output_t output_info = {&parent_node, dir_vg_item, NULL};
-        if (dss_check_dir(session, dir_path, GFT_PATH, &output_info, CM_TRUE) != CM_SUCCESS) {
-            if (cm_get_error_code() == ERR_DSS_FILE_NOT_EXIST) {
-                DSS_BREAK_IFERR2(CM_ERROR, LOG_DEBUG_ERR("dir path: %s not exist", dir_path));
-            }
-        }
+        status = dss_check_dir(session, dir_path, GFT_PATH, &output_info, CM_TRUE);
+        DSS_BREAK_IF_ERROR(status);
 
         uint32_t pos = dss_get_last_delimiter(path, '/');
         DSS_BREAK_IF_ERROR(dss_get_name_from_path(path, &pos, name));
