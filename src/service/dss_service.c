@@ -638,7 +638,7 @@ static status_t dss_process_readlink(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &link_path));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", link_path));
     DSS_RETURN_IF_ERROR(dss_read_link(session, link_path, name, &res_len));
-    DSS_LOG_DEBUG_OP("Link is %s, when read link.", link_path);
+    DSS_LOG_DEBUG_OP("Link is %s, when read link.", name);
     text_t data;
     cm_str2text(name, &data);
     data.len++; // for keeping the '\0'

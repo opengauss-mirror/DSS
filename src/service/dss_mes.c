@@ -35,8 +35,8 @@ void dss_proc_broadcast_req(dss_session_t *session, mes_message_t *msg);
 void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg);
 void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg);
 void dss_proc_loaddisk_req(dss_session_t *session, mes_message_t *msg);
-void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_message_t *msg);
 void dss_proc_join_cluster_req(dss_session_t *session, mes_message_t *msg);
+void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_message_t *msg);
 
 void dss_proc_normal_ack(dss_session_t *session, mes_message_t *msg)
 {
@@ -61,7 +61,7 @@ dss_processor_t g_dss_processors[DSS_CMD_CEIL] = {
         "dss standby join in cluster to active req"},
     [DSS_CMD_ACK_JOIN_CLUSTER] = {dss_proc_normal_ack, CM_FALSE, CM_FALSE, MES_TASK_GROUP_ZERO,
         "dss active proc join in cluster to standby ack"},
-    [DSS_CMD_REQ_REFRESH_FT] = {dss_proc_loaddisk_req, CM_TRUE, CM_TRUE, MES_TASK_GROUP_ZERO,
+    [DSS_CMD_REQ_REFRESH_FT] = {dss_proc_refresh_ft_by_primary_req, CM_TRUE, CM_TRUE, MES_TASK_GROUP_ZERO,
         "dss standby refresh ft by primary req"},
     [DSS_CMD_ACK_REFRESH_FT] = {dss_proc_normal_ack, CM_FALSE, CM_FALSE, MES_TASK_GROUP_ZERO,
         "dss active refresh ft to standby ack"},
@@ -534,35 +534,7 @@ static status_t dss_set_mes_profile(mes_profile_t *profile)
     return CM_SUCCESS;
 }
 
-status_t dss_notify_expect_bool_ack(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *cmd_ack)
-{
-    if (g_dss_instance.is_maintain) {
-        return CM_SUCCESS;
-    }
-    dss_notify_req_msg_t check;
-    check.ftid = ftid;
-    *cmd_ack = CM_FALSE;
-    errno_t err = strncpy_s(check.vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name, strlen(vg_item->vg_name));
-    if (err != EOK) {
-        DSS_THROW_ERROR(ERR_SYSTEM_CALL, err);
-        return CM_ERROR;
-    }
-    LOG_DEBUG_INF("notify other dss instance to check file open, ftid:%llu in vg:%s.", ftid, vg_item->vg_name);
-    dss_recv_msg_t recv_msg = {CM_TRUE, CM_FALSE};
-    status_t status = dss_notify_sync(session, cmd, (char *)&check, sizeof(dss_notify_req_msg_t), &recv_msg);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("[DSS] ABORT INFO: Failed to notify other dss instance, cmd: %u, file: %llu, vg: %s, errcode:%d, "
-                    "OS errno:%d, OS errmsg:%s.",
-            cmd, ftid, vg_item->vg_name, cm_get_error_code(), errno, strerror(errno));
-        cm_fync_logfile();
-        _exit(1);
-    }
-    if (recv_msg.cmd_ack) {
-        *cmd_ack = CM_TRUE;
-    }
-    return status;
-}
+
 
 static status_t dss_create_mes_session(void)
 {
@@ -645,6 +617,35 @@ status_t dss_notify_sync(
     bcast_req->buffer[size] = '\0';
     status_t status = dss_broadcast_msg(session, (void *)bcast_req, req_size, recv_msg, DSS_MES_LONG_WAIT_TIMEOUT);
     DSS_FREE_POINT(tmp);
+    return status;
+}
+
+status_t dss_notify_expect_bool_ack(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *cmd_ack)
+{
+    if (g_dss_instance.is_maintain) {
+        return CM_SUCCESS;
+    }
+    dss_notify_req_msg_t check;
+    check.ftid = ftid;
+    *cmd_ack = CM_FALSE;
+    errno_t err = strncpy_s(check.vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name, strlen(vg_item->vg_name));
+    if (err != EOK) {
+        DSS_THROW_ERROR(ERR_SYSTEM_CALL, err);
+        return CM_ERROR;
+    }
+    LOG_DEBUG_INF("notify other dss instance to check file open, ftid:%llu in vg:%s.", ftid, vg_item->vg_name);
+    dss_recv_msg_t recv_msg = {CM_TRUE, CM_FALSE};
+    status_t status = dss_notify_sync(session, cmd, (char *)&check, sizeof(dss_notify_req_msg_t), &recv_msg);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[DSS] ABORT INFO: Failed to notify other dss instance, cmd: %u, file: %llu, vg: %s, errcode:%d, "
+                    "OS errno:%d, OS errmsg:%s.",
+            cmd, ftid, vg_item->vg_name, cm_get_error_code(), errno, strerror(errno));
+        return CM_ERROR;
+    }
+    if (recv_msg.cmd_ack) {
+        *cmd_ack = CM_TRUE;
+    }
     return status;
 }
 
@@ -831,8 +832,6 @@ void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg)
         return;
     }
     LOG_DEBUG_INF("The dss server receive msg from remote node, src node:%u, dst node:%u.", srcid, dstid);
-    dss_init_packet(&session->recv_pack, CM_FALSE);
-    dss_init_packet(&session->send_pack, CM_FALSE);
     errno_t errcode = memcpy_s(session->recv_pack.buf, size, (msg->buffer + sizeof(mes_message_head_t)), size);
     mes_release_message_buf(msg);
     if (errcode != EOK) {
@@ -1217,7 +1216,7 @@ status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg
 
     LOG_DEBUG_INF("Try refresh ft by primary result:%u.", ack.is_ok);
     if (!ack.is_ok) {
-        LOG_DEBUG_ERR("Try refresh ft by priamry ack is not ok.");
+        LOG_DEBUG_ERR("Try refresh ft by primary ack is not ok.");
         return CM_ERROR;
     }
 
@@ -1270,7 +1269,7 @@ void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_message_t *m
         return;
     }
 
-    LOG_RUN_ERR("Refresh ft by primary from remote node:%u, blockid:%llu, vgid:%u, vg_name:%s refresh end",
+    LOG_DEBUG_INF("Refresh ft by primary from remote node:%u, blockid:%llu, vgid:%u, vg_name:%s refresh end",
         (uint32)(msg->head->src_inst), DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
         refresh_ft_req->vg_name);
     mes_release_message_buf(msg);

@@ -460,7 +460,7 @@ void dss_lock_shm_meta_ix2x(dss_session_t *session, latch_t *latch)
 {
     latch_statis_t *stat = NULL;
     uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
-    dss_latch_x2ix(latch, sid, stat);
+    dss_latch_ix2x(latch, sid, stat);
 }
 
 void dss_lock_shm_meta_bucket_x(latch_t *latch)
