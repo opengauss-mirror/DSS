@@ -312,7 +312,7 @@ static bool32 dss_check_srv_status(mes_message_t *msg)
     date_t time_now = 0;
     mes_message_head_t head = *(msg->head);
     while (g_dss_instance.status != DSS_STATUS_OPEN &&
-            (msg->head->cmd != DSS_CMD_REQ_JOIN_CLUSTER || msg->head->cmd != DSS_CMD_ACK_JOIN_CLUSTER)) {
+            (msg->head->cmd != DSS_CMD_REQ_JOIN_CLUSTER && msg->head->cmd != DSS_CMD_ACK_JOIN_CLUSTER)) {
         LOG_DEBUG_INF(
             "Could not exec remote req for the dssserver is not open or msg not join cluster, src node:%u.",
             (uint32)(head.src_inst));
@@ -715,7 +715,7 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
     ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, DSS_MES_WAIT_TIMEOUT);
     DSS_RETURN_IFERR2(ret,
         LOG_RUN_ERR("dss server receive msg from remote node failed, src node:%u, dst node:%u cmd:%u, azk size:%lu.", 
-            currtid, remoteid, session->recv_pack.head->cmd, msg.head->size - sizeof(mes_message_head_t)));
+            currtid, remoteid, session->recv_pack.head->cmd, head.size - sizeof(mes_message_head_t)));
  
     // 4. attach remote execution result
     // remote_result|errcode|errmsg
