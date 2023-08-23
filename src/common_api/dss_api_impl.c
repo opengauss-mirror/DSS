@@ -1677,7 +1677,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         rw_ctx.env = dss_env;
         rw_ctx.file_ctx = context;
         rw_ctx.handle = handle;
-        rw_ctx.size = size;
+        rw_ctx.size = total_size;
         rw_ctx.read = param->is_read;
         rw_ctx.offset = (param->atom_oper ? param->offset : context->offset);
 
@@ -1708,7 +1708,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             if (!param->is_read) {
                 status = dss_check_apply_extending_file(
-                    conn, context, handle, size, rw_ctx.offset, second_block->head.common.id);
+                    conn, context, handle, total_size, rw_ctx.offset, second_block->head.common.id);
                 DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to extend file second block."));
             } else {
                 status = dss_check_apply_refresh_file(conn, context, second_block->head.common.id);
