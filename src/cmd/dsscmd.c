@@ -902,6 +902,7 @@ static status_t dss_load_vginfo_sync(dss_conn_t *connection, dss_allvg_vlm_space
     status_t status;
     dss_env_t *dss_env = dss_get_env();
     if (!dss_env->initialized) {
+        DSS_THROW_ERROR(ERR_DSS_ENV_NOT_INITIALIZED);
         return CM_ERROR;
     }
     dss_vg_info_t *dss_vg_info = dss_env->dss_vg_info;
