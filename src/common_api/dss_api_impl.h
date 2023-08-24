@@ -46,6 +46,35 @@ typedef struct st_dss_rw_param {
     bool32 is_read;
 } dss_rw_param_t;
 
+typedef struct st_dss_load_ctrl_info {
+    const char *vg_name;
+    uint32 index;
+} dss_load_ctrl_info_t;
+
+typedef struct st_dss_add_or_remove_info {
+    const char *vg_name;
+    const char *volume_name;
+} dss_add_or_remove_info_t;
+
+typedef struct st_dss_extend_info {
+    uint64 fid;
+    uint64 ftid;
+    uint64 offset;
+    uint32 size;
+    const char *vg_name;
+    uint32 vg_id;
+} dss_extend_info_t;
+
+typedef struct st_dss_make_dir_info {
+    const char *parent;
+    const char *name;
+} dss_make_dir_info_t;
+
+typedef struct st_dss_remove_dir_info {
+    const char *name;
+    bool recursive;
+} dss_remove_dir_info_t;
+
 struct __dss_conn_opt;
 typedef struct __dss_conn_opt *dss_conn_opt_t;
 
@@ -54,6 +83,9 @@ typedef struct __dss_conn_opt *dss_conn_opt_t;
 #define SYS_HOME "HOME"
 #define DSS_DEFAULT_UDS_PATH "UDS:/tmp/.dss_unix_d_socket"
 
+status_t dss_load_ctrl_sync(dss_conn_t *conn, const char *vg_name, uint32 index);
+status_t dss_add_or_remove_volume(dss_conn_t *conn, const char *vg_name, const char *volume_name, uint8 cmd);
+status_t dss_kick_host_sync(dss_conn_t *conn, int64 kick_hostid);
 status_t dss_alloc_conn(dss_conn_t **conn);
 void dss_free_conn(dss_conn_t *conn);
 status_t dss_connect(const char *server_locator, dss_conn_opt_t options, char *user_name, dss_conn_t *conn);
@@ -113,6 +145,7 @@ status_t dss_stop_server_impl(dss_conn_t *conn);
 void dss_get_api_volume_error(void);
 status_t dss_get_phy_size_impl(dss_conn_t *conn, int handle, long long *size);
 status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long offset, int size);
+status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ack);
 
 #define DSS_SET_PTR_VALUE_IF_NOT_NULL(ptr, value) \
     do {                                          \

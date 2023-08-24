@@ -199,7 +199,7 @@ status_t dss_load_vg_conf_inner(dss_vg_info_t *vgs_info, const dss_config_t *ins
 typedef status_t (*dss_remote_read_proc_t)(
     const char *vg_name, dss_volume_t *volume, int64 offset, void *buf, int size);
 void regist_remote_read_proc(dss_remote_read_proc_t proc);
-status_t dss_read_volume_4standby(const char *vg_name, uint32 volum_id, int64 offset, void *buf, int32 size);
+status_t dss_read_volume_4standby(const char *vg_name, uint32 volume_id, int64 offset, void *buf, uint32 size);
 status_t dss_remove_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item, const char *vg_name,
     const char *volume_name, dss_config_t *inst_cfg);
 status_t dss_load_ctrl_core(dss_vg_info_item_t *vg_item, uint32 index);

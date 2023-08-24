@@ -38,6 +38,31 @@ extern "C" {
 
 #define DSS_ACCMODE 00000003
 #define DSS_OPEN_MODE(flag)  ((flag + 1) & DSS_ACCMODE)
+
+status_t dss_load_ctrl_sync(dss_conn_t *conn, const char *vg_name, uint32 index)
+{
+    CM_RETURN_IFERR(dss_check_name(vg_name));
+    dss_load_ctrl_info_t send_info;
+    send_info.vg_name = vg_name;
+    send_info.index = index;
+    return dss_msg_interact(conn, DSS_CMD_LOAD_CTRL, (void *)&send_info, NULL);
+}
+
+status_t dss_add_or_remove_volume(dss_conn_t *conn, const char *vg_name, const char *volume_name, uint8 cmd)
+{
+    DSS_RETURN_IF_ERROR(dss_check_name(vg_name));
+    DSS_RETURN_IF_ERROR(dss_check_volume_path(volume_name));
+    dss_add_or_remove_info_t send_info;
+    send_info.vg_name = vg_name;
+    send_info.volume_name = volume_name;
+    return dss_msg_interact(conn, cmd, (void *)&send_info, NULL);
+}
+
+status_t dss_kick_host_sync(dss_conn_t *conn, int64 kick_hostid)
+{
+    return dss_msg_interact(conn, DSS_CMD_KICKH, (void *)&kick_hostid, NULL);
+}
+
 status_t dss_apply_refresh_file_table(dss_conn_t *conn, dss_dir_t *dir);
 status_t dss_apply_refresh_volume(dss_conn_t *conn, dss_file_context_t *context, auid_t auid);
 status_t dss_refresh_volume_handle(dss_conn_t *conn, dss_file_context_t *context, auid_t auid);
@@ -45,12 +70,6 @@ status_t dss_reopen_volume_handle(dss_conn_t *conn, dss_file_context_t *context,
 
 status_t dss_apply_extending_file(dss_conn_t *conn, int32 handle, int32 size, int64 offset)
 {
-    uint64 fid;
-    ftid_t ftid;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
     dss_env_t *dss_env = dss_get_env();
     if (handle >= (int32)dss_env->max_open_file || handle < 0) {
         return CM_ERROR;
@@ -60,43 +79,17 @@ status_t dss_apply_extending_file(dss_conn_t *conn, int32 handle, int32 size, in
     if (context->flag == DSS_FILE_CONTEXT_FLAG_FREE) {
         return CM_ERROR;
     }
-    fid = context->fid;
-    ftid = context->node->id;
 
     LOG_DEBUG_INF("Apply extending file:%s, handle:%d, curr size:%llu, curr written_size:%llu.", context->node->name,
         handle, context->node->size, context->node->written_size);
-    // make up packet
-    dss_init_set(&conn->pack);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_EXTEND_FILE;
-    send_pack->head->flags = 0;
-
-    // 1. fid
-    CM_RETURN_IFERR(dss_put_int64(send_pack, fid));
-    // 2. ftid
-    CM_RETURN_IFERR(dss_put_int64(send_pack, *(uint64 *)&ftid));
-    // 3. offset
-    CM_RETURN_IFERR(dss_put_int64(send_pack, (uint64)offset));
-    // 4. size
-    CM_RETURN_IFERR(dss_put_int32(send_pack, (uint32)size));
-    // 5. vg name
-    CM_RETURN_IFERR(dss_put_str(send_pack, context->vg_name));
-    // 6. vgid
-    CM_RETURN_IFERR(dss_put_int32(send_pack, context->vgid));
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    status_t ret = dss_call_ex(&conn->pipe, send_pack, ack_pack);
-    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("Failed to send message when extend file."));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-    return CM_SUCCESS;
+    dss_extend_info_t send_info;
+    send_info.fid = context->fid;
+    send_info.ftid = *(uint64 *)&(context->node->id);
+    send_info.offset = (uint64)offset;
+    send_info.size = (uint32)size;
+    send_info.vg_name = context->vg_name;
+    send_info.vg_id = context->vgid;
+    return dss_msg_interact(conn, DSS_CMD_EXTEND_FILE, (void *)&send_info, NULL);
 }
 
 status_t dss_apply_refresh_file(dss_conn_t *conn, dss_file_context_t *context, dss_block_id_t blockid)
@@ -107,7 +100,7 @@ status_t dss_apply_refresh_file(dss_conn_t *conn, dss_file_context_t *context, d
     ftid_t ftid = context->node->id;
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
     dss_packet_t *send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_REFRESH_FILE;
     send_pack->head->flags = 0;
@@ -347,7 +340,7 @@ status_t dss_apply_refresh_volume(dss_conn_t *conn, dss_file_context_t *context,
     char *errmsg = NULL;
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_REFRESH_VOLUME;
@@ -439,7 +432,7 @@ status_t dss_apply_refresh_file_table(dss_conn_t *conn, dss_dir_t *dir)
     blockid = dir->cur_ftid;
     blockid.item = 0;
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_REFRESH_FILE_TABLE;
@@ -593,69 +586,15 @@ status_t dss_init_vol_handle_sync(dss_conn_t *conn)
     return CM_SUCCESS;
 }
 
-static status_t dss_get_home_core(dss_packet_t *send_pack, dss_packet_t *ack_pack, char **home)
-{
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-
-    text_t extra_info = CM_NULL_TEXT;
-    dss_init_get(ack_pack);
-    if (dss_get_text(ack_pack, &extra_info) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_HOME), "get home info connect error");
-        return CM_ERROR;
-    }
-    if (extra_info.len == 0 || extra_info.len >= DSS_MAX_PATH_BUFFER_SIZE) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_HOME), "get home info length error");
-        return CM_ERROR;
-    }
-    char *home_str = extra_info.str;
-    home_str[extra_info.len] = '\0';
-    *home = home_str;
-    LOG_DEBUG_INF("Client get home is %s.", home_str);
-    return CM_SUCCESS;
-}
-
 status_t dss_get_home_sync(dss_conn_t *conn, char **home)
 {
-    dss_packet_t *send_pack = NULL;
-    dss_packet_t *ack_pack = NULL;
-
-    // make up packet
-    dss_init_packet(&conn->pack, conn->pipe.options);
-    dss_init_set(&conn->pack);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_GET_HOME;
-    send_pack->head->flags = 0;
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    CM_RETURN_IFERR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    return dss_get_home_core(send_pack, ack_pack, home);
+    CM_RETURN_IFERR(dss_msg_interact(conn, DSS_CMD_GET_HOME, NULL, (void *)home));
+    LOG_DEBUG_INF("Client get home is %s.", *home);
+    return CM_SUCCESS;
 }
 
 status_t dss_set_session_sync(dss_conn_t *conn)
 {
-    dss_packet_t *send_pack = NULL;
-    dss_packet_t *ack_pack = NULL;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
-    // make up packet
-    dss_init_packet(&conn->pack, conn->pipe.options);
-    dss_init_set(&conn->pack);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_SET_SESSIONID;
-    send_pack->head->flags = 0;
-
     dss_cli_info cli_info;
     cli_info.cli_pid = cm_sys_pid();
     cli_info.start_time = cm_sys_process_start_time(cli_info.cli_pid);
@@ -664,28 +603,12 @@ status_t dss_set_session_sync(dss_conn_t *conn)
     errno_t err;
     err = strcpy_s(cli_info.process_name, sizeof(cli_info.process_name), cm_sys_program_name());
     if (err != EOK) {
-        LOG_DEBUG_ERR("System call strcpy_s error %d.", errcode);
-        return CM_ERROR;
-    }
-
-    CM_RETURN_IFERR(dss_put_data(send_pack, &cli_info, sizeof(cli_info)));
-
-    ack_pack = &conn->pack;
-    CM_RETURN_IFERR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
+        LOG_DEBUG_ERR("System call strcpy_s error %d.", err);
         return CM_ERROR;
     }
 
     uint32 sid = DSS_INVALID_SESSIONID;
-    dss_init_get(ack_pack);
-    if (dss_get_int32(ack_pack, (int32 *)&sid) != CM_SUCCESS) {
-        LOG_DEBUG_ERR("get sid info connect error");
-        return ERR_DSS_CLI_EXEC_FAIL;
-    }
-
+    CM_RETURN_IFERR(dss_msg_interact(conn, DSS_CMD_SET_SESSIONID, (void *)&cli_info, (void *)&sid));
     dss_env_t *dss_env = dss_get_env();
     uint32 max_cfg_sess = dss_env->inst_cfg.params.cfg_session_num;
     if (dss_env->inst_cfg.params.inst_cnt > 1) {
@@ -778,76 +701,26 @@ void dss_disconnect_ex(dss_conn_t *conn)
 
 status_t dss_make_dir_impl(dss_conn_t *conn, const char *parent, const char *dir_name)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
-    LOG_DEBUG_INF("dss make dir entry, parent:%s, dir_name:%s", parent, dir_name);
-
-    // make up packet
-    dss_init_set(&conn->pack);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_MKDIR;
-    send_pack->head->flags = 0;
-
-    // 1. parent
     DSS_RETURN_IF_ERROR(dss_check_device_path(parent));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, parent));
-    // 2. dir_name
     DSS_RETURN_IF_ERROR(dss_check_name(dir_name));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, dir_name));
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
+    dss_make_dir_info_t send_info;
+    send_info.parent = parent;
+    send_info.name = dir_name;
+    status_t status = dss_msg_interact(conn, DSS_CMD_MKDIR, (void *)&send_info, NULL);
     LOG_DEBUG_INF("dss make dir leave");
-    return CM_SUCCESS;
+    return status;
 }
 
 status_t dss_remove_dir_impl(dss_conn_t *conn, const char *dir, bool32 recursive)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
-    LOG_DEBUG_INF("dss remove dir entry, dir:%s, recursive:%d", dir, recursive);
-
-    // make up packet
-    dss_init_set(&conn->pack);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_RMDIR;
-    send_pack->head->flags = 0;
-
-    // 1. dir_name
     DSS_RETURN_IF_ERROR(dss_check_device_path(dir));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, dir));
-
-    // 2. recursive -r
-    DSS_RETURN_IF_ERROR(dss_put_int32(send_pack, recursive));
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
+    LOG_DEBUG_INF("dss remove dir entry, dir:%s, recursive:%d", dir, recursive);
+    dss_remove_dir_info_t send_info;
+    send_info.name = dir;
+    send_info.recursive = recursive;
+    status_t status = dss_msg_interact(conn, DSS_CMD_RMDIR, (void *)&send_info, NULL);
     LOG_DEBUG_INF("dss remove dir leave");
-    return CM_SUCCESS;
+    return status;
 }
 
 static dss_dir_t *dss_open_dir_impl_core(dss_conn_t *conn, const char *dir_path, dss_env_t *dss_env)
@@ -916,7 +789,7 @@ dss_dir_t *dss_open_dir_impl(dss_conn_t *conn, const char *dir_path, bool32 refr
     }
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     dss_packet_t *send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_OPEN_DIR;
@@ -1016,7 +889,7 @@ status_t dss_close_dir_impl(dss_conn_t *conn, dss_dir_t *dir)
     CM_RETURN_IF_FALSE(dss_env->initialized);
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_CLOSE_DIR;
     send_pack->head->flags = 0;
@@ -1058,7 +931,7 @@ status_t dss_create_file_impl(dss_conn_t *conn, const char *file_path, int flag)
     LOG_DEBUG_INF("dss create file entry, file path:%s, flag:%d", file_path, flag);
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_CREATE_FILE;
@@ -1094,7 +967,7 @@ status_t dss_remove_file_impl(dss_conn_t *conn, const char *file_path)
     LOG_DEBUG_INF("dss remove file entry, file path:%s", file_path);
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_DELETE_FILE;
@@ -1149,7 +1022,7 @@ static status_t dss_get_ftid_by_path_on_server(dss_conn_t *conn, const char *pat
     char *errmsg = NULL;
 
     LOG_DEBUG_INF("begin to get ftid by path: %s", path);
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_GET_FTID_BY_PATH;
     send_pack->head->flags = 0;
@@ -1381,7 +1254,7 @@ status_t dss_exist_impl(dss_conn_t *conn, const char *path, bool32 *result, gft_
     LOG_DEBUG_INF("dss exits file entry, name:%s", path);
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_EXIST;
@@ -1611,7 +1484,7 @@ static status_t dss_update_written_size(dss_env_t *dss_env, dss_conn_t *conn, ds
     ftid_t ftid = context->node->id;
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     dss_packet_t *send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_UPDATE_WRITTEN_SIZE;
@@ -2061,7 +1934,7 @@ status_t dss_rename_file_impl(dss_conn_t *conn, const char *src, const char *dst
     char *errmsg = NULL;
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_RENAME_FILE;
@@ -2103,7 +1976,7 @@ status_t dss_truncate_impl(dss_conn_t *conn, int handle, uint64 length)
     ftid_t ftid = context->node->id;
     int64 offset = context->offset;
 
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
     dss_packet_t *send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_TRUNCATE_FILE;
     send_pack->head->flags = 0;
@@ -2342,7 +2215,7 @@ status_t dss_symlink_impl(dss_conn_t *conn, const char *oldpath, const char *new
     char *errmsg = NULL;
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_SYMLINK;
@@ -2377,7 +2250,7 @@ status_t dss_unlink_impl(dss_conn_t *conn, const char *link)
     LOG_DEBUG_INF("dss unlink entry, link:%s", link);
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_UNLINK;
@@ -2409,7 +2282,7 @@ status_t dss_islink_impl(dss_conn_t *conn, const char *path, bool32 *result)
     char *errmsg = NULL;
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_EXIST;
@@ -2457,7 +2330,7 @@ status_t dss_readlink_impl(dss_conn_t *conn, const char *dir_path, char *out_str
     char *errmsg = NULL;
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_READLINK;
@@ -2747,7 +2620,7 @@ status_t dss_setcfg_impl(dss_conn_t *conn, const char *name, const char *value, 
     char *errmsg = NULL;
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_SETCFG;
@@ -2781,7 +2654,7 @@ status_t dss_getcfg_impl(dss_conn_t *conn, const char *name, char *out_str, size
     char *errmsg = NULL;
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_GETCFG;
@@ -2847,7 +2720,7 @@ status_t dss_stop_server_impl(dss_conn_t *conn)
     char *errmsg = NULL;
 
     // make up packet
-    dss_init_set(&conn->pack);
+    dss_init_set(&conn->pack, conn->proto_version);
 
     send_pack = &conn->pack;
     send_pack->head->cmd = DSS_CMD_STOP_SERVER;
@@ -2970,6 +2843,159 @@ status_t dss_get_phy_size_impl(dss_conn_t *conn, int handle, long long *size)
     dss_unlatch(&context->latch);
     return status;
 }
+static status_t dss_encode_load_ctrl(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_load_ctrl_info_t *info = (dss_load_ctrl_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_str(pack, info->vg_name));
+    CM_RETURN_IFERR(dss_put_int32(pack, info->index));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_get_home(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_set_version(pack, DSS_PROTO_VERSION);
+    return CM_SUCCESS;
+}
+
+static status_t dss_decode_get_home(dss_packet_t *ack_pack, void *ack)
+{
+    text_t ack_info = CM_NULL_TEXT;
+    CM_RETURN_IFERR(dss_get_text(ack_pack, &ack_info));
+    if (ack_info.len == 0 || ack_info.len >= DSS_MAX_PATH_BUFFER_SIZE) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_HOME), "get home info length error");
+        return CM_ERROR;
+    }
+    *(char **)ack = ack_info.str;
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_set_session(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    CM_RETURN_IFERR(dss_put_data(pack, send_info, sizeof(dss_cli_info)));
+    return CM_SUCCESS;
+}
+
+static status_t dss_decode_set_session(dss_packet_t *ack_pack, void *ack)
+{
+    CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)ack));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_add_or_remove_volume(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_add_or_remove_info_t *info = (dss_add_or_remove_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_str(pack, info->vg_name));
+    CM_RETURN_IFERR(dss_put_str(pack, info->volume_name));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_extend_file(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_extend_info_t *info = (dss_extend_info_t *)send_info;
+    // 1. fid
+    CM_RETURN_IFERR(dss_put_int64(pack, info->fid));
+    // 2. ftid
+    CM_RETURN_IFERR(dss_put_int64(pack, info->ftid));
+    // 3. offset
+    CM_RETURN_IFERR(dss_put_int64(pack, info->offset));
+    // 4. size
+    CM_RETURN_IFERR(dss_put_int32(pack, info->size));
+    // 5. vg name
+    CM_RETURN_IFERR(dss_put_str(pack, info->vg_name));
+    // 6. vgid
+    CM_RETURN_IFERR(dss_put_int32(pack, info->vg_id));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_make_dir(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_make_dir_info_t *info = (dss_make_dir_info_t *)send_info;
+    // 1. parent
+    CM_RETURN_IFERR(dss_put_str(pack, info->parent));
+    // 2. dir_name
+    CM_RETURN_IFERR(dss_put_str(pack, info->name));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_remove_dir(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_remove_dir_info_t *info = (dss_remove_dir_info_t *)send_info;
+    // 1. dir_name
+    CM_RETURN_IFERR(dss_put_str(pack, info->name));
+    // 2. recursive -r
+    CM_RETURN_IFERR(dss_put_int32(pack, info->recursive));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_kickh(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    CM_RETURN_IFERR(dss_put_int64(pack, *(uint64 *)send_info));
+    return CM_SUCCESS;
+}
+
+typedef status_t (*dss_encode_packet_proc_t)(dss_conn_t *conn, dss_packet_t *pack, void *send_info);
+typedef status_t (*dss_decode_packet_proc_t)(dss_packet_t *ack_pack, void *ack);
+typedef struct st_dss_packet_proc {
+    dss_encode_packet_proc_t encode_proc;
+    dss_decode_packet_proc_t decode_proc;
+    char *cmd_info;
+} dss_packet_proc_t;
+
+dss_packet_proc_t g_dss_packet_proc[DSS_CMD_END] = {
+    [DSS_CMD_MKDIR] = {dss_encode_make_dir, NULL, "make dir"},
+    [DSS_CMD_RMDIR] = {dss_encode_remove_dir, NULL, "remove dir"},
+    [DSS_CMD_EXTEND_FILE] = {dss_encode_extend_file, NULL, "extend file"},
+    [DSS_CMD_ADD_VOLUME] = {dss_encode_add_or_remove_volume, NULL, "add volume"},
+    [DSS_CMD_REMOVE_VOLUME] = {dss_encode_add_or_remove_volume, NULL, "remove volume"},
+    [DSS_CMD_KICKH] = {dss_encode_kickh, NULL, "kickh"},
+    [DSS_CMD_LOAD_CTRL] = {dss_encode_load_ctrl, NULL, "load ctrl"},
+    [DSS_CMD_SET_SESSIONID] = {dss_encode_set_session, dss_decode_set_session, "set session"},
+    [DSS_CMD_GET_HOME] = {dss_encode_get_home, dss_decode_get_home, "get home"},
+};
+
+status_t dss_decode_packet(dss_packet_proc_t *make_proc, dss_packet_t *ack_pack, void *ack)
+{
+    if (ack == NULL || make_proc->decode_proc == NULL) {
+        return CM_SUCCESS;
+    }
+    dss_init_get(ack_pack);
+    status_t ret = make_proc->decode_proc(ack_pack, ack);
+    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("Decode %s msg failed", make_proc->cmd_info));
+    return ret;
+}
+
+status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ack)
+{
+    dss_packet_t *send_pack = &conn->pack;
+    dss_packet_t *ack_pack = &conn->pack;
+    dss_packet_proc_t *make_proc;
+    do {
+        dss_init_packet(&conn->pack, conn->pipe.options);
+        dss_init_set(&conn->pack, conn->proto_version);
+        send_pack->head->cmd = cmd;
+        send_pack->head->flags = 0;
+        make_proc = &g_dss_packet_proc[cmd];
+        DSS_RETURN_IF_ERROR(make_proc->encode_proc(conn, send_pack, send_info));
+        ack_pack = &conn->pack;
+        DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
+
+        // check return state
+        if (ack_pack->head->result != CM_SUCCESS) {
+            int32 errcode = dss_get_pack_err(conn, ack_pack);
+            if (errcode == ERR_DSS_VERSION_NOT_MATCH) {
+                continue;
+            }
+            return errcode;
+        }
+        break;
+    } while (1);
+    if (cmd == DSS_CMD_GET_HOME) {
+        conn->server_version = dss_get_version(ack_pack);
+        conn->proto_version = MIN(DSS_PROTO_VERSION, conn->server_version);
+    }
+    return dss_decode_packet(make_proc, ack_pack, ack);
+}
+
 #ifdef __cplusplus
 }
 #endif

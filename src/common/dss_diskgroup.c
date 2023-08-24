@@ -1766,37 +1766,37 @@ status_t dss_read_volume_inst(
     return CM_SUCCESS;
 }
 
-status_t dss_read_volume_4standby(const char *vg_name, uint32 volume_id, int64 offset, void *buf, int32 size)
+status_t dss_read_volume_4standby(const char *vg_name, uint32 volume_id, int64 offset, void *buf, uint32 size)
 {
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item == NULL) {
-        LOG_RUN_ERR("Read volume for standby fialed, find vg(%s) error.", vg_name);
+        LOG_RUN_ERR("Read volume for standby failed, find vg(%s) error.", vg_name);
         return CM_ERROR;
     }
 
     if (volume_id >= DSS_MAX_VOLUMES) {
-        LOG_RUN_ERR("Read volume for standby fialed, vg(%s) voiume id[%u] error.", vg_name, volume_id);
+        LOG_RUN_ERR("Read volume for standby failed, vg(%s) volume id[%u] error.", vg_name, volume_id);
         return CM_ERROR;
     }
 
     dss_volume_t *volume = &vg_item->volume_handle[volume_id];
     if (volume->handle == DSS_INVALID_HANDLE) {
         if (dss_open_volume(volume->name_p, NULL, DSS_INSTANCE_OPEN_FLAG, volume) != CM_SUCCESS) {
-            LOG_RUN_ERR("Read volume for standby fialed, failed to open volume(%s).", volume->name_p);
+            LOG_RUN_ERR("Read volume for standby failed, failed to open volume(%s).", volume->name_p);
             return CM_ERROR;
         } 
     }
 
     uint64 volumesize = vg_item->dss_ctrl->core.volume_attrs[volume_id].size;
     if (((uint64)offset > volumesize) || ((uint64)size > (volumesize - (uint64)offset))) {
-        LOG_RUN_ERR("Read volume for standby fialed, params err, vg(%s) voiume id[%u] offset[%llu] size[%u] volume size[%llu].",
+        LOG_RUN_ERR("Read volume for standby failed, params err, vg(%s) voiume id[%u] offset[%llu] size[%u] volume size[%llu].",
             vg_name, volume_id, offset, size, volumesize);
         return CM_ERROR;
     }
     
 
-    if (dss_read_volume(volume, offset, buf, size) != CM_SUCCESS) {
-        LOG_RUN_ERR("Read volume for standby fialed, failed to load disk(%s) data.", volume->name_p);
+    if (dss_read_volume(volume, offset, buf, (int32)size) != CM_SUCCESS) {
+        LOG_RUN_ERR("Read volume for standby failed, failed to load disk(%s) data.", volume->name_p);
         return CM_ERROR;
     }
 

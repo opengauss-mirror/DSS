@@ -118,6 +118,8 @@ typedef struct st_dss_session {
     void *reactor;
     void *workthread_ctx;
     dss_session_stat_t dss_session_stat[DSS_EVT_COUNT];
+    uint32 client_version; /* client version */
+    uint32 proto_version;  /* client and server negotiated version */
 } dss_session_t;
 
 static inline void dss_begin_stat(timeval_t *begin_tv)

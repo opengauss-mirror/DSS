@@ -63,7 +63,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_FILE_CREATE] = "create file failed, reason %s",
     [ERR_DSS_FILE_RDWR_INSUFF_PER] = "Insufficient permission to %s file, while the permission is %u.",
     [ERR_DSS_FILE_NOT_EXIST] = "The file %s of %s does not exist",
-    [ERR_DSS_FILE_OPENING_REMOTE] = "The file is open in other inst: %d, command:%d exec failed.",
+    [ERR_DSS_FILE_OPENING_REMOTE] = "The file is open in other inst: %hhu, command:%u exec failed.",
     [ERR_DSS_FILE_TYPE_MISMATCH] = "The type of directory link or file %s is not matched.",
     [ERR_DSS_FILE_PATH_ILL] = "Path %s decode error %s",
     [ERR_DSS_FILE_INVALID_SIZE] = "Invalid extend offset %lld, size %d.",
@@ -106,6 +106,8 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_INVALID_ID] = "Invalid %s id : %llu.",
     [ERR_DSS_PROCESS_REMOTE] = "Failed to process remote, errcode: %d, errmsg: %s.",
     [ERR_DSS_CONNECT_FAILED] = "Failed to connect dss server, errcode: %d, errmsg: %s.",
+    [ERR_DSS_VERSION_NOT_MATCH] =
+        "Protocol version need be changed, old protocol version is %u, new protocol version is %u.",
 };
 
 static status_t dss_init_log_file(log_param_t *log_param, dss_config_t *inst_cfg)

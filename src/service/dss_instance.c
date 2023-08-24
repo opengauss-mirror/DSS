@@ -416,11 +416,19 @@ static status_t instance_init(dss_instance_t *inst)
     return CM_SUCCESS;
 }
 
+static void dss_init_cluster_proto_ver(dss_instance_t *inst)
+{
+    for (uint32 i = 0; i < DSS_MAX_INSTANCES; i++) {
+        inst->cluster_proto_vers[i] = DSS_INVALID_VERSION;
+    }
+}
+
 status_t dss_startup(dss_instance_t *inst, char *home)
 {
     status_t status;
     errno_t errcode = memset_s(inst, sizeof(dss_instance_t), 0, sizeof(dss_instance_t));
     securec_check_ret(errcode);
+    dss_init_cluster_proto_ver(inst);
     inst->lock_fd = CM_INVALID_INT32;
     dss_set_server_flag();
     g_dss_instance_status = &inst->status;
