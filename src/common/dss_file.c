@@ -267,8 +267,8 @@ void dss_lock_vg_mem_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_it
 
 void dss_lock_vg_mem_and_shm_x2ix(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-    dss_lock_vg_mem_x2ix(vg_item);
     dss_lock_shm_meta_x2ix(session, vg_item->vg_latch);
+    dss_lock_vg_mem_x2ix(vg_item);
 }
 
 void dss_lock_vg_mem_and_shm_ix2x(dss_session_t *session, dss_vg_info_item_t *vg_item)
@@ -3222,7 +3222,7 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("[DSS] Invalid file:%s in vg:%s fail.", node->name, vg_item->vg_name);
         dss_unlock_vg_mem_and_shm(session, vg_item);
-        return CM_SUCCESS;
+        return CM_ERROR;
     }
 
     /*

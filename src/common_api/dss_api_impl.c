@@ -287,7 +287,7 @@ static status_t dss_check_apply_extending_file(
     DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
     status_t status = dss_apply_extending_file(conn, handle, size, offset);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to apply refresh file, fid:%llu.", context->fid);
+        LOG_DEBUG_ERR("Failed to apply extending file, fid:%llu.", context->fid);
         return CM_ERROR;    
     }
     DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
@@ -332,7 +332,7 @@ static status_t dss_check_refresh_volume(dss_conn_t *conn, dss_file_context_t *c
     if (!dss_is_fs_meta_valid(context->node)) {
         if (dss_check_apply_refresh_file(conn, context, DSS_INVALID_BLOCK_ID) != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to apply refresh file, fid:%llu.", context->fid);
-            return status;
+            return CM_ERROR;
         }
         *is_refresh = CM_TRUE;
     }
@@ -1567,7 +1567,7 @@ static status_t dss_alloc_block_core(
             DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to extend file entry fs block."));
         } else {
             status = dss_check_apply_refresh_file(conn, context, entry_fs_block->head.common.id);
-            DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to extend file entry fs block."));
+            DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to refresh file entry fs block."));
         }
         second_block_id = entry_fs_block->bitmap[block_count];
         status = dss_check_find_fs_block(rw_ctx.conn, context, second_block_id, second_block);
@@ -1691,7 +1691,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
 
         status = dss_check_find_fs_block(conn, context, node->entry, &entry_fs_block);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Can not fund entry block in memory, entry blockid:%llu, nodeid:%llu.",
+            LOG_DEBUG_ERR("Can not find entry block in memory, entry blockid:%llu, nodeid:%llu.",
                 DSS_ID_TO_U64(node->entry), DSS_ID_TO_U64(node->id));
             return CM_ERROR;
         }
@@ -1705,7 +1705,6 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         auid_t auid = second_block->bitmap[block_au_count];
         if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
             // allocate au or refresh second block
-            DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             if (!param->is_read) {
                 status = dss_check_apply_extending_file(
                     conn, context, handle, total_size, rw_ctx.offset, second_block->head.common.id);
@@ -2571,7 +2570,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
 
         status = dss_check_find_fs_block(conn, context, node->entry, &entry_fs_block);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Can not fund entry block in memory, entry blockid:%llu, nodeid:%llu.",
+            LOG_DEBUG_ERR("Can not find entry block in memory, entry blockid:%llu, nodeid:%llu.",
                 DSS_ID_TO_U64(node->entry), DSS_ID_TO_U64(node->id));
             return CM_ERROR;
         }
@@ -2603,7 +2602,6 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
         auid_t auid = second_block->bitmap[block_au_count];
         if (dss_cmp_auid(auid, DSS_INVALID_ID64)) {
             // allocate au or refresh second block
-            DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             if (!param->is_read) {
                 status = dss_check_apply_extending_file(
                     conn, context, handle, size, rw_ctx.offset, second_block->head.common.id);
@@ -2820,7 +2818,7 @@ status_t dss_getcfg_impl(dss_conn_t *conn, const char *name, char *out_str, size
         return CM_SUCCESS;
     }
 
-    errno_t err = strncpy_s(out_str, str_len, extra_info.str, strlen(extra_info.str));
+    errno_t err = strncpy_s(out_str, str_len, extra_info.str, extra_info.len);
     if (SECUREC_UNLIKELY(err != EOK)) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "value of str_len is not large enough when getcfg.");
         return CM_ERROR;
@@ -2894,22 +2892,7 @@ status_t dss_fstat_impl(dss_conn_t *conn, int handle, dss_stat_info_t item)
     return ret;
 }
 
-status_t dss_get_phy_size_impl(dss_conn_t *conn, int handle, long long *size)
-{
-    dss_file_context_t *context = NULL;
-    DSS_RETURN_IF_ERROR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
 
-    dss_block_id_t blockid;
-    dss_set_blockid(&blockid, DSS_INVALID_ID64);
-    status_t status = dss_apply_refresh_file(conn, context, blockid);
-    if (status != DSS_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to apply refresh file,fid:%llu.", context->fid);
-        return DSS_ERROR;
-    }
-    *size = context->node->size;
-    dss_unlatch(&context->latch);
-    return status;
-}
 static status_t dss_aio_post_pwrite_file_prepare(
     dss_conn_t *conn, dss_file_context_t *context, long long offset, int32 size, bool32 *need_update, int64 *new_offset)
 {
@@ -2930,7 +2913,6 @@ static status_t dss_aio_post_pwrite_file_prepare(
     DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
     return CM_SUCCESS;
 }
-
 
 status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long offset, int32 size)
 {
@@ -2960,6 +2942,34 @@ status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long o
     return status;
 }
 
+static status_t dss_get_phy_size_prepare(dss_conn_t *conn, dss_file_context_t *context, long long *size)
+{
+    *size = 0;
+    DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
+    status_t status = dss_check_apply_refresh_file(conn, context, DSS_INVALID_BLOCK_ID);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    *size = cm_atomic_get(&context->node->size);
+    DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
+    return CM_SUCCESS;
+}
+
+status_t dss_get_phy_size_impl(dss_conn_t *conn, int handle, long long *size)
+{
+    dss_file_context_t *context = NULL;
+    DSS_RETURN_IF_ERROR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
+
+    status_t status = dss_get_phy_size_prepare(conn, context, size);
+    if (status != DSS_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to apply refresh file,fid:%llu.", context->fid);
+        dss_unlatch(&context->latch);
+        return DSS_ERROR;
+    }
+    *size = context->node->size;
+    dss_unlatch(&context->latch);
+    return status;
+}
 #ifdef __cplusplus
 }
 #endif
