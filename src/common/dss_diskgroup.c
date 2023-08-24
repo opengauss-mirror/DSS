@@ -876,7 +876,6 @@ void dss_unlock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry_p
     if (dss_mode == DSS_MODE_DISK) {
         char lock_file[DSS_MAX_FILE_LEN];
         if (dss_pre_lockfile_name(entry_path, lock_file, inst_cfg) != CM_SUCCESS) {
-            dss_unlatch(&vg_item->disk_latch);
             LOG_DEBUG_ERR("Failed to get lock file %s.", entry_path);
             cm_assert(0);
             return;
@@ -884,7 +883,6 @@ void dss_unlock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry_p
 
         FILE *vglock_fp = dss_get_vglock_fp(lock_file, CM_FALSE);
         if (vglock_fp == NULL) {
-            dss_unlatch(&vg_item->disk_latch);
             LOG_DEBUG_ERR("Failed to get vglock fp %s.", lock_file);
             cm_assert(0);
             return;
@@ -893,11 +891,9 @@ void dss_unlock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry_p
         flock(vglock_fp->_fileno, LOCK_UN);
         dss_free_vglock_fp(lock_file, vglock_fp);
         fclose(vglock_fp);
-        dss_unlatch(&vg_item->disk_latch);
         LOG_DEBUG_INF("ulock vg:%s, lock file:%s.", entry_path, lock_file);
     } else {
         dss_unlock_vg_raid(vg_item, entry_path, g_inst_cfg->params.inst_id);
-        dss_unlatch(&vg_item->disk_latch);
     }
     return;
 }
