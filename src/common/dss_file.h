@@ -235,7 +235,7 @@ static inline bool32 is_ft_root_block(ftid_t ftid)
 }
 
 typedef status_t (*dss_invalidate_other_nodes_proc_t)(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
+    dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
 void regist_invalidate_other_nodes_proc(dss_invalidate_other_nodes_proc_t proc);
 
 typedef status_t (*dss_refresh_ft_by_primary_proc_t)(dss_block_id_t blockid, uint32 vgid, char *vg_name);

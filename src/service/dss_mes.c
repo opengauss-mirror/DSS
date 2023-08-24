@@ -37,24 +37,23 @@ static __thread char *g_thv_read_buf = NULL;
 __declspec(thread) char *g_thv_read_buf = NULL;
 #endif
 
-void dss_proc_broadcast_req(dss_session_t *session, mes_message_t *msg);
-void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg);
-void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg);
-void dss_proc_loaddisk_req(dss_session_t *session, mes_message_t *msg);
-void dss_proc_join_cluster_req(dss_session_t *session, mes_message_t *msg);
-void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_message_t *msg);
-void dss_proc_get_ft_block_req(dss_session_t *session, mes_message_t *msg);
+void dss_proc_broadcast_req(dss_session_t *session, mes_msg_t *msg);
+void dss_proc_syb2active_req(dss_session_t *session, mes_msg_t *msg);
+void dss_proc_loaddisk_req(dss_session_t *session, mes_msg_t *msg);
+void dss_proc_join_cluster_req(dss_session_t *session, mes_msg_t *msg);
+void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_msg_t *msg);
+void dss_proc_get_ft_block_req(dss_session_t *session, mes_msg_t *msg);
 
-void dss_proc_normal_ack(dss_session_t *session, mes_message_t *msg)
+void dss_proc_normal_ack(dss_session_t *session, mes_msg_t *msg)
 {
-    LOG_DEBUG_INF("Receive ack(%u),src inst(%u), dst inst(%u).", (uint32)(msg->head->cmd),
-        (uint32)(msg->head->src_inst), (uint32)(msg->head->dst_inst));
-    mes_notify_msg_recv(msg);
+    dss_message_head_t *dss_head = (dss_message_head_t *)msg->buffer;
+    LOG_DEBUG_INF("Receive ack(%u),src inst(%u), dst inst(%u).", (uint32)(dss_head->dss_cmd),
+        (uint32)(dss_head->src_inst), (uint32)(dss_head->dst_inst));
 }
 
 dss_processor_t g_dss_processors[DSS_CMD_CEIL] = {
     [DSS_CMD_REQ_BROADCAST] = {dss_proc_broadcast_req, CM_TRUE, CM_TRUE, MES_TASK_GROUP_ZERO, "dss broadcast"},
-    [DSS_CMD_ACK_BROADCAST_WITH_MSG] = {dss_proc_broadcast_ack2, CM_FALSE, CM_FALSE, MES_TASK_GROUP_ZERO,
+    [DSS_CMD_ACK_BROADCAST_WITH_MSG] = {dss_proc_normal_ack, CM_FALSE, CM_FALSE, MES_TASK_GROUP_ZERO,
         "dss broadcast ack with data"},
     [DSS_CMD_REQ_SYB2ACTIVE] = {dss_proc_syb2active_req, CM_TRUE, CM_TRUE, MES_TASK_GROUP_ZERO,
         "dss standby to active req"},
@@ -78,18 +77,23 @@ dss_processor_t g_dss_processors[DSS_CMD_CEIL] = {
         "dss active proc get ft block ack"},
 };
 
-void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg)
+static inline mes_task_group_id_t dss_get_cmd_group_id(dss_mes_command_t cmd)
 {
-    mes_notify_broadcast_msg_recv_and_cahce(msg);
+    return g_dss_processors[cmd].group_id;
 }
 
-static void dss_init_mes_head(dss_message_head_t *head, uint32 cmd, uint32 size, uint32 version)
+static void dss_init_mes_head(dss_message_head_t *head, uint32 cmd, uint32 flags, uint16 src_inst, uint16 dst_inst,
+    uint32 size, uint32 version, ruid_type ruid)
 {
-    (void)memset_s(head, sizeof(dss_message_head_t), 0, sizeof(dss_message_head_t));
+    (void)memset_s(head, DSS_MES_MSG_HEAD_SIZE, 0, DSS_MES_MSG_HEAD_SIZE);
     head->sw_proto_ver = DSS_PROTO_VERSION;
     head->msg_proto_ver = version;
     head->size = size;
     head->dss_cmd = cmd;
+    head->ruid = ruid;
+    head->src_inst = src_inst;
+    head->dst_inst = dst_inst;
+    head->flags = flags | dss_get_cmd_group_id(cmd);
 }
 
 static dss_bcast_ack_cmd_t dss_get_bcast_ack_cmd(dss_bcast_req_cmd_t bcast_op)
@@ -134,29 +138,28 @@ static void dss_proc_broadcast_req_inner(dss_session_t *session, dss_notify_req_
             LOG_DEBUG_ERR("invalid broadcast req type");
             return;
     }
+    dss_message_head_t *req_head = &req->dss_head;
+    uint16 dst_inst = req_head->src_inst;
+    uint16 src_inst = req_head->dst_inst;
+    uint32 version = req_head->msg_proto_ver;
+    ruid_type ruid = req_head->ruid;
     dss_notify_ack_msg_t ack_check;
-    dss_init_mes_head(
-        &ack_check.dss_head, DSS_CMD_ACK_BROADCAST_WITH_MSG, sizeof(dss_notify_ack_msg_t), req->dss_head.msg_proto_ver);
+    dss_init_mes_head(&ack_check.dss_head, DSS_CMD_ACK_BROADCAST_WITH_MSG, 0, src_inst, dst_inst, sizeof(dss_notify_ack_msg_t), version, ruid);
     ack_check.type = dss_get_bcast_ack_cmd(req->type);
-    mes_init_ack_head(&req->dss_head.mes_head, &ack_check.dss_head.mes_head, DSS_CMD_ACK_BROADCAST_WITH_MSG,
-        sizeof(dss_notify_ack_msg_t), session->id);
     ack_check.result = status;
     ack_check.cmd_ack = cmd_ack;
-
-    int ret = mes_send_data(&ack_check.dss_head.mes_head);
+    int ret = mes_send_response(dst_inst, ack_check.dss_head.flags, ruid, (char *)&ack_check,
+        sizeof(dss_notify_ack_msg_t));
     if (ret != CM_SUCCESS) {
-        LOG_DEBUG_ERR("send message failed, src inst(%hhu), dst inst(%hhu) ret(%d) ",
-            ack_check.dss_head.mes_head.src_inst, ack_check.dss_head.mes_head.dst_inst, ret);
+        LOG_DEBUG_ERR("send message failed, src inst(%hhu), dst inst(%hhu) ret(%d) ", src_inst, dst_inst, ret);
         return;
     }
-    DSS_LOG_DEBUG_OP("send message succeed, notify %llu  result: %u. cmd=%u, rsn=%llu, src_inst=%hhu, "
-                     "dst_inst=%hhu, src_sid=%hu, dst_sid=%hu.",
-        req->ftid, cmd_ack, ack_check.dss_head.dss_cmd, ack_check.dss_head.mes_head.rsn,
-        ack_check.dss_head.mes_head.src_inst, ack_check.dss_head.mes_head.dst_inst, ack_check.dss_head.mes_head.src_sid,
-        ack_check.dss_head.mes_head.dst_sid);
+    DSS_LOG_DEBUG_OP("send message succeed, notify %llu  result: %u. cmd=%u, src_inst=%hhu, "
+                     "dst_inst=%hhu.", req->ftid, cmd_ack, ack_check.dss_head.dss_cmd,
+                     ack_check.dss_head.src_inst, ack_check.dss_head.dst_inst);
 }
 
-int32 dss_process_broadcast_ack(dss_session_t *session, dss_notify_ack_msg_t *ack, dss_recv_msg_t *recv_msg_output)
+int32 dss_process_broadcast_ack(dss_notify_ack_msg_t *ack, dss_recv_msg_t *recv_msg_output)
 {
     int32 ret = ERR_DSS_MES_ILL;
     switch (ack->type) {
@@ -174,95 +177,91 @@ int32 dss_process_broadcast_ack(dss_session_t *session, dss_notify_ack_msg_t *ac
 
 static void dss_ack_version_not_match(dss_session_t *session, dss_message_head_t *req_head, uint32 version)
 {
+    uint16 dst_inst = req_head->src_inst;
+    uint16 src_inst = req_head->dst_inst;
+    ruid_type ruid = req_head->ruid;
     dss_message_head_t ack_head;
     uint32 cmd = (req_head->dss_cmd == DSS_CMD_REQ_BROADCAST) ? DSS_CMD_ACK_BROADCAST_WITH_MSG : DSS_CMD_ACK_SYB2ACTIVE;
-    dss_init_mes_head(&ack_head, cmd, DSS_MES_MSG_HEAD_SIZE, version);
-    mes_init_ack_head(&req_head->mes_head, &ack_head.mes_head, cmd, DSS_MES_MSG_HEAD_SIZE, session->id);
+    dss_init_mes_head(&ack_head, cmd, 0, src_inst, dst_inst, DSS_MES_MSG_HEAD_SIZE, version, ruid);
     ack_head.result = ERR_DSS_VERSION_NOT_MATCH;
-    int ret = mes_send_data(&ack_head.mes_head);
+    int ret = mes_send_response(dst_inst, ack_head.flags, ruid, (char *)&ack_head, DSS_MES_MSG_HEAD_SIZE);
     if (ret != CM_SUCCESS) {
         LOG_DEBUG_ERR("send version not match message failed, src inst(%hhu), dst inst(%hhu) ret(%d)",
-            req_head->mes_head.src_inst, req_head->mes_head.dst_inst, ret);
+            src_inst, dst_inst, ret);
         return;
     }
     LOG_RUN_INF("send version not match message succeed, src inst(%hhu), dst inst(%hhu), ack msg version (%hhu)",
-        req_head->mes_head.src_inst, req_head->mes_head.dst_inst, version);
+        src_inst, dst_inst, version);
 }
 
-void dss_proc_broadcast_req(dss_session_t *session, mes_message_t *msg)
+void dss_proc_broadcast_req(dss_session_t *session, mes_msg_t *msg)
 {
-    if (msg->head->size < sizeof(dss_notify_req_msg_t)) {
+    if (msg->size < sizeof(dss_notify_req_msg_t)) {
         LOG_DEBUG_ERR("invalid message req size");
-        mes_release_message_buf(msg);
+        mes_release_msg(msg);
         return;
     }
     dss_notify_req_msg_t *req = (dss_notify_req_msg_t *)msg->buffer;
-    LOG_DEBUG_INF("Try proc broadcast req, head rsn is %llu, head cmd is %u, req cmd is %u.",
-        req->dss_head.mes_head.rsn, req->dss_head.dss_cmd, req->type);
+    LOG_DEBUG_INF("Try proc broadcast req, head cmd is %u, req cmd is %u.", req->dss_head.dss_cmd, req->type);
     dss_proc_broadcast_req_inner(session, req);
-    mes_release_message_buf(msg);
+    mes_release_msg(msg);
     return;
 }
 
-static int dss_handle_broadcast_msg(
-    dss_session_t *session, uint64 succ_inst, char *recv_msg[CM_MAX_INSTANCES], dss_recv_msg_t *recv_msg_output)
+static int dss_handle_broadcast_msg(mes_msg_list_t *responses, dss_recv_msg_t *recv_msg_output)
 {
-    uint32 i;
     int ret;
     dss_message_head_t *ack_head;
-
-    for (i = 0; i < CM_MAX_INSTANCES; i++) {
-        if (DSS_IS_INST_SEND(succ_inst, i) && recv_msg[i] != NULL) {
-            ack_head = (dss_message_head_t *)recv_msg[i];
-            if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {
-                recv_msg_output->version_not_match_inst |= ((uint64)0x1 << i);
-                continue;
-            }
-            if (ack_head->mes_head.size < sizeof(dss_notify_ack_msg_t)) {
-                DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
-                return ERR_DSS_MES_ILL;
-            }
-            dss_notify_ack_msg_t *ack = (dss_notify_ack_msg_t *)ack_head;
-            ret = dss_process_broadcast_ack(session, ack, recv_msg_output);
-            DSS_RETURN_IFERR2(
-                ret, DSS_THROW_ERROR(ERR_DSS_FILE_OPENING_REMOTE, ack_head->mes_head.src_inst, ack_head->dss_cmd));
+    uint16 src_inst;
+    for (uint32 i = 0; i < responses->count; i++) {
+        mes_msg_t *msg = &responses->messages[i];
+        ack_head = (dss_message_head_t *)msg->buffer;
+        if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {
+            src_inst = responses->messages[i].src_inst;
+            recv_msg_output->version_not_match_inst |= ((uint64)0x1 << src_inst);
+            continue;
         }
+        if (ack_head->size < sizeof(dss_notify_ack_msg_t)) {
+            DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
+            return ERR_DSS_MES_ILL;
+        }
+        dss_notify_ack_msg_t *ack = (dss_notify_ack_msg_t *)ack_head;
+        ret = dss_process_broadcast_ack(ack, recv_msg_output);
+        DSS_RETURN_IFERR2(
+            ret, DSS_THROW_ERROR(ERR_DSS_FILE_OPENING_REMOTE, ack_head->src_inst, ack_head->dss_cmd));
     }
     return DSS_SUCCESS;
 }
 
-static void dss_release_broadcast_msg(dss_session_t *session, uint64 succ_inst, char *recv_msg[CM_MAX_INSTANCES])
+static void dss_release_broadcast_msg(mes_msg_list_t *responses)
 {
-    uint32 i;
-    mes_message_t msg;
-    for (i = 0; i < CM_MAX_INSTANCES; i++) {
-        if (DSS_IS_INST_SEND(succ_inst, i) && recv_msg[i] != NULL) {
-            msg.buffer = recv_msg[i];
-            msg.head = (mes_message_head_t *)recv_msg[i];
-            mes_release_message_buf(&msg);
-        }
+    for (uint32 i = 0; i < responses->count; i++) {
+        mes_release_msg(&responses->messages[i]);
     }
 }
 
-static int dss_handle_recv_broadcast_msg(dss_session_t *session, uint64 succ_req_inst, uint32 timeout,
-    uint64 *succ_ack_inst, dss_recv_msg_t *recv_msg_output)
+static int dss_handle_recv_broadcast_msg(ruid_type ruid, uint32 timeout, uint64 *succ_ack_inst,
+    dss_recv_msg_t *recv_msg_output)
 {
-    int ret;
-    char *recv_msg[CM_MAX_INSTANCES] = {0};
-
-    ret = mes_wait_acks_and_recv_msg(session->id, timeout, succ_req_inst, recv_msg);
-    if (ret == DSS_SUCCESS) {
-        ret = dss_handle_broadcast_msg(session, succ_req_inst, recv_msg, recv_msg_output);
+    mes_msg_list_t responses;
+    int ret = mes_broadcast_get_response(ruid, &responses, timeout);
+    if (ret != DSS_SUCCESS) {
+        LOG_DEBUG_INF("Try broadcast get response failed, ret is %d, ruid is %llu.", ret, ruid);
+        return ret;
     }
-
+    ret = dss_handle_broadcast_msg(&responses, recv_msg_output);
+    if (ret != DSS_SUCCESS) {
+        dss_release_broadcast_msg(&responses);
+        LOG_DEBUG_INF("Try broadcast get response failed, ret is %d, ruid is %llu.", ret, ruid);
+        return ret;
+    }
     // do not care ret, just check get ack msg
-    for (uint32 i = 0; i < CM_MAX_INSTANCES; i++) {
-        if (recv_msg[i] != NULL) {
-            *succ_ack_inst |= ((uint64)0x1 << i);
-        }
+    for (uint32 i = 0; i < responses.count; i++) {
+        uint32 src_inst = responses.messages[i].src_inst;
+        *succ_ack_inst |= ((uint64)0x1 << src_inst);
     }
     *succ_ack_inst = *succ_ack_inst & (~recv_msg_output->version_not_match_inst);
-    dss_release_broadcast_msg(session, succ_req_inst, recv_msg);
+    dss_release_broadcast_msg(&responses);
     return ret;
 }
 
@@ -287,10 +286,31 @@ uint32 dss_get_broadcast_proto_ver(uint64 succ_inst)
     return broadcast_proto_vers;
 }
 
+uint32 dss_count_one_bit(uint32 n)
+{
+    uint32 count = 0;
+    while (n) {
+        n = n & (n - 1);
+        count++;
+    }
+    return count;
+}
+
+void dss_get_valid_inst(uint64 valid_inst, uint32 *arr, uint32 count)
+{
+    uint32 i = 0;
+    for (uint32 j = 0; j < DSS_MAX_INSTANCES; j++) {
+        if (DSS_IS_INST_SEND(valid_inst, j)) {
+            arr[i] = j;
+            i++;
+        }
+    }
+}
+
 #define DSS_BROADCAST_MSG_TRY_MAX 5
 #define DSS_BROADCAST_MSG_TRY_SLEEP_TIME 200
 static status_t dss_broadcast_msg_with_try(
-    dss_session_t *session, mes_message_head_t *head, dss_recv_msg_t *recv_msg, unsigned int timeout)
+    dss_message_head_t *dss_head, dss_recv_msg_t *recv_msg, unsigned int timeout)
 {
     int32 ret = DSS_SUCCESS;
 
@@ -304,28 +324,36 @@ static status_t dss_broadcast_msg_with_try(
     uint64 snd_err_inst_map = (~recv_msg->succ_inst & cur_work_inst_map);
     uint64 last_inst_inst_map = 0;
     uint64 new_added_inst_map = 0;
-    uint64 vaild_inst = 0;
-    uint64 vaild_inst_mask = 0;
+    uint64 valid_inst = 0;
+    uint64 valid_inst_mask = 0;
     do {
         // only send the last-send-failed and new added
         cm_reset_error();
-        vaild_inst_mask = ((cur_work_inst_map & snd_err_inst_map) | new_added_inst_map);
-        vaild_inst = (param->inst_map) & (~((uint64)0x1 << (uint64)(param->inst_id))) & vaild_inst_mask;
-        vaild_inst = (~recv_msg->version_not_match_inst & vaild_inst);
-        LOG_DEBUG_INF("Try broadcast num is %u, head rsn is %llu, head cmd is %u.", i, head->rsn, head->cmd);
-        mes_broadcast(session->id, vaild_inst, (const void *)head, &succ_req_inst);
-        if (!recv_msg->handle_recv_msg && timeout > 0) {
-            ret = mes_wait_acks(session->id, timeout);
-        } else {
-            ret = dss_handle_recv_broadcast_msg(session, succ_req_inst, timeout, &succ_ack_inst, recv_msg);
+        valid_inst_mask = ((cur_work_inst_map & snd_err_inst_map) | new_added_inst_map);
+        valid_inst = (param->inst_map) & (~((uint64)0x1 << (uint64)(param->inst_id))) & valid_inst_mask;
+        valid_inst = (~recv_msg->version_not_match_inst & valid_inst);
+        if (valid_inst == 0) {
+            if (recv_msg->version_not_match_inst != 0) {
+                recv_msg->version_not_match_inst = 0;
+                return ERR_DSS_VERSION_NOT_MATCH;
+            }
+            LOG_DEBUG_INF("No inst need to broadcast.");
+            return CM_SUCCESS;
         }
+        LOG_DEBUG_INF("Try broadcast num is %u, head cmd is %u.", i, dss_head->dss_cmd);
+        uint32 count = dss_count_one_bit(valid_inst);
+        uint32 valid_inst_arr[DSS_MAX_INSTANCES] ={0};
+        dss_get_valid_inst(valid_inst, valid_inst_arr, count);
+        (void)mes_broadcast_request_sp((inst_type *)valid_inst_arr, count, dss_head->flags, &dss_head->ruid, (char *)dss_head, dss_head->size);
+        succ_req_inst = valid_inst;
+        ret = dss_handle_recv_broadcast_msg(dss_head->ruid, timeout, &succ_ack_inst, recv_msg);
+        uint64 succ_inst = valid_inst & succ_ack_inst;
         LOG_DEBUG_INF(
-            "Try broadcast num is %u, valid_inst is %llu, succ_req_inst is %llu.", i, vaild_inst, succ_req_inst);
-        uint64 succ_inst = succ_req_inst & succ_ack_inst;
+            "Try broadcast num is %u, valid_inst is %llu, succ_inst is %llu.", i, valid_inst, succ_inst);
         if (succ_inst != 0) {
             recv_msg->succ_inst = recv_msg->succ_inst | succ_inst;
         }
-        if (ret == CM_SUCCESS && succ_req_inst == vaild_inst) {
+        if (ret == CM_SUCCESS && succ_req_inst == succ_ack_inst) {
             if (recv_msg->version_not_match_inst != 0) {
                 recv_msg->version_not_match_inst = 0;
                 return ERR_DSS_VERSION_NOT_MATCH;
@@ -333,12 +361,10 @@ static status_t dss_broadcast_msg_with_try(
             return ret;
         }
         // ready for next try only new added and (send req failed or recv ack  failed)
-        snd_err_inst_map = vaild_inst_mask & (~(succ_req_inst & succ_ack_inst));
+        snd_err_inst_map = valid_inst_mask & (~(succ_req_inst & succ_ack_inst));
         last_inst_inst_map = cur_work_inst_map;
         cur_work_inst_map = dss_get_inst_work_status();
         new_added_inst_map = (~last_inst_inst_map & cur_work_inst_map);
-        // re-snd with new rsn
-        head->rsn = mes_get_rsn(session->id);
         cm_sleep(DSS_BROADCAST_MSG_TRY_SLEEP_TIME);
         i++;
     } while (i < DSS_BROADCAST_MSG_TRY_MAX);
@@ -349,26 +375,20 @@ static status_t dss_broadcast_msg_with_try(
 }
 
 static status_t dss_broadcast_msg(
-    dss_session_t *session, char *req_buf, uint32 size, dss_recv_msg_t *recv_msg, unsigned int timeout)
+    char *req_buf, uint32 size, dss_recv_msg_t *recv_msg, unsigned int timeout)
 {
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    dss_params_t *param = &inst_cfg->params;
-    mes_message_head_t *head = (mes_message_head_t *)req_buf;
-    MES_INIT_MESSAGE_HEAD(head, DSS_CMD_REQ_BROADCAST, 0, param->inst_id, 0, session->id, CM_INVALID_ID16);
-    head->size = (uint16)size;
-    head->rsn = mes_get_rsn(session->id);
-    return dss_broadcast_msg_with_try(session, head, recv_msg, timeout);
+    return dss_broadcast_msg_with_try((dss_message_head_t *)req_buf, recv_msg, timeout);
 }
 
-static bool32 dss_check_srv_status(mes_message_t *msg)
+static bool32 dss_check_srv_status(mes_msg_t *msg)
 {
     date_t time_start = g_timer()->now;
     date_t time_now = 0;
-    mes_message_head_t head = *(msg->head);
+    dss_message_head_t *dss_head = (dss_message_head_t *)(msg->buffer);
     while (g_dss_instance.status != DSS_STATUS_OPEN &&
-            (msg->head->cmd != DSS_CMD_REQ_JOIN_CLUSTER && msg->head->cmd != DSS_CMD_ACK_JOIN_CLUSTER)) {
+            (dss_head->dss_cmd != DSS_CMD_REQ_JOIN_CLUSTER && dss_head->dss_cmd != DSS_CMD_ACK_JOIN_CLUSTER)) {
         LOG_DEBUG_INF("Could not exec remote req for the dssserver is not open or msg not join cluster, src node:%u.",
-            (uint32)(head.src_inst));
+            (uint32)(dss_head->src_inst));
         DSS_GET_CM_LOCK_LONG_SLEEP;
         time_now = g_timer()->now;
         if (time_now - time_start > DSS_MAX_FAIL_TIME_WITH_CM * MICROSECS_PER_SECOND) {
@@ -399,45 +419,51 @@ static status_t dss_prepare_ack_msg(
     return CM_SUCCESS;
 }
 
-void dss_proc_remote_req_err(dss_session_t *session, dss_message_head_t *dss_head, unsigned char cmd, int32 ret)
+void dss_proc_remote_req_err(dss_session_t *session, dss_message_head_t *req_dss_head, unsigned char cmd, int32 ret)
 {
     dss_message_head_t ack;
     char *ack_buf = NULL;
     uint32 ack_size = 0;
-    status_t status = dss_prepare_ack_msg(session, ret, &ack_buf, &ack_size, dss_head->msg_proto_ver);
+    status_t status = dss_prepare_ack_msg(session, ret, &ack_buf, &ack_size, req_dss_head->msg_proto_ver);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("The dssserver prepare ack msg failed, src node:%u, dst node:%u.", dss_head->mes_head.src_inst,
-            dss_head->mes_head.dst_inst);
+        LOG_DEBUG_ERR("The dssserver prepare ack msg failed, src node:%u, dst node:%u.", req_dss_head->src_inst,
+            req_dss_head->dst_inst);
         return;
     }
-    dss_init_mes_head(&ack, cmd, ack_size + DSS_MES_MSG_HEAD_SIZE, dss_head->msg_proto_ver);
-    mes_init_ack_head(&dss_head->mes_head, &ack.mes_head, cmd, ack.size, session->id);
+    uint16 src_inst = req_dss_head->dst_inst;
+    uint16 dst_inst = req_dss_head->src_inst;
+    ruid_type ruid = req_dss_head->ruid;
+    uint32 version = req_dss_head->msg_proto_ver;
+    dss_init_mes_head(
+        &ack, cmd, 0, src_inst, dst_inst, ack_size + DSS_MES_MSG_HEAD_SIZE, version, ruid);
     ack.result = ret;
-    (void)mes_send_data3(&ack.mes_head, DSS_MES_MSG_HEAD_SIZE, ack_buf);
+    (void)mes_send_response_x(dst_inst, ack.flags, ruid, 2, &ack, DSS_MES_MSG_HEAD_SIZE, ack_buf, ack_size);
 }
 
-static status_t dss_process_remote_req_prepare(dss_session_t *session, mes_message_t *msg, dss_processor_t *processor)
+static status_t dss_process_remote_req_prepare(dss_session_t *session, mes_msg_t *msg, dss_processor_t *processor)
 {
+    dss_message_head_t *dss_head = (dss_message_head_t *)msg->buffer;
     // ready the ack connection
-    dss_check_peer_by_inst(&g_dss_instance, msg->head->src_inst);
-    if (msg->head->cmd != DSS_CMD_REQ_BROADCAST && !dss_need_exec_local()) {
-        LOG_RUN_ERR("Proc msg cmd:%u from remote node:%u fail, can NOT exec here.", (uint32)msg->head->cmd,
-            msg->head->src_inst);
+    dss_check_peer_by_inst(&g_dss_instance, dss_head->src_inst);
+    if (dss_head->dss_cmd != DSS_CMD_REQ_BROADCAST && !dss_need_exec_local()) {
+        LOG_RUN_ERR("Proc msg cmd:%u from remote node:%u fail, can NOT exec here.", (uint32)dss_head->dss_cmd,
+            dss_head->src_inst);
         return CM_ERROR;
     }
     if (dss_check_srv_status(msg) != CM_TRUE) {
-        LOG_RUN_ERR("Proc msg cmd:%u from remote node:%u fail, local status fail.", (uint32)msg->head->cmd,
-            msg->head->src_inst);
+        LOG_RUN_ERR("Proc msg cmd:%u from remote node:%u fail, local status fail.", (uint32)dss_head->dss_cmd,
+            dss_head->src_inst);
         return CM_ERROR;
     }
     return CM_SUCCESS;
 }
 
-static status_t dss_process_remote_ack_prepare(dss_session_t *session, mes_message_t *msg, dss_processor_t *processor)
+static status_t dss_process_remote_ack_prepare(dss_session_t *session, mes_msg_t *msg, dss_processor_t *processor)
 {
     if (dss_check_srv_status(msg) != CM_TRUE) {
-        LOG_RUN_ERR("Proc msg cmd:%u from remote node:%u fail, local status fail.", (uint32)msg->head->cmd,
-            msg->head->src_inst);
+        dss_message_head_t *dss_head = (dss_message_head_t *)msg->buffer;
+        LOG_RUN_ERR("Proc msg cmd:%u from remote node:%u fail, local status fail.", (uint32)dss_head->dss_cmd,
+            dss_head->src_inst);
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -455,42 +481,46 @@ static void dss_set_cluster_proto_vers(uint8 inst_id, uint32 version)
         if (cur_version == version) {
             break;
         }
-        set_flag = cm_atomic32_cas((atomic32_t *)&g_dss_instance.cluster_proto_vers[inst_id], cur_version, version);
+        set_flag = cm_atomic32_cas(
+            (atomic32_t *)&g_dss_instance.cluster_proto_vers[inst_id], (int32)cur_version, (int32)version);
     } while (!set_flag);
 }
 
-static void dss_process_message(uint32 work_idx, mes_message_t *msg)
+static void dss_process_message(uint32 work_idx, ruid_type ruid, mes_msg_t *msg)
 {
     cm_reset_error();
+
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 mes_sess_cnt = inst_cfg->params.channel_num + inst_cfg->params.work_thread_cnt;
-
     if (work_idx >= mes_sess_cnt) {
         cm_panic(0);
     }
-    LOG_DEBUG_INF("Proc msg cmd:%u, src node:%u, dst node:%u, src sid:%u, dst sid:%u, rsn:%llu begin.", 
-        (uint32)(msg->head->cmd), (uint32)(msg->head->src_inst), (uint32)(msg->head->dst_inst),
-        (uint32)(msg->head->src_sid), (uint32)(msg->head->dst_sid), msg->head->rsn);
-    if (msg->head->cmd >= DSS_CMD_CEIL) {
-        LOG_DEBUG_ERR("Invalid request received,cmd is %u.", (uint8)msg->head->cmd);
-        mes_release_message_buf(msg);
-        return;
-    }
-
-    dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
-    dss_session_t *session = &session_ctrl->sessions[work_idx];
-    status_t ret;
-    if (msg->head->size < DSS_MES_MSG_HEAD_SIZE) {
-        LOG_DEBUG_ERR("Invalid message size");
-        mes_release_message_buf(msg);
+    if (msg->size < DSS_MES_MSG_HEAD_SIZE) {
+        LOG_DEBUG_ERR("invalid message req size.");
+        mes_release_msg(msg);
         return;
     }
     dss_message_head_t *dss_head = (dss_message_head_t *)msg->buffer;
-    dss_set_cluster_proto_vers(dss_head->mes_head.src_inst, dss_head->sw_proto_ver);
+    LOG_DEBUG_INF("Proc msg cmd:%u, src node:%u, dst node:%u begin.", 
+        (uint32)(dss_head->dss_cmd), (uint32)(dss_head->src_inst), (uint32)(dss_head->dst_inst));
+    if (dss_head->dss_cmd >= DSS_CMD_CEIL) {
+        LOG_DEBUG_ERR("Invalid request received,cmd is %u.", (uint8)dss_head->dss_cmd);
+        mes_release_msg(msg);
+        return;
+    }
+    dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
+    dss_session_t *session = &session_ctrl->sessions[work_idx];
+    status_t ret;
+    if (dss_head->size < DSS_MES_MSG_HEAD_SIZE) {
+        LOG_DEBUG_ERR("Invalid message size");
+        mes_release_msg(msg);
+        return;
+    }
+    dss_set_cluster_proto_vers((uint8)dss_head->src_inst, dss_head->sw_proto_ver);
     if (dss_head->msg_proto_ver > DSS_PROTO_VERSION) {
         uint32 curr_proto_ver = MIN(dss_head->sw_proto_ver, DSS_PROTO_VERSION);
         dss_ack_version_not_match(session, dss_head, curr_proto_ver);
-        mes_release_message_buf(msg);
+        mes_release_msg(msg);
         return;
     }
     dss_init_packet(&session->recv_pack, CM_FALSE);
@@ -506,24 +536,20 @@ static void dss_process_message(uint32 work_idx, mes_message_t *msg)
         ret = dss_process_remote_ack_prepare(session, msg, processor);
     }
     if (ret != CM_SUCCESS) {
-        mes_release_message_buf(msg);
+        mes_release_msg(msg);
         return;
     }
 
     // from here, the proc need to give the ack and release message buf
     processor->proc(session, msg);
 
-    LOG_DEBUG_INF("Proc msg cmd:%u, src node:%u, dst node:%u, src sid:%u, dst sid:%u, rsn:%llu end.", 
-        (uint32)(msg->head->cmd), (uint32)(msg->head->src_inst), (uint32)(msg->head->dst_inst),
-        (uint32)(msg->head->src_sid), (uint32)(msg->head->dst_sid), msg->head->rsn);
+    LOG_DEBUG_INF("Proc msg cmd:%u, src node:%u, dst node:%u end.", 
+        (uint32)(dss_head->dss_cmd), (uint32)(dss_head->src_inst), (uint32)(dss_head->dst_inst));
 }
 
 // add function
 static status_t dss_register_proc(void)
 {
-    for (uint32 i = DSS_CMD_REQ_BROADCAST; i < DSS_CMD_CEIL; i++) {
-        mes_set_msg_enqueue(i, g_dss_processors[i].is_enqueue);
-    }
     mes_register_proc_func(dss_process_message);
     return CM_SUCCESS;
 }
@@ -553,14 +579,6 @@ static void dss_set_mes_buffer_pool(unsigned long long recv_msg_buf_size, mes_pr
     profile->buffer_pool_attr.buf_attr[pool_idx].size = DSS_THIRD_BUFFER_LENGTH;
 }
 
-void dss_set_command_group(void)
-{
-    // group 0
-    for (uint8 i = 0; i < DSS_CMD_CEIL; i++) {
-        mes_set_command_task_group(i, g_dss_processors[i].group_id);
-    }
-}
-
 static inline void dss_set_group_task_num(dss_config_t *dss_profile, mes_profile_t *mes_profile)
 {
     uint32 work_thread_cnt_load_meta =
@@ -571,8 +589,6 @@ static inline void dss_set_group_task_num(dss_config_t *dss_profile, mes_profile
     uint32 work_thread_cnt_comm = (dss_profile->params.work_thread_cnt - work_thread_cnt_load_meta);
     mes_profile->task_group[MES_TASK_GROUP_ZERO] = work_thread_cnt_comm;
     mes_profile->task_group[MES_TASK_GROUP_ONE] = work_thread_cnt_load_meta;
-    mes_profile->task_group[MES_TASK_GROUP_TWO] = 0;
-    mes_profile->task_group[MES_TASK_GROUP_THREE] = 0;
 }
 
 static status_t dss_set_mes_profile(mes_profile_t *profile)
@@ -611,11 +627,8 @@ static status_t dss_set_mes_profile(mes_profile_t *profile)
 
     dss_set_mes_buffer_pool(inst_cfg->params.mes_pool_size, profile);
     dss_set_group_task_num(inst_cfg, profile);
-    dss_set_command_group();
     return CM_SUCCESS;
 }
-
-
 
 static status_t dss_create_mes_session(void)
 {
@@ -678,18 +691,18 @@ void dss_stop_mes(void)
     mes_uninit();
 }
 
-status_t dss_notify_sync(dss_session_t *session, char *buffer, uint32 size, dss_recv_msg_t *recv_msg)
+status_t dss_notify_sync(char *buffer, uint32 size, dss_recv_msg_t *recv_msg)
 {
     CM_ASSERT(buffer != NULL);
     CM_ASSERT(size < SIZE_K(1));
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 timeout = inst_cfg->params.mes_wait_timeout;
-    status_t status = dss_broadcast_msg(session, buffer, size, recv_msg, timeout);
+    status_t status = dss_broadcast_msg(buffer, size, recv_msg, timeout);
     return status;
 }
 
 status_t dss_notify_expect_bool_ack(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *cmd_ack)
+    dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *cmd_ack)
 {
     if (g_dss_instance.is_maintain) {
         return CM_SUCCESS;
@@ -698,6 +711,8 @@ status_t dss_notify_expect_bool_ack(
     recv_msg.broadcast_proto_ver = dss_get_broadcast_proto_ver(0);
     dss_notify_req_msg_t req;
     status_t status;
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    dss_params_t *param = &inst_cfg->params;
     do {
         req.ftid = ftid;
         req.type = cmd;
@@ -708,9 +723,9 @@ status_t dss_notify_expect_bool_ack(
             return CM_ERROR;
         }
         LOG_DEBUG_INF("notify other dss instance to do cmd %u, ftid:%llu in vg:%s.", cmd, ftid, vg_item->vg_name);
-        dss_init_mes_head(
-            &req.dss_head, DSS_CMD_REQ_BROADCAST, sizeof(dss_notify_req_msg_t), recv_msg.broadcast_proto_ver);
-        status = dss_notify_sync(session, (char *)&req, req.dss_head.size, &recv_msg);
+        dss_init_mes_head(&req.dss_head, DSS_CMD_REQ_BROADCAST, 0, (uint16)param->inst_id, CM_INVALID_ID16,
+            sizeof(dss_notify_req_msg_t), recv_msg.broadcast_proto_ver, 0);
+        status = dss_notify_sync((char *)&req, req.dss_head.size, &recv_msg);
         if (status == ERR_DSS_VERSION_NOT_MATCH) {
             uint32 new_proto_ver = dss_get_broadcast_proto_ver(recv_msg.succ_inst);
             LOG_RUN_INF("broadcast msg proto version has changed, old is %hhu, new is %hhu",
@@ -737,9 +752,9 @@ status_t dss_notify_expect_bool_ack(
 }
 
 
-status_t dss_invalidate_other_nodes(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack)
+status_t dss_invalidate_other_nodes(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack)
 {
-    return dss_notify_expect_bool_ack(session, vg_item, BCAST_REQ_INVALIDATE_FS_META, ftid, cmd_ack);
+    return dss_notify_expect_bool_ack(vg_item, BCAST_REQ_INVALIDATE_FS_META, ftid, cmd_ack);
 }
 
 static void dss_check_inst_conn(uint32_t id, uint64 old_inst_stat, uint64 cur_inst_stat)
@@ -750,9 +765,9 @@ static void dss_check_inst_conn(uint32_t id, uint64 old_inst_stat, uint64 cur_in
 
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     if (old_inst_stat == 0) {
-        (void)mes_connect(id, inst_cfg->params.nodes[id], inst_cfg->params.ports[id]);
+        (void)mes_add_instance(id, inst_cfg->params.nodes[id], inst_cfg->params.ports[id]);
     } else {
-        mes_disconnect(id);
+        (void)mes_del_instance(id);
     }
 }
 
@@ -800,7 +815,7 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
 {
     status_t ret = CM_ERROR;
     dss_message_head_t dss_head;
-    mes_message_t msg;
+    mes_msg_t msg;
     dss_message_head_t *ack_head = NULL;
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 timeout = inst_cfg->params.mes_wait_timeout;
@@ -808,20 +823,18 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
     do {
         uint32 buf_size = DSS_MES_MSG_HEAD_SIZE + session->recv_pack.head->size;
         // 1.init mes head, dss head, dssbody
-        dss_init_mes_head(&dss_head, DSS_CMD_REQ_SYB2ACTIVE, buf_size, new_proto_ver);
-        MES_INIT_MESSAGE_HEAD(
-            &dss_head.mes_head, DSS_CMD_REQ_SYB2ACTIVE, 0, currtid, remoteid, session->id, CM_INVALID_ID16);
-        dss_head.mes_head.size = (uint16)buf_size;
-        dss_head.mes_head.rsn = mes_get_rsn(session->id);
+        dss_init_mes_head(
+            &dss_head, DSS_CMD_REQ_SYB2ACTIVE, 0, (uint16)currtid, (uint16)remoteid, buf_size, new_proto_ver, 0);
         // 2. send request to remote
-        ret = mes_send_data3(&dss_head.mes_head, DSS_MES_MSG_HEAD_SIZE, session->recv_pack.buf);
+        ret = mes_send_request_x(
+            dss_head.dst_inst, dss_head.flags, &dss_head.ruid, 2, &dss_head, DSS_MES_MSG_HEAD_SIZE, session->recv_pack.buf, session->recv_pack.head->size);
         char *err_msg = "The dss server fails to send messages to the remote node";
         DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("%s, src node(%u), dst node(%u).", err_msg, currtid, remoteid));
         // 3. receive msg from remote
-        ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, timeout);
+        ret = mes_get_response(dss_head.ruid, &msg, timeout);
         DSS_RETURN_IFERR2(ret,
-            LOG_RUN_ERR("dss server receive msg from remote failed, src node:%u, dst node:%u, cmd:%u, size:%lu.",
-                currtid, remoteid, session->recv_pack.head->cmd, dss_head.size - DSS_MES_MSG_HEAD_SIZE));
+            LOG_RUN_ERR("dss server receive msg from remote failed, src node:%u, dst node:%u, cmd:%u.",
+                currtid, remoteid, session->recv_pack.head->cmd));
         // 4. attach remote execution result
         ack_head = (dss_message_head_t *)msg.buffer;
         if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {
@@ -835,12 +848,12 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
                 DSS_THROW_ERROR(
                     ERR_DSS_VERSION_NOT_MATCH, dss_get_version(&session->recv_pack), session->proto_version);
                 *remote_result = ERR_DSS_VERSION_NOT_MATCH;
-                mes_release_message_buf(&msg);
+                mes_release_msg(&msg);
                 return ret;
             } else {
                 dss_head.msg_proto_ver = new_proto_ver;
                 // if msg version has changed, please motify your change
-                mes_release_message_buf(&msg);
+                mes_release_msg(&msg);
                 continue;
             }
         } else {
@@ -850,11 +863,11 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
     // errcode|errmsg
     // data
     *remote_result = ack_head->result;
-    uint32 body_size = msg.head->size - DSS_MES_MSG_HEAD_SIZE;
+    uint32 body_size = ack_head->size - DSS_MES_MSG_HEAD_SIZE;
     if (*remote_result != CM_SUCCESS) {
-        if (msg.head->size < sizeof(dss_remote_exec_fail_ack_t)) {
+        if (ack_head->size < sizeof(dss_remote_exec_fail_ack_t)) {
             DSS_RETURN_IFERR3(
-                CM_ERROR, DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid"), mes_release_message_buf(&msg));
+                CM_ERROR, DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid"), mes_release_msg(&msg));
         }
         dss_remote_exec_fail_ack_t *fail_ack = (dss_remote_exec_fail_ack_t *)msg.buffer;
         DSS_THROW_ERROR(ERR_DSS_PROCESS_REMOTE, fail_ack->err_code, fail_ack->err_msg);
@@ -865,21 +878,21 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
         // do not parse the format
         ret = dss_put_data(&session->send_pack, succ_ack->body_buf, body_size);
     }
-    mes_release_message_buf(&msg);
+    mes_release_msg(&msg);
     return ret;
 }
 
 status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int ack_size, status_t *remote_result)
 {
     status_t ret = CM_ERROR;
-    dss_message_head_t *req_head = (dss_message_head_t *)req;
+    dss_message_head_t *dss_head = (dss_message_head_t *)req;
     dss_message_head_t *ack_head = NULL;
     dss_session_t *session = NULL;
     uint32 remoteid = DSS_INVALID_ID32;
     uint32 currid = DSS_INVALID_ID32;
-    mes_message_t msg;
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 timeout = inst_cfg->params.mes_wait_timeout;
+    mes_msg_t msg;
     if (dss_create_session(NULL, &session) != CM_SUCCESS) {
         LOG_RUN_ERR("Exec cmd:%u on remote node create session fail.", (uint32)cmd);
         return CM_ERROR;
@@ -890,20 +903,16 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
     do {
         uint32 proto_ver = dss_get_remote_proto_ver(remoteid);
         // 1. init msg head
-        dss_init_mes_head(req_head, cmd, req_size, proto_ver);
-        MES_INIT_MESSAGE_HEAD(&req_head->mes_head, cmd, 0, currid, remoteid, session->id, CM_INVALID_ID16);
-        req_head->mes_head.size = (uint16)req_size;
-        req_head->mes_head.rsn = mes_get_rsn(session->id);
-    
+        dss_init_mes_head(dss_head, cmd, 0, (uint16)currid, (uint16)remoteid, req_size, proto_ver, 0);
         // 2. send request to remote
-        ret = mes_send_data(&req_head->mes_head);
+        ret = mes_send_request(remoteid, dss_head->flags, &dss_head->ruid, req, dss_head->size);
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("Exec cmd:%u on remote node:%u  send msg fail.", (uint32)cmd, remoteid);
             dss_destroy_session(session);
             return ERR_DSS_MES_ILL;
         }
         // 3. receive msg from remote
-        ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, timeout);
+        ret = mes_get_response(dss_head->ruid, &msg, timeout);
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("Exec cmd:%u on remote node:%u  recv msg fail.", (uint32)cmd, remoteid);
             dss_destroy_session(session);
@@ -912,7 +921,7 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
         ack_head = (dss_message_head_t *)msg.buffer;
         if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {
             //if msg version has changed, please motify your change
-            mes_release_message_buf(&msg);
+            mes_release_msg(&msg);
             continue;
         }
         break;
@@ -920,47 +929,48 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
     // 4. attach remote execution result
     *remote_result = ack_head->result;
     LOG_DEBUG_INF("dss server receive msg from remote node, cmd:%u, ack to cli data size:%hu, remote_result:%u.", 
-        ack_head->dss_cmd, msg.head->size, (uint32)*remote_result);
+        ack_head->dss_cmd, ack_head->size, (uint32)*remote_result);
     if (*remote_result != CM_SUCCESS) {
-        if (msg.head->size < sizeof(dss_remote_exec_fail_ack_t)) {
+        if (ack_head->size < sizeof(dss_remote_exec_fail_ack_t)) {
             DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
-            DSS_RETURN_IFERR3(CM_ERROR, dss_destroy_session(session), mes_release_message_buf(&msg));
+            DSS_RETURN_IFERR3(CM_ERROR, dss_destroy_session(session), mes_release_msg(&msg));
         }
         dss_remote_exec_fail_ack_t *fail_ack = (dss_remote_exec_fail_ack_t *)msg.buffer;
         DSS_THROW_ERROR(ERR_DSS_PROCESS_REMOTE, fail_ack->err_code, fail_ack->err_msg);
     } else {
-        if (msg.head->size != ack_size) {
+        if (ack_head->size != ack_size) {
             DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
-            DSS_RETURN_IFERR3(CM_ERROR, dss_destroy_session(session), mes_release_message_buf(&msg));
+            DSS_RETURN_IFERR3(CM_ERROR, dss_destroy_session(session), mes_release_msg(&msg));
         }
-        errno_t err = memcpy_s(ack, (size_t)ack_size, msg.buffer, (size_t)msg.head->size);
+        errno_t err = memcpy_s(ack, (size_t)ack_size, msg.buffer, (size_t)ack_head->size);
         if (err != EOK) {
             CM_THROW_ERROR(ERR_SYSTEM_CALL, err);
             ret = CM_ERROR;
         }
     }
 
-    mes_release_message_buf(&msg);
+    mes_release_msg(&msg);
     dss_destroy_session(session);
     LOG_DEBUG_INF("Exec cmd:%u on remote node:%u end.", (uint32)cmd, remoteid);
     return ret;
 }
 
-void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg)
+void dss_proc_syb2active_req(dss_session_t *session, mes_msg_t *msg)
 {
-    uint32 size = msg->head->size - DSS_MES_MSG_HEAD_SIZE;
     dss_message_head_t req_head = *(dss_message_head_t *)(msg->buffer);
-    uint32 srcid = (uint32)(req_head.mes_head.src_inst);
-    uint32 dstid = (uint32)(req_head.mes_head.dst_inst);
+    uint32 size = req_head.size - DSS_MES_MSG_HEAD_SIZE;
+    uint16 srcid = req_head.src_inst;
+    uint16 dstid = req_head.dst_inst;
+    ruid_type ruid = req_head.ruid;
     if (size > DSS_MAX_PACKET_SIZE) {
         LOG_DEBUG_ERR(
             "The dss server receive msg from remote failed, src node:%u, dst node:%u, size is %u.", srcid, dstid, size);
-        mes_release_message_buf(msg);
+        mes_release_msg(msg);
         return;
     }
     LOG_DEBUG_INF("The dss server receive messages from remote node, src node:%u, dst node:%u.", srcid, dstid);
     errno_t errcode = memcpy_s(session->recv_pack.buf, size, msg->buffer + DSS_MES_MSG_HEAD_SIZE, size);
-    mes_release_message_buf(msg);
+    mes_release_msg(msg);
     if (errcode != EOK) {
         LOG_DEBUG_ERR("The dss server memcpy msg failed, src node:%u, dst node:%u.", srcid, dstid);
         return;
@@ -977,33 +987,31 @@ void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg)
         srcid, dstid, session->send_pack.head->cmd, body_size);
     dss_message_head_t ack;
     dss_init_mes_head(
-        &ack, DSS_CMD_ACK_SYB2ACTIVE, body_size + DSS_MES_MSG_HEAD_SIZE, req_head.msg_proto_ver);
-    mes_init_ack_head(&req_head.mes_head, &ack.mes_head, DSS_CMD_ACK_SYB2ACTIVE, 0, session->id);
-    ack.mes_head.size = (uint16)(ack.size);
+        &ack, DSS_CMD_ACK_SYB2ACTIVE, 0, dstid, srcid, body_size + DSS_MES_MSG_HEAD_SIZE, req_head.msg_proto_ver, ruid);
     ack.result = ret;
-    ret = mes_send_data3(&ack.mes_head, DSS_MES_MSG_HEAD_SIZE, body_buf);
+    ret = mes_send_response_x(ack.dst_inst, ack.flags, ack.ruid, 2, &ack, DSS_MES_MSG_HEAD_SIZE, body_buf, body_size);
     if (ret != CM_SUCCESS) {
         LOG_DEBUG_ERR("The dss server fails to send messages to the remote node, src node:%u, dst node:%u.",
-            (uint32)(ack.mes_head.src_inst), (uint32)(ack.mes_head.dst_inst));
+            (uint32)(ack.src_inst), (uint32)(ack.dst_inst));
         return;
     }
     LOG_DEBUG_INF("The dss server send messages to the remote node success, src node:%u, dst node:%u.",
-        (uint32)(ack.mes_head.src_inst), (uint32)(ack.mes_head.dst_inst));
+        (uint32)(ack.src_inst), (uint32)(ack.dst_inst));
 }
 
 status_t dss_send2standby(big_packets_ctrl_t *ack, const char *buf)
 {
-    status_t ret = mes_send_data3(&ack->dss_head.mes_head, sizeof(big_packets_ctrl_t), buf);
+    dss_message_head_t *dss_head = &ack->dss_head;
+    status_t ret = mes_send_response_x(dss_head->dst_inst, dss_head->flags, dss_head->ruid, 2, ack,
+        sizeof(big_packets_ctrl_t), buf, dss_head->size - sizeof(big_packets_ctrl_t));
     if (ret != CM_SUCCESS) {
         LOG_RUN_ERR("The dssserver fails to send messages to the remote node, src node:%u, dst node:%u.",
-            (uint32)(ack->dss_head.mes_head.src_inst), (uint32)(ack->dss_head.mes_head.dst_inst));
+            (uint32)(dss_head->src_inst), (uint32)(dss_head->dst_inst));
         return ret;
     }
 
-    LOG_DEBUG_INF("The dss server send messages to the remote node success, src node:%u, dst node:%u."
-                 "src sid:%u, dst sid:%u, rsn:%llu",
-        (uint32)(ack->dss_head.mes_head.src_inst), (uint32)(ack->dss_head.mes_head.dst_inst),
-        (uint32)(ack->dss_head.mes_head.src_sid), (uint32)(ack->dss_head.mes_head.dst_sid), ack->dss_head.mes_head.rsn);
+    LOG_DEBUG_INF("The dss server send messages to the remote node success, src node:%u, dst node:%u.",
+        (uint32)(dss_head->src_inst), (uint32)(dss_head->dst_inst));
     return ret;
 }
 
@@ -1046,9 +1054,10 @@ static int32 dss_batch_load_core(dss_session_t *session, dss_loaddisk_req_t *req
     uint32 remain = req->size;
     uint32 read_total = 0;
     big_packets_ctrl_t ctrl;
+    dss_message_head_t *req_dss_head = &req->dss_head;
     (void)memset_s(&ctrl, sizeof(big_packets_ctrl_t), 0, sizeof(big_packets_ctrl_t));
-    dss_init_mes_head(&ctrl.dss_head, DSS_CMD_ACK_LOAD_DISK, 0, version);
-    mes_init_ack_head(&req->dss_head.mes_head, &ctrl.dss_head.mes_head, DSS_CMD_ACK_LOAD_DISK, 0, session->id);
+    dss_init_mes_head(
+        &ctrl.dss_head, DSS_CMD_ACK_LOAD_DISK, 0, req_dss_head->dst_inst, req_dss_head->src_inst, 0, version, req_dss_head->ruid);
     ctrl.totalsize = req->size;
     while (remain > 0) {
         if (session && session->is_closed) {
@@ -1067,7 +1076,6 @@ static int32 dss_batch_load_core(dss_session_t *session, dss_loaddisk_req_t *req
         ctrl.cursize = each_size;
         ctrl.endflag = (remain == 0) ? CM_TRUE : CM_FALSE;
         ctrl.dss_head.size = each_size + sizeof(big_packets_ctrl_t);
-        ctrl.dss_head.mes_head.size = (uint16)ctrl.dss_head.size;
         if (dss_send2standby(&ctrl, read_buff) != CM_SUCCESS) {
             LOG_RUN_ERR(
                 "read volume for standby send msg failed, vg name[%s], volume id[%u].", req->vg_name, req->volumeid);
@@ -1101,45 +1109,47 @@ int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, uint32 ver
     return ret;
 }
 
-void dss_proc_loaddisk_req(dss_session_t *session, mes_message_t *msg)
+void dss_proc_loaddisk_req(dss_session_t *session, mes_msg_t *msg)
 {
     int32 ret = CM_ERROR;
-    if (msg->head->size != sizeof(dss_loaddisk_req_t)) {
+    dss_loaddisk_req_t *req = (dss_loaddisk_req_t *)msg->buffer;
+    dss_message_head_t *req_dss_head = &req->dss_head;
+    if (req_dss_head->size != sizeof(dss_loaddisk_req_t)) {
         LOG_RUN_ERR("Invalid reveive msg size from remote failed, src node(%hu), dst node(%hu).",
-            msg->head->src_inst, msg->head->dst_inst);
-        mes_release_message_buf(msg);
+            req_dss_head->src_inst, req_dss_head->dst_inst);
+        mes_release_msg(msg);
         return;
     }
-    dss_loaddisk_req_t *req = (dss_loaddisk_req_t *)msg->buffer;
+    
     if (dss_is_readonly() == CM_TRUE) {
         dss_config_t *cfg = dss_get_inst_cfg();
         LOG_RUN_ERR("The local node:%u is in readonly state and cannot execute remote loaddisk requests.",
             (uint32)(cfg->params.inst_id));
-        dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_LOAD_DISK, ret);
-        mes_release_message_buf(msg);
+        dss_proc_remote_req_err(session, req_dss_head, DSS_CMD_ACK_LOAD_DISK, ret);
+        mes_release_msg(msg);
         return;
     }
     LOG_DEBUG_INF("Exec load disk req, src node(%hu), volume id:%u, offset:%llu, size:%u.",
-        msg->head->src_inst, req->volumeid, req->offset, req->size);
+        req_dss_head->src_inst, req->volumeid, req->offset, req->size);
     if (dss_check_srv_status(msg) != CM_TRUE) {
-        dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_LOAD_DISK, ret);
-        mes_release_message_buf(msg);
+        dss_proc_remote_req_err(session, req_dss_head, DSS_CMD_ACK_LOAD_DISK, ret);
+        mes_release_msg(msg);
         return;
     }
-    ret = dss_batch_load(session, req, req->dss_head.msg_proto_ver);
+    ret = dss_batch_load(session, req, req_dss_head->msg_proto_ver);
     if (ret != CM_SUCCESS) {
-        LOG_RUN_ERR("Exec load disk req failed, src node:%u, volume id:%u, offset:%llu, size:%u.", (uint32)(msg->head->src_inst),
+        LOG_RUN_ERR("Exec load disk req failed, src node:%u, volume id:%u, offset:%llu, size:%u.", (uint32)(req_dss_head->src_inst),
             req->volumeid, req->offset, req->size);
         dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_LOAD_DISK, ret);
     }
-    mes_release_message_buf(msg);
+    mes_release_msg(msg);
     return;
 }
 
 static status_t dss_init_readvlm_remote_params(
     dss_loaddisk_req_t *req, const char *entry, uint32 *currid, uint32 *remoteid, dss_session_t *session)
 {
-    error_t errcode = memset_s(req, sizeof(dss_loaddisk_req_t), 0, sizeof(dss_loaddisk_req_t));
+    errno_t errcode = memset_s(req, sizeof(dss_loaddisk_req_t), 0, sizeof(dss_loaddisk_req_t));
     securec_check_ret(errcode);
     errcode = memcpy_s(req->vg_name, DSS_MAX_NAME_LEN, entry, DSS_MAX_NAME_LEN);
     securec_check_ret(errcode);
@@ -1161,52 +1171,48 @@ static bool32 dss_packets_verify(big_packets_ctrl_t *lastctrl, big_packets_ctrl_
     return CM_TRUE;
 }
 
-static status_t dss_rec_msgs(dss_session_t *session, void *buf, uint32 size)
+static status_t dss_rec_msgs(ruid_type ruid, void *buf, uint32 size)
 {
-    mes_message_t msg;
+    mes_msg_t msg;
     big_packets_ctrl_t lastctrl;
     (void)memset_s(&lastctrl, sizeof(big_packets_ctrl_t), 0, sizeof(big_packets_ctrl_t));
     big_packets_ctrl_t *ctrl;
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 timeout = inst_cfg->params.mes_wait_timeout;
     do {
-        if (session && session->is_closed) {
-            LOG_RUN_ERR("session:%u is closed.", session->id);
-            return CM_ERROR;
-        }
-        status_t ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, timeout);
+        status_t ret = mes_get_response(ruid, &msg, timeout);
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("dss server receive msg from remote node failed, result:%d.", ret);
             return ret;
         }
         dss_message_head_t *ack_head = (dss_message_head_t *)msg.buffer;
         if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {
-            mes_release_message_buf(&msg);
+            mes_release_msg(&msg);
             return ERR_DSS_VERSION_NOT_MATCH;
         }
-        if (msg.head->size < sizeof(big_packets_ctrl_t)) {
+        if (ack_head->size < sizeof(big_packets_ctrl_t)) {
             ret = CM_ERROR;
-            LOG_RUN_ERR("Dss load disk from remote node failed invalid size, msg len(%d) error.", msg.head->size);
-            if (msg.head->size == DSS_MES_MSG_HEAD_SIZE) {
+            LOG_RUN_ERR("Dss load disk from remote node failed invalid size, msg len(%d) error.", ack_head->size);
+            if (ack_head->size == DSS_MES_MSG_HEAD_SIZE) {
                 ret = ack_head->result;
             }
-            mes_release_message_buf(&msg);
+            mes_release_msg(&msg);
             return ret;
         }
         ctrl = (big_packets_ctrl_t *)msg.buffer;
         if (dss_packets_verify(&lastctrl, ctrl) == CM_FALSE) {
-            mes_release_message_buf(&msg);
+            mes_release_msg(&msg);
             LOG_RUN_ERR("dss server receive msg verify failed.");
             return CM_ERROR;
         }
-        if (size < ctrl->offset + ctrl->cursize || msg.head->size != (sizeof(big_packets_ctrl_t) + ctrl->cursize)) {
-            mes_release_message_buf(&msg);
+        if (size < ctrl->offset + ctrl->cursize || ack_head->size != (sizeof(big_packets_ctrl_t) + ctrl->cursize)) {
+            mes_release_msg(&msg);
             LOG_RUN_ERR("dss server receive msg size is invalid.");
             return CM_ERROR;
         }
         errno_t errcode =
             memcpy_s((char *)buf + ctrl->offset, ctrl->cursize, msg.buffer + sizeof(big_packets_ctrl_t), ctrl->cursize);
-        mes_release_message_buf(&msg);
+        mes_release_msg(&msg);
         securec_check_ret(errcode);
     } while (ctrl->endflag != CM_TRUE);
 
@@ -1217,22 +1223,20 @@ static status_t dss_read_volume_remote_core(dss_session_t *session, dss_loaddisk
 {
     status_t ret = CM_ERROR;
     do {
-        req->dss_head.mes_head.rsn = mes_get_rsn(session->id);
-        LOG_DEBUG_INF("Ready msg cmd:%u, src node:%u, dst node:%u, src sid:%u, dst sid:%u rsn:%llu end",
-            req->dss_head.dss_cmd, (uint32)(req->dss_head.mes_head.src_inst), (uint32)(req->dss_head.mes_head.dst_inst),
-            (uint32)(req->dss_head.mes_head.src_sid), (uint32)(req->dss_head.mes_head.dst_sid),
-            req->dss_head.mes_head.rsn);
+        dss_message_head_t *dss_head = &req->dss_head;
+        LOG_DEBUG_INF("Ready msg cmd:%u, src node:%u, dst node:%u end",
+            dss_head->dss_cmd, (uint32)(dss_head->src_inst), (uint32)(dss_head->dst_inst));
         // 2. send request to remote
-        ret = mes_send_data(&req->dss_head.mes_head);
+        ret = mes_send_request(dss_head->dst_inst, dss_head->flags, &dss_head->ruid, (char *)req, dss_head->size);
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("The dssserver fails to send messages to the remote node, src node (%u), dst node(%u).",
-                req->dss_head.mes_head.src_inst, req->dss_head.mes_head.dst_inst);
+                dss_head->src_inst, dss_head->dst_inst);
             return ret;
         }
         // 3. receive msg from remote
-        ret = dss_rec_msgs(session, buf, req->size);
+        ret = dss_rec_msgs(dss_head->ruid, buf, req->size);
         if (ret == ERR_DSS_VERSION_NOT_MATCH) {
-            req->dss_head.msg_proto_ver = dss_get_remote_proto_ver(req->dss_head.mes_head.dst_inst);
+            req->dss_head.msg_proto_ver = dss_get_remote_proto_ver(req->dss_head.dst_inst);
             // if msg version has changed, please motify your change
             continue;
         }
@@ -1268,11 +1272,7 @@ status_t dss_read_volume_remote(const char *vg_name, dss_volume_t *volume, int64
     req.size = (uint32)size;
     // 1. init msg head
     uint32 remote_proto_ver = dss_get_remote_proto_ver(remoteid);
-    dss_init_mes_head(&req.dss_head, DSS_CMD_REQ_LOAD_DISK, sizeof(dss_loaddisk_req_t), remote_proto_ver);
-
-    MES_INIT_MESSAGE_HEAD(
-        &req.dss_head.mes_head, DSS_CMD_REQ_LOAD_DISK, 0, currid, remoteid, session->id, CM_INVALID_ID16);
-    req.dss_head.mes_head.size = (uint16)req.dss_head.size;
+    dss_init_mes_head(&req.dss_head, DSS_CMD_REQ_LOAD_DISK, 0, (uint16)currid, (uint16)remoteid, sizeof(dss_loaddisk_req_t), remote_proto_ver, 0);
     ret = dss_read_volume_remote_core(session, &req, buf);
     dss_destroy_session(session);
     if (ret != CM_SUCCESS) {
@@ -1311,23 +1311,28 @@ status_t dss_join_cluster(bool32 *join_succ)
     return CM_SUCCESS;
 }
 
-void dss_proc_join_cluster_req(dss_session_t *session, mes_message_t *msg)
+void dss_proc_join_cluster_req(dss_session_t *session, mes_msg_t *msg)
 {
-    if (msg->head->size != sizeof(dss_join_cluster_req_t)) {
-        LOG_RUN_ERR("Proc join cluster from remote node:%u check req msg fail.", (uint32)(msg->head->src_inst));
-        mes_release_message_buf(msg);
+    dss_message_head_t *req_head = (dss_message_head_t *)msg->buffer;
+    if (req_head->size != sizeof(dss_join_cluster_req_t)) {
+        LOG_RUN_ERR("Proc join cluster from remote node:%u check req msg fail.", (uint32)(req_head->src_inst));
+        mes_release_msg(msg);
         return;
     }
 
     dss_join_cluster_req_t *req = (dss_join_cluster_req_t *)msg->buffer;
-    uint32 proto_ver = req->dss_head.msg_proto_ver;
+    uint16 dst_inst = req_head->src_inst;
+    uint16 src_inst = req_head->dst_inst;
+    uint32 version = req_head->msg_proto_ver;
+    ruid_type ruid = req_head->ruid;
     // please solve with your proto_ver
     LOG_DEBUG_INF(
-        "Proc join cluster from remote node:%u reg node:%u begin.", (uint32)(msg->head->src_inst), req->reg_id);
+        "Proc join cluster from remote node:%u reg node:%u begin.", (uint32)(req_head->src_inst), req->reg_id);
     
     // only in the work_status map can join the cluster
+
     dss_join_cluster_ack_t ack;
-    dss_init_mes_head(&ack.ack_head, DSS_CMD_ACK_JOIN_CLUSTER, sizeof(dss_join_cluster_ack_t), proto_ver);
+    dss_init_mes_head(&ack.ack_head, DSS_CMD_ACK_JOIN_CLUSTER, 0, src_inst, dst_inst, sizeof(dss_join_cluster_ack_t), version, ruid);
     ack.is_reg = CM_FALSE;
     ack.ack_head.result = CM_SUCCESS;
     uint64 work_status = dss_get_inst_work_status();
@@ -1336,21 +1341,19 @@ void dss_proc_join_cluster_req(dss_session_t *session, mes_message_t *msg)
         ack.is_reg = CM_TRUE;
     }
 
-    LOG_DEBUG_INF("Proc join cluster from remote node:%u, reg node:%u, is_reg:%u.", (uint32)(msg->head->src_inst),
+    LOG_DEBUG_INF("Proc join cluster from remote node:%u, reg node:%u, is_reg:%u.", (uint32)(req_head->src_inst),
         req->reg_id, (uint32)ack.is_reg);
-    mes_init_ack_head(
-        msg->head, (mes_message_head_t *)&ack, DSS_CMD_ACK_JOIN_CLUSTER, sizeof(dss_join_cluster_ack_t), session->id);
-    int send_ret = mes_send_data((mes_message_head_t *)&ack);
+    int send_ret = mes_send_response(dst_inst, ack.ack_head.flags, ruid, (char *)&ack, ack.ack_head.size);
     if (send_ret != CM_SUCCESS) {
-        LOG_RUN_ERR("Proc join cluster from remote node:%u, reg node:%u send ack fail.", (uint32)(msg->head->src_inst),
+        LOG_RUN_ERR("Proc join cluster from remote node:%u, reg node:%u send ack fail.", (uint32)dst_inst,
             req->reg_id);
-        mes_release_message_buf(msg);
+        mes_release_msg(msg);
         return;
     }
 
     LOG_DEBUG_INF("Proc join cluster from remote node:%u, reg node:%u send ack size:%u end.",
-        (uint32)(msg->head->src_inst), req->reg_id, ack.ack_head.size);
-    mes_release_message_buf(msg);
+        (uint32)dst_inst, req->reg_id, ack.ack_head.size);
+    mes_release_msg(msg);
 }
 
 status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_path, gft_item_type_t type,
@@ -1516,100 +1519,103 @@ static status_t dss_proc_get_ft_block_req_core(
     return CM_SUCCESS;
 }
 
-void dss_proc_get_ft_block_req(dss_session_t *session, mes_message_t *msg)
+void dss_proc_get_ft_block_req(dss_session_t *session, mes_msg_t *msg)
 {
-    if (msg->head->size != sizeof(dss_get_ft_block_req_t)) {
-        LOG_RUN_ERR("Get ft block from remote node:%u check req msg size fail.", (uint32)(msg->head->src_inst));
-        mes_release_message_buf(msg);
+    if (msg->size != sizeof(dss_get_ft_block_req_t)) {
+        LOG_RUN_ERR("Get ft block from remote node check req msg size fail.");
+        mes_release_msg(msg);
         return;
     }
     dss_get_ft_block_req_t *req = (dss_get_ft_block_req_t *)msg->buffer;
+    uint16 src_inst = req->dss_head.dst_inst;
+    uint16 dst_inst = req->dss_head.src_inst;
+    ruid_type ruid = req->dss_head.ruid;
     uint32 proto_ver = req->dss_head.msg_proto_ver;
     // please solve with your proto_ver
     if (req->type > GFT_LINK) {
         LOG_RUN_ERR(
-            "Get ft block from remote node:%u check req msg type:%d fail.", (uint32)(msg->head->src_inst), req->type);
+            "Get ft block from remote node:%u check req msg type:%d fail.", (uint32)dst_inst, req->type);
         dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_GET_FT_BLOCK, CM_ERROR);
-        mes_release_message_buf(msg);
+        mes_release_msg(msg);
         return;
     }
     status_t status = dss_check_device_path(req->path);
     if (status != CM_SUCCESS) {
         dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_GET_FT_BLOCK, status);
-        mes_release_message_buf(msg);
+        mes_release_msg(msg);
         return;
     }
-    LOG_DEBUG_INF("Get ft block from remote node:%u, path:%s begin.", (uint32)(msg->head->src_inst), req->path);
+    LOG_DEBUG_INF("Get ft block from remote node:%u, path:%s begin.", (uint32)dst_inst, req->path);
     uint32 beg_pos = 0;
     char vg_name[DSS_MAX_NAME_LEN];
     status = dss_get_name_from_path(req->path, &beg_pos, vg_name);
     if (status != CM_SUCCESS) {
         dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_GET_FT_BLOCK, status);
-        mes_release_message_buf(msg);
+        mes_release_msg(msg);
     }
     dss_get_ft_block_ack_t ack;
-    dss_init_mes_head(&ack.ack_head, DSS_CMD_ACK_GET_FT_BLOCK, sizeof(dss_get_ft_block_ack_t), proto_ver);
+    dss_init_mes_head(&ack.ack_head, DSS_CMD_ACK_GET_FT_BLOCK, 0, src_inst, dst_inst, sizeof(dss_get_ft_block_ack_t), proto_ver, ruid);
     dss_load_shm_lock_s_force(vg_name);
     status = dss_proc_get_ft_block_req_core(session, req, &ack);
     dss_load_shm_unlock(vg_name);
     if (status != CM_SUCCESS) {
         dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_GET_FT_BLOCK, status);
-        mes_release_message_buf(msg);
+        mes_release_msg(msg);
         return;
     }
     ack.ack_head.result = CM_SUCCESS;
-    mes_init_ack_head(
-        msg->head, (mes_message_head_t *)&ack, DSS_CMD_ACK_GET_FT_BLOCK, sizeof(dss_get_ft_block_ack_t), session->id);
-    int send_ret = mes_send_data((mes_message_head_t *)&ack);
+    int send_ret = mes_send_response(dst_inst, ack.ack_head.flags, ruid, (char *)&ack, ack.ack_head.size);
     if (send_ret != CM_SUCCESS) {
         LOG_RUN_ERR(
-            "Get ft block from remote node:%u, path:%s send ack fail.", (uint32)(msg->head->src_inst), req->path);
+            "Get ft block from remote node:%u, path:%s send ack fail.", (uint32)(dst_inst), req->path);
     } else {
-        LOG_DEBUG_INF("Get ft block from remote node:%u, path:%s end.", (uint32)(msg->head->src_inst), req->path);
+        LOG_DEBUG_INF("Get ft block from remote node:%u, path:%s end.", (uint32)(dst_inst), req->path);
     }
-    mes_release_message_buf(msg);
+    mes_release_msg(msg);
 }
 
-void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_message_t *msg)
+void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_msg_t *msg)
 {
-    if (msg->head->size != sizeof(dss_refresh_ft_req_t)) {
-        LOG_RUN_ERR("Refresh ft by primary from remote node:%u check req msg fail.", (uint32)(msg->head->src_inst));
-        mes_release_message_buf(msg);
+    dss_message_head_t *req_head = (dss_message_head_t *)msg->buffer;
+    if (req_head->size != sizeof(dss_refresh_ft_req_t)) {
+        LOG_RUN_ERR("Refresh ft by primary from remote node:%u check req msg fail.", (uint32)(req_head->src_inst));
+        mes_release_msg(msg);
         return;
     }
 
     dss_refresh_ft_req_t *refresh_ft_req = (dss_refresh_ft_req_t *)msg->buffer;
-    uint32 proto_ver = refresh_ft_req->dss_head.msg_proto_ver;
     // please solve with your proto_ver
     LOG_DEBUG_INF("Refresh ft by primary from remote node:%u, blockid:%llu, vgid:%u, vg_name:%s begin.",
-        (uint32)(msg->head->src_inst), DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
+        (uint32)(req_head->src_inst), DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
         refresh_ft_req->vg_name);
     if (dss_refresh_ft_block(session, refresh_ft_req->vg_name, refresh_ft_req->vgid, refresh_ft_req->blockid) != CM_SUCCESS) {
         LOG_RUN_ERR("Refresh ft by primary from remote node:%u, blockid:%llu, vgid:%u, vg_name:%s refresh fail.",
-            (uint32)(msg->head->src_inst), DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
+            (uint32)(req_head->src_inst), DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
             refresh_ft_req->vg_name);
         dss_proc_remote_req_err(session, &refresh_ft_req->dss_head, DSS_CMD_ACK_REFRESH_FT, CM_ERROR);
-        mes_release_message_buf(msg);
+        mes_release_msg(msg);
         return;
     }
-
+    uint16 dst_inst = req_head->src_inst;
+    uint16 src_inst = req_head->dst_inst;
+    uint32 version = req_head->msg_proto_ver;
+    ruid_type ruid = req_head->ruid;
     dss_refresh_ft_ack_t ack;
-    dss_init_mes_head(&ack.ack_head, DSS_CMD_ACK_REFRESH_FT, sizeof(dss_refresh_ft_ack_t), proto_ver);
+    dss_init_mes_head(
+        &ack.ack_head, DSS_CMD_ACK_REFRESH_FT, 0, src_inst, dst_inst, sizeof(dss_refresh_ft_ack_t), version, ruid);
     ack.is_ok = CM_TRUE;
     ack.ack_head.result = CM_SUCCESS;
-    mes_init_ack_head(
-        msg->head, (mes_message_head_t *)&ack, DSS_CMD_ACK_REFRESH_FT, sizeof(dss_refresh_ft_ack_t), session->id);
-    int send_ret = mes_send_data((mes_message_head_t *)&ack);
+    int send_ret = mes_send_response(dst_inst, ack.ack_head.flags, ruid, (char *)&ack, ack.ack_head.size);
     if (send_ret != CM_SUCCESS) {
         LOG_RUN_ERR("Refresh ft by primary from remote node:%u, blockid:%llu, vgid:%u, vg_name:%s send ack fail.",
-            (uint32)(msg->head->src_inst), DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
+            (uint32)dst_inst, DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
             refresh_ft_req->vg_name);
-        mes_release_message_buf(msg);
+        mes_release_msg(msg);
         return;
     }
 
     LOG_DEBUG_INF("Refresh ft by primary from remote node:%u, blockid:%llu, vgid:%u, vg_name:%s refresh end.",
-        (uint32)(msg->head->src_inst), DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
+        (uint32)dst_inst, DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
         refresh_ft_req->vg_name);
-    mes_release_message_buf(msg);
+    mes_release_msg(msg);
 }
