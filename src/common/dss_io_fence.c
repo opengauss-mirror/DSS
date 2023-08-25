@@ -269,16 +269,6 @@ status_t dss_iof_unregister_single(int64 rk, char *dev)
     return CM_SUCCESS;
 }
 
-static void dss_get_vg_info_is_server(bool32 is_server, dss_vg_info_t **dss_vg_info)
-{
-    if (is_server) {
-        *dss_vg_info = VGS_INFO;
-    } else {
-        dss_env_t *dss_env = dss_get_env();
-        *dss_vg_info = dss_env->dss_vg_info;
-    }
-}
-
 status_t dss_iof_register_core(int64 rk, dss_vg_info_t *dss_vg_info)
 {
     status_t ret;
@@ -296,25 +286,6 @@ status_t dss_iof_register_core(int64 rk, dss_vg_info_t *dss_vg_info)
             DSS_RETURN_IF_ERROR(dss_iof_register_single(rk, item->dss_ctrl->volume.defs[j].name));
         }
     }
-    return CM_SUCCESS;
-}
-
-status_t dss_iof_register_all(int64 rk, bool32 is_server)
-{
-#ifdef WIN32
-#else
-    dss_vg_info_t *dss_vg_info = NULL;
-
-    LOG_DEBUG_INF("Begin register all, rk %lld, is server %u.", rk + 1, (uint32)is_server);
-    dss_get_vg_info_is_server(is_server, &dss_vg_info);
-    bool32 result = (bool32)(dss_vg_info != NULL);
-    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Can't get vgs info, is_server %u.", (uint32)is_server));
-    status_t ret = dss_iof_register_core(rk, dss_vg_info);
-    if (ret != CM_SUCCESS) {
-        return ret;
-    }
-#endif
-    LOG_RUN_INF("IOfence register all succ.");
     return CM_SUCCESS;
 }
 
@@ -336,25 +307,6 @@ status_t dss_iof_unregister_core(int64 rk, dss_vg_info_t *dss_vg_info)
         }
     }
     LOG_DEBUG_INF("Unregister all succ.");
-    return CM_SUCCESS;
-}
-
-status_t dss_iof_unregister_all(int64 rk, bool32 is_server)
-{
-#ifdef WIN32
-#else
-    dss_vg_info_t *dss_vg_info = NULL;
-
-    LOG_DEBUG_INF("Begin Unregister all, rk %lld, is server %u.", rk + 1, (uint32)is_server);
-    dss_get_vg_info_is_server(is_server, &dss_vg_info);
-    bool32 result = (bool32)(dss_vg_info != NULL);
-    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Can't get vgs info, is_server %u.", (uint32)is_server));
-    status_t ret = dss_iof_unregister_core(rk, dss_vg_info);
-    if (ret != CM_SUCCESS) {
-        return ret;
-    }
-#endif
-    LOG_RUN_INF("IOfence unregister all succ.");
     return CM_SUCCESS;
 }
 

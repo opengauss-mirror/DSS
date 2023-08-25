@@ -275,7 +275,6 @@ status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_
     dss_static_assert_info();
 
     LOG_RUN_INF("Begin to create vg %s.", vg_name);
-    LOG_DEBUG_INF("Begin to create vg %s.", vg_name);
     status = dss_load_vg_conf_info(&g_vgs_info, inst_cfg);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load vg info from config, vg name is %s, volume name is %s, errcode is %d.\n", vg_name,
@@ -302,7 +301,6 @@ status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_
     status = dss_set_vg_ctrl(vg_name, volume_name, vg_item, inst_cfg, size);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("dss set vg ctrl failed."));
     LOG_RUN_INF("End to create vg %s.", vg_name);
-    LOG_DEBUG_INF("End to create vg %s.", vg_name);
 
     return CM_SUCCESS;
 }
