@@ -1141,6 +1141,7 @@ static status_t dss_rec_msgs(dss_session_t *session, void *buf, uint32 size)
         }
         dss_message_head_t *ack_head = (dss_message_head_t *)msg.buffer;
         if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {
+            mes_release_message_buf(&msg);
             return ERR_DSS_VERSION_NOT_MATCH;
         }
         if (msg.head->size < sizeof(big_packets_ctrl_t)) {
