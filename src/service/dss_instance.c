@@ -382,10 +382,15 @@ static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
     return CM_SUCCESS;
 }
 
-static void dss_init_maintain(dss_instance_t *inst)
+static void dss_init_maintain(dss_instance_t *inst, dss_srv_args_t dss_args)
 {
-    char *maintain_env = getenv(DSS_MAINTAIN_ENV);
-    inst->is_maintain = (maintain_env != NULL && cm_strcmpi(maintain_env, "TRUE") ==0);
+    if (dss_args.is_maintain) {
+        inst->is_maintain = true;
+    } else {
+        char *maintain_env = getenv(DSS_MAINTAIN_ENV);
+        inst->is_maintain = (maintain_env != NULL && cm_strcmpi(maintain_env, "TRUE") ==0);
+    }
+    
     if (inst->is_maintain) {
         LOG_RUN_INF("DSS_MAINTAIN is TRUE");
     } else {
@@ -423,7 +428,7 @@ static void dss_init_cluster_proto_ver(dss_instance_t *inst)
     }
 }
 
-status_t dss_startup(dss_instance_t *inst, char *home)
+status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
 {
     status_t status;
     errno_t errcode = memset_s(inst, sizeof(dss_instance_t), 0, sizeof(dss_instance_t));
@@ -432,7 +437,7 @@ status_t dss_startup(dss_instance_t *inst, char *home)
     inst->lock_fd = CM_INVALID_INT32;
     dss_set_server_flag();
     g_dss_instance_status = &inst->status;
-    status = dss_set_cfg_dir(home, &inst->inst_cfg);
+    status = dss_set_cfg_dir(dss_args.dss_home, &inst->inst_cfg);
     DSS_RETURN_IFERR2(status, (void)printf("Environment variant DSS_HOME not found!\n"));
     status = dss_load_config(&inst->inst_cfg);
     DSS_RETURN_IFERR2(status, (void)printf("%s\nFailed to load parameters!\n", cm_get_errormsg(cm_get_error_code())));
@@ -441,7 +446,7 @@ status_t dss_startup(dss_instance_t *inst, char *home)
     status = dss_init_loggers(
         &inst->inst_cfg, g_dss_instance_log, sizeof(g_dss_instance_log) / sizeof(dss_log_def_t), "dssserver");
     DSS_RETURN_IFERR2(status, (void)printf("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code())));
-    dss_init_maintain(inst);
+    dss_init_maintain(inst, dss_args);
     LOG_RUN_INF("DSS instance begin to initialize.");
     status = instance_init(inst);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to initialized!"));
