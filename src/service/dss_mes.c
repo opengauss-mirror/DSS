@@ -802,8 +802,8 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
         // 3. receive msg from remote
         ret = mes_allocbuf_and_recv_data((uint16)session->id, &msg, DSS_MES_WAIT_TIMEOUT);
         DSS_RETURN_IFERR2(ret,
-            LOG_RUN_ERR("dss server receive msg from remote failed, src node:%u, dst node:%u, cmd:%u, ack size:%lu.",
-                currtid, remoteid, session->recv_pack.head->cmd, msg.head->size - DSS_MES_MSG_HEAD_SIZE));
+            LOG_RUN_ERR("dss server receive msg from remote failed, src node:%u, dst node:%u, cmd:%u, size:%lu.",
+                currtid, remoteid, session->recv_pack.head->cmd, dss_head.size - DSS_MES_MSG_HEAD_SIZE));
         // 4. attach remote execution result
         ack_head = (dss_message_head_t *)msg.buffer;
         if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {
@@ -896,6 +896,7 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
             mes_release_message_buf(&msg);
             continue;
         }
+        break;
     } while (CM_TRUE);
     // 4. attach remote execution result
     *remote_result = ack_head->result;
