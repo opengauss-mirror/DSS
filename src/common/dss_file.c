@@ -1125,6 +1125,7 @@ status_t dss_get_ftid_by_path(dss_session_t *session, const char *path, ftid_t *
 
         node = dss_find_ft_node(session, *dir_vg_item, parent_node, name, CM_TRUE);
         if (node == NULL) {
+            status = CM_ERROR;
             DSS_BREAK_IFERR3(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FILE_NOT_EXIST, name, path),
                 LOG_DEBUG_ERR("path: %s not exist", path));
         }
