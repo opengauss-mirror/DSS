@@ -113,6 +113,9 @@ static void handle_main_wait(void)
 {
     int64 periods = 0;
     uint32 interval = 500;
+#ifdef ENABLE_DSSTEST
+    bool32 test_join = CM_FALSE;
+#endif
     do {
         if (g_dss_instance.abort_status == CM_TRUE) {
             break;
@@ -124,6 +127,13 @@ static void handle_main_wait(void)
             periods = 0;
             dss_ssl_ca_cert_expire();
         }
+#ifdef ENABLE_DSSTEST
+        // this just for check the function is ok
+        if (!test_join) {
+            g_dss_instance.is_join_cluster = CM_FALSE;
+            test_join = dss_check_join_cluster();
+        }
+#endif
         atomic32_t unreg_volume_count = cm_atomic32_get(&g_dss_unreg_volume_count);
         if (dss_is_readwrite() && unreg_volume_count != 0) {
             dss_check_unreg_volume();
