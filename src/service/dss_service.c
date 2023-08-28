@@ -172,50 +172,6 @@ status_t dss_process_single_cmd(dss_session_t *session)
     return status;
 }
 
-void dss_session_entry(thread_t *thread)
-{
-    dss_session_t *session = (dss_session_t *)thread->argument;
-    LOG_RUN_INF("Session:%u begin to do service.", session->id);
-
-    dss_init_packet(&session->recv_pack, CM_FALSE);
-    dss_init_packet(&session->send_pack, CM_FALSE);
-
-    cm_set_thread_name("DSS_SERVER");
-    session->pipe.socket_timeout = (int32)CM_SOCKET_TIMEOUT;
-
-    /* fetch protocol type */
-    if (dss_diag_proto_type(session) != CM_SUCCESS) {
-        dss_destroy_session(session);
-        cm_release_thread(thread);
-        LOG_RUN_ERR("Failed to get protocol type!");
-        return;
-    }
-    session->status = DSS_SESSION_STATUS_RUNNING;
-    session->curr_lsn = cm_get_curr_lsn();
-    (void)cm_atomic_inc(&g_dss_instance.active_sessions);
-    while (!thread->closed) {
-        if (session->status == DSS_SESSION_STATUS_PAUSED) {
-            cm_sleep(DSS_SESSION_PAUSED_WAIT);
-            continue;
-        }
-        /* process request command */
-        if ((dss_process_command(session) != CM_SUCCESS) && (session->is_closed == CM_TRUE)) {
-            break;
-        }
-        if (session->status == DSS_SESSION_STATUS_PAUSING) {
-            session->status = DSS_SESSION_STATUS_PAUSED;
-            LOG_DEBUG_INF("Set session:%u paused.", session->id);
-        }
-    }
-    session->status = DSS_SESSION_STATUS_IDLE;
-    LOG_RUN_INF("Session:%u end to do service.", session->id);
-
-    session->is_closed = CM_TRUE;
-    dss_release_session_res(session);
-    cm_release_thread(thread);
-    (void)cm_atomic_dec(&g_dss_instance.active_sessions);
-}
-
 static void dss_return_error(dss_session_t *session)
 {
     int32 code;
