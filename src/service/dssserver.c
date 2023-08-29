@@ -165,9 +165,6 @@ static status_t dss_init_background_tasks(void)
     return status;
 }
 
-typedef struct st_dss_srv_args {
-    char dss_home[DSS_MAX_PATH_BUFFER_SIZE];
-} dss_srv_args_t;
 typedef status_t (*dss_srv_arg_parser)(int argc, char **argv, int *argIdx, dss_srv_args_t *dss_args);
 typedef struct st_dss_srv_arg_handler {
     char name[DSS_MAX_PATH_BUFFER_SIZE];
@@ -197,7 +194,17 @@ status_t dss_srv_parse_home(int argc, char **argv, int *argIdx, dss_srv_args_t *
     (*argIdx)++;
     return CM_SUCCESS;
 }
-dss_srv_arg_handler_t g_dss_args_handler[] = {{"-D", dss_srv_parse_home}};
+
+status_t dss_srv_parse_maintain(int argc, char **argv, int *argIdx, dss_srv_args_t *dss_args)
+{
+    dss_args->is_maintain = true;
+    return CM_SUCCESS;
+}
+
+dss_srv_arg_handler_t g_dss_args_handler[] = {
+    {"-D", dss_srv_parse_home}, 
+    {"-M", dss_srv_parse_maintain}
+};
 
 status_t dss_srv_parse_one_agr(int argc, char **argv, dss_srv_args_t *dss_args, int *argIdx)
 {
@@ -229,6 +236,7 @@ static void dss_srv_usage()
                  "       dssserver [-h]\n"
                  "       dssserver [-D dss_home_path]\n"
                  "Option:\n"
+                 "\t -M                 DSS_MAINTAIN mode.\n"
                  "\t -h                 show the help information.\n"
                  "\t -D                 specify dss server home path.\n");
 }
@@ -263,7 +271,7 @@ int main(int argc, char **argv)
     (void)sigprocmask(0, NULL, &sign_old_mask);
     (void)sigprocmask(SIG_UNBLOCK, &sign_old_mask, NULL);
 #endif  
-    if (dss_startup(&g_dss_instance, dss_args.dss_home) != CM_SUCCESS) {
+    if (dss_startup(&g_dss_instance, dss_args) != CM_SUCCESS) {
         printf("dss failed to startup.\n");
         fflush(stdout);
         dss_clean_server();

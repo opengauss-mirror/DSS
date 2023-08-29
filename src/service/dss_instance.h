@@ -68,6 +68,11 @@ typedef struct st_dss_cm_res {
     cm_res_mgr_t mgr;
 } dss_cm_res;
 
+typedef struct st_dss_srv_args {
+    char dss_home[DSS_MAX_PATH_BUFFER_SIZE];
+    bool is_maintain;
+} dss_srv_args_t;
+
 typedef struct st_dss_instance {
     int32 lock_fd;
     spinlock_t switch_lock;
@@ -89,7 +94,7 @@ typedef struct st_dss_instance {
 } dss_instance_t;
 
 status_t dss_lock_instance(void);
-status_t dss_startup(dss_instance_t *inst, char *home);
+status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args);
 
 extern dss_instance_t g_dss_instance;
 #define ZFS_INST (&g_dss_instance)
