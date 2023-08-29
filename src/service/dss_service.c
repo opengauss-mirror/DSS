@@ -48,6 +48,9 @@ static inline bool32 dss_need_exec_remote(bool32 exec_on_active, bool32 local_re
 static uint32 dss_get_master_proto_ver(void)
 {
     uint32 master_id = dss_get_master_id();
+    if (master_id >= DSS_MAX_INSTANCES) {
+        return DSS_PROTO_VERSION;
+    }
     uint32 master_proto_ver = (uint32)cm_atomic32_get((atomic32_t *)&g_dss_instance.cluster_proto_vers[master_id]);
     if (master_proto_ver == DSS_INVALID_VERSION) {
         return DSS_PROTO_VERSION;
