@@ -63,7 +63,6 @@ static dss_rdwr_type_e g_is_dss_readwrite = DSS_STATUS_NORMAL;
 static uint32 g_master_instance_id = DSS_INVALID_ID32;
 static const char *const g_dss_lock_vg_file = "dss_vg.lck";
 static int32 g_dss_lock_vg_fd = CM_INVALID_INT32;
-atomic32_t g_dss_unreg_volume_count = 0;
 
 // CAUTION: dss_admin manager command just like dss_create_vg,cannot call it,
 bool32 dss_is_server(void)
@@ -237,9 +236,6 @@ status_t dss_init_vol_handle(dss_vg_info_item_t *vg_item, int32 flags, dss_vol_h
         if ((vg_item->volume_handle[vid].handle != DSS_INVALID_HANDLE && !vol_handles) &&
             (vg_item->volume_handle[vid].unaligned_handle != DSS_INVALID_HANDLE && !vol_handles)) {
             continue;
-        }
-        if (dss_is_server() && vg_item->dss_ctrl->volume.defs[vid].flag == VOLUME_PREPARE) {
-            (void)cm_atomic32_inc(&g_dss_unreg_volume_count);
         }
         if (vol_handles) {
             if (!dss_check_volume_is_used(vg_item, vid)) {
@@ -1220,14 +1216,13 @@ status_t dss_add_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item
     }
 
     if (dss_process_redo_log(session, vg_item) != CM_SUCCESS) {
-        dss_unlock_shm_meta(session, vg_item->vg_latch);
+        dss_unlock_vg_mem_and_shm(session, vg_item);
         dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
         _exit(1);
     }
-    (void)cm_atomic32_inc(&g_dss_unreg_volume_count);
     return CM_SUCCESS;
 }
 
@@ -1339,7 +1334,7 @@ status_t dss_remove_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_i
         return CM_ERROR;
     }
     if (dss_process_redo_log(session, vg_item) != CM_SUCCESS) {
-        dss_unlock_shm_meta(session, vg_item->vg_latch);
+        dss_unlock_vg_mem_and_shm(session, vg_item);
         dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
@@ -1497,11 +1492,6 @@ status_t dss_refresh_meta_info(dss_session_t *session)
         status = dss_refresh_buffer_cache(&g_vgs_info->volume_group[i], g_vgs_info->volume_group[i].buffer_cache);
         if (status != CM_SUCCESS) {
             return status;
-        }
-        for (uint32 j = 0; j < DSS_MAX_VOLUMES; j++) {
-            if (g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].flag == VOLUME_PREPARE) {
-                (void)cm_atomic32_inc(&g_dss_unreg_volume_count);
-            }
         }
     }
     return CM_SUCCESS;
