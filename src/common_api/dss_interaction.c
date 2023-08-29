@@ -57,33 +57,6 @@ int32 dss_get_pack_err(dss_conn_t *conn, dss_packet_t *pack)
     }
 }
 
-status_t dss_open_file_on_server(dss_conn_t *conn, const char *file_path, int flag)
-{
-    int32 errcode;
-    char *errmsg = NULL;
-
-    dss_init_packet(&conn->pack, conn->pipe.options);
-    dss_init_set(&conn->pack, conn->proto_version);
-    dss_packet_t *send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_OPEN_FILE;
-    send_pack->head->flags = 0;
-
-    /* 1. file name */
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, file_path));
-    /* 2. flag */
-    DSS_RETURN_IF_ERROR(dss_put_int32(send_pack, (uint32)flag));
-
-    dss_packet_t *ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-    return CM_SUCCESS;
-}
-
 status_t dss_get_inst_status_on_server(dss_conn_t *conn, dss_server_status_t *dss_status)
 {
     int32 errcode;

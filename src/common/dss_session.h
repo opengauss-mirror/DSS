@@ -159,7 +159,7 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session);
 void dss_destroy_session(dss_session_t *session);
 
 status_t dss_lock_shm_meta_s(dss_session_t *session, const dss_latch_offset_t *offset, latch_t *latch, int32 timeout);
-status_t dss_lock_shm_meta_s_without_session(latch_t *latch, int32 timeout);
+status_t dss_lock_shm_meta_s_without_session(latch_t *latch, bool32 is_force, int32 timeout);
 status_t dss_cli_lock_shm_meta_s(
     dss_session_t *session, dss_latch_offset_t *offset, latch_t *latch, latch_should_exit should_exit);
 void dss_lock_shm_meta_x(const dss_session_t *session, latch_t *latch);

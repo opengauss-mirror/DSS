@@ -320,8 +320,12 @@ static status_t dss_process_open_file(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &name));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &flag));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", name));
-
-    return dss_open_file(session, (const char *)name, flag);
+    dss_find_node_t find_info;
+    status_t status = dss_open_file(session, (const char *)name, flag, &find_info);
+    if (status == CM_SUCCESS) {
+        DSS_RETURN_IF_ERROR(dss_put_data(&session->send_pack, &find_info, sizeof(dss_find_node_t)));
+    }
+    return status;
 }
 
 static status_t dss_process_close_file(dss_session_t *session)
@@ -377,8 +381,12 @@ static status_t dss_process_open_dir(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &name));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &refresh_recursive));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", name));
-
-    return dss_open_dir(session, (const char *)name, (bool32)refresh_recursive);
+    dss_find_node_t find_info;
+    status_t status = dss_open_dir(session, (const char *)name, (bool32)refresh_recursive, &find_info);
+    if (status == CM_SUCCESS) {
+        DSS_RETURN_IF_ERROR(dss_put_data(&session->send_pack, &find_info, sizeof(dss_find_node_t)));
+    }
+    return status;
 }
 
 static status_t dss_process_close_dir(dss_session_t *session)

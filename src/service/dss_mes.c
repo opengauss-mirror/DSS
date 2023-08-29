@@ -43,6 +43,7 @@ void dss_proc_syb2active_req(dss_session_t *session, mes_message_t *msg);
 void dss_proc_loaddisk_req(dss_session_t *session, mes_message_t *msg);
 void dss_proc_join_cluster_req(dss_session_t *session, mes_message_t *msg);
 void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_message_t *msg);
+void dss_proc_get_ft_block_req(dss_session_t *session, mes_message_t *msg);
 
 void dss_proc_normal_ack(dss_session_t *session, mes_message_t *msg)
 {
@@ -71,6 +72,10 @@ dss_processor_t g_dss_processors[DSS_CMD_CEIL] = {
         "dss standby refresh ft by primary req"},
     [DSS_CMD_ACK_REFRESH_FT] = {dss_proc_normal_ack, CM_FALSE, CM_FALSE, MES_TASK_GROUP_ZERO,
         "dss active proc ft to standby ack"},
+    [DSS_CMD_REQ_GET_FT_BLOCK] = {dss_proc_get_ft_block_req, CM_TRUE, CM_TRUE, MES_TASK_GROUP_ONE,
+        "dss standby get ft block req"},
+    [DSS_CMD_ACK_GET_FT_BLOCK] = {dss_proc_normal_ack, CM_FALSE, CM_FALSE, MES_TASK_GROUP_ONE,
+        "dss active proc get ft block ack"},
 };
 
 void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg)
@@ -657,6 +662,7 @@ status_t dss_startup_mes(void)
     regist_remote_read_proc(dss_read_volume_remote);
     regist_invalidate_other_nodes_proc(dss_invalidate_other_nodes);
     regist_refresh_ft_by_primary_proc(dss_refresh_ft_by_primary);
+    regist_get_node_by_path_remote_proc(dss_get_node_by_path_remote);
     return mes_init(&profile);
 }
 
@@ -862,7 +868,7 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
 status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int ack_size, status_t *remote_result)
 {
     status_t ret = CM_ERROR;
-    dss_message_head_t *dss_head = (dss_message_head_t *)req;
+    dss_message_head_t *req_head = (dss_message_head_t *)req;
     dss_message_head_t *ack_head = NULL;
     dss_session_t *session = NULL;
     uint32 remoteid = DSS_INVALID_ID32;
@@ -878,17 +884,17 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
     do {
         uint32 proto_ver = dss_get_remote_proto_ver(remoteid);
         // 1. init msg head
-        dss_init_mes_head(dss_head, cmd, req_size, proto_ver);
-        MES_INIT_MESSAGE_HEAD(&dss_head->mes_head, cmd, 0, currid, remoteid, session->id, CM_INVALID_ID16);
-        dss_head->mes_head.size = (uint16)req_size;
-        dss_head->mes_head.rsn = mes_get_rsn(session->id);
+        dss_init_mes_head(req_head, cmd, req_size, proto_ver);
+        MES_INIT_MESSAGE_HEAD(&req_head->mes_head, cmd, 0, currid, remoteid, session->id, CM_INVALID_ID16);
+        req_head->mes_head.size = (uint16)req_size;
+        req_head->mes_head.rsn = mes_get_rsn(session->id);
     
         // 2. send request to remote
-        ret = mes_send_data(&dss_head->mes_head);
+        ret = mes_send_data(&req_head->mes_head);
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("Exec cmd:%u on remote node:%u  send msg fail.", (uint32)cmd, remoteid);
             dss_destroy_session(session);
-            return ret;
+            return ERR_DSS_MES_ILL;
         }
 
         // 3. receive msg from remote
@@ -896,7 +902,7 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("Exec cmd:%u on remote node:%u  recv msg fail.", (uint32)cmd, remoteid);
             dss_destroy_session(session);
-            return ret;
+            return ERR_DSS_MES_ILL;
         }
         ack_head = (dss_message_head_t *)msg.buffer;
         if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {
@@ -1009,6 +1015,24 @@ static void dss_loaddisk_unlock(char *vg_name)
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item != NULL) {
         dss_unlock_vg_mem(vg_item);
+    }
+}
+
+static void dss_load_shm_lock_s_force(char *vg_name)
+{
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
+    if (vg_item != NULL) {
+        dss_lock_vg_mem_s_force(vg_item);
+        (void)dss_lock_shm_meta_s_without_session(vg_item->vg_latch, CM_TRUE, SPIN_WAIT_FOREVER);
+    }
+}
+
+static void dss_load_shm_unlock(char *vg_name)
+{
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
+    if (vg_item != NULL) {
+        dss_unlock_vg_mem(vg_item);
+        dss_unlock_shm_meta_without_session(vg_item->vg_latch);
     }
 }
 
@@ -1322,6 +1346,85 @@ void dss_proc_join_cluster_req(dss_session_t *session, mes_message_t *msg)
     mes_release_message_buf(msg);
 }
 
+status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_path, gft_item_type_t type,
+    dss_check_dir_output_t *output_info, bool32 is_throw_err)
+{
+    dss_get_ft_block_req_t req;
+    req.type = type;
+    errno_t errcode = strncpy_s(req.path, sizeof(req.path), dir_path, strlen(dir_path));
+    DSS_SECUREC_SS_RETURN_IF_ERROR(errcode, CM_ERROR);
+
+    status_t remote_result;
+    dss_get_ft_block_ack_t ack;
+    status_t ret = dss_exec_on_remote(DSS_CMD_REQ_GET_FT_BLOCK, (char *)&req, sizeof(dss_get_ft_block_req_t),
+        (char *)&ack, sizeof(dss_get_ft_block_ack_t), &remote_result);
+    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("Try get node by path remote failed."));
+    DSS_RETURN_IF_ERROR(remote_result);
+    if (dss_cmp_blockid(ack.node_id, DSS_INVALID_64)) {
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft block id ack msg error.");
+        return CM_ERROR;
+    }
+    if (!dss_read_remote_checksum(ack.block, DSS_BLOCK_SIZE)) {
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft block ack msg block checksum error.");
+        return CM_ERROR;
+    }
+    dss_vg_info_item_t *ack_vg_item = dss_find_vg_item(ack.vg_name);
+    if (ack_vg_item == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft block ack msg vg_name is not exist.");
+        return CM_ERROR;
+    }
+    if (output_info->item != NULL && ack_vg_item->id != (*output_info->item)->id) {
+        dss_unlock_vg_mem_and_shm(session, *output_info->item);
+        *output_info->item = ack_vg_item;
+        if (output_info->is_lock_x) {
+            dss_lock_vg_mem_and_shm_x(session, *output_info->item);
+        } else {
+            dss_lock_vg_mem_and_shm_s(session, *output_info->item);
+        }
+    }
+    dss_ft_block_t *shm_block = NULL;
+    dss_block_id_t block_id = ack.node_id;
+    block_id.item = 0;
+    ret = dss_refresh_block_in_shm(
+        session, *output_info->item, block_id, DSS_BLOCK_TYPE_FT, ack.block, (char **)&shm_block);
+    if (ret == CM_SUCCESS && output_info->out_node != NULL) {
+        *output_info->out_node = dss_get_ft_node_by_block(shm_block, ack.node_id.item);
+    }
+    if (!dss_cmp_blockid(ack.parent_node_id, DSS_INVALID_64)) {
+        if (!dss_read_remote_checksum(ack.parent_block, DSS_BLOCK_SIZE)) {
+            DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft block ack msg block checksum error.");
+            return CM_ERROR;
+        }
+        if (is_ft_root_block(ack.parent_node_id)) {
+            dss_root_ft_block_t *ft_block = (dss_root_ft_block_t *)ack.parent_block;
+            if (ack.parent_node_id.item >= ft_block->ft_block.node_num) {
+                DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft block ack msg parent_node_id item error.");
+                return CM_ERROR;
+            }
+            char *root = ack_vg_item->dss_ctrl->root;
+            errcode = memcpy_s(root, DSS_BLOCK_SIZE, ack.parent_block, DSS_BLOCK_SIZE);
+            if (errcode != EOK) {
+                CM_THROW_ERROR(ERR_SYSTEM_CALL, (errcode));
+                return CM_ERROR;
+            }
+            if (output_info->parent_node != NULL) {
+                *output_info->parent_node =
+                    (gft_node_t *)((root + sizeof(dss_root_ft_block_t)) + ack.parent_node_id.item * sizeof(gft_node_t));
+            }
+            return CM_SUCCESS;
+        }
+        block_id = ack.parent_node_id;
+        block_id.item = 0;
+        shm_block = NULL;
+        ret = dss_refresh_block_in_shm(
+            session, *output_info->item, block_id, DSS_BLOCK_TYPE_FT, ack.parent_block, (char **)&shm_block);
+        if (ret == CM_SUCCESS && output_info->parent_node != NULL) {
+            *output_info->parent_node = dss_get_ft_node_by_block(shm_block, ack.parent_node_id.item);
+        }
+    }
+    return ret;
+}
+
 status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg_name)
 {
     LOG_DEBUG_INF("Try refresh ft by primary begin.");
@@ -1355,6 +1458,94 @@ status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg
     return CM_SUCCESS;
 }
 
+static status_t dss_proc_get_ft_block_req_core(
+    dss_session_t *session, dss_get_ft_block_req_t *req, dss_get_ft_block_ack_t *ack)
+{
+    gft_node_t *out_node = NULL;
+    gft_node_t *parent_node = NULL;
+    dss_vg_info_item_t *vg_item = NULL;
+    dss_check_dir_output_t output_info = {&out_node, &vg_item, &parent_node, CM_FALSE, CM_FALSE};
+    DSS_RETURN_IF_ERROR(dss_check_dir(session, req->path, req->type, &output_info, CM_TRUE));
+    ack->node_id = out_node->id;
+    dss_ft_block_t *block = dss_get_ft_block_by_node(out_node);
+    errno_t errcode = memcpy_s(ack->block, DSS_BLOCK_SIZE, block, DSS_BLOCK_SIZE);
+    if (errcode != EOK) {
+        CM_THROW_ERROR(ERR_SYSTEM_CALL, (errcode));
+        return CM_ERROR;
+    }
+    errcode = strncpy_sp(ack->vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name, strlen(vg_item->vg_name));
+    if (errcode != EOK) {
+        CM_THROW_ERROR(ERR_SYSTEM_CALL, (errcode));
+        return CM_ERROR;
+    }
+    if (parent_node != NULL) {
+        ack->parent_node_id = parent_node->id;
+        block = dss_get_ft_block_by_node(parent_node);
+        errcode = memcpy_s(ack->parent_block, DSS_BLOCK_SIZE, block, DSS_BLOCK_SIZE);
+        if (errcode != EOK) {
+            CM_THROW_ERROR(ERR_SYSTEM_CALL, (errcode));
+            return CM_ERROR;
+        }
+    } else {
+        dss_set_blockid(&ack->parent_node_id, DSS_INVALID_64);
+    }
+    return CM_SUCCESS;
+}
+
+void dss_proc_get_ft_block_req(dss_session_t *session, mes_message_t *msg)
+{
+    if (msg->head->size != sizeof(dss_get_ft_block_req_t)) {
+        LOG_RUN_ERR("Get ft block from remote node:%u check req msg size fail.", (uint32)(msg->head->src_inst));
+        mes_release_message_buf(msg);
+        return;
+    }
+    dss_get_ft_block_req_t *req = (dss_get_ft_block_req_t *)msg->buffer;
+    uint32 proto_ver = req->dss_head.msg_proto_ver;
+    // please solve with your proto_ver
+    if (req->type > GFT_LINK) {
+        LOG_RUN_ERR(
+            "Get ft block from remote node:%u check req msg type:%d fail.", (uint32)(msg->head->src_inst), req->type);
+        dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_GET_FT_BLOCK, CM_ERROR);
+        mes_release_message_buf(msg);
+        return;
+    }
+    status_t status = dss_check_device_path(req->path);
+    if (status != CM_SUCCESS) {
+        dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_GET_FT_BLOCK, status);
+        mes_release_message_buf(msg);
+        return;
+    }
+    LOG_DEBUG_INF("Get ft block from remote node:%u, path:%s begin.", (uint32)(msg->head->src_inst), req->path);
+    uint32 beg_pos = 0;
+    char vg_name[DSS_MAX_NAME_LEN];
+    status = dss_get_name_from_path(req->path, &beg_pos, vg_name);
+    if (status != CM_SUCCESS) {
+        dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_GET_FT_BLOCK, status);
+        mes_release_message_buf(msg);
+    }
+    dss_get_ft_block_ack_t ack;
+    dss_init_mes_head(&ack.ack_head, DSS_CMD_ACK_GET_FT_BLOCK, sizeof(dss_get_ft_block_ack_t), proto_ver);
+    dss_load_shm_lock_s_force(vg_name);
+    status = dss_proc_get_ft_block_req_core(session, req, &ack);
+    dss_load_shm_unlock(vg_name);
+    if (status != CM_SUCCESS) {
+        dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_GET_FT_BLOCK, status);
+        mes_release_message_buf(msg);
+        return;
+    }
+    ack.ack_head.result = CM_SUCCESS;
+    mes_init_ack_head(
+        msg->head, (mes_message_head_t *)&ack, DSS_CMD_ACK_GET_FT_BLOCK, sizeof(dss_get_ft_block_ack_t), session->id);
+    int send_ret = mes_send_data((mes_message_head_t *)&ack);
+    if (send_ret != CM_SUCCESS) {
+        LOG_RUN_ERR(
+            "Get ft block from remote node:%u, path:%s send ack fail.", (uint32)(msg->head->src_inst), req->path);
+    } else {
+        LOG_DEBUG_INF("Get ft block from remote node:%u, path:%s end.", (uint32)(msg->head->src_inst), req->path);
+    }
+    mes_release_message_buf(msg);
+}
+
 void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_message_t *msg)
 {
     if (msg->head->size != sizeof(dss_refresh_ft_req_t)) {
@@ -1369,8 +1560,7 @@ void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_message_t *m
     LOG_DEBUG_INF("Refresh ft by primary from remote node:%u, blockid:%llu, vgid:%u, vg_name:%s begin.",
         (uint32)(msg->head->src_inst), DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
         refresh_ft_req->vg_name);
-    if (dss_refresh_ft_block(
-        session, refresh_ft_req->vg_name, refresh_ft_req->vgid, refresh_ft_req->blockid) != CM_SUCCESS) {
+    if (dss_refresh_ft_block(session, refresh_ft_req->vg_name, refresh_ft_req->vgid, refresh_ft_req->blockid) != CM_SUCCESS) {
         LOG_RUN_ERR("Refresh ft by primary from remote node:%u, blockid:%llu, vgid:%u, vg_name:%s refresh fail.",
             (uint32)(msg->head->src_inst), DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
             refresh_ft_req->vg_name);

@@ -723,42 +723,21 @@ status_t dss_remove_dir_impl(dss_conn_t *conn, const char *dir, bool32 recursive
     return status;
 }
 
-static dss_dir_t *dss_open_dir_impl_core(dss_conn_t *conn, const char *dir_path, dss_env_t *dss_env)
+static dss_dir_t *dss_open_dir_impl_core(dss_conn_t *conn, dss_find_node_t *find_node)
 {
-    char name[DSS_MAX_NAME_LEN];
-    uint32_t beg_pos = 0;
-    status_t status = dss_get_name_from_path(dir_path, &beg_pos, name);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to get name from path %s,%d.", dir_path, status);
-        return NULL;
-    }
-
-    if (name[0] == 0) {
-        LOG_DEBUG_ERR("Failed to get name from path %s.", dir_path);
-        return NULL;
-    }
-
-    gft_node_t *node = NULL;
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(name);
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(find_node->vg_name);
     if (vg_item == NULL) {
-        LOG_DEBUG_ERR("Failed to find vg, %s.", name);
-        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, name);
+        LOG_RUN_ERR("Failed to find vg, %s.", find_node->vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, find_node->vg_name);
         return NULL;
     }
 
     DSS_LOCK_VG_META_S_RETURN_NULL(vg_item, conn->session);
-    dss_vg_info_item_t *dir_vg_item;
-    dss_check_dir_output_t output_info = {&node, &dir_vg_item, NULL};
-    status = dss_check_dir(conn->session, dir_path, GFT_PATH, &output_info, CM_TRUE);
-    if (status != CM_SUCCESS) {
+    gft_node_t *node = dss_get_ft_node_by_ftid(conn->session, vg_item, find_node->ftid, CM_FALSE, CM_FALSE);
+    if (node == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "find_node ftid", *(uint64 *)&find_node->ftid);
         DSS_UNLOCK_VG_META_S(vg_item, conn->session);
-        LOG_DEBUG_ERR("dss check dir failed, when open dir impl, dir_path:%s.", dir_path);
         return NULL;
-    }
-    if (dir_vg_item->id != vg_item->id) {
-        DSS_UNLOCK_VG_META_S(vg_item, conn->session);
-        vg_item = dir_vg_item;
-        DSS_LOCK_VG_META_S_RETURN_NULL(vg_item, conn->session);
     }
     dss_dir_t *dir = (dss_dir_t *)cm_malloc(sizeof(dss_dir_t));
     if (dir == NULL) {
@@ -769,7 +748,7 @@ static dss_dir_t *dss_open_dir_impl_core(dss_conn_t *conn, const char *dir_path,
     dir->cur_ftid = node->items.first;
     dir->vg_item = vg_item;
     dir->version = DSS_GET_ROOT_BLOCK(vg_item->dss_ctrl)->ft_block.common.version;
-    dir->pftid = *(uint64 *)&node->id;
+    dir->pftid = node->id;
     DSS_UNLOCK_VG_META_S(vg_item, conn->session);
 
     LOG_DEBUG_INF("dss open dir leave");
@@ -788,41 +767,19 @@ dss_dir_t *dss_open_dir_impl(dss_conn_t *conn, const char *dir_path, bool32 refr
         return NULL;
     }
 
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-
-    dss_packet_t *send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_OPEN_DIR;
-    send_pack->head->flags = 0;
-
     // 1. PATH
     if (dss_check_device_path(dir_path) != CM_SUCCESS) {
         return NULL;
     }
-    status_t status = dss_put_str(send_pack, dir_path);
+    dss_find_node_t *find_node;
+    dss_open_dir_info_t send_info;
+    send_info.dir_path = dir_path;
+    send_info.refresh_recursive = refresh_recursive;
+    status_t status = dss_msg_interact(conn, DSS_CMD_OPEN_DIR, (void *)&send_info, (void *)&find_node);
     if (status != CM_SUCCESS) {
         return NULL;
     }
-    status = dss_put_int32(send_pack, refresh_recursive);
-    if (status != CM_SUCCESS) {
-        return NULL;
-    }
-    // send it and wait for ack
-    dss_packet_t *ack_pack = &conn->pack;
-    status = dss_call_ex(&conn->pipe, send_pack, ack_pack);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to send message when open path(%s).", dir_path);
-        return NULL;
-    }
-    // check return state
-    int32 errcode = -1;
-    char *errmsg = NULL;
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return NULL;
-    }
-    return dss_open_dir_impl_core(conn, dir_path, dss_env);
+    return dss_open_dir_impl_core(conn, find_node);
 }
 
 gft_node_t *dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 skip_delete)
@@ -895,7 +852,7 @@ status_t dss_close_dir_impl(dss_conn_t *conn, dss_dir_t *dir)
     send_pack->head->flags = 0;
 
     // 1. pftid
-    uint64 pftid = dir->pftid;
+    uint64 pftid = *(uint64 *)&dir->pftid;
     status = dss_put_int64(send_pack, pftid);
     DSS_RETURN_IFERR2(status, DSS_FREE_POINT(dir));
 
@@ -1127,35 +1084,35 @@ status_t dss_open_file_inner(dss_vg_info_item_t *vg_item, gft_node_t *ft_node, d
     return CM_SUCCESS;
 }
 
+status_t dss_open_file_on_server(dss_conn_t *conn, const char *file_path, int flag, dss_find_node_t **find_node)
+{
+    dss_open_file_info_t send_info;
+    send_info.file_path = file_path;
+    send_info.flag = flag;
+    return dss_msg_interact(conn, DSS_CMD_OPEN_FILE, (void *)&send_info, (void *)find_node);
+}
+
 status_t dss_open_file_impl(dss_conn_t *conn, const char *file_path, int flag, int *handle)
 {
-    status_t status;
-    dss_vg_info_item_t *vg_item = NULL;
+    status_t status = CM_ERROR;
     gft_node_t *ft_node = NULL;
-
+    dss_find_node_t *find_node = NULL;
     LOG_DEBUG_INF("dss begin to open file, file path:%s, flag:%d", file_path, flag);
     DSS_RETURN_IF_ERROR(dss_check_device_path(file_path));
-    DSS_RETURN_IF_ERROR(dss_find_vg_by_file_path(file_path, &vg_item));
-    DSS_RETURN_IF_ERROR(dss_open_file_on_server(conn, file_path, flag));
+    DSS_RETURN_IF_ERROR(dss_open_file_on_server(conn, file_path, flag, &find_node));
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(find_node->vg_name);
+    if (vg_item == NULL) {
+        LOG_RUN_ERR("Failed to find vg, vg name %s.", find_node->vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, find_node->vg_name);
+        return CM_ERROR;
+    }
     DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
     do {
-        dss_vg_info_item_t *file_vg_item = NULL;
-        dss_check_dir_output_t output_info = {&ft_node, &file_vg_item, NULL};
-        status = dss_check_dir(conn->session, file_path, GFT_FILE, &output_info, CM_TRUE);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to check dir when open file impl, errcode:%d.", cm_get_error_code());
+        ft_node = dss_get_ft_node_by_ftid(conn->session, vg_item, find_node->ftid, CM_FALSE, CM_FALSE);
+        if (ft_node == NULL) {
+            DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "find_node ftid", *(uint64 *)&find_node->ftid);
+            status = CM_ERROR;
             break;
-        }
-        if (file_vg_item->id != vg_item->id) {
-            DSS_UNLOCK_VG_META_S(vg_item, conn->session);
-            vg_item = file_vg_item;
-            status = dss_lock_vg_s(vg_item, conn->session);
-            if (status != CM_SUCCESS) {
-                if (ft_node != NULL) {
-                    (void)dss_close_file_on_server(conn, vg_item, ft_node->fid, ft_node->id);
-                }
-                return status;
-            }
         }
         status = dss_open_file_inner(vg_item, ft_node, DSS_OPEN_MODE(flag), handle);
     } while (0);
@@ -2928,6 +2885,38 @@ static status_t dss_encode_remove_dir(dss_conn_t *conn, dss_packet_t *pack, void
     return CM_SUCCESS;
 }
 
+static status_t dss_encode_open_dir(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_open_dir_info_t *info = (dss_open_dir_info_t *)send_info;
+    /* 1. dir name */
+    CM_RETURN_IFERR(dss_put_str(pack, info->dir_path));
+    /* 2. flag */
+    CM_RETURN_IFERR(dss_put_int32(pack, info->refresh_recursive));
+    return CM_SUCCESS;
+}
+
+static status_t dss_decode_open_dir(dss_packet_t *ack_pack, void *ack)
+{
+    CM_RETURN_IFERR(dss_get_data(ack_pack, sizeof(dss_find_node_t), (void **)ack));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_open_file(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_open_file_info_t *info = (dss_open_file_info_t *)send_info;
+    /* 1. file name */
+    CM_RETURN_IFERR(dss_put_str(pack, info->file_path));
+    /* 2. flag */
+    CM_RETURN_IFERR(dss_put_int32(pack, (uint32)info->flag));
+    return CM_SUCCESS;
+}
+
+static status_t dss_decode_open_file(dss_packet_t *ack_pack, void *ack)
+{
+    CM_RETURN_IFERR(dss_get_data(ack_pack, sizeof(dss_find_node_t), (void **)ack));
+    return CM_SUCCESS;
+}
+
 static status_t dss_encode_kickh(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
 {
     CM_RETURN_IFERR(dss_put_int64(pack, *(uint64 *)send_info));
@@ -2945,6 +2934,8 @@ typedef struct st_dss_packet_proc {
 dss_packet_proc_t g_dss_packet_proc[DSS_CMD_END] = {
     [DSS_CMD_MKDIR] = {dss_encode_make_dir, NULL, "make dir"},
     [DSS_CMD_RMDIR] = {dss_encode_remove_dir, NULL, "remove dir"},
+    [DSS_CMD_OPEN_DIR] = {dss_encode_open_dir, dss_decode_open_dir, "open dir"},
+    [DSS_CMD_OPEN_FILE] = {dss_encode_open_file, dss_decode_open_file, "open file"},
     [DSS_CMD_EXTEND_FILE] = {dss_encode_extend_file, NULL, "extend file"},
     [DSS_CMD_ADD_VOLUME] = {dss_encode_add_or_remove_volume, NULL, "add volume"},
     [DSS_CMD_REMOVE_VOLUME] = {dss_encode_add_or_remove_volume, NULL, "remove volume"},
