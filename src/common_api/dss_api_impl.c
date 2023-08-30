@@ -577,7 +577,7 @@ status_t dss_init_vol_handle_sync(dss_conn_t *conn)
             for (int32 j = (int32)(i - 1); j >= 0; j--) {
                 dss_destroy_vol_handle(&g_vgs_info->volume_group[j], &cli_vg_handles->vg_vols[j], DSS_MAX_VOLUMES);
             }
-
+            DSS_FREE_POINT(conn->cli_vg_handles);
             return status;
         }
     }
