@@ -440,6 +440,10 @@ static status_t dss_process_remote_ack_prepare(dss_session_t *session, mes_messa
 
 static void dss_set_cluster_proto_vers(uint8 inst_id, uint32 version)
 {
+    if (inst_id >= DSS_MAX_INSTANCES) {
+        LOG_DEBUG_ERR("Invalid request inst_id:%hhu, version is %u.", inst_id, version);
+        return;
+    }
     bool32 set_flag = CM_FALSE;
     do {
         uint32 cur_version = (uint32)cm_atomic32_get((atomic32_t *)&g_dss_instance.cluster_proto_vers[inst_id]);
@@ -772,6 +776,10 @@ void dss_check_mes_conn(uint64 cur_inst_map)
 
 static uint32 dss_get_remote_proto_ver(uint32 remoteid)
 {
+    if (remoteid >= DSS_MAX_INSTANCES) {
+        LOG_DEBUG_ERR("Invalid remote id:%u.", remoteid);
+        return DSS_PROTO_VERSION;
+    }
     uint32 remote_proto_ver = (uint32)cm_atomic32_get((atomic32_t *)&g_dss_instance.cluster_proto_vers[remoteid]);
     if (remote_proto_ver == DSS_INVALID_VERSION) {
         return DSS_PROTO_VERSION;
