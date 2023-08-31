@@ -847,7 +847,7 @@ int dss_aio_prep_pread(void *iocb, int handle, void *buf, size_t count, long lon
     DSS_RETURN_IF_ERROR(ret);
 
     int dev_fd = DSS_INVALID_HANDLE;
-    long long new_offset;
+    long long new_offset = 0;
     ret = dss_get_fd_by_offset(conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_TRUE, &dev_fd, &new_offset);
     DSS_RETURN_IF_ERROR(ret);
 
@@ -867,7 +867,7 @@ int dss_aio_prep_pwrite(void *iocb, int handle, void *buf, size_t count, long lo
     DSS_RETURN_IF_ERROR(ret);
 
     int dev_fd = DSS_INVALID_HANDLE;
-    long long new_offset;
+    long long new_offset = 0;
     ret = dss_get_fd_by_offset(conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_FALSE, &dev_fd, &new_offset);
     DSS_RETURN_IF_ERROR(ret);
 
