@@ -2592,7 +2592,7 @@ status_t get_au_size_impl(dss_conn_t *conn, int handle, long long *au_size)
 status_t dss_compare_size_equal_impl(const char *vg_name, long long *au_size)
 {
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
-    if (vg_name == NULL) {
+    if (vg_name == NULL || vg_item == NULL) {
         dss_free_vg_info(g_vgs_info);
         LOG_DEBUG_ERR("Failed to find vg info from config, vg name is null\n");
         return CM_ERROR;
@@ -2601,7 +2601,7 @@ status_t dss_compare_size_equal_impl(const char *vg_name, long long *au_size)
 
     open_global_rbd_handle();
     rbd_config_param *config = ceph_parse_rbd_configs(vg_item->entry_path);
-    if (config->rbd_handle == NULL) {
+    if (config == NULL || config->rbd_handle == NULL) {
         return CM_ERROR;
     }
     long long obj_size;
