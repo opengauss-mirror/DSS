@@ -809,6 +809,7 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
 #define DSS_RECOVERY_INTERVAL 500
 void dss_get_cm_lock_and_recover(thread_t *thread) 
 {
+    cm_set_thread_name("recovery");
     while (!thread->closed) {
         dss_instance_t *inst = (dss_instance_t *)thread->argument;
         dss_get_cm_lock_and_recover_inner(inst);
