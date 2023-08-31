@@ -2516,10 +2516,11 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
         }
         dss_cli_vg_handles_t *cli_vg_handles = (dss_cli_vg_handles_t *)(conn->cli_vg_handles);
         dss_simple_volume_t *vol = &cli_vg_handles->vg_vols[vg_item->id].volume_handle[auid.volume];
-        cm_panic(*((uint64 *)vol_offset) >= au_size);  // wrongly writing superau area
 
         *vol_offset = dss_get_au_offset(vg_item, auid);
         *vol_offset = *vol_offset + (int64)au_offset;
+        uint64 super_au_size = CM_CALC_ALIGN(DSS_VOLUME_HEAD_SIZE, au_size);
+        cm_panic(*((uint64 *)vol_offset) >= super_au_size);  // wrongly writing superau area
         
         /* get the real block device descriptor */
         *fd = vol->handle;
