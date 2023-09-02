@@ -497,7 +497,7 @@ static status_t dss_check_url_format(const char *url, text_t *uds)
     return (cm_strcmpni(url, uds->str, uds->len) != 0) ? CM_ERROR : CM_SUCCESS;
 }
 
-status_t dss_connect(const char *server_locator, dss_conn_opt_t options, char *user_name, dss_conn_t *conn)
+status_t dss_connect(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn)
 {
     if (server_locator == NULL) {
         DSS_THROW_ERROR(ERR_DSS_UDS_INVALID_URL, "NULL", 0);
@@ -516,7 +516,7 @@ status_t dss_connect(const char *server_locator, dss_conn_opt_t options, char *u
     }
     conn->cli_vg_handles = NULL;
     conn->pipe.options = 0;
-    conn->pipe.connect_timeout = DSS_UDS_CONNECT_TIMEOUT;
+    conn->pipe.connect_timeout = (options == NULL ? DSS_UDS_CONNECT_TIMEOUT : options->timeout);
     conn->pipe.socket_timeout = DSS_UDS_SOCKET_TIMEOUT;
     conn->pipe.link.uds.sock = CS_INVALID_SOCKET;
     conn->pipe.link.uds.closed = CM_TRUE;
@@ -627,12 +627,12 @@ status_t dss_set_session_sync(dss_conn_t *conn)
 }
 
 // NOTE:just for dsscmd because not support many threads in one process.
-status_t dss_connect_ex(const char *server_locator, dss_conn_opt_t options, char *user_name, dss_conn_t *conn)
+status_t dss_connect_ex(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn)
 {
     status_t status;
     dss_env_t *dss_env = dss_get_env();
     dss_init_conn(conn);
-    status = dss_connect(server_locator, options, user_name, conn);
+    status = dss_connect(server_locator, options, conn);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to connect to DSS server via server locator:%s.", server_locator);
         return status;
