@@ -42,6 +42,9 @@ extern "C" {
 // for most time, standby nodes rerad meta from primary
 #define DSS_WORK_THREAD_LOAD_DATA_PERCENT 0.5
 
+#define DSS_MES_MAX_WAIT_TIMEOUT 10000  // 10s
+#define DSS_MES_MIN_WAIT_TIMEOUT 500  // 500ms
+
 #define DSS_MIN_RECV_MSG_BUFF_SIZE (uint64) SIZE_M(1)
 #define DSS_MAX_RECV_MSG_BUFF_SIZE (uint64) SIZE_G(1)
 
@@ -86,6 +89,7 @@ typedef struct st_dss_params {
     char ceph_config[DSS_FILE_NAME_BUFFER_SIZE];
     bool32 blackbox_detail_on;
     cluster_run_mode_t cluster_run_mode;
+    uint32 mes_wait_timeout;
 } dss_params_t;
 
 typedef struct st_dss_config {
