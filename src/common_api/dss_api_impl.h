@@ -75,8 +75,10 @@ typedef struct st_dss_remove_dir_info {
     bool recursive;
 } dss_remove_dir_info_t;
 
-struct __dss_conn_opt;
-typedef struct __dss_conn_opt *dss_conn_opt_t;
+typedef struct st_dss_conn_opt {
+    int32 timeout;
+    char *user_name;
+} dss_conn_opt_t;
 
 #define DSSAPI_BLOCK_SIZE 512
 #define DSS_HOME "DSS_HOME"
@@ -88,11 +90,11 @@ status_t dss_add_or_remove_volume(dss_conn_t *conn, const char *vg_name, const c
 status_t dss_kick_host_sync(dss_conn_t *conn, int64 kick_hostid);
 status_t dss_alloc_conn(dss_conn_t **conn);
 void dss_free_conn(dss_conn_t *conn);
-status_t dss_connect(const char *server_locator, dss_conn_opt_t options, char *user_name, dss_conn_t *conn);
+status_t dss_connect(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn);
 void dss_disconnect(dss_conn_t *conn);
 
 // NOTE:just for dsscmd because not support many threads in one process.
-status_t dss_connect_ex(const char *server_locator, dss_conn_opt_t options, char *user_name, dss_conn_t *conn);
+status_t dss_connect_ex(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn);
 void dss_disconnect_ex(dss_conn_t *conn);
 status_t dss_lock_vg_s(dss_vg_info_item_t *vg_item, dss_session_t *session);
 

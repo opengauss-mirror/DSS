@@ -779,13 +779,13 @@ static status_t dss_uds_get_connection(const char *server_locator, dss_conn_t *c
             return CM_ERROR;
         }
 
-        status = dss_connect_ex((const char *)abs_server_path, NULL, NULL, conn);
+        status = dss_connect_ex((const char *)abs_server_path, NULL, conn);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to connect,url:%s.\n", abs_server_path);
             return status;
         }
     } else {
-        status = dss_connect_ex(server_locator, NULL, NULL, conn);
+        status = dss_connect_ex(server_locator, NULL, conn);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to connect,url:%s.\n", server_locator);
             return status;

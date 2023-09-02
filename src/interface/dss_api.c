@@ -113,7 +113,7 @@ static void dss_clt_env_init(void)
     }
 }
 
-static status_t dss_conn_retry(dss_conn_t *conn)
+static status_t dss_conn_retry(dss_conn_opt_t *options, dss_conn_t *conn)
 {
     // establish connection
     status_t status = CM_SUCCESS;
@@ -121,7 +121,7 @@ static status_t dss_conn_retry(dss_conn_t *conn)
     do {
         // avoid buffer leak when disconnect
         dss_free_packet_buffer(&conn->pack);
-        status = dss_connect(dss_get_inst_path(), NULL, NULL, conn);
+        status = dss_connect(dss_get_inst_path(), options, conn);
         DSS_BREAK_IFERR2(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client connet server failed."));
         char *home = NULL;
         status = dss_get_home_sync(conn, &home);
@@ -143,13 +143,13 @@ static status_t dss_conn_retry(dss_conn_t *conn)
     return status;
 }
 
-status_t dss_conn_sync(dss_conn_t *conn)
+status_t dss_conn_sync(dss_conn_opt_t *options, dss_conn_t *conn)
 {
     status_t ret = CM_ERROR;
     int timeout = g_dss_conn_info.timeout;
     int wait_time = 0;
     while (timeout == DSS_CONN_NEVER_TIMEOUT || timeout > wait_time) {
-        ret = dss_conn_retry(conn);
+        ret = dss_conn_retry(options, conn);
         if (ret == CM_SUCCESS) {
             break;
         }
@@ -179,7 +179,8 @@ status_t dss_conn_create(pointer_t *result)
 
     // init packet
     dss_init_packet(&conn->pack, conn->pipe.options);
-    if (dss_conn_sync(conn) != CM_SUCCESS) {
+    dss_conn_opt_t options = {.timeout = DSS_CONN_DEFAULT_TIME_OUT};
+    if (dss_conn_sync(&options, conn) != CM_SUCCESS) {
         DSS_THROW_ERROR(ERR_DSS_CONNECT_FAILED, cm_get_os_error(), strerror(cm_get_os_error()));
         DSS_FREE_POINT(conn);
         return CM_ERROR;
@@ -203,7 +204,7 @@ static status_t dss_get_conn(dss_conn_t **conn)
     if ((*conn)->flag && (*conn)->conn_pid != getpid()) {
         LOG_RUN_INF("Dss client need re-connect, last conn pid:%llu.", (uint64)(*conn)->conn_pid);
         dss_disconnect(*conn);
-        if (dss_conn_sync(*conn) != CM_SUCCESS) {
+        if (dss_conn_sync(NULL, *conn) != CM_SUCCESS) {
             LOG_RUN_ERR("[DSS API] ABORT INFO: dss server stoped, application need restart.");
             cm_fync_logfile();
             _exit(1);
