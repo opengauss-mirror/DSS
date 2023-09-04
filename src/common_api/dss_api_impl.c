@@ -2304,12 +2304,12 @@ status_t dss_islink_impl(dss_conn_t *conn, const char *path, bool32 *result)
 
     dss_init_get(ack_pack);
     gft_item_type_t type = GFT_PATH;
-     if (dss_get_int32(ack_pack, (int32 *)result) != CM_SUCCESS) {
+    if (dss_get_int32(ack_pack, (int32 *)result) != CM_SUCCESS) {
         DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get result data error");
         LOG_DEBUG_ERR("get result data error.");
         return CM_ERROR;
     }
-    if (dss_get_int32(ack_pack, (int32 *)type) != CM_SUCCESS) {
+    if (dss_get_int32(ack_pack, (int32 *)&type) != CM_SUCCESS) {
         DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get type data error");
         LOG_DEBUG_ERR("get type data error.");
         return CM_ERROR;
