@@ -2140,7 +2140,7 @@ status_t dss_init(uint32 max_open_files, char *home)
         return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "Failed to attach shared vg info", CM_ERROR);
     }
 
-    status_t status = dss_get_vg_info(share_vg_info, &dss_env->dss_vg_info);
+    status_t status = dss_get_vg_info(share_vg_info, NULL);
     if (status != CM_SUCCESS) {
         return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "Failed to get shared vg info", status);
     }
@@ -2151,8 +2151,8 @@ status_t dss_init(uint32 max_open_files, char *home)
     }
     CM_RETURN_IFERR(dss_init_files(dss_env, max_open_files));
 
-    for (int32_t i = 0; i < (int32_t)dss_env->dss_vg_info->group_num; i++) {
-        dss_vg_info_item_t *item = &dss_env->dss_vg_info->volume_group[i];
+    for (int32_t i = 0; i < (int32_t)g_vgs_info->group_num; i++) {
+        dss_vg_info_item_t *item = &g_vgs_info->volume_group[i];
         cm_attach_shm(SHM_TYPE_HASH, item->buffer_cache->shm_id, 0, CM_SHM_ATTACH_RW);
     }
 
@@ -2173,19 +2173,18 @@ status_t dss_init(uint32 max_open_files, char *home)
 
 void dss_destroy_vg_info(dss_env_t *dss_env)
 {
-    dss_vg_info_t *dss_vg_info = dss_env->dss_vg_info;
-    if (dss_vg_info == NULL) {
+    if (g_vgs_info == NULL) {
         return;
     }
-    for (uint32 i = 0; i < dss_vg_info->group_num; i++) {
+    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
         for (uint32 j = 0; j < DSS_MAX_VOLUMES; j++) {
-            if (dss_vg_info->volume_group[i].volume_handle[j].handle != DSS_INVALID_HANDLE) {
-                dss_close_volume(&dss_vg_info->volume_group[i].volume_handle[j]);
+            if (g_vgs_info->volume_group[i].volume_handle[j].handle != DSS_INVALID_HANDLE) {
+                dss_close_volume(&g_vgs_info->volume_group[i].volume_handle[j]);
             }
         }
     }
     ga_detach_area();
-    DSS_FREE_POINT(dss_vg_info);
+    dss_free_vg_info();
 }
 
 void dss_destroy(void)
@@ -2594,7 +2593,7 @@ status_t dss_compare_size_equal_impl(const char *vg_name, long long *au_size)
 {
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_name == NULL || vg_item == NULL) {
-        dss_free_vg_info(g_vgs_info);
+        dss_free_vg_info();
         LOG_DEBUG_ERR("Failed to find vg info from config, vg name is null\n");
         return CM_ERROR;
     }

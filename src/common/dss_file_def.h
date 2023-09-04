@@ -506,7 +506,6 @@ typedef struct st_dss_env {
     latch_t conn_latch;
     uint32 conn_count;
     dss_file_context_t *files;
-    dss_vg_info_t *dss_vg_info;
     void *session;
     thread_t thread_heartbeat;
     dss_config_t inst_cfg;

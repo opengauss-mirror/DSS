@@ -189,11 +189,9 @@ status_t dss_load_vg_conf_info(dss_vg_info_t **vgs, const dss_config_t *inst_cfg
     return CM_SUCCESS;
 }
 
-void dss_free_vg_info(dss_vg_info_t *vgs_info)
+void dss_free_vg_info()
 {
-    if (vgs_info) {
-        DSS_FREE_POINT(vgs_info);
-    }
+    DSS_FREE_POINT(g_vgs_info);
 }
 
 dss_vg_info_item_t *dss_find_vg_item(const char *vg_name)
@@ -353,7 +351,7 @@ status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **inf
         if (status != CM_SUCCESS) {
             DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
             shm_hashmap_destroy(&share_vg_info->vg[i].buffer_cache, i);
-            dss_free_vg_info(g_vgs_info);
+            dss_free_vg_info();
             return status;
         }
     }

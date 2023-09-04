@@ -223,7 +223,7 @@ static status_t dss_set_vg_ctrl(
     status_t status;
     dss_ctrl_t *vg_ctrl = (dss_ctrl_t *)cm_malloc_align(DSS_ALIGN_SIZE, sizeof(dss_ctrl_t));
     if (vg_ctrl == NULL) {
-        dss_free_vg_info(g_vgs_info);
+        dss_free_vg_info();
         LOG_DEBUG_ERR("Failed to alloc memory, vg name is %s, volume name is %s.\n", vg_name, volume_name);
         DSS_THROW_ERROR(ERR_ALLOC_MEMORY, sizeof(dss_ctrl_t), "vg_ctrl");
         return CM_ERROR;
@@ -263,7 +263,7 @@ static status_t dss_set_vg_ctrl(
         dss_unlock_vg_storage(vg_item, volume_name, inst_cfg);
     } while (0);
     DSS_FREE_POINT(vg_ctrl);
-    dss_free_vg_info(g_vgs_info);
+    dss_free_vg_info();
     return status;
 }
 
@@ -284,7 +284,7 @@ status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_
 
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item == NULL) {
-        dss_free_vg_info(g_vgs_info);
+        dss_free_vg_info();
         LOG_DEBUG_ERR("Failed to find vg info from config, vg name is %s, volume name is %s, errcode is %d.\n", vg_name,
             volume_name, status);
         DSS_THROW_ERROR(ERR_DSS_VG_CREATE, vg_name, "Failed to find vg info from config");
@@ -292,7 +292,7 @@ status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_
     }
 
     if (vg_item->entry_path[0] == '\0' || cm_strcmpi(vg_item->entry_path, volume_name) != 0) {
-        dss_free_vg_info(g_vgs_info);
+        dss_free_vg_info();
         DSS_THROW_ERROR(
             ERR_DSS_VG_CREATE, vg_name, "Failed to cmp super-block name with entry_path config in dss_vg_conf.\n");
         return CM_ERROR;

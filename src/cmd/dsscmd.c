@@ -905,9 +905,8 @@ static status_t dss_load_vginfo_sync(dss_conn_t *connection, dss_allvg_vlm_space
         DSS_THROW_ERROR(ERR_DSS_ENV_NOT_INITIALIZED);
         return CM_ERROR;
     }
-    dss_vg_info_t *dss_vg_info = dss_env->dss_vg_info;
     dss_latch_s(&dss_env->latch);
-    status = dss_load_vginfo_sync_core(connection, allvg_vlm_space_t, dss_vg_info);
+    status = dss_load_vginfo_sync_core(connection, allvg_vlm_space_t, g_vgs_info);
     dss_unlatch(&dss_env->latch);
     return status;
 }
@@ -3342,6 +3341,11 @@ static status_t execute_cmd(int argc, char **argv, uint32 idx)
     return status;
 }
 
+static void clean_cmd()
+{
+    dss_free_vg_info();
+}
+
 int main(int argc, char **argv)
 {
 #ifndef WIN32
@@ -3382,5 +3386,7 @@ int main(int argc, char **argv)
         return ret;
     }
     cm_reset_error();
-    return execute_cmd(argc, argv, idx);
+    ret = execute_cmd(argc, argv, idx);
+    clean_cmd();
+    return ret;
 }
