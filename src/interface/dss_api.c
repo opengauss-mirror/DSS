@@ -60,7 +60,6 @@ extern "C" {
 /* A node is deleted only when it fails to be started for 5 consecutive times within 30 seconds.
    Therefore, the startup failure time cannot exceed 6 seconds. */
 #define DSS_CONN_DEFAULT_TIME_OUT 3000
-#define DSS_CONN_RETRY_INTERVAL 5
 char g_dss_inst_path[CM_MAX_PATH_LEN] = {0};
 typedef struct st_dss_conn_info {
     // protect connections
@@ -113,7 +112,7 @@ static void dss_clt_env_init(void)
     }
 }
 
-static status_t dss_conn_retry(dss_conn_opt_t *options, dss_conn_t *conn)
+static status_t dss_try_conn(dss_conn_opt_t *options, dss_conn_t *conn)
 {
     // establish connection
     status_t status = CM_SUCCESS;
@@ -143,25 +142,6 @@ static status_t dss_conn_retry(dss_conn_opt_t *options, dss_conn_t *conn)
     return status;
 }
 
-status_t dss_conn_sync(dss_conn_opt_t *options, dss_conn_t *conn)
-{
-    status_t ret = CM_ERROR;
-    int timeout = g_dss_conn_info.timeout;
-    int wait_time = 0;
-    while (timeout == DSS_CONN_NEVER_TIMEOUT || timeout > wait_time) {
-        ret = dss_conn_retry(options, conn);
-        if (ret == CM_SUCCESS) {
-            break;
-        }
-        if (cm_get_os_error() == ENOENT) {
-            break;
-        }
-        cm_sleep(DSS_CONN_RETRY_INTERVAL);
-        wait_time += DSS_CONN_RETRY_INTERVAL;
-    }
-    return ret;
-}
-
 status_t dss_conn_create(pointer_t *result)
 {
     dss_conn_t *conn = (dss_conn_t *)cm_malloc(sizeof(dss_conn_t));
@@ -180,7 +160,7 @@ status_t dss_conn_create(pointer_t *result)
     // init packet
     dss_init_packet(&conn->pack, conn->pipe.options);
     dss_conn_opt_t options = {.timeout = DSS_CONN_DEFAULT_TIME_OUT};
-    if (dss_conn_sync(&options, conn) != CM_SUCCESS) {
+    if (dss_try_conn(&options, conn) != CM_SUCCESS) {
         DSS_THROW_ERROR(ERR_DSS_CONNECT_FAILED, cm_get_os_error(), strerror(cm_get_os_error()));
         DSS_FREE_POINT(conn);
         return CM_ERROR;
@@ -204,7 +184,7 @@ static status_t dss_get_conn(dss_conn_t **conn)
     if ((*conn)->flag && (*conn)->conn_pid != getpid()) {
         LOG_RUN_INF("Dss client need re-connect, last conn pid:%llu.", (uint64)(*conn)->conn_pid);
         dss_disconnect(*conn);
-        if (dss_conn_sync(NULL, *conn) != CM_SUCCESS) {
+        if (dss_try_conn(NULL, *conn) != CM_SUCCESS) {
             LOG_RUN_ERR("[DSS API] ABORT INFO: dss server stoped, application need restart.");
             cm_fync_logfile();
             _exit(1);
