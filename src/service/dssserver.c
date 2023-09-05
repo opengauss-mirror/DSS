@@ -106,7 +106,7 @@ static void dss_clean_server()
         cm_close_file(g_dss_instance.lock_fd);
     }
     CM_FREE_PTR(cm_log_param_instance()->log_compress_buf);
-    dss_destroy_reactors();
+    dss_free_vg_info();
 }
 
 static void handle_main_wait(void)

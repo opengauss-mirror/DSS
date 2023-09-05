@@ -83,7 +83,7 @@ extern dss_share_vg_info_t *g_dss_share_vg_info;
 // create vg only use in tool
 status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_t *inst_cfg, uint32 size);
 status_t dss_load_vg_conf_info(dss_vg_info_t **vgs, const dss_config_t *inst_cfg);
-void dss_free_vg_info(dss_vg_info_t *vgs_info);
+void dss_free_vg_info();
 dss_vg_info_item_t *dss_find_vg_item(const char *vg_name);
 status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **info);
 status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock);
