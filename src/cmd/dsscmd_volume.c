@@ -416,7 +416,7 @@ status_t dss_add_volume_offline(const char *home, const char *vg_name, const cha
 
     if (dss_lock_vg_storage_w(vg_item, vg_item->entry_path, &inst_cfg) != CM_SUCCESS) {
         dss_inq_free_vg_info(vg_info);
-        DSS_PRINT_ERROR("Failed to lock vg:%s.\n", vg_item->entry_path);
+        DSS_PRINT_ERROR("Failed to lock vg:%s.\n", vg_name);
         return CM_ERROR;
     }
 
