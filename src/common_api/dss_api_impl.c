@@ -2743,7 +2743,7 @@ status_t dss_stop_server_impl(dss_conn_t *conn)
 
 status_t dss_set_stat_info(dss_stat_info_t item, gft_node_t *node)
 {
-    item->type = node->type;
+    item->type = (dss_item_type_t)node->type;
     item->size = node->size;
     item->written_size = node->written_size;
     item->create_time = node->create_time;

@@ -294,7 +294,7 @@ int dss_dread(dss_dir_handle dir, dss_dir_item_t item, dss_dir_item_t *result)
     if (node == NULL) {
         return DSS_SUCCESS;
     }
-    item->d_type = node->type;
+    item->d_type = (dss_item_type_t)node->type;
 
     int32 errcode = memcpy_s(item->d_name, DSS_MAX_NAME_LEN, node->name, DSS_MAX_NAME_LEN);
     if (SECUREC_UNLIKELY(errcode != EOK)) {
