@@ -141,122 +141,12 @@ void dss_destroy_session(dss_session_t *session)
     cm_spin_unlock(&g_dss_session_ctrl.lock);
 }
 
-static void dss_count_session_latch_core(const dss_session_ctrl_t *session_ctrl, dss_session_t *scan_session,
-    const dss_latch_offset_t *latch_offset, uint32 *count, uint32 used_count)
+dss_session_t *dss_get_session(uint32 sid)
 {
-    uint32 stack_top = scan_session->latch_stack.stack_top;
-    for (uint32 i = 0; i < stack_top; i++) {
-        dss_latch_offset_t *scan_latch_offset = &scan_session->latch_stack.latch_offset_stack[i];
-        if (latch_offset->type != scan_latch_offset->type) {
-            continue;
-        }
-        if (latch_offset->type == DSS_LATCH_OFFSET_UNIQ_ID) {
-            if (latch_offset->offset.unique_id == scan_latch_offset->offset.unique_id) {
-                *count += 1;
-            }
-            continue;
-        }
-        if (latch_offset->type == DSS_LATCH_OFFSET_SHMOFFSET) {
-            if (latch_offset->offset.shm_offset == scan_latch_offset->offset.shm_offset) {
-                *count += 1;
-            }
-            continue;
-        }
-        if (used_count >= session_ctrl->used_count) {
-            break;
-        }
+    if (sid >= g_dss_session_ctrl.total) {
+        return NULL;
     }
-}
-
-static void dss_count_session_latch(dss_session_ctrl_t *session_ctrl, const dss_session_t *session,
-    const dss_latch_offset_t *latch_offset, uint32 *count)
-{
-    uint32 used_count = 0;
-    CM_ASSERT(session_ctrl != NULL);
-    CM_ASSERT(session != NULL);
-    CM_ASSERT(latch_offset != NULL);
-    CM_ASSERT(count != NULL);
-
-    *count = 0;
-
-    cm_spin_lock(&session_ctrl->lock, NULL);
-
-    for (uint32 id = 0; id < session_ctrl->total; id++) {
-        dss_session_t *scan_session = &session_ctrl->sessions[id];
-        if (scan_session->is_used == CM_FALSE) {
-            continue;
-        }
-
-        used_count++;
-        if (scan_session->id == session->id) {
-            if (used_count >= session_ctrl->used_count) {
-                break;
-            }
-            continue;
-        }
-        dss_count_session_latch_core(session_ctrl, scan_session, latch_offset, count, used_count);
-        if (used_count >= session_ctrl->used_count) {
-            break;
-        }
-    }
-
-    cm_spin_unlock(&session_ctrl->lock);
-}
-
-void dss_clean_session_latch(dss_session_ctrl_t *session_ctrl, dss_session_t *session)
-{
-    uint32 count = 0;
-    int32 i = 0;
-    sh_mem_p offset;
-    int32 stack_top;
-    latch_t *latch = NULL;
-
-    CM_ASSERT(session != NULL);
-
-    if (!session->is_direct) {
-        LOG_DEBUG_ERR("session is not direct.");
-        return;
-    }
-
-    stack_top = (int32)session->latch_stack.stack_top;
-
-    for (i = stack_top; i >= DSS_MAX_LATCH_STACK_BOTTON;) {
-        dss_latch_offset_type_e offset_type = session->latch_stack.latch_offset_stack[i].type;
-        if ((i == stack_top) && (offset_type == DSS_LATCH_OFFSET_INVALID)) {
-            i--;
-            continue;
-        }
-
-        if (cm_sys_process_alived(session->cli_info.cli_pid, session->cli_info.start_time)) {
-            cm_usleep(DSS_LOCK_CLEAN_SLEEP_TIME);
-            stack_top = (int32)session->latch_stack.stack_top;
-            i = stack_top;
-            continue;
-        }
-        if (offset_type == DSS_LATCH_OFFSET_SHMOFFSET) {
-            offset = session->latch_stack.latch_offset_stack[i].offset.shm_offset;
-            CM_ASSERT(offset != SHM_INVALID_ADDR);
-            latch = (latch_t *)OFFSET_TO_ADDR(offset);
-            LOG_DEBUG_INF("Clean session latch,i:%d, offset:%llu.", i, (uint64)offset);
-        } else {
-            LOG_DEBUG_ERR("latch offset type is invalid %u,i:%d.", session->latch_stack.latch_offset_stack[i].type, i);
-            i--;
-            continue;
-        }
-
-        if (DSS_SESSIONID_IN_LOCK(session->id) != latch->lock) {
-            cm_spin_lock_by_sid(DSS_SESSIONID_IN_LOCK(session->id), &latch->lock, NULL);
-        }
-
-        dss_count_session_latch(session_ctrl, session, &session->latch_stack.latch_offset_stack[i], &count);
-        LOG_DEBUG_INF("Clean session latch, old count:%hu, new count:%u.", latch->shared_count, count);
-        latch->shared_count = (uint16)count;
-        session->latch_stack.latch_offset_stack[i].type = DSS_LATCH_OFFSET_INVALID;
-        cm_spin_unlock(&latch->lock);
-        i--;
-    }
-
-    session->latch_stack.stack_top = DSS_MAX_LATCH_STACK_BOTTON;
+    return &g_dss_session_ctrl.sessions[sid];
 }
 
 static bool32 dss_is_timeout(int32 timeout, int32 sleep_times, int32 sleeps)
@@ -269,35 +159,38 @@ static bool32 dss_is_timeout(int32 timeout, int32 sleep_times, int32 sleeps)
     return (bool32)(((timeout * 1000) / (sleeps)) < sleep_times);
 }
 
-status_t dss_lock_shm_meta_s_without_session(latch_t *latch, bool32 is_force, int32 timeout)
+status_t dss_lock_shm_meta_s_without_stack(
+    dss_session_t *session, dss_shared_latch_t *shared_latch, bool32 is_force, int32 timeout)
 {
+    cm_panic_log(dss_is_server(), "can not op shared latch without session latch stack in client");
     int32 sleep_times = 0;
     latch_statis_t *stat = NULL;
     uint32 count = 0;
-    uint32 invalid_sid = DSS_DEFAULT_SESSIONID;
-
+    uint32 sid = (session != NULL ? DSS_SESSIONID_IN_LOCK(session->id) : DSS_DEFAULT_SESSIONID);
     do {
-        cm_spin_lock_by_sid(invalid_sid, &latch->lock, (stat != NULL) ? &stat->s_spin : NULL);
+        cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, (stat != NULL) ? &stat->s_spin : NULL);
+        if (shared_latch->latch.stat == LATCH_STATUS_IDLE) {
+            shared_latch->latch.stat = LATCH_STATUS_S;
+            shared_latch->latch.shared_count = 1;
+            shared_latch->latch.sid = (uint16)sid;
+            shared_latch->latch_extent.shared_sid_count += sid;
+            cm_spin_unlock(&shared_latch->latch.lock);
+            cm_latch_stat_inc(stat, count);
+            return CM_SUCCESS;
+        }
+        if ((shared_latch->latch.stat == LATCH_STATUS_S) || (shared_latch->latch.stat == LATCH_STATUS_IX && is_force)) {
+            shared_latch->latch.shared_count++;
+            shared_latch->latch_extent.shared_sid_count += sid;
+            cm_spin_unlock(&shared_latch->latch.lock);
+            cm_latch_stat_inc(stat, count);
+            return CM_SUCCESS;
+        }
 
-        if (latch->stat == LATCH_STATUS_IDLE) {
-            latch->stat = LATCH_STATUS_S;
-            latch->shared_count = 1;
-            latch->sid = (uint16)invalid_sid;
-            cm_spin_unlock(&latch->lock);
-            cm_latch_stat_inc(stat, count);
-            return CM_SUCCESS;
-        }
-        if ((latch->stat == LATCH_STATUS_S) || (latch->stat == LATCH_STATUS_IX && is_force)) {
-            latch->shared_count++;
-            cm_spin_unlock(&latch->lock);
-            cm_latch_stat_inc(stat, count);
-            return CM_SUCCESS;
-        }
-        cm_spin_unlock(&latch->lock);
+        cm_spin_unlock(&shared_latch->latch.lock);
         if (stat != NULL) {
             stat->misses++;
         }
-        while (latch->stat != LATCH_STATUS_IDLE && latch->stat != LATCH_STATUS_S) {
+        while (shared_latch->latch.stat != LATCH_STATUS_IDLE && shared_latch->latch.stat != LATCH_STATUS_S) {
             count++;
             if (count < GS_SPIN_COUNT) {
                 continue;
@@ -316,41 +209,66 @@ status_t dss_lock_shm_meta_s_without_session(latch_t *latch, bool32 is_force, in
     return CM_SUCCESS;
 }
 
-status_t dss_lock_shm_meta_s(dss_session_t *session, const dss_latch_offset_t *offset, latch_t *latch, int32 timeout)
+// only used by api-client
+status_t dss_lock_shm_meta_s_with_stack(
+    dss_session_t *session, dss_latch_offset_t *offset, dss_shared_latch_t *shared_latch, int32 timeout)
 {
+    cm_panic_log(!(dss_is_server()), "can not op shared latch with session latch stack in server");
     CM_ASSERT(session->latch_stack.stack_top < DSS_MAX_LATCH_STACK_DEPTH);
+
+    session->latch_stack.stack_top_bak = session->latch_stack.stack_top;
+    session->latch_stack.op = LATCH_SHARED_OP_LATCH_S;
     session->latch_stack.latch_offset_stack[session->latch_stack.stack_top] = *offset;
-    uint32 sid = DSS_SESSIONID_IN_LOCK(session->id);
 
     int32 sleep_times = 0;
     latch_statis_t *stat = NULL;
     uint32 count = 0;
+    uint32 sid = DSS_SESSIONID_IN_LOCK(session->id);
     bool32 is_force = CM_FALSE;
-
     do {
-        cm_spin_lock_by_sid(sid, &latch->lock, (stat != NULL) ? &stat->s_spin : NULL);
+        cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, (stat != NULL) ? &stat->s_spin : NULL);
 
-        if (latch->stat == LATCH_STATUS_IDLE) {
-            latch->stat = LATCH_STATUS_S;
-            latch->shared_count = 1;
-            latch->sid = (uint16)sid;
+        // for shared latch in shm, need to backup first
+        dss_set_latch_extent(&shared_latch->latch_extent, shared_latch->latch.stat, shared_latch->latch.shared_count);
+
+        if (shared_latch->latch.stat == LATCH_STATUS_IDLE) {
+            session->latch_stack.op = LATCH_SHARED_OP_LATCH_S_BEG;
+
+            shared_latch->latch.stat = LATCH_STATUS_S;
+            shared_latch->latch.shared_count = 1;
+            shared_latch->latch.sid = (uint16)sid;
+            shared_latch->latch_extent.shared_sid_count += sid;
+
+            // put this before the unlock to make sure: whn error happen, no one else can change the status of this
+            // latch
             session->latch_stack.stack_top++;
-            cm_spin_unlock(&latch->lock);
+            session->latch_stack.op = LATCH_SHARED_OP_LATCH_S_END;
+
+            cm_spin_unlock(&shared_latch->latch.lock);
             cm_latch_stat_inc(stat, count);
             return CM_SUCCESS;
         }
-        if ((latch->stat == LATCH_STATUS_S) || (latch->stat == LATCH_STATUS_IX && is_force)) {
-            latch->shared_count++;
+        if ((shared_latch->latch.stat == LATCH_STATUS_S) || (shared_latch->latch.stat == LATCH_STATUS_IX && is_force)) {
+            session->latch_stack.op = LATCH_SHARED_OP_LATCH_S_BEG;
+
+            shared_latch->latch.shared_count++;
+            shared_latch->latch_extent.shared_sid_count += sid;
+
+            // put this before the unlock to make sure: whn error happen, no one else can change the status of this
+            // latch
             session->latch_stack.stack_top++;
-            cm_spin_unlock(&latch->lock);
+            session->latch_stack.op = LATCH_SHARED_OP_LATCH_S_END;
+ 
+            cm_spin_unlock(&shared_latch->latch.lock);
             cm_latch_stat_inc(stat, count);
             return CM_SUCCESS;
         }
-        cm_spin_unlock(&latch->lock);
+
+        cm_spin_unlock(&shared_latch->latch.lock);
         if (stat != NULL) {
             stat->misses++;
         }
-        while (latch->stat != LATCH_STATUS_IDLE && latch->stat != LATCH_STATUS_S) {
+        while (shared_latch->latch.stat != LATCH_STATUS_IDLE && shared_latch->latch.stat != LATCH_STATUS_S) {
             count++;
             if (count < GS_SPIN_COUNT) {
                 continue;
@@ -359,15 +277,14 @@ status_t dss_lock_shm_meta_s(dss_session_t *session, const dss_latch_offset_t *o
             SPIN_STAT_INC(stat, s_sleeps);
             cm_usleep(SPIN_SLEEP_TIME);
             sleep_times++;
-            if (session->is_closed) {
-                DSS_THROW_ERROR(ERR_DSS_SHM_LOCK, "uds connection is closed.");
-                LOG_RUN_ERR("[DSS] ABORT INFO: Failed to lock vg share memery because uds connection is closed.");
-                session->latch_stack.latch_offset_stack[session->latch_stack.stack_top].type = DSS_LATCH_OFFSET_INVALID;
-                cm_fync_logfile();
-                _exit(1);
-            }
+
             if (dss_is_timeout(timeout, sleep_times, SPIN_SLEEP_TIME)) {
-                session->latch_stack.latch_offset_stack[session->latch_stack.stack_top].type = DSS_LATCH_OFFSET_INVALID;
+                if (session != NULL) {
+                    session->latch_stack.latch_offset_stack[session->latch_stack.stack_top].type =
+                        DSS_LATCH_OFFSET_INVALID;
+                    session->latch_stack.op = LATCH_SHARED_OP_NONE;
+                }
+
                 return CM_ERROR;
             }
             count = 0;
@@ -376,21 +293,21 @@ status_t dss_lock_shm_meta_s(dss_session_t *session, const dss_latch_offset_t *o
     return CM_SUCCESS;
 }
 
-status_t dss_lock_shm_meta_bucket_s(dss_session_t *session, uint32 id, latch_t *latch)
+status_t dss_lock_shm_meta_bucket_s(dss_session_t *session, uint32 id, dss_shared_latch_t *shared_latch)
 {
-    if (session != NULL) {
-        dss_latch_offset_t latch_offset;
-        latch_offset.type = DSS_LATCH_OFFSET_SHMOFFSET;
-        cm_shm_key_t key = cm_shm_key_of(SHM_TYPE_HASH, id);
-        latch_offset.offset.shm_offset = cm_trans_shm_offset(key, latch);
-        return dss_lock_shm_meta_s(session, &latch_offset, latch, SPIN_WAIT_FOREVER);
-    } else {
-        return dss_lock_shm_meta_s_without_session(latch, CM_FALSE, SPIN_WAIT_FOREVER);
+    if (dss_is_server() || session == NULL) {
+        return dss_lock_shm_meta_s_without_stack(session, shared_latch, CM_FALSE, SPIN_WAIT_FOREVER);
     }
+
+    dss_latch_offset_t latch_offset;
+    latch_offset.type = DSS_LATCH_OFFSET_SHMOFFSET;
+    cm_shm_key_t key = cm_shm_key_of(SHM_TYPE_HASH, id);
+    latch_offset.offset.shm_offset = cm_trans_shm_offset(key, &shared_latch->latch);
+    return dss_lock_shm_meta_s_with_stack(session, &latch_offset, shared_latch, SPIN_WAIT_FOREVER);
 }
 
 status_t dss_cli_lock_shm_meta_s(
-    dss_session_t *session, dss_latch_offset_t *offset, latch_t *latch, latch_should_exit should_exit)
+    dss_session_t *session, dss_latch_offset_t *offset, dss_shared_latch_t *shared_latch, latch_should_exit should_exit)
 {
     for (int i = 0; i < DSS_CLIENT_TIMEOUT_COUNT; i++) {
         if (session->is_closed) {
@@ -399,12 +316,12 @@ status_t dss_cli_lock_shm_meta_s(
             cm_fync_logfile();
             _exit(1);
         }
-        if (dss_lock_shm_meta_s(session, offset, latch, SPIN_WAIT_FOREVER) == CM_SUCCESS) {
+        if (dss_lock_shm_meta_s_with_stack(session, offset, shared_latch, SPIN_WAIT_FOREVER) == CM_SUCCESS) {
             return CM_SUCCESS;
         }
 
         if (should_exit && should_exit()) {
-            LOG_RUN_ERR("Caller want to exit when waiting for latch!!");
+            LOG_RUN_ERR("Caller want to exit when waiting for shared_latch!!");
             return ERR_DSS_LOCK_TIMEOUT;
         }
     }
@@ -412,32 +329,33 @@ status_t dss_cli_lock_shm_meta_s(
     return ERR_DSS_LOCK_TIMEOUT;
 }
 
-void dss_lock_shm_meta_x(const dss_session_t *session, latch_t *latch)
+void dss_lock_shm_meta_x(const dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
+    cm_panic_log(dss_is_server(), "can not op x latch in client");
     latch_statis_t *stat = NULL;
     uint32 count = 0;
     uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
 
     do {
-        cm_spin_lock_by_sid(sid, &latch->lock, (stat != NULL) ? &stat->x_spin : NULL);
-        if (latch->stat == LATCH_STATUS_IDLE) {
-            latch->sid = (uint16)sid;
-            latch->stat = LATCH_STATUS_X;
-            cm_spin_unlock(&latch->lock);
+        cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, (stat != NULL) ? &stat->x_spin : NULL);
+        if (shared_latch->latch.stat == LATCH_STATUS_IDLE) {
+            shared_latch->latch.sid = (uint16)sid;
+            shared_latch->latch.stat = LATCH_STATUS_X;
+            cm_spin_unlock(&shared_latch->latch.lock);
             cm_latch_stat_inc(stat, count);
             return;
         }
-        if (latch->stat == LATCH_STATUS_S) {
-            latch->stat = LATCH_STATUS_IX;
-            cm_spin_unlock(&latch->lock);
-            cm_latch_ix2x(latch, sid, stat);
+        if (shared_latch->latch.stat == LATCH_STATUS_S) {
+            shared_latch->latch.stat = LATCH_STATUS_IX;
+            cm_spin_unlock(&shared_latch->latch.lock);
+            cm_latch_ix2x(&shared_latch->latch, sid, stat);
             return;
         }
-        cm_spin_unlock(&latch->lock);
+        cm_spin_unlock(&shared_latch->latch.lock);
         if (stat != NULL) {
             stat->misses++;
         }
-        while (latch->stat != LATCH_STATUS_IDLE && latch->stat != LATCH_STATUS_S) {
+        while (shared_latch->latch.stat != LATCH_STATUS_IDLE && shared_latch->latch.stat != LATCH_STATUS_S) {
             count++;
             if (count >= GS_SPIN_COUNT) {
                 SPIN_STAT_INC(stat, x_sleeps);
@@ -448,71 +366,408 @@ void dss_lock_shm_meta_x(const dss_session_t *session, latch_t *latch)
     } while (CM_TRUE);
 }
 
-void dss_lock_shm_meta_x2ix(dss_session_t *session, latch_t *latch)
+void dss_lock_shm_meta_x2ix(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
+    cm_panic_log(dss_is_server(), "can not op x latch in client");
     latch_statis_t *stat = NULL;
     uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
-    dss_latch_x2ix(latch, sid, stat);
+    dss_latch_x2ix(&shared_latch->latch, sid, stat);
 }
 
-void dss_lock_shm_meta_ix2x(dss_session_t *session, latch_t *latch)
+void dss_lock_shm_meta_ix2x(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
+    cm_panic_log(dss_is_server(), "can not op x latch in client");
     latch_statis_t *stat = NULL;
     uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
-    dss_latch_ix2x(latch, sid, stat);
+    dss_latch_ix2x(&shared_latch->latch, sid, stat);
 }
 
-void dss_lock_shm_meta_bucket_x(latch_t *latch)
+void dss_lock_shm_meta_bucket_x(dss_shared_latch_t *shared_latch)
 {
-    dss_lock_shm_meta_x(NULL, latch);
+    dss_lock_shm_meta_x(NULL, shared_latch);
 }
 
-void dss_unlock_shm_meta_without_session(latch_t *latch)
+void dss_unlock_shm_meta_s_without_stack(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
+    cm_panic_log(dss_is_server(), "can not op shared latch without session latch stack in client");
     spin_statis_t *stat_spin = NULL;
-    uint32 invalid_sid = DSS_DEFAULT_SESSIONID;
-
-    cm_spin_lock_by_sid(invalid_sid, &latch->lock, stat_spin);
-
-    if (latch->shared_count > 0) {
-        latch->shared_count--;
+    uint32 sid = (session != NULL ? DSS_SESSIONID_IN_LOCK(session->id) : DSS_DEFAULT_SESSIONID);
+    cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, stat_spin);
+    if (shared_latch->latch.shared_count > 0) {
+        shared_latch->latch.shared_count--;
     }
-
-    if ((latch->stat == LATCH_STATUS_S || latch->stat == LATCH_STATUS_X) && (latch->shared_count == 0)) {
-        latch->stat = LATCH_STATUS_IDLE;
+    if (shared_latch->latch.shared_count == 0) {
+        if (shared_latch->latch.stat == LATCH_STATUS_S) {
+            shared_latch->latch.stat = LATCH_STATUS_IDLE;
+        }
+        shared_latch->latch.sid = 0;
     }
-
-    cm_spin_unlock(&latch->lock);
+    shared_latch->latch_extent.shared_sid_count -= sid;
+    cm_spin_unlock(&shared_latch->latch.lock);
 }
 
-void dss_unlock_shm_meta(dss_session_t *session, latch_t *latch)
+void dss_unlock_shm_meta_x(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
+    cm_panic_log(dss_is_server(), "can not op x latch in client");
+    spin_statis_t *stat_spin = NULL;
+    uint32 sid = (session != NULL ? DSS_SESSIONID_IN_LOCK(session->id) : DSS_DEFAULT_SESSIONID);
+    cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, stat_spin);
+    shared_latch->latch.stat = LATCH_STATUS_IDLE;
+    shared_latch->latch.sid = 0;
+    cm_spin_unlock(&shared_latch->latch.lock);
+}
+
+void dss_unlock_shm_meta_without_stack(dss_session_t *session, dss_shared_latch_t *shared_latch)
+{
+    cm_panic_log(dss_is_server(), "can not op shared latch without session latch stack in client");
+    if (shared_latch->latch.stat == LATCH_STATUS_S || shared_latch->latch.stat == LATCH_STATUS_IX) {
+        dss_unlock_shm_meta_s_without_stack(session, shared_latch);
+        return;
+    }
+    dss_unlock_shm_meta_x(session, shared_latch);
+}
+
+// only used by api-client or by clean
+bool32 dss_unlock_shm_meta_s_with_stack(dss_session_t *session, dss_shared_latch_t *shared_latch, bool32 is_try_lock)
+{
+    // NOT check:cm_panic_log(!(dss_is_server()), "can not op shared latch with latch stack session in server");
+    session->latch_stack.stack_top_bak = session->latch_stack.stack_top;
+    session->latch_stack.op = LATCH_SHARED_OP_UNLATCH;
+
     spin_statis_t *stat_spin = NULL;
     uint32 sid = DSS_SESSIONID_IN_LOCK(session->id);
-
-    cm_spin_lock_by_sid(sid, &latch->lock, stat_spin);
-
-    if (latch->shared_count > 0) {
-        latch->shared_count--;
-        CM_ASSERT(session->latch_stack.stack_top != DSS_MAX_LATCH_STACK_BOTTON);
-        session->latch_stack.stack_top--;
+    if (!is_try_lock) {
+        cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, stat_spin);
+    } else {
+        bool32 is_locked = cm_spin_try_lock(&shared_latch->latch.lock);
+        if (!is_locked) {
+            return CM_FALSE;
+        }
     }
+    // for shared latch in shm, need to backup first
+    dss_set_latch_extent(&shared_latch->latch_extent, shared_latch->latch.stat, shared_latch->latch.shared_count);
 
-    if ((latch->stat == LATCH_STATUS_S || latch->stat == LATCH_STATUS_X) && (latch->shared_count == 0)) {
-        latch->stat = LATCH_STATUS_IDLE;
+    // begin to change latch
+    session->latch_stack.op = LATCH_SHARED_OP_UNLATCH_BEG;
+
+    CM_ASSERT(shared_latch->latch.shared_count > 0);
+    shared_latch->latch.shared_count--;
+    if (shared_latch->latch.shared_count == 0) {
+        if (shared_latch->latch.stat == LATCH_STATUS_S) {
+            shared_latch->latch.stat = LATCH_STATUS_IDLE;
+        }
+        shared_latch->latch.sid = 0;
     }
+    shared_latch->latch_extent.shared_sid_count -= sid;
 
-    cm_spin_unlock(&latch->lock);
-    session->latch_stack.latch_offset_stack[session->latch_stack.stack_top].type = DSS_LATCH_OFFSET_INVALID;
+    cm_spin_unlock(&shared_latch->latch.lock);
+
+    // put this after the unlock to make sure:when error happen after unlock, do NOT op the unlatch-ed latch
+    // begin to change stack
+    CM_ASSERT(session->latch_stack.stack_top);
+    // in the normal, should be stack_top-- first, then set [stack_top].typ = DSS_LATCH_OFFSET_INVALID
+    // but may NOT do [stack_top].typ = DSS_LATCH_OFFSET_INVALID when some error happen,
+    // so leave the stack_top-- on the second step
+    session->latch_stack.latch_offset_stack[session->latch_stack.stack_top - 1].type = DSS_LATCH_OFFSET_INVALID;
+    session->latch_stack.stack_top--;
+    session->latch_stack.op = LATCH_SHARED_OP_UNLATCH_END;
+    return CM_TRUE;
 }
 
-void dss_unlock_shm_meta_bucket(dss_session_t *session, latch_t *latch)
+void dss_unlock_shm_meta_with_stack(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
-    if (session != NULL) {
-        dss_unlock_shm_meta(session, latch);
-    } else {
-        dss_unlock_shm_meta_without_session(latch);
+    if (shared_latch->latch.stat == LATCH_STATUS_S || shared_latch->latch.stat == LATCH_STATUS_IX) {
+        (void)dss_unlock_shm_meta_s_with_stack(session, shared_latch, CM_FALSE);
+        return;
     }
+    dss_unlock_shm_meta_x(session, shared_latch);
+}
+
+void dss_unlock_shm_meta_bucket(dss_session_t *session, dss_shared_latch_t *shared_latch)
+{
+    if (dss_is_server() || session == NULL) {
+        dss_unlock_shm_meta_without_stack(session, shared_latch);
+        return;
+    }
+    dss_unlock_shm_meta_with_stack(session, shared_latch);
+}
+
+static void dss_clean_latch_s_without_bak(dss_session_t *session, dss_shared_latch_t *shared_latch)
+{
+    LOG_DEBUG_INF("Clean sid:%u latch_stack old stack_top:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        session->latch_stack.stack_top);
+    session->latch_stack.latch_offset_stack[session->latch_stack.stack_top].type = DSS_LATCH_OFFSET_INVALID;
+    LOG_DEBUG_INF("Clean sid:%u latch_stack new stack_top:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        session->latch_stack.stack_top);
+}
+
+static void dss_clean_latch_s_with_bak(dss_session_t *session, dss_shared_latch_t *shared_latch)
+{
+    LOG_DEBUG_INF("Clean sid:%u shared_latch old count:%hu, old stat:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        shared_latch->latch.shared_count, shared_latch->latch.stat);
+
+    // do not care about the new value, just using the shared_count_bak
+    shared_latch->latch.shared_count = shared_latch->latch_extent.shared_count_bak;
+    shared_latch->latch.stat = shared_latch->latch_extent.stat_bak;
+    shared_latch->latch_extent.shared_sid_count = shared_latch->latch_extent.shared_sid_count_bak;
+
+    if (shared_latch->latch.shared_count == 0) {
+        if (shared_latch->latch.stat == LATCH_STATUS_S) {
+            shared_latch->latch.stat = LATCH_STATUS_IDLE;
+        }
+        shared_latch->latch.sid = 0;
+    }
+
+    LOG_DEBUG_INF("Clean sid:%u shared_latch new count:%hu, new stat:%u.",
+        DSS_SESSIONID_IN_LOCK(session->id), shared_latch->latch.shared_count, shared_latch->latch.stat);
+    
+    LOG_DEBUG_INF("Clean sid:%u latch_stack old stack_top:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        session->latch_stack.stack_top);
+    // not sure last latch finish, so using the stack_top_bak
+    session->latch_stack.stack_top = session->latch_stack.stack_top_bak;
+    // when latch first, and not finish, the stack_top may be zero
+    if (session->latch_stack.stack_top > 0) {
+        session->latch_stack.latch_offset_stack[session->latch_stack.stack_top - 1].type = DSS_LATCH_OFFSET_INVALID;
+        session->latch_stack.stack_top--;
+    } else {
+        session->latch_stack.latch_offset_stack[session->latch_stack.stack_top].type = DSS_LATCH_OFFSET_INVALID;
+    }
+    LOG_DEBUG_INF("Clean sid:%u latch_stack new stack_top:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        session->latch_stack.stack_top);
+}
+
+static void dss_clean_unlatch_without_bak(dss_session_t *session, dss_shared_latch_t *shared_latch)
+{
+    LOG_DEBUG_INF("Clean sid:%u unlatch shared_latch, old count:%hu, old stat:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        shared_latch->latch.shared_count, shared_latch->latch.stat);
+
+    CM_ASSERT(shared_latch->latch.shared_count > 0);
+    shared_latch->latch.shared_count--;
+    shared_latch->latch_extent.shared_sid_count -= DSS_SESSIONID_IN_LOCK(session->id);
+
+    if (shared_latch->latch.shared_count == 0) {
+        if (shared_latch->latch.stat == LATCH_STATUS_S) {
+            shared_latch->latch.stat = LATCH_STATUS_IDLE;
+        }
+        shared_latch->latch.sid = 0;
+    }
+
+    LOG_DEBUG_INF("Clean sid:%u shared_latch new count:%hu, new stat:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        shared_latch->latch.shared_count, shared_latch->latch.stat);
+
+    LOG_DEBUG_INF("Clean sid:%u latch_stack old stack_top:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        session->latch_stack.stack_top);
+    CM_ASSERT(session->latch_stack.stack_top > 0);
+    session->latch_stack.latch_offset_stack[session->latch_stack.stack_top - 1].type = DSS_LATCH_OFFSET_INVALID;
+    session->latch_stack.stack_top--;
+    LOG_DEBUG_INF("Clean sid:%u latch_stack new stack_top:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        session->latch_stack.stack_top);
+}
+
+static void dss_clean_unlatch_with_bak(dss_session_t *session, dss_shared_latch_t *shared_latch)
+{
+    LOG_DEBUG_INF("Clean sid:%u unlatch shared_latch, old count:%hu, old stat:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        shared_latch->latch.shared_count, shared_latch->latch.stat);
+    // not sure last unlatch finsh, using the shared_count_bak first
+    shared_latch->latch.shared_count = shared_latch->latch_extent.shared_count_bak;
+    shared_latch->latch.stat = shared_latch->latch_extent.stat_bak;
+    shared_latch->latch_extent.shared_sid_count = shared_latch->latch_extent.shared_sid_count_bak;
+
+    CM_ASSERT(shared_latch->latch.shared_count > 0);
+    shared_latch->latch.shared_count--;
+    shared_latch->latch_extent.shared_sid_count -= DSS_SESSIONID_IN_LOCK(session->id);
+
+    if (shared_latch->latch.shared_count == 0) {
+        if (shared_latch->latch.stat == LATCH_STATUS_S) {
+            shared_latch->latch.stat = LATCH_STATUS_IDLE;
+        }
+        shared_latch->latch.sid = 0;
+    }
+    LOG_DEBUG_INF("Clean sid:%u shared_latch new count:%hu, new stat:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        shared_latch->latch.shared_count, shared_latch->latch.stat);
+
+    LOG_DEBUG_INF("Clean sid:%u latch_stack old stack_top:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        session->latch_stack.stack_top);
+    // not sure last unlatch finish, so using the stack_top_bak
+    session->latch_stack.stack_top = session->latch_stack.stack_top_bak;
+    CM_ASSERT(session->latch_stack.stack_top > 0);
+    session->latch_stack.latch_offset_stack[session->latch_stack.stack_top - 1].type = DSS_LATCH_OFFSET_INVALID;
+    session->latch_stack.stack_top--;
+    LOG_DEBUG_INF("Clean sid:%u latch_stack new stack_top:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        session->latch_stack.stack_top);
+}
+
+static void dss_clean_last_op_with_lock(dss_session_t *session, dss_shared_latch_t *shared_latch)
+{
+    CM_ASSERT((DSS_SESSIONID_IN_LOCK(session->id)) == shared_latch->latch.lock);
+
+    LOG_DEBUG_INF("Clean sid:%u latch_stack op:%u, stack_top_bak:%hu.", DSS_SESSIONID_IN_LOCK(session->id),
+        session->latch_stack.op, session->latch_stack.stack_top_bak);
+
+    LOG_DEBUG_INF("Clean sid:%u latch_extent stat_bak:%hu, shared_count_bak:%hu.", DSS_SESSIONID_IN_LOCK(session->id),
+        shared_latch->latch_extent.stat_bak, shared_latch->latch_extent.shared_count_bak);
+
+    // step 1, try to clean
+    // no backup, no change
+    if (session->latch_stack.op == LATCH_SHARED_OP_LATCH_S) {
+        dss_clean_latch_s_without_bak(session, shared_latch);
+        // when latch with backup, undo the latch witch backup
+    } else if (session->latch_stack.op == LATCH_SHARED_OP_LATCH_S_BEG ||
+                session->latch_stack.op == LATCH_SHARED_OP_LATCH_S_END) {
+        dss_clean_latch_s_with_bak(session, shared_latch);
+        // when unlatch, no backup, no change, redo the unlatch without backup
+    } else if (session->latch_stack.op == LATCH_SHARED_OP_UNLATCH) {
+        dss_clean_unlatch_without_bak(session, shared_latch);
+        // when unlatch not finish with backup, redo unlatch with backup
+    } else if (session->latch_stack.op == LATCH_SHARED_OP_UNLATCH_BEG) {
+        dss_clean_unlatch_with_bak(session, shared_latch);
+    }
+
+    session->latch_stack.op = LATCH_SHARED_OP_UNLATCH_END;
+    // step2
+    cm_spin_unlock(&shared_latch->latch.lock);
+}
+
+static void dss_clean_last_op_without_lock(dss_session_t *session, dss_shared_latch_t *shared_latch)
+{
+    if (session->latch_stack.op == LATCH_SHARED_OP_NONE || session->latch_stack.op == LATCH_SHARED_OP_LATCH_S) {
+        session->latch_stack.latch_offset_stack[session->latch_stack.stack_top].type = DSS_LATCH_OFFSET_INVALID;
+        session->latch_stack.op = LATCH_SHARED_OP_UNLATCH_END;
+        LOG_DEBUG_INF("Clean sid:%u reset to latch_stack op:%u, stack_top:%hu.", DSS_SESSIONID_IN_LOCK(session->id),
+            session->latch_stack.op, session->latch_stack.stack_top);
+        // LATCH_SHARED_OP_UNLATCH_BEG and not in lock, means has finished to unlatch the latch,
+        // but not finished to set lack_stack[stack_top].type
+    } else if (session->latch_stack.op == LATCH_SHARED_OP_UNLATCH_BEG) {
+        CM_ASSERT(session->latch_stack.stack_top > 0);
+        session->latch_stack.latch_offset_stack[session->latch_stack.stack_top - 1].type = DSS_LATCH_OFFSET_INVALID;
+        session->latch_stack.stack_top--;
+        session->latch_stack.op = LATCH_SHARED_OP_UNLATCH_END;
+        LOG_DEBUG_INF("Clean sid:%u reset to latch_stack op:%u, stack_top:%hu.", DSS_SESSIONID_IN_LOCK(session->id),
+            session->latch_stack.op, session->latch_stack.stack_top);
+    }
+}
+
+static bool32 dss_clean_lock_for_shm_meta(dss_session_t *session, dss_shared_latch_t *shared_latch, bool32 is_daemon)
+{
+    LOG_DEBUG_INF("Clean sid:%u latch_stack op:%u, stack_top:%hu.", DSS_SESSIONID_IN_LOCK(session->id),
+        session->latch_stack.op, session->latch_stack.stack_top);
+    // last op between lock & unlock for this latch not finish
+    if (DSS_SESSIONID_IN_LOCK(session->id) == shared_latch->latch.lock) {
+        dss_clean_last_op_with_lock(session, shared_latch);
+        // if last op not happen, or latch not begin
+    } else if (session->latch_stack.op == LATCH_SHARED_OP_NONE || session->latch_stack.op == LATCH_SHARED_OP_LATCH_S ||
+                session->latch_stack.op == LATCH_SHARED_OP_UNLATCH_BEG) {
+        dss_clean_last_op_without_lock(session, shared_latch);
+        // otherwise unlatch the latch
+    } else {
+        // may exist other session lock but dead after last check the lsat->spin_lock, so if it's daemon, do lock with
+        // try this
+        if (is_daemon) {
+            LOG_DEBUG_INF("Clean sid:%u latch_stack op:%u, stack_top:%hu wait next try.",
+                DSS_SESSIONID_IN_LOCK(session->id), session->latch_stack.op, session->latch_stack.stack_top);
+            return dss_unlock_shm_meta_s_with_stack(session, shared_latch, CM_TRUE);
+        }
+        (void)dss_unlock_shm_meta_s_with_stack(session, shared_latch, CM_FALSE);
+    }
+    return CM_TRUE;
+}
+
+#define DSS_WAIT_CLI_EXIT_CHK_INTERVAL 200
+static void dss_wait_cli_exit(dss_session_t *session)
+{
+    bool32 alived = CM_FALSE;
+    if (session->cli_info.cli_pid == 0) {
+        return;
+    }
+    do {
+        alived = cm_sys_process_alived(session->cli_info.cli_pid, session->cli_info.start_time);
+        if (!alived) {
+            break;
+        }
+        LOG_DEBUG_INF("Process:%s is alive, pid:%llu, start_time:%lld.", session->cli_info.process_name,
+            session->cli_info.cli_pid, session->cli_info.start_time);
+        if (session->is_closed) {
+            break;
+        }
+        cm_usleep(DSS_WAIT_CLI_EXIT_CHK_INTERVAL);
+    } while (alived);
+}
+
+void dss_clean_session_latch(dss_session_t *session, bool32 is_daemon)
+{
+    int32 i = 0;
+    sh_mem_p offset;
+    int32 latch_place;
+    dss_latch_offset_type_e offset_type;
+    dss_shared_latch_t *shared_latch = NULL;
+
+    CM_ASSERT(session != NULL);
+    if (!session->is_direct) {
+        LOG_DEBUG_INF("Clean sid:%u is not direct.", DSS_SESSIONID_IN_LOCK(session->id));
+        return;
+    }
+    // may cli not exit now, wait it
+    if (!is_daemon) {
+        dss_wait_cli_exit(session);
+        // only prevent other clean task
+        cm_spin_lock(&session->lock, NULL);
+    } else {
+        bool32 locked = cm_spin_try_lock(&session->lock);
+        if (!locked) {
+            return;
+        }
+    }
+    
+    LOG_DEBUG_INF("Clean sid:%u latch_stack op:%u, stack_top:%hu.", DSS_SESSIONID_IN_LOCK(session->id),
+        session->latch_stack.op, session->latch_stack.stack_top);
+    for (i = (int32)session->latch_stack.stack_top; i >= DSS_MAX_LATCH_STACK_BOTTON; i--) {
+        // the stack_top may NOT be moveed to the right place
+        if (i == DSS_MAX_LATCH_STACK_DEPTH) {
+            latch_place = i - 1;
+        } else {
+            latch_place = i;
+        }
+        offset_type = session->latch_stack.latch_offset_stack[latch_place].type;
+        // the stack_top may be the right invalid or latch not finish to set offset_type
+        // or unlatch not over, just finish unlatch the latch, but not set offset_type
+        if (offset_type != DSS_LATCH_OFFSET_SHMOFFSET) {
+            LOG_DEBUG_ERR("Clean sid:%u shared_latch offset type is invalid %u,latch_place:%d.",
+                DSS_SESSIONID_IN_LOCK(session->id), session->latch_stack.latch_offset_stack[latch_place].type,
+                latch_place);
+            if (session->latch_stack.op == LATCH_SHARED_OP_UNLATCH_BEG && i != (int32)session->latch_stack.stack_top) {
+                session->latch_stack.stack_top = latch_place;
+                session->latch_stack.op = LATCH_SHARED_OP_UNLATCH_END;
+            }
+            LOG_DEBUG_INF("Clean sid:%u reset to latch_stack op:%u, stack_top:%hu.", DSS_SESSIONID_IN_LOCK(session->id),
+                session->latch_stack.op, session->latch_stack.stack_top);
+            continue;
+        } else {
+            offset = session->latch_stack.latch_offset_stack[latch_place].offset.shm_offset;
+            CM_ASSERT(offset != SHM_INVALID_ADDR);
+            shared_latch = (dss_shared_latch_t *)OFFSET_TO_ADDR(offset);
+            LOG_DEBUG_INF("Clean sid:%u shared_latch,latch_place:%d, offset:%llu.", DSS_SESSIONID_IN_LOCK(session->id),
+                latch_place, (uint64)offset);
+        }
+    
+        // the lock is locked by this session in the dead-client,
+        if (is_daemon && shared_latch->latch.lock != 0 &&
+            DSS_SESSIONID_IN_LOCK(session->id) != shared_latch->latch.lock) {
+            cm_spin_unlock(&session->lock);
+            LOG_DEBUG_INF("Clean sid:%u daemon wait next time to clean.", DSS_SESSIONID_IN_LOCK(session->id));
+            return;
+        } else {
+            bool32 is_cleaned = dss_clean_lock_for_shm_meta(session, shared_latch, is_daemon);
+            if (!is_cleaned) {
+                cm_spin_unlock(&session->lock);
+                LOG_DEBUG_INF("Clean sid:%u daemon wait next time to clean.", DSS_SESSIONID_IN_LOCK(session->id));
+                return;
+            }
+        }
+    }
+
+    session->latch_stack.op = LATCH_SHARED_OP_NONE;
+    session->latch_stack.stack_top = DSS_MAX_LATCH_STACK_BOTTON;
+    cm_spin_unlock(&session->lock);
 }
 
 #ifdef __cplusplus

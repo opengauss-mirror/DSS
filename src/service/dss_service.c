@@ -146,7 +146,7 @@ static void dss_clean_open_files(dss_session_t *session)
 
 void dss_release_session_res(dss_session_t *session)
 {
-    dss_clean_session_latch(dss_get_session_ctrl(), session);
+    dss_clean_session_latch(session, CM_FALSE);
     dss_clean_open_files(session);
     dss_destroy_session(session);
 }

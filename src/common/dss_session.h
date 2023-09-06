@@ -68,6 +68,8 @@ typedef struct st_dss_latch_offset {
 typedef struct st_dss_latch_stack {
     dss_latch_offset_t latch_offset_stack[DSS_MAX_LATCH_STACK_DEPTH];
     uint32 stack_top;
+    uint32 stack_top_bak;
+    dss_latch_shared_op_e op;
 } dss_latch_stack_t;
 
 typedef enum en_protocol_type {
@@ -96,6 +98,7 @@ typedef struct st_dss_session_stat {
 } dss_session_stat_t;
 
 typedef struct st_dss_session {
+    spinlock_t lock;    // for control current rw of the same session
     uint32 id;
     bool32 is_closed;
     bool32 is_used;
@@ -157,20 +160,23 @@ status_t dss_init_session(uint32 max_session_num);
 dss_session_ctrl_t *dss_get_session_ctrl(void);
 status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session);
 void dss_destroy_session(dss_session_t *session);
+dss_session_t *dss_get_session(uint32 sid);
 
-status_t dss_lock_shm_meta_s(dss_session_t *session, const dss_latch_offset_t *offset, latch_t *latch, int32 timeout);
-status_t dss_lock_shm_meta_s_without_session(latch_t *latch, bool32 is_force, int32 timeout);
-status_t dss_cli_lock_shm_meta_s(
-    dss_session_t *session, dss_latch_offset_t *offset, latch_t *latch, latch_should_exit should_exit);
-void dss_lock_shm_meta_x(const dss_session_t *session, latch_t *latch);
-void dss_lock_shm_meta_x2ix(dss_session_t *session, latch_t *latch);
-void dss_lock_shm_meta_ix2x(dss_session_t *session, latch_t *latch);
-void dss_unlock_shm_meta(dss_session_t *session, latch_t *latch);
-void dss_unlock_shm_meta_without_session(latch_t *latch);
-status_t dss_lock_shm_meta_bucket_s(dss_session_t *session, uint32 id, latch_t *latch);
-void dss_lock_shm_meta_bucket_x(latch_t *latch);
-void dss_unlock_shm_meta_bucket(dss_session_t *session, latch_t *latch);
-void dss_clean_session_latch(dss_session_ctrl_t *session_ctrl, dss_session_t *session);
+status_t dss_lock_shm_meta_s_with_stack(
+    dss_session_t *session, dss_latch_offset_t *offset, dss_shared_latch_t *shared_latch, int32 timeout);
+status_t dss_lock_shm_meta_s_without_stack(
+    dss_session_t *session, dss_shared_latch_t *shared_latch, bool32 is_force, int32 timeout);
+status_t dss_cli_lock_shm_meta_s(dss_session_t *session, dss_latch_offset_t *offset, dss_shared_latch_t *shared_latch,
+    latch_should_exit should_exit);
+void dss_lock_shm_meta_x(const dss_session_t *session, dss_shared_latch_t *shared_latch);
+void dss_lock_shm_meta_x2ix(dss_session_t *session, dss_shared_latch_t *shared_latch);
+void dss_lock_shm_meta_ix2x(dss_session_t *session, dss_shared_latch_t *shared_latch);
+void dss_unlock_shm_meta_with_stack(dss_session_t *session, dss_shared_latch_t *shared_latch);
+void dss_unlock_shm_meta_without_stack(dss_session_t *session, dss_shared_latch_t *shared_latch);
+status_t dss_lock_shm_meta_bucket_s(dss_session_t *session, uint32 id, dss_shared_latch_t *shared_latch);
+void dss_lock_shm_meta_bucket_x(dss_shared_latch_t *shared_latch);
+void dss_unlock_shm_meta_bucket(dss_session_t *session, dss_shared_latch_t *shared_latch);
+void dss_clean_session_latch(dss_session_t *session, bool32 is_daemon);
 uint32 dss_get_udssession_startid(void);
 #ifdef __cplusplus
 }

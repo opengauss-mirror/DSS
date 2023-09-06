@@ -30,6 +30,7 @@
 #include "dss_hashmap.h"
 #include "dss_shm.h"
 #include "cm_latch.h"
+#include "dss_latch.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -53,7 +54,7 @@ typedef struct tag_shm_oamap {
 } shm_oamap_t;
 
 typedef struct tag_shm_hashmap_bucket {
-    latch_t enque_lock;
+    dss_shared_latch_t enque_lock;
     sh_mem_p first;
     bool32 has_next;
 } shm_hashmap_bucket_t;

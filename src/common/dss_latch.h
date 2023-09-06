@@ -27,10 +27,36 @@
 
 #include "cm_latch.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef enum en_dss_latch_mode {
     LATCH_MODE_SHARE = 0,
     LATCH_MODE_EXCLUSIVE = 1
 } dss_latch_mode_e;
+
+typedef enum en_dss_latch_shared_op {
+    LATCH_SHARED_OP_NONE = 0,
+    LATCH_SHARED_OP_LATCH_S = 1,
+    LATCH_SHARED_OP_LATCH_S_BEG = 2,
+    LATCH_SHARED_OP_LATCH_S_END = 3,
+    LATCH_SHARED_OP_UNLATCH = 4,
+    LATCH_SHARED_OP_UNLATCH_BEG = 5,
+    LATCH_SHARED_OP_UNLATCH_END = 6,
+} dss_latch_shared_op_e;
+
+typedef struct st_dss_latch_extent {
+    volatile uint16 shared_count_bak;
+    volatile uint16 stat_bak;
+    volatile uint64 shared_sid_count;
+    volatile uint64 shared_sid_count_bak;
+} dss_latch_extent_t;
+
+typedef struct st_dss_shared_latch {
+    latch_t latch;
+    dss_latch_extent_t latch_extent;
+} dss_shared_latch_t;
+
 #define SPIN_SLEEP_TIME 500
 #define SPIN_WAIT_FOREVER (-1)
 #define DSS_CLIENT_TIMEOUT_COUNT 30
@@ -53,5 +79,11 @@ static inline void dss_latch(latch_t *latch, dss_latch_mode_e latch_mode, uint32
 void dss_latch_s2(latch_t *latch, uint32 sid, bool32 is_force, latch_statis_t *stat);
 void dss_latch_x2ix(latch_t *latch, uint32 sid, latch_statis_t *stat);
 void dss_latch_ix2x(latch_t *latch, uint32 sid, latch_statis_t *stat);
+
+void dss_set_latch_extent(dss_latch_extent_t *latch_extent, uint16 stat, uint16 shared_count);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -271,7 +271,7 @@ typedef struct st_dss_vg_info_item_t {
     dss_vg_status_e status;
     cm_oamap_t au_map;  // UNUSED
     dss_volume_t volume_handle[DSS_MAX_VOLUMES];
-    latch_t *vg_latch;
+    dss_shared_latch_t *vg_latch;
     dss_ctrl_t *dss_ctrl;
     shm_hashmap_t *buffer_cache;
     char *align_buf;
@@ -302,9 +302,9 @@ typedef struct st_dss_vg_conf_t {
 } dss_vg_conf_t;
 
 typedef struct st_dss_share_vg_item_t {
-    latch_t vg_latch;
+    dss_shared_latch_t vg_latch;
     shm_hashmap_t buffer_cache;
-    char reserve[460];  // align 512
+    char reserve[440];  // align 512
     dss_ctrl_t dss_ctrl;
 } dss_share_vg_item_t;
 

@@ -124,8 +124,10 @@ static void handle_main_wait(void)
             dss_ssl_ca_cert_expire();
         }
         if (dss_is_readwrite()) {
-            dss_check_unreg_volume();
+            dss_check_unreg_volume(g_dss_instance.handle_session);
         }
+
+        dss_clean_all_sessions_latch();
         cm_sleep(interval);
         periods++;
     } while (CM_TRUE);

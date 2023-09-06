@@ -24,6 +24,7 @@
 
 #include "dss_malloc.h"
 #include "dsscmd_inq.h"
+#include "dss_latch.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -188,7 +189,7 @@ static status_t dss_alloc_volume_group(dss_vg_info_t *vg_info)
         result, LOG_DEBUG_ERR("cm_malloc_align stack failed, align size:%u, size:%u.", DSS_ALIGN_SIZE, len));
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         vg_info->volume_group[i].buffer_cache = (shm_hashmap_t *)(buf + i * len);
-        vg_info->volume_group[i].vg_latch = (latch_t *)(buf + i * len + DSS_MAX_STACK_BUF_SIZE);
+        vg_info->volume_group[i].vg_latch = (dss_shared_latch_t *)(buf + i * len + DSS_MAX_STACK_BUF_SIZE);
         vg_info->volume_group[i].stack.buff = (char *)(buf + i * len + DSS_MAX_STACK_BUF_SIZE + DSS_MAX_STACK_BUF_SIZE);
         vg_info->volume_group[i].dss_ctrl =
             (dss_ctrl_t *)(buf + i * len + DSS_MAX_STACK_BUF_SIZE + DSS_MAX_STACK_BUF_SIZE + DSS_MAX_STACK_BUF_SIZE);

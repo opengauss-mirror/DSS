@@ -352,6 +352,13 @@ status_t dss_get_instance_log_buf(dss_instance_t *inst)
     return dss_recover_no_cm(inst);
 }
 
+static status_t dss_init_inst_handle_session(dss_instance_t *inst)
+{
+    status_t status = dss_create_session(NULL, &inst->handle_session);
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance init create handle session fail!"));
+    return CM_SUCCESS;
+}
+
 static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
 {
     g_dss_share_vg_info = (dss_share_vg_info_t *)ga_object_addr(GA_INSTANCE_POOL, objectid);
@@ -379,6 +386,8 @@ static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to start lsnr!"));
     status = dss_create_reactors();
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to start reactors!"));
+    status = dss_init_inst_handle_session(inst);
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance int handle session!"));
     return CM_SUCCESS;
 }
 
@@ -899,22 +908,22 @@ bool32 dss_check_join_cluster()
     return CM_TRUE;
 }
 
-static bool32 dss_find_unreg_volume(char **dev, uint8 *vg_idx, uint8 *volume_id)
+static bool32 dss_find_unreg_volume(dss_session_t *session, char **dev, uint8 *vg_idx, uint8 *volume_id)
 {
     for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
         for (uint32 j = 0; j < DSS_MAX_VOLUMES; j++) {
             if (g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].flag != VOLUME_PREPARE) {
                 continue;
             }
-            dss_lock_vg_mem_and_shm_s(NULL, &g_vgs_info->volume_group[i]);
+            dss_lock_vg_mem_and_shm_s(session, &g_vgs_info->volume_group[i]);
             if (g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].flag != VOLUME_PREPARE) {
-                dss_unlock_vg_mem_and_shm(NULL, &g_vgs_info->volume_group[i]);
+                dss_unlock_vg_mem_and_shm(session, &g_vgs_info->volume_group[i]);
                 continue;
             }
             *dev = g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].name;
             *vg_idx = (uint8)i;
             *volume_id = (uint8)j;
-            dss_unlock_vg_mem_and_shm(NULL, &g_vgs_info->volume_group[i]);
+            dss_unlock_vg_mem_and_shm(session, &g_vgs_info->volume_group[i]);
             return CM_TRUE;
         }
     }
@@ -931,13 +940,13 @@ static bool32 dss_is_register(iof_reg_in_t *reg_info, int64 host_id)
     return CM_FALSE;
 }
 
-void dss_check_unreg_volume(void)
+void dss_check_unreg_volume(dss_session_t *session)
 {
     uint8 vg_idx, volume_id;
     iof_reg_in_t reg_info;
     (void)memset_s(&reg_info, sizeof(reg_info), 0 ,sizeof(reg_info));
 
-    bool32 is_unreg = dss_find_unreg_volume(&reg_info.dev, &vg_idx, &volume_id);
+    bool32 is_unreg = dss_find_unreg_volume(session, &reg_info.dev, &vg_idx, &volume_id);
     if (!is_unreg) {
         return;
     }
@@ -950,10 +959,10 @@ void dss_check_unreg_volume(void)
     if (dss_lock_vg_storage_r(vg_item, vg_item->entry_path, g_inst_cfg) != CM_SUCCESS) {
         return;
     }
-    dss_lock_vg_mem_and_shm_s(NULL, vg_item);
+    dss_lock_vg_mem_and_shm_s(session, vg_item);
     ret = dss_load_vg_ctrl_part(vg_item, (int64)(DSS_VOLUME_HEAD_SIZE - DSS_DISK_UNIT_SIZE),
         &vg_item->dss_ctrl->global_ctrl, DSS_DISK_UNIT_SIZE, &remote);
-    dss_unlock_vg_mem_and_shm(NULL, vg_item);
+    dss_unlock_vg_mem_and_shm(session, vg_item);
     dss_unlock_vg_storage(vg_item, vg_item->entry_path, g_inst_cfg);
     if (ret != CM_SUCCESS) {
         return;
@@ -968,14 +977,14 @@ void dss_check_unreg_volume(void)
     }
 
     vg_item = &g_vgs_info->volume_group[vg_idx];
-    dss_lock_vg_mem_and_shm_x(NULL, vg_item);
+    dss_lock_vg_mem_and_shm_x(session, vg_item);
     if (vg_item->dss_ctrl->volume.defs[volume_id].flag == VOLUME_FREE) {
-        dss_unlock_vg_mem_and_shm(NULL, vg_item);
+        dss_unlock_vg_mem_and_shm(session, vg_item);
         return;
     }
     vg_item->dss_ctrl->volume.defs[volume_id].flag = VOLUME_OCCUPY;
     ret = dss_update_volume_ctrl(vg_item);
-    dss_unlock_vg_mem_and_shm(NULL, vg_item);
+    dss_unlock_vg_mem_and_shm(session, vg_item);
     if (ret != CM_SUCCESS) {
         return;
     }
