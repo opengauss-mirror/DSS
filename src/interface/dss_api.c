@@ -646,7 +646,7 @@ static void dss_fsize_with_options(const char *fname, long long *fsize, int orig
         return;
     }
 
-    status = dss_open_file_impl(conn, fname, 0, &handle);
+    status = dss_open_file_impl(conn, fname, O_RDONLY, &handle);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Open file :%s failed.\n", fname);
         return;
