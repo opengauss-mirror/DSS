@@ -819,21 +819,26 @@ static status_t dss_process_stop_server(dss_session_t *session)
 // process switch lock,just master id can do
 static status_t dss_process_switch_lock(dss_session_t *session)
 {
-    uint32 master_id = dss_get_master_id();
     dss_config_t *cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)(cfg->params.inst_id);
     int32 switch_id;
     dss_init_get(&session->recv_pack);
-    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &switch_id));
+    if (dss_get_int32(&session->recv_pack, &switch_id) != CM_SUCCESS) {
+        cm_spin_unlock(&g_dss_instance.switch_lock);
+        return CM_ERROR;
+    }
+    cm_spin_lock(&g_dss_instance.switch_lock, NULL);
+    uint32 master_id = dss_get_master_id();
     if ((uint32)switch_id == master_id) {
+        cm_spin_unlock(&g_dss_instance.switch_lock);
         LOG_DEBUG_INF("switchid is equal to current master_id, which is %u.", master_id);
         return CM_SUCCESS;
     }
     if (master_id != curr_id) {
+        cm_spin_unlock(&g_dss_instance.switch_lock);
         LOG_DEBUG_ERR("current id is %u, just master id %u can do switch lock.", curr_id, master_id);
         return CM_ERROR;
     }
-    cm_spin_lock(&g_dss_instance.switch_lock, NULL);
     dss_wait_session_pause(&g_dss_instance);
     g_dss_instance.status = DSS_STATUS_SWITCH;
     status_t ret = CM_SUCCESS;
@@ -900,10 +905,7 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
             LOG_RUN_INF("Main server %u is set successfully by %u.", curr_id, master_id);
             return CM_SUCCESS;
         }
-        if (!cm_spin_timed_lock(&g_dss_instance.switch_lock, DSS_PROCESS_REMOTE_INTERVAL)) {
-            LOG_DEBUG_INF("Spin switch_lock timed out, just continue.");
-            continue;
-        }
+        cm_spin_lock(&g_dss_instance.switch_lock, NULL);
         if (!g_dss_instance.is_maintain) {
             status = dss_process_remote_switch_lock(session, curr_id, master_id);
             if (status != CM_SUCCESS) {
