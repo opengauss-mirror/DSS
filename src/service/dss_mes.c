@@ -577,7 +577,7 @@ static status_t dss_set_mes_profile(mes_profile_t *profile)
 
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     profile->inst_id = (uint32)inst_cfg->params.inst_id;
-    profile->pipe_type = inst_cfg->params.pipe_type;
+    profile->pipe_type = (mes_pipe_type_t)inst_cfg->params.pipe_type;
     profile->channel_cnt = inst_cfg->params.channel_num;
     profile->work_thread_cnt = inst_cfg->params.work_thread_cnt;
     profile->conn_created_during_init = 0;

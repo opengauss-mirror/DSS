@@ -73,7 +73,13 @@ typedef enum en_dss_log_id {
 #define DSS_CONN_NEVER_TIMEOUT (-1)
 #define DSS_VERSION_MAX_LEN 256
 
-typedef enum en_dss_item_type { DSS_PATH, DSS_FILE, DSS_LINK } dss_item_type_t;
+typedef enum en_dss_item_type {
+    DSS_PATH,
+    DSS_FILE,
+    DSS_LINK,
+    DSS_LINK_TO_PATH,
+    DSS_LINK_TO_FILE,
+} dss_item_type_t;
 
 typedef struct st_dss_dirent {
     dss_item_type_t d_type;
