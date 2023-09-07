@@ -72,7 +72,7 @@ static status_t find_try_match_link(dss_conn_t *conn, char *path, const char *na
 {
     if (dss_is_valid_link_path(path)) {
         gft_node_t *node = NULL;
-        dss_check_dir_output_t output_info = {&node, NULL, NULL};
+        dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE, CM_TRUE};
         DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE));
         if (node != NULL) {  // check the link name
             if (is_match(node->name, name)) {
@@ -91,7 +91,7 @@ status_t find_traverse_path(dss_conn_t *conn, char *path, size_t path_size, char
     gft_item_type_t type;
     gft_node_t *node = NULL;
     dss_vg_info_item_t *vg_item = NULL;
-    dss_check_dir_output_t output_info = {&node, NULL, NULL};
+    dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE, CM_TRUE};
     char vg_name[DSS_MAX_NAME_LEN] = {0};
     size_t len = strlen(path);
     status_t status = CM_ERROR;
@@ -131,9 +131,10 @@ status_t find_traverse_path(dss_conn_t *conn, char *path, size_t path_size, char
         (void)dss_close_dir_impl(conn, dir);
         return CM_ERROR;
     }
-    status = dss_check_dir(conn->session, path, GFT_PATH, &output_info, CM_TRUE);
-    if (status != CM_SUCCESS || node == NULL) {
-        LOG_DEBUG_ERR("Failed to check dir node\n");
+    node = dss_get_ft_node_by_ftid(conn->session, dir->vg_item, dir->pftid, CM_FALSE, CM_FALSE);
+    if (node == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "dir ftid", *(uint64 *)&dir->pftid);
+        DSS_PRINT_ERROR("Failed to get ft node %s.\n", path);
         DSS_UNLOCK_VG_META_S(dir->vg_item, conn->session);
         (void)dss_close_dir_impl(conn, dir);
         return CM_ERROR;

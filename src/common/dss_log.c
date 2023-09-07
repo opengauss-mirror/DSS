@@ -86,6 +86,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_SHM_CHECK] = "Failed to check shared memory ctrl, key=0x%08x, reason=%s",
     [ERR_DSS_SHM_LOCK] = "Failed to lock vg shared memory, reason=%s",
     [ERR_DSS_GA_INIT] = "DSS ga init error, reason %s",
+    [ERR_DSS_GA_GET_ADDR] = "DSS ga get addr error, pool id %d, object id%u.",
     [ERR_DSS_SESSION_INVALID_ID] = "Invalid session %d",
     [ERR_DSS_SESSION_CREATE] = "Create new DSS session failed, no free sessions, %d sessions used",
     [ERR_DSS_INVALID_PARAM] = "Invalid DSS parameter: %s",
@@ -109,6 +110,8 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_CONNECT_FAILED] = "Failed to connect dss server, errcode: %d, errmsg: %s.",
     [ERR_DSS_VERSION_NOT_MATCH] =
         "Protocol version need be changed, old protocol version is %u, new protocol version is %u.",
+    [ERR_DSS_INVALID_BLOCK_TYPE] =
+        "Get Invalid block type, expect type is %u, but the type in share memory is %u.",
 };
 
 static status_t dss_init_log_file(log_param_t *log_param, dss_config_t *inst_cfg)

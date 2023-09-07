@@ -269,12 +269,11 @@ static bool32 dss_is_timeout(int32 timeout, int32 sleep_times, int32 sleeps)
     return (bool32)(((timeout * 1000) / (sleeps)) < sleep_times);
 }
 
-status_t dss_lock_shm_meta_s_without_session(latch_t *latch, int32 timeout)
+status_t dss_lock_shm_meta_s_without_session(latch_t *latch, bool32 is_force, int32 timeout)
 {
     int32 sleep_times = 0;
     latch_statis_t *stat = NULL;
     uint32 count = 0;
-    bool32 is_force = CM_FALSE;
     uint32 invalid_sid = DSS_DEFAULT_SESSIONID;
 
     do {
@@ -386,7 +385,7 @@ status_t dss_lock_shm_meta_bucket_s(dss_session_t *session, uint32 id, latch_t *
         latch_offset.offset.shm_offset = cm_trans_shm_offset(key, latch);
         return dss_lock_shm_meta_s(session, &latch_offset, latch, SPIN_WAIT_FOREVER);
     } else {
-        return dss_lock_shm_meta_s_without_session(latch, SPIN_WAIT_FOREVER);
+        return dss_lock_shm_meta_s_without_session(latch, CM_FALSE, SPIN_WAIT_FOREVER);
     }
 }
 

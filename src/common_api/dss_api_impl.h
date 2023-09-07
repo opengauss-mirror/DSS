@@ -51,6 +51,16 @@ typedef struct st_dss_load_ctrl_info {
     uint32 index;
 } dss_load_ctrl_info_t;
 
+typedef struct st_dss_open_file_info {
+    const char *file_path;
+    int flag;
+} dss_open_file_info_t;
+
+typedef struct st_dss_open_dir_info {
+    const char *dir_path;
+    bool32 refresh_recursive;
+} dss_open_dir_info_t;
+
 typedef struct st_dss_add_or_remove_info {
     const char *vg_name;
     const char *volume_name;

@@ -155,6 +155,13 @@ static inline void dss_check_checksum(uint32 checksum0, uint32 checksum1)
     }
 }
 
+static inline bool32 dss_read_remote_checksum(void *buf, int32 size)
+{
+    uint32 sum1 = *(uint32 *)buf;
+    uint32 sum2 = dss_get_checksum(buf, (uint32)size);
+    return sum1 == sum2;
+}
+
 uint64 dss_get_vg_latch_shm_offset(dss_vg_info_item_t *vg_item);
 
 static inline uint64 dss_get_vg_au_size(dss_ctrl_t *ctrl)

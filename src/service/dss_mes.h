@@ -44,6 +44,8 @@ typedef enum en_dss_mes_command {
     DSS_CMD_ACK_JOIN_CLUSTER,
     DSS_CMD_REQ_REFRESH_FT,
     DSS_CMD_ACK_REFRESH_FT,
+    DSS_CMD_REQ_GET_FT_BLOCK,
+    DSS_CMD_ACK_GET_FT_BLOCK,
     DSS_CMD_CEIL,
 } dss_mes_command_t;
 
@@ -192,6 +194,21 @@ typedef struct st_refresh_ft_ack {
     bool32 is_ok;
 } dss_refresh_ft_ack_t;
 
+typedef struct st_get_ft_block_req {
+    dss_message_head_t dss_head;
+    char path[DSS_FILE_PATH_MAX_LENGTH];
+    gft_item_type_t type;
+} dss_get_ft_block_req_t;
+
+typedef struct st_get_ft_block_ack {
+    dss_message_head_t ack_head;
+    dss_block_id_t node_id;
+    dss_block_id_t parent_node_id;
+    char vg_name[DSS_MAX_NAME_LEN];
+    char block[DSS_BLOCK_SIZE];
+    char parent_block[DSS_BLOCK_SIZE];
+} dss_get_ft_block_ack_t;
+
 #define DSS_MES_MSG_HEAD_SIZE (sizeof(dss_message_head_t))
 uint32 dss_get_broadcast_proto_ver(uint64 succ_inst);
 status_t dss_notify_sync(dss_session_t *session, char *buffer, uint32 size, dss_recv_msg_t *recv_msg);
@@ -212,6 +229,8 @@ int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, uint32 ver
 status_t dss_notify_online(dss_session_t *session);
 status_t dss_join_cluster(bool32 *join_succ);
 status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg_name);
+status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_path, gft_item_type_t type,
+    dss_check_dir_output_t *output_info, bool32 is_throw_err);
 
 #ifdef __cplusplus
 }

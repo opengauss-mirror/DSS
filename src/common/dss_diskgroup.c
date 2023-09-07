@@ -1693,13 +1693,6 @@ static inline bool32 dss_need_load_remote(int size)
     return ((remote_read_proc != NULL) && (!dss_need_exec_local()) && (size <= (int32)DSS_LOADDISK_BUFFER_SIZE));
 }
 
-static bool32 dss_read_remote_checksum(void *buf, int32 size)
-{
-    uint32 sum1 = *(uint32 *)buf;
-    uint32 sum2 = dss_get_checksum(buf, (uint32)size);
-    return sum1 == sum2;
-}
-
 bool32 dss_need_exec_local(void)
 {
     dss_config_t *cfg = dss_get_inst_cfg();

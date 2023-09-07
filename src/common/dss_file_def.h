@@ -372,6 +372,8 @@ typedef struct st_dss_check_dir_output_t {
     gft_node_t **out_node;
     dss_vg_info_item_t **item;
     gft_node_t **parent_node;
+    bool8 is_lock_x;
+    bool8 is_local_req;
 } dss_check_dir_output_t;
 
 #define DSS_GET_COMMON_BLOCK_HEAD(au) ((dss_common_block_t *)((char *)(au)))
@@ -519,7 +521,7 @@ typedef struct st_dss_dir_t {
     uint64 version;
     ftid_t cur_ftid;
     gft_node_t cur_node;
-    uint64 pftid;  // path ftid
+    ftid_t pftid;  // path ftid
 } dss_dir_t;
 
 typedef struct st_dss_find_node_t {
