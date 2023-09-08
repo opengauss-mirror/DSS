@@ -595,6 +595,10 @@ static status_t dss_process_symlink(dss_session_t *session)
     cm_str2text(new_path, &text);
     bool32 result = cm_fetch_rtext(&text, '/', '\0', &sub);
     DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("not a complete absolute path name(%s %s)", T2S(&sub), T2S(&text)));
+    if (strlen(text.str) >= DSS_MAX_NAME_LEN) {
+        DSS_THROW_ERROR(ERR_DSS_LINK_CREATE, "the length of name is too long");
+        return CM_ERROR;
+    }
 
     char parent_str[DSS_FILE_PATH_MAX_LENGTH];
     char name_str[DSS_MAX_NAME_LEN];
