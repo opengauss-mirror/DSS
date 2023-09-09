@@ -2113,12 +2113,6 @@ static status_t set_config_info(char *home)
         LOG_DEBUG_ERR("Failed to load parameters!\n");
         return status;
     }
-
-    status = dss_load_vg_conf_info(&g_vgs_info, &inst_cfg);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to load vg info from config, errcode is %d.\n", status);
-        return status;
-    }
     return CM_SUCCESS;
 }
 
