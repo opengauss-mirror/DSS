@@ -2098,17 +2098,16 @@ static status_t get_examine_opt_parameter(char *server_locator, char **home, int
     return CM_SUCCESS;
 }
 
-static status_t set_config_info(char *home)
+static status_t set_config_info(char *home, dss_config_t *inst_cfg)
 {
     status_t status;
-    dss_config_t inst_cfg;
-    status = dss_set_cfg_dir(home, &inst_cfg);
+    status = dss_set_cfg_dir(home, inst_cfg);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Environment variant DSS_HOME not found!\n");
         return status;
     }
 
-    status = dss_load_config(&inst_cfg);
+    status = dss_load_config(inst_cfg);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load parameters!\n");
         return status;
@@ -2188,6 +2187,7 @@ static status_t examine_proc(void)
     char *home = NULL;
     char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
     dss_conn_t connection;
+    dss_config_t inst_cfg;
 
     status_t status = get_examine_parameter(&path, &offset, &format);
     if (status != CM_SUCCESS) {
@@ -2197,7 +2197,8 @@ static status_t examine_proc(void)
     if (status != CM_SUCCESS) {
         return status;
     }
-    status = set_config_info(home);
+
+    status = set_config_info(home, &inst_cfg);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to load config info!\n");
         return status;
@@ -2409,9 +2410,17 @@ static status_t showdisk_proc(void)
     char *home = cmd_showdisk_args[DSS_ARG_IDX_4].input_args;
     status_t status;
     dss_vg_info_item_t *vg_item = NULL;
-    status = set_config_info(home);
+    dss_config_t inst_cfg;
+
+    status = set_config_info(home, &inst_cfg);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to load config info!\n");
+        return status;
+    }
+
+    status = dss_load_vg_conf_info(&g_vgs_info, &inst_cfg);
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to load vg info from config, errcode is %d.\n", status);
         return status;
     }
 
