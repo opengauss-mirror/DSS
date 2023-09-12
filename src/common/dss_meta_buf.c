@@ -64,6 +64,8 @@ status_t dss_register_buffer_cache(
         return CM_ERROR;
     }
     dss_lock_shm_meta_bucket_x(&bucket->enque_lock);
+    DSS_LOG_DEBUG_OP("Register block id, v:%u,au:%llu,block:%u,item:%u.", block_id->volume,
+        (uint64)block_id->au, block_id->block, block_id->item);
     dss_register_buffer_cache_inner(bucket, obj_id, block_ctrl, hash);
     dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
     return CM_SUCCESS;
@@ -254,6 +256,8 @@ static status_t dss_load_buffer_cache(
         return status;
     }
     block = DSS_GET_COMMON_BLOCK_HEAD(buf);
+    DSS_LOG_DEBUG_OP("DSS load buffer cache, v:%u,au:%llu,block:%u,item:%u,type:%d.", block->id.volume,
+        (uint64)block->id.au, block->id.block, block->id.item, block->type);
     if (block->type == DSS_BLOCK_TYPE_FT) {
         block_ctrl = (dss_block_ctrl_t *)(buf + DSS_BLOCK_SIZE);
     } else {
@@ -380,6 +384,9 @@ static status_t dss_add_buffer_cache(
             }
             uint32 size = (type == DSS_BLOCK_TYPE_FT) ? DSS_BLOCK_SIZE : DSS_FILE_SPACE_BLOCK_SIZE;
             securec_check_ret(memcpy_s(addr, size, refresh_buf, size));
+            dss_common_block_t *ref_block = DSS_GET_COMMON_BLOCK_HEAD(addr);
+            DSS_LOG_DEBUG_OP("DSS refresh block in shm, v:%u,au:%llu,block:%u,item:%u,type:%d.", ref_block->id.volume,
+                (uint64)ref_block->id.au, ref_block->id.block, ref_block->id.item, ref_block->type);
             *shm_buf = addr;
             return CM_SUCCESS;
         }
@@ -418,6 +425,8 @@ static status_t dss_add_buffer_cache(
         return CM_ERROR;
     }
     block = DSS_GET_COMMON_BLOCK_HEAD(addr);
+    DSS_LOG_DEBUG_OP("DSS add buffer cache, v:%u,au:%llu,block:%u,item:%u,type:%d.", block->id.volume,
+        (uint64)block->id.au, block->id.block, block->id.item, block->type);
     if (block->type == DSS_BLOCK_TYPE_FT) {
         block_ctrl = (dss_block_ctrl_t *)(addr + DSS_BLOCK_SIZE);
     } else {
@@ -456,6 +465,9 @@ status_t dss_refresh_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg
         }
         uint32 size = (type == DSS_BLOCK_TYPE_FT) ? DSS_BLOCK_SIZE : DSS_FILE_SPACE_BLOCK_SIZE;
         securec_check_ret(memcpy_s(addr, size, buf, size));
+        dss_common_block_t *ref_block = DSS_GET_COMMON_BLOCK_HEAD(addr);
+        DSS_LOG_DEBUG_OP("DSS refresh block in shm, v:%u,au:%llu,block:%u,item:%u,type:%d.", ref_block->id.volume,
+            (uint64)ref_block->id.au, ref_block->id.block, ref_block->id.item, ref_block->type);
         *shm_buf = addr;
         return CM_SUCCESS;
     }

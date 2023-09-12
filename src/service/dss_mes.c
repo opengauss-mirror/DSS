@@ -1381,21 +1381,34 @@ status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_pat
         return CM_ERROR;
     }
     if (output_info->item != NULL && ack_vg_item->id != (*output_info->item)->id) {
-        dss_unlock_vg_mem_and_shm(session, *output_info->item);
         *output_info->item = ack_vg_item;
-        if (output_info->is_lock_x) {
-            dss_lock_vg_mem_and_shm_x(session, *output_info->item);
-        } else {
-            dss_lock_vg_mem_and_shm_s(session, *output_info->item);
-        }
     }
     dss_ft_block_t *shm_block = NULL;
     dss_block_id_t block_id = ack.node_id;
-    block_id.item = 0;
-    ret = dss_refresh_block_in_shm(
-        session, *output_info->item, block_id, DSS_BLOCK_TYPE_FT, ack.block, (char **)&shm_block);
-    if (ret == CM_SUCCESS && output_info->out_node != NULL) {
-        *output_info->out_node = dss_get_ft_node_by_block(shm_block, ack.node_id.item);
+    if (is_ft_root_block(ack.node_id)) {
+        dss_root_ft_block_t *ft_block = (dss_root_ft_block_t *)ack.block;
+        if (ack.node_id.item >= ft_block->ft_block.node_num) {
+            DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft block ack msg node_id item error.");
+            return CM_ERROR;
+        }
+        char *root = ack_vg_item->dss_ctrl->root;
+        errcode = memcpy_s(root, DSS_BLOCK_SIZE, ack.block, DSS_BLOCK_SIZE);
+        if (errcode != EOK) {
+            CM_THROW_ERROR(ERR_SYSTEM_CALL, (errcode));
+            return CM_ERROR;
+        }
+        if (output_info->out_node != NULL) {
+            *output_info->out_node =
+                (gft_node_t *)((root + sizeof(dss_root_ft_block_t)) + ack.node_id.item * sizeof(gft_node_t));
+        }
+    } else {
+        block_id.item = 0;
+        ret = dss_refresh_block_in_shm(
+            session, *output_info->item, block_id, DSS_BLOCK_TYPE_FT, ack.block, (char **)&shm_block);
+        DSS_RETURN_IF_ERROR(ret);
+        if (output_info->out_node != NULL) {
+            *output_info->out_node = dss_get_ft_node_by_block(shm_block, ack.node_id.item);
+        }
     }
     if (!dss_cmp_blockid(ack.parent_node_id, DSS_INVALID_64)) {
         if (!dss_read_remote_checksum(ack.parent_block, DSS_BLOCK_SIZE)) {
@@ -1474,6 +1487,8 @@ static status_t dss_proc_get_ft_block_req_core(
     dss_check_dir_output_t output_info = {&out_node, &vg_item, &parent_node, CM_FALSE, CM_FALSE};
     DSS_RETURN_IF_ERROR(dss_check_dir(session, req->path, req->type, &output_info, CM_TRUE));
     ack->node_id = out_node->id;
+    DSS_LOG_DEBUG_OP("Req out node, v:%u,au:%llu,block:%u,item:%u,type:%d,path:%s.", out_node->id.volume,
+        (uint64)out_node->id.au, out_node->id.block, out_node->id.item, req->type, req->path);
     dss_ft_block_t *block = dss_get_ft_block_by_node(out_node);
     errno_t errcode = memcpy_s(ack->block, DSS_BLOCK_SIZE, block, DSS_BLOCK_SIZE);
     if (errcode != EOK) {
@@ -1487,6 +1502,8 @@ static status_t dss_proc_get_ft_block_req_core(
     }
     if (parent_node != NULL) {
         ack->parent_node_id = parent_node->id;
+        DSS_LOG_DEBUG_OP("Req parent node, v:%u,au:%llu,block:%u,item:%u,type:%d,path:%s.", parent_node->id.volume,
+            (uint64)parent_node->id.au, parent_node->id.block, parent_node->id.item, req->type, req->path);
         block = dss_get_ft_block_by_node(parent_node);
         errcode = memcpy_s(ack->parent_block, DSS_BLOCK_SIZE, block, DSS_BLOCK_SIZE);
         if (errcode != EOK) {
