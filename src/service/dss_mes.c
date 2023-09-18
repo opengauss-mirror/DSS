@@ -286,7 +286,7 @@ uint32 dss_get_broadcast_proto_ver(uint64 succ_inst)
     return broadcast_proto_vers;
 }
 
-uint32 dss_count_one_bit(uint32 n)
+uint32 dss_count_one_bit(uint64 n)
 {
     uint32 count = 0;
     while (n) {
