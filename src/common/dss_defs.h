@@ -136,6 +136,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_VG_DATA_SIZE 512
 #define DSS_MIN_BUFFER_BLOCKS 32
 #define DSS_MIN_SESSIONID 0
+#define DSS_MAX_SESSIONS 16320
 #define DSS_MIN_SESSIONID_CFG 16  // allow config min sessionid in dss_inst.ini
 #define DSS_MIN_INST_ID 0
 #define DSS_MAX_INST_ID DSS_MAX_INSTANCES
@@ -533,9 +534,6 @@ static inline uint64 dss_get_log_offset(uint64 au_size)
     }
     return au_size;
 }
-
-#define SIGNED_LLONG_MAX "9223372036854775807"
-#define SIGNED_LLONG_MIN "-9223372036854775808"
 
 time_t cm_encode_time(date_detail_t *detail);
 void cm_decode_time(time_t time, date_detail_t *detail);

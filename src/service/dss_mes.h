@@ -25,7 +25,7 @@
 #ifndef __DSS_MES_H__
 #define __DSS_MES_H__
 
-#include "mes.h"
+#include "mes_interface.h"
 #include "dss_file_def.h"
 #include "dss_session.h"
 
@@ -65,7 +65,7 @@ typedef enum en_dss_mes_command {
 #define DSS_SECOND_BUFFER_RATIO (1.0f / 4)
 #define DSS_THIRDLY_BUFFER_RATIO (1.0f / 2)
 
-typedef void (*dss_message_proc_t)(dss_session_t *session, mes_message_t *msg);
+typedef void (*dss_message_proc_t)(dss_session_t *session, mes_msg_t *msg);
 typedef struct st_processor_func {
     dss_mes_command_t cmd_type;
     dss_message_proc_t proc;
@@ -120,23 +120,26 @@ typedef struct st_dss_recv_msg {
 } dss_recv_msg_t;
 
 typedef struct st_dss_message_head {
-    mes_message_head_t mes_head;
     uint32 msg_proto_ver;
     uint32 sw_proto_ver;
+    uint16 src_inst;
+    uint16 dst_inst;
     uint32 dss_cmd;
     uint32 size;
+    uint32 flags;
+    ruid_type ruid;
     int32 result;
     uint8 reserve[64];
 } dss_message_head_t;
 
-typedef struct st_dss_notify_req_msg_t {
+typedef struct st_dss_notify_req_msg {
     dss_message_head_t dss_head;
     dss_bcast_req_cmd_t type;
     uint64 ftid;
     char vg_name[DSS_MAX_NAME_LEN];
 } dss_notify_req_msg_t;
 
-typedef struct st_dss_notify_ack_msg_t {
+typedef struct st_dss_notify_ack_msg {
     dss_message_head_t dss_head;
     dss_bcast_ack_cmd_t type;
     int32 result;
@@ -211,22 +214,20 @@ typedef struct st_get_ft_block_ack {
 
 #define DSS_MES_MSG_HEAD_SIZE (sizeof(dss_message_head_t))
 uint32 dss_get_broadcast_proto_ver(uint64 succ_inst);
-status_t dss_notify_sync(dss_session_t *session, char *buffer, uint32 size, dss_recv_msg_t *recv_msg);
+status_t dss_notify_sync(char *buffer, uint32 size, dss_recv_msg_t *recv_msg);
 status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result);
 status_t dss_notify_expect_bool_ack(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *cmd_ack);
-status_t dss_invalidate_other_nodes(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
+    dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *cmd_ack);
+status_t dss_invalidate_other_nodes(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
 
 void dss_check_mes_conn(uint64 cur_inst_map);
 status_t dss_startup_mes(void);
 void dss_stop_mes(void);
-int32 dss_process_broadcast_ack(dss_session_t *session, dss_notify_ack_msg_t *ack, dss_recv_msg_t *recv_msg_output);
-void dss_proc_broadcast_req(dss_session_t *session, mes_message_t *msg);
-void dss_proc_broadcast_ack2(dss_session_t *session, mes_message_t *msg);
+int32 dss_process_broadcast_ack(dss_notify_ack_msg_t *ack, dss_recv_msg_t *recv_msg_output);
+void dss_proc_broadcast_req(dss_session_t *session, mes_msg_t *msg);
 status_t dss_read_volume_remote(const char *vg_name, dss_volume_t *volume, int64 offset, void *buf, int32 size);
 status_t dss_send2standby(big_packets_ctrl_t *ack, const char *buf);
 int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, uint32 version);
-status_t dss_notify_online(dss_session_t *session);
 status_t dss_join_cluster(bool32 *join_succ);
 status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg_name);
 status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_path, gft_item_type_t type,

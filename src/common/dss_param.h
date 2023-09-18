@@ -30,7 +30,7 @@
 #include "cs_pipe.h"
 #include "ceph_rbd_param.h"
 #include "mes_metadata.h"
-#include "mes.h"
+#include "mes_interface.h"
 #include "dss_errno.h"
 #include "dss_api.h"
 #ifdef __cplusplus

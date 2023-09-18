@@ -163,7 +163,7 @@ static status_t dss_load_session_cfg(dss_config_t *inst_cfg)
     status_t status = cm_str2int(value, &sessions);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MAX_SESSION_NUMS"));
 
-    if (sessions < DSS_MIN_SESSIONID_CFG || sessions > CM_MAX_SESSIONS) {
+    if (sessions < DSS_MIN_SESSIONID_CFG || sessions > DSS_MAX_SESSIONS) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MAX_SESSION_NUMS"));
     }
 

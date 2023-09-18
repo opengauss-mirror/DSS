@@ -304,7 +304,7 @@ static status_t dss_rm_dir_file_inner(dss_session_t *session, dss_vg_info_item_t
     gft_node_t *old_node = *node;
     dss_unlock_vg_mem_and_shm(session, *vg_item);
     DSS_RETURN_IFERR2(
-        dss_notify_expect_bool_ack(session, *vg_item, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&(*node)->id, &is_open),
+        dss_notify_expect_bool_ack(*vg_item, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&(*node)->id, &is_open),
         dss_lock_vg_mem_and_shm_x(session, *vg_item));
     dss_lock_vg_mem_and_shm_x(session, *vg_item);
 
@@ -489,7 +489,7 @@ static status_t dss_remove_dir_file_by_node_inner(
     gft_node_t *old_node = node;
     dss_unlock_vg_mem_and_shm(session, vg_item);
     DSS_RETURN_IFERR2(
-        dss_notify_expect_bool_ack(session, vg_item, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&node->id, &is_open),
+        dss_notify_expect_bool_ack(vg_item, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&node->id, &is_open),
         dss_lock_vg_mem_and_shm_x(session, vg_item));
     dss_lock_vg_mem_and_shm_x(session, vg_item);
     DSS_RETURN_IF_ERROR(dss_remove_dir_file_by_node_inner_check(vg_item, node, parent_node));
