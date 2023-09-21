@@ -151,26 +151,28 @@ void dss_release_session_res(dss_session_t *session)
     dss_destroy_session(session);
 }
 
-status_t dss_process_single_cmd(dss_session_t *session)
+status_t dss_process_single_cmd(dss_session_t **session)
 {
     status_t status;
-    if (session->proto_type == PROTO_TYPE_UNKNOWN) {
-        LOG_DEBUG_INF("session %u begin check protocal type.", session->id);
+    if ((*session)->proto_type == PROTO_TYPE_UNKNOWN) {
+        LOG_DEBUG_INF("session %u begin check protocal type.", (*session)->id);
         /* fetch protocol type */
-        status = dss_diag_proto_type(session);
+        status = dss_diag_proto_type(*session);
         if (status != CM_SUCCESS) {
             LOG_RUN_ERR("Failed to get protocol type!");
-            dss_clean_reactor_session(session);
+            dss_clean_reactor_session(*session);
+            *session = NULL;
             return CM_ERROR;
         }
     } else {
-        status = dss_process_command(session);
+        status = dss_process_command(*session);
     }
-    if (session->is_closed) {
-        LOG_RUN_INF("Session:%u end to do service.", session->id);
-        dss_clean_reactor_session(session);
+    if ((*session)->is_closed) {
+        LOG_RUN_INF("Session:%u end to do service.", (*session)->id);
+        dss_clean_reactor_session(*session);
+        *session = NULL;
     } else {
-        dss_session_detach_workthread(session);
+        dss_session_detach_workthread(*session);
     }
     return status;
 }

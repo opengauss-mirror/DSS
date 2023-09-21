@@ -78,8 +78,9 @@ static void dss_reactor_session_entry(void *param)
     dss_init_packet(&session->recv_pack, CM_FALSE);
     dss_init_packet(&session->send_pack, CM_FALSE);
     session->pipe.socket_timeout = (int32)CM_SOCKET_TIMEOUT;
-    dss_process_single_cmd(session);
-    if (!session->is_closed) {
+    dss_process_single_cmd(&session);
+    // do NOT add any code after here, and can not use any data of dss_workthread_t from here
+    if (session != NULL) {
         dss_reactor_set_oneshot(session);
     }
 }
