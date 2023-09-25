@@ -52,8 +52,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_VOLUME_REMOVE_NOEXIST] = "Remove a non-existent volume %s of volume-group %s failed",
     [ERR_DSS_VOLUME_REMOVE_NONEMPTY] = "Remove a nonempty volume %s failed",
     [ERR_DSS_VOLUME_REMOVE_SUPER_BLOCK] = "Remove super block %s failed",
-    [ERR_DSS_FILE_SEEK] = "Failed to seek file, vgid:%u, fid:%llu, offset:%llu, file size:%llu, "
-                          "check if disk space is full",
+    [ERR_DSS_FILE_SEEK] = "Failed to seek file, vgid:%u, fid:%llu, offset:%lld, file size:%llu",
     [ERR_DSS_FILE_REMOVE_OPENING] = "DSS file is open",
     [ERR_DSS_FILE_RENAME] = "Rename failed, reason %s",
     [ERR_DSS_FILE_RENAME_DIFF_VG] = "Failed to rename from vg %s to another vg %s, function not supported",

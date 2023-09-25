@@ -1780,6 +1780,7 @@ static void inq_reg_help(const char *prog_name, int print_flag)
 
 static status_t inq_reg_proc(void)
 {
+    DSS_PRINT_INF("Begin to inq reg.\n");
     int64 host_id = atoll(cmd_inq_req_args[DSS_ARG_IDX_0].input_args);
     char *home = cmd_inq_req_args[DSS_ARG_IDX_1].input_args;
     status_t status = dss_inq_reg_core(home, host_id);
@@ -1847,6 +1848,7 @@ static void kickh_help(const char *prog_name, int print_flag)
 
 static status_t kickh_proc(void)
 {
+    DSS_PRINT_INF("Begin to kick.\n");
     int64 kick_hostid = atoll(cmd_kickh_args[DSS_ARG_IDX_0].input_args);
     char *home = cmd_kickh_args[DSS_ARG_IDX_1].input_args;
 
@@ -1881,6 +1883,7 @@ static void reghl_help(const char *prog_name, int print_flag)
 
 static status_t reghl_proc(void)
 {
+    DSS_PRINT_INF("Begin to register.\n");
     char *home = cmd_reghl_args[DSS_ARG_IDX_0].input_args;
     status_t status = dss_reghl_core(home);
     if (status != CM_SUCCESS) {
@@ -1925,6 +1928,7 @@ static status_t unreghl_proc(void)
         }
     }
 
+    DSS_PRINT_INF("Begin to unregister.\n");
     char *home = cmd_unreghl_args[DSS_ARG_IDX_1].input_args;
     status = dss_unreghl_core(home, (type == 0) ? CM_FALSE : CM_TRUE);
     if (status != CM_SUCCESS) {
