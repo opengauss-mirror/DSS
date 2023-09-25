@@ -1138,7 +1138,8 @@ status_t dss_get_ftid_by_path(dss_session_t *session, const char *path, ftid_t *
         DSS_BREAK_IF_ERROR(status);
 
         uint32_t pos = dss_get_last_delimiter(path, '/');
-        DSS_BREAK_IF_ERROR(dss_get_name_from_path(path, &pos, name));
+        status = dss_get_name_from_path(path, &pos, name);
+        DSS_BREAK_IF_ERROR(status);
         if (name[0] == 0) {
             LOG_DEBUG_INF("get root node ftid");
             *ftid = parent_node->id;
