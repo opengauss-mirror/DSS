@@ -597,14 +597,14 @@ static status_t dss_load_blackbox_detail_on(dss_config_t *inst_cfg)
 
 status_t dss_load_config(dss_config_t *inst_cfg)
 {
-    char file_name[DSS_FILE_PATH_MAX_LENGTH];
+    char file_name[DSS_FILE_NAME_BUFFER_SIZE];
     errno_t ret = memset_sp(&inst_cfg->params, sizeof(dss_params_t), 0, sizeof(dss_params_t));
     if (ret != EOK) {
         return CM_ERROR;
     }
 
     // get config info
-    ret = snprintf_s(file_name, DSS_FILE_PATH_MAX_LENGTH, DSS_FILE_PATH_MAX_LENGTH - 1, "%s/cfg/%s", inst_cfg->home,
+    ret = snprintf_s(file_name, DSS_FILE_NAME_BUFFER_SIZE, DSS_FILE_NAME_BUFFER_SIZE - 1, "%s/cfg/%s", inst_cfg->home,
         g_dss_config_file);
     if (ret == -1) {
         DSS_RETURN_IFERR2(
