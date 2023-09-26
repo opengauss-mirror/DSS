@@ -57,7 +57,7 @@ typedef enum en_dss_mes_command {
 #define DSS_MSG_BUFFER_QUEUE_NUM (8)
 #define DSS_FIRST_BUFFER_LENGTH (64)
 #define DSS_SECOND_BUFFER_LENGTH (128)
-#define DSS_THIRD_BUFFER_LENGTH (SIZE_K(32) + 64)
+#define DSS_THIRD_BUFFER_LENGTH (SIZE_K(32) + 256)
 #define DSS_CKPT_NOTIFY_TASK_RATIO (1.0f / 4)
 #define DSS_CLEAN_EDP_TASK_RATIO (1.0f / 4)
 #define DSS_TXN_INFO_TASK_RATIO (1.0f / 16)
