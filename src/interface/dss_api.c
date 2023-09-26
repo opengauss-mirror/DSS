@@ -657,16 +657,6 @@ void dss_fsize_maxwr(const char *fname, long long *fsize)
 void dss_get_error(int *errcode, const char **errmsg)
 {
     cm_get_error(errcode, errmsg);
-
-    if (*errcode == 0) {
-        return;
-    }
-
-    if (*errcode < ERR_DSS_FLOOR || *errcode > ERR_DSS_CEIL) {
-        LOG_DEBUG_ERR("dss_get_error failed, errcode: %d", *errcode);
-        *errcode = -1;
-        *errmsg = "Failed to get dss errcode";
-    }
 }
 
 int dss_get_fname(int handle, char *fname, int fname_size)
