@@ -1472,6 +1472,14 @@ static status_t dss_update_written_size(dss_env_t *dss_env, dss_conn_t *conn, ds
     return CM_SUCCESS;
 }
 
+static bool32 dss_check_node_size_fail(dss_file_context_t *context, int64 offset, int32 size)
+{
+    uint64 au_size = dss_get_vg_au_size(context->vg_item->dss_ctrl);
+    int64 file_size = offset + size;
+    uint64 align_size = CM_CALC_ALIGN((uint64)file_size, au_size);
+    return (align_size > (uint64)context->node->size);
+}
+
 status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, int32 *read_size)
 {
     status_t status = CM_SUCCESS;
@@ -1620,6 +1628,10 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         } else {
             LOG_DEBUG_INF("Begin to write volume %s, offset:%lld, size:%d, fname:%s, fsize:%llu, fwritten_size:%llu.",
                 volume.name_p, vol_offset, real_size, node->name, node->size, node->written_size);
+            // check dss_check_node_size_fail to avoid to do extend without update node->size error when need to write
+            if (dss_check_node_size_fail(context, rw_ctx.offset, real_size)) {
+                cm_panic_log(CM_FALSE, "Node:%llu size:%llu not right.", DSS_ID_TO_U64(node->id), (uint64)node->size);
+            }
             status = dss_write_volume(&volume, (int64)vol_offset, buf, real_size);
         }
         if (status != CM_SUCCESS) {
@@ -2443,6 +2455,9 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
             LOG_DEBUG_INF("Node:%llu, name:%s, fsize:%llu, written_size:%llu, retry_time:%u.", DSS_ID_TO_U64(node->id),
                 node->name, node->size, node->written_size, retry_time);
             continue;
+            // check dss_check_node_size_fail avoid to do extend without update node->size error when need to write
+        } else if ((!param->is_read && dss_check_node_size_fail(context, rw_ctx.offset, rw_ctx.size))) {
+            cm_panic_log(CM_FALSE, "Node:%llu size:%llu not right.", DSS_ID_TO_U64(node->id), (uint64)node->size);
         }
 
         if (auid.volume >= DSS_MAX_VOLUMES) {

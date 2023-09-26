@@ -1014,8 +1014,8 @@ static status_t rp_redo_set_file_size_inner(dss_vg_info_item_t *vg_item, dss_red
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
     }
     dss_redo_set_file_size_t *size_info = (dss_redo_set_file_size_t *)entry->data;
-    LOG_DEBUG_INF("Begin to replay set file:%llu, size:%llu, oldsize:%llu, vg name:%s.", DSS_ID_TO_U64(size_info->ftid),
-        size_info->size, size_info->oldsize, vg_item->vg_name);
+    LOG_DEBUG_INF("Begin to replay set file:%llu, size:%llu, oldsize:%llu, node size:%llu,vg name:%s.", DSS_ID_TO_U64(size_info->ftid),
+        size_info->size, size_info->oldsize, node->size, vg_item->vg_name);
 
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
         node->size = set_file_size->size;

@@ -2696,6 +2696,9 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
     uint32 block_count = 0;
     uint32 block_au_count = 0;
     uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
+    LOG_DEBUG_INF("Try to extend ftid:%llu from size:%llu and offset:%llu with au_size:%llu.",
+        *(uint64 *)&node->id, node->size, (uint64)node_data->offset, au_size);
+
     status_t status = dss_get_fs_block_info_by_offset(node_data->offset, au_size, &block_count, &block_au_count, NULL);
     DSS_RETURN_IFERR2(
         status, LOG_DEBUG_ERR("The offset(%lld) is not correct,real block count:%u.", node_data->offset, block_count));
@@ -2778,6 +2781,9 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
         dss_put_log(session, vg_item, DSS_RT_SET_FILE_SIZE, &redo_size, sizeof(redo_size));
     }
 
+    LOG_DEBUG_INF("Try to process redo ftid:%llu to size:%llu from offset:%llu with au_size:%llu.",
+        *(uint64 *)&node->id, node->size, (uint64)node_data->offset, au_size);
+
     status = dss_process_redo_log(session, vg_item);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
@@ -2785,6 +2791,9 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
         cm_fync_logfile();
         _exit(1);
     }
+
+    LOG_DEBUG_INF("Finish to extend ftid:%llu to size:%llu from offset:%llu with au_size:%llu.",
+        *(uint64 *)&node->id, node->size, (uint64)node_data->offset, au_size);
 
     return CM_SUCCESS;
 }
@@ -2804,6 +2813,9 @@ status_t dss_extend_from_offset(
     }
     // CM_CALC_ALGN_FLOOR from 0 will be -8, offset start from 0
     uint64 algin_offset = CM_CALC_ALIGN_FLOOR((uint64)(offset + 1), au_size);
+
+    LOG_DEBUG_INF("Try to extend ftid:%llu from size:%llu to align_size:%llu, offset:%llu, algin_offset:%llu.",
+        *(uint64 *)&node_data->ftid, node->size, align_size, (uint64)node_data->offset, algin_offset);
 
     dss_node_data_t node_data2 = *node_data;
     /* ready to exten file size to 'align_size' */
