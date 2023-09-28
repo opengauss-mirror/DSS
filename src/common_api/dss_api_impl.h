@@ -94,6 +94,7 @@ typedef struct st_dss_conn_opt {
 #define DSS_HOME "DSS_HOME"
 #define SYS_HOME "HOME"
 #define DSS_DEFAULT_UDS_PATH "UDS:/tmp/.dss_unix_d_socket"
+extern int32 g_dss_uds_conn_timeout;
 
 status_t dss_load_ctrl_sync(dss_conn_t *conn, const char *vg_name, uint32 index);
 status_t dss_add_or_remove_volume(dss_conn_t *conn, const char *vg_name, const char *volume_name, uint8 cmd);

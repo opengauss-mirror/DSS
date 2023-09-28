@@ -120,6 +120,9 @@ typedef struct st_dss_stat {
     dss_item_type_t type;
 } dss_stat_t;
 
+typedef enum en_dss_conn_opt_key {
+    DSS_CONN_OPT_TIME_OUT = 0,
+} dss_conn_opt_key_e;
 #define DSS_LOCAL_MAJOR_VER_WEIGHT 1000000
 #define DSS_LOCAL_MINOR_VER_WEIGHT 1000
 #define DSS_LOCAL_MAJOR_VERSION 0
@@ -179,6 +182,7 @@ DSS_DECLARE void dss_refresh_logger(char *log_field, unsigned long long *value);
 // connection
 DSS_DECLARE int dss_set_svr_path(const char *conn_path);
 DSS_DECLARE int dss_set_conn_timeout(int timeout);
+DSS_DECLARE int dss_set_conn_opts(dss_conn_opt_key_e key, void *value);
 // instance param
 DSS_DECLARE int dss_set_main_inst(void);
 DSS_DECLARE int dss_get_inst_status(dss_server_status_t *dss_status);
