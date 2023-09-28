@@ -38,6 +38,7 @@ extern "C" {
 
 #define DSS_ACCMODE 00000003
 #define DSS_OPEN_MODE(flag)  ((flag + 1) & DSS_ACCMODE)
+int32 g_dss_uds_conn_timeout = DSS_UDS_CONNECT_TIMEOUT;
 
 status_t dss_load_ctrl_sync(dss_conn_t *conn, const char *vg_name, uint32 index)
 {
@@ -516,7 +517,8 @@ status_t dss_connect(const char *server_locator, dss_conn_opt_t *options, dss_co
     }
     conn->cli_vg_handles = NULL;
     conn->pipe.options = 0;
-    conn->pipe.connect_timeout = (options == NULL ? DSS_UDS_CONNECT_TIMEOUT : options->timeout);
+    int timeout = options != NULL ? options->timeout : g_dss_uds_conn_timeout;
+    conn->pipe.connect_timeout = timeout < 0 ? DSS_UDS_CONNECT_TIMEOUT : timeout;
     conn->pipe.socket_timeout = DSS_UDS_SOCKET_TIMEOUT;
     conn->pipe.link.uds.sock = CS_INVALID_SOCKET;
     conn->pipe.link.uds.closed = CM_TRUE;

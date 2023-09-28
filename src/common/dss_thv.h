@@ -53,7 +53,7 @@ extern "C" {
 
 typedef enum tag_thv_type {
     GLOBAL_THV_OBJ0 = 0,  // had been occupied by dss connection
-    GLOBAL_THV_OBJ1 = 1,
+    GLOBAL_THV_OBJ1 = 1,  // dss connection options
     GLOBAL_THV_OBJ2 = 2,
     // add more here, notice modify DB_MAX_THV_OBJ_NUM
     MAX_THV_TYPE
@@ -81,9 +81,9 @@ status_t cm_set_thv_args_by_id(
 // initialize all thread variant，call it after cm_set_thv_args_by_id
 void cm_init_thv(void);
 
-status_t cm_get_thv(thv_type_e var_type, pointer_t *result);
+status_t cm_get_thv(thv_type_e var_type, bool32 is_create, pointer_t *result);
 
-status_t cm_launch_thv(thv_type_e var_type, init_thv_func init, create_thv_func create, release_thv_func release);
+status_t cm_launch_thv(thv_ctrl_t *thv_ctrls, uint32 thv_ctrl_cnt);
 
 #ifdef __cplusplus
 }

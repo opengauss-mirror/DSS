@@ -106,9 +106,9 @@ void cm_init_thv(void)
     }
 }
 
-status_t cm_get_thv(thv_type_e var_type, pointer_t *result)
+status_t cm_get_thv(thv_type_e var_type, bool32 is_create, pointer_t *result)
 {
-    if (g_thv_addr[var_type] == NULL) {
+    if (g_thv_addr[var_type] == NULL && is_create) {
         int32 ret = g_thv_ctrl_func[var_type].create(&g_thv_addr[var_type]);
         if (ret != EOK) {
             LOG_RUN_ERR("create thread variable failed, var_type %u", (uint32)var_type);
@@ -129,17 +129,19 @@ status_t cm_get_thv(thv_type_e var_type, pointer_t *result)
     return CM_SUCCESS;
 }
 
-status_t cm_launch_thv(thv_type_e var_type, init_thv_func init, create_thv_func create, release_thv_func release)
+status_t cm_launch_thv(thv_ctrl_t *thv_ctrls, uint32 thv_ctrl_cnt)
 {
     // now begin init thread variant
     if (cm_create_thv_ctrl() != CM_SUCCESS) {
         return CM_ERROR;
     }
 
-    if (cm_set_thv_args_by_id(GLOBAL_THV_OBJ0, init, create, release) != CM_SUCCESS) {
-        return CM_ERROR;
+    for (uint32 i = 0; i < thv_ctrl_cnt; i++) {
+        if (cm_set_thv_args_by_id(i, thv_ctrls[i].init, thv_ctrls[i].create, thv_ctrls[i].release) != CM_SUCCESS) {
+            return CM_ERROR;
+        }
     }
-
+    
     cm_init_thv();
 
     return CM_SUCCESS;
@@ -162,12 +164,12 @@ status_t cm_set_thv_args_by_id(
 void cm_init_thv(void)
 {}
 
-status_t cm_get_thv(thv_type_e var_type, pointer_t *result)
+status_t cm_get_thv(thv_type_e var_type, bool32 is_create, pointer_t *result)
 {
     return CM_ERROR;
 }
 
-status_t cm_launch_thv(thv_type_e var_type, init_thv_func init, create_thv_func create, release_thv_func release)
+status_t cm_launch_thv(thv_ctrl_t *thv_ctrls, uint32 thv_ctrl_cnt)
 {
     return CM_SUCCESS;
 }

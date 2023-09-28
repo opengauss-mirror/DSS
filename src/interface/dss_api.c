@@ -57,19 +57,16 @@ extern "C" {
 
 #define HANDLE_VALUE(handle) ((handle) - (DSS_HANDLE_BASE))
 #define DB_DSS_DEFAULT_UDS_PATH "UDS:/tmp/.dss_unix_d_socket"
-/* A node is deleted only when it fails to be started for 5 consecutive times within 30 seconds.
-   Therefore, the startup failure time cannot exceed 6 seconds. */
-#define DSS_CONN_DEFAULT_TIME_OUT 3000
 char g_dss_inst_path[CM_MAX_PATH_LEN] = {0};
 typedef struct st_dss_conn_info {
     // protect connections
     latch_t conn_latch;
     uint32 conn_num;
     bool32 isinit;
-    int32 timeout;  // - 1: never time out
 } dss_conn_info_t;
-static dss_conn_info_t g_dss_conn_info = {{0, 0, 0, 0, 0}, 0, CM_FALSE, DSS_CONN_DEFAULT_TIME_OUT};
+static dss_conn_info_t g_dss_conn_info = {{0, 0, 0, 0, 0}, 0, CM_FALSE};
 status_t dss_conn_create(pointer_t *result);
+status_t dss_conn_opts_create(pointer_t *result);
 
 static void dss_conn_release(pointer_t thv_addr)
 {
@@ -87,6 +84,11 @@ static void dss_conn_release(pointer_t thv_addr)
     DSS_FREE_POINT(conn);
 }
 
+static void dss_conn_opts_release(pointer_t thv_addr)
+{
+    DSS_FREE_POINT(thv_addr);
+}
+
 static char *dss_get_inst_path(void)
 {
     if (g_dss_inst_path[0] != '\0') {
@@ -95,12 +97,17 @@ static char *dss_get_inst_path(void)
     return DB_DSS_DEFAULT_UDS_PATH;
 }
 
+static thv_ctrl_t g_dss_thv_ctrls[] = {
+    {NULL, dss_conn_create, dss_conn_release},
+    {NULL, dss_conn_opts_create, dss_conn_opts_release},
+};
+
 static void dss_clt_env_init(void)
 {
     if (g_dss_conn_info.isinit == CM_FALSE) {
         cm_latch_x(&g_dss_conn_info.conn_latch, 1, NULL);
         if (g_dss_conn_info.isinit == CM_FALSE) {
-            status_t status = cm_launch_thv(GLOBAL_THV_OBJ0, NULL, dss_conn_create, dss_conn_release);
+            status_t status = cm_launch_thv(g_dss_thv_ctrls, sizeof(g_dss_thv_ctrls) / sizeof(g_dss_thv_ctrls[0]));
             if (status != CM_SUCCESS) {
                 LOG_RUN_ERR("Dss client initialization failed.");
                 cm_unlatch(&g_dss_conn_info.conn_latch, NULL);
@@ -142,6 +149,34 @@ static status_t dss_try_conn(dss_conn_opt_t *options, dss_conn_t *conn)
     return status;
 }
 
+status_t dss_conn_opts_create(pointer_t *result)
+{
+    dss_conn_opt_t *options = (dss_conn_opt_t *)cm_malloc(sizeof(dss_conn_opt_t));
+    if (options == NULL) {
+        DSS_THROW_ERROR(ERR_ALLOC_MEMORY, sizeof(dss_conn_opt_t), "dss_conn_opts_create");
+        return CM_ERROR;
+    }
+    (void)memset_s(options, sizeof(dss_conn_opt_t), 0, sizeof(dss_conn_opt_t));
+    *result = options;
+    return CM_SUCCESS;
+}
+
+status_t dss_conn_sync(dss_conn_opt_t *options, dss_conn_t *conn)
+{
+    status_t ret = CM_ERROR;
+    int timeout = (options != NULL ? options->timeout : g_dss_uds_conn_timeout);
+    do {
+        ret = dss_try_conn(options, conn);
+        if (ret == CM_SUCCESS) {
+            break;
+        }
+        if (cm_get_os_error() == ENOENT) {
+            break;
+        }
+    } while (timeout == DSS_CONN_NEVER_TIMEOUT);
+    return ret;
+}
+
 status_t dss_conn_create(pointer_t *result)
 {
     dss_conn_t *conn = (dss_conn_t *)cm_malloc(sizeof(dss_conn_t));
@@ -150,17 +185,13 @@ status_t dss_conn_create(pointer_t *result)
         return CM_ERROR;
     }
 
-    errno_t rc = memset_s(conn, sizeof(dss_conn_t), 0, sizeof(dss_conn_t));
-    if (rc != EOK) {
-        DSS_THROW_ERROR(ERR_SYSTEM_CALL, rc);
-        DSS_FREE_POINT(conn);
-        return CM_ERROR;
-    }
+    (void)memset_s(conn, sizeof(dss_conn_t), 0, sizeof(dss_conn_t));
 
     // init packet
     dss_init_packet(&conn->pack, conn->pipe.options);
-    dss_conn_opt_t options = {.timeout = DSS_CONN_DEFAULT_TIME_OUT};
-    if (dss_try_conn(&options, conn) != CM_SUCCESS) {
+    dss_conn_opt_t *options = NULL;
+    (void)cm_get_thv(GLOBAL_THV_OBJ1, CM_FALSE, (pointer_t *)&options);
+    if (dss_try_conn(options, conn) != CM_SUCCESS) {
         DSS_THROW_ERROR(ERR_DSS_CONNECT_FAILED, cm_get_os_error(), strerror(cm_get_os_error()));
         DSS_FREE_POINT(conn);
         return CM_ERROR;
@@ -176,7 +207,7 @@ static status_t dss_get_conn(dss_conn_t **conn)
 {
     cm_reset_error();
     dss_clt_env_init();
-    if (cm_get_thv(GLOBAL_THV_OBJ0, (pointer_t *)conn) != CM_SUCCESS) {
+    if (cm_get_thv(GLOBAL_THV_OBJ0, CM_TRUE, (pointer_t *)conn) != CM_SUCCESS) {
         return CM_ERROR;
     }
 
@@ -184,7 +215,7 @@ static status_t dss_get_conn(dss_conn_t **conn)
     if ((*conn)->flag && (*conn)->conn_pid != getpid()) {
         LOG_RUN_INF("Dss client need re-connect, last conn pid:%llu.", (uint64)(*conn)->conn_pid);
         dss_disconnect(*conn);
-        if (dss_try_conn(NULL, *conn) != CM_SUCCESS) {
+        if (dss_conn_sync(NULL, *conn) != CM_SUCCESS) {
             LOG_RUN_ERR("[DSS API] ABORT INFO: dss server stoped, application need restart.");
             cm_fync_logfile();
             _exit(1);
@@ -715,8 +746,34 @@ int dss_set_conn_timeout(int32 timeout)
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid timeout when set connection timeout");
         return CM_ERROR;
     }
-    g_dss_conn_info.timeout = timeout;
+    g_dss_uds_conn_timeout = timeout;
     return CM_SUCCESS;
+}
+
+int dss_set_thread_conn_timeout(dss_conn_opt_t *thv_opts, int32 timeout)
+{
+    if (timeout < 0 && timeout != DSS_CONN_NEVER_TIMEOUT) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid timeout when set connection timeout");
+        return CM_ERROR;
+    }
+    thv_opts->timeout = timeout;
+    return CM_SUCCESS;
+}
+
+int dss_set_conn_opts(dss_conn_opt_key_e key, void *value)
+{
+    dss_clt_env_init();
+    dss_conn_opt_t *thv_opts = NULL;
+    if (cm_get_thv(GLOBAL_THV_OBJ1, CM_TRUE, (pointer_t *)&thv_opts) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+    switch (key) {
+        case DSS_CONN_OPT_TIME_OUT:
+            return dss_set_thread_conn_timeout(thv_opts, *(int32*)value);
+        default:
+            DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid key when set connection options");
+            return CM_ERROR;
+    }
 }
 
 static int32 init_single_logger_core(log_param_t *log_param, log_type_t log_id, char *file_name, uint32 file_name_len)
