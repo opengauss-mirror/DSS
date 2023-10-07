@@ -142,6 +142,7 @@ static status_t dss_initial_vg_ctrl(
         DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
         return CM_ERROR;
     }
+    dss_set_software_version(&vg_ctrl->vg_info, (uint32)DSS_SOFTWARE_VERSION);
     vg_ctrl->vg_info.vol_type.id = 0;
     vg_ctrl->vg_info.vol_type.type = DSS_VOLUME_TYPE_MANAGER;
     errcode = strncpy_s(

@@ -1097,7 +1097,7 @@ status_t dss_gen_volume_head(
     vol_head->valid_flag = DSS_CTRL_VALID_FLAG;
     errcode = strcpy_s(vol_head->vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name);
     DSS_SECUREC_SS_RETURN_IF_ERROR(errcode, CM_ERROR);
-    vol_head->software_version = 0;
+    dss_set_software_version((dss_vg_header_t *)&vol_head, (uint32)DSS_SOFTWARE_VERSION);
     (void)cm_gettimeofday(&vol_head->create_time);
     vol_head->checksum = dss_get_checksum((char *)vol_head, DSS_VG_DATA_SIZE);
     return CM_SUCCESS;
@@ -1269,7 +1269,6 @@ static status_t dss_remove_volume_impl_core(
         }
         vol_head->valid_flag = 0;
         vol_head->software_version = 0;
-
         errcode = memcpy_sp(redo.head, DSS_ALIGN_SIZE, vol_head, DSS_ALIGN_SIZE);
         securec_check_ret(errcode);
         int32 ret = snprintf_s(redo.name, DSS_MAX_NAME_LEN, strlen(volume_name), "%s", volume_name);

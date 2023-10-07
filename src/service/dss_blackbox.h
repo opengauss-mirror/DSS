@@ -26,6 +26,16 @@
 #define __DSS_BLACKBOX_H__
 
 #include "cm_blackbox.h"
+
+static inline status_t dss_write_shm_memory_file_inner(int32 handle, int64 *length, const void* buffer, int32 size)
+{
+    status_t ret = cm_write_file(handle, buffer, size);
+    if (ret == CM_SUCCESS) {
+        *length += size;
+    }
+    return ret;
+}
+
 status_t dss_sigcap_handle_reg();
 status_t dss_update_state_file(bool32 coredump);
 #endif

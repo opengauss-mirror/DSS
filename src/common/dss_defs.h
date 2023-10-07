@@ -546,6 +546,7 @@ status_t cm_time2str(time_t time, const char *fmt, char *str, uint32 str_max_siz
 
 void cm_destroy_thread_lock(thread_lock_t *lock);
 char *dss_get_cmd_desc(dss_cmd_type_e cmd_type);
+char *dss_get_print_tab(uint8 level);
 
 #ifdef __cplusplus
 }

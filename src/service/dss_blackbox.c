@@ -224,65 +224,135 @@ void dss_print_effect_param(void)
     LOG_BLACKBOX_INF("_AUDIT_LEVEL is %u.\n", audit_level);
 }
 
-void dss_print_block_pool(int32 handle, ga_pool_id_e pool_id)
+void dss_write_block_pool(int32 handle, int64 *length, ga_pool_id_e pool_id)
 {
     if (pool_id != GA_8K_POOL && pool_id != GA_16K_POOL) {
         return;
     }
-    char explain_buf[CM_FILE_NAME_BUFFER_SIZE];
-    (void)snprintf_s(
-        explain_buf, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "\nga pool %u:\n", (uint32)pool_id);
-    status_t ret = cm_write_file(handle, explain_buf, CM_FILE_NAME_BUFFER_SIZE);
-    if (ret != CM_SUCCESS) {
-        LOG_BLACKBOX_INF("Failed to write ga pool %u explain\n.", (uint32)pool_id);
-    }
     ga_pool_t *pool = &g_app_pools[GA_POOL_IDX((uint32)pool_id)];
     if (pool == NULL) {
         LOG_BLACKBOX_INF("Failed to get ga pool\n.");
+        return;
     }
-    ret = cm_write_file(handle, (char *)pool->addr, DSS_MAX_MEM_BLOCK_SIZE);
+    uint32 object_cost = pool->ctrl->def.object_size + (uint32)sizeof(ga_object_map_t);
+    uint64 ex_pool_size = (uint64)object_cost * pool->ctrl->def.object_count;
+    uint64 total_size = pool->capacity + ex_pool_size * pool->ctrl->ex_count;
+    status_t ret = dss_write_shm_memory_file_inner(handle, length, &total_size, sizeof(uint64));
+    if (ret != CM_SUCCESS) {
+        LOG_BLACKBOX_INF("Failed to write ga pool size, pool id is %u\n.", (uint32)pool_id);
+    }
+    ret = dss_write_shm_memory_file_inner(handle, length, (char *)pool->addr, pool->capacity);
     if (ret != CM_SUCCESS) {
         LOG_BLACKBOX_INF("Failed to write init ga pool, pool id is %u\n.", (uint32)pool_id);
     }
     for (uint32 i = 0; i < pool->ctrl->ex_count; i++) {
-        ret = cm_write_file(handle, pool->ex_pool_addr[i], DSS_MAX_MEM_BLOCK_SIZE);
+        ret = dss_write_shm_memory_file_inner(handle, length, pool->ex_pool_addr[i], (int32)ex_pool_size);
         LOG_BLACKBOX_INF("Failed to write extend ga pool, pool id is %u, ex_num is %u\n.",
             (uint32)pool_id, i);
     }
 }
 
-void dss_print_share_vg_and_hashmap_info(int32 handle)
+static void dss_update_shm_memory_length(int32 handle, int64 length, int64 begin)
 {
-    char explain_buf[CM_FILE_NAME_BUFFER_SIZE] = {0};
-    status_t ret;
+    int64 end = cm_seek_file(handle, 0, SEEK_CUR);
+    if (end == -1) {
+        LOG_BLACKBOX_INF("Failed to seek file %d", handle);
+        return;
+    } 
+    int64 offset = cm_seek_file(handle, begin, SEEK_SET);
+    if (offset == -1) {
+        LOG_BLACKBOX_INF("Failed to seek file %d", handle);
+        return;
+    } 
+    status_t ret = cm_write_file(handle, &length, sizeof(int64));
+    if (ret != CM_SUCCESS) {
+        LOG_BLACKBOX_INF("Failed to update length %lld\n.", length);
+    }
+    offset = cm_seek_file(handle, end, SEEK_SET);
+    if (offset == -1) {
+        LOG_BLACKBOX_INF("Failed to seek file %d", handle);
+    } 
+}
+
+// length| vg_num| software_version|vg_name|dss_ctrl|software_version|vg_name|dss_ctrl|...
+void dss_write_share_vg_info(int32 handle)
+{
+    int64 length = 0;
+    int64 begin = cm_seek_file(handle, 0, SEEK_CUR);
+    if (begin == -1) {
+        LOG_BLACKBOX_INF("Failed to seek file %d", handle);
+    } 
+    status_t ret = dss_write_shm_memory_file_inner(handle, &length, &length, sizeof(int64));
+    if (ret != CM_SUCCESS) {
+        LOG_BLACKBOX_INF("Failed to write length %lld\n.", length);
+    }
+    ret = dss_write_shm_memory_file_inner(handle, &length, &g_vgs_info->group_num, sizeof(uint32_t));
+    if (ret != CM_SUCCESS) {
+        LOG_BLACKBOX_INF("Failed to write vg num %u\n.", g_vgs_info->group_num);
+    }
     for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
-        (void)snprintf_s(explain_buf, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "shm ctrl info of vg %u:\n", i);
-        ret = cm_write_file(handle, explain_buf, CM_FILE_NAME_BUFFER_SIZE);
-        if (ret != CM_SUCCESS) {
-            LOG_BLACKBOX_INF("Failed to explain shm ctrl info of vg %u\n.", i);
-        }
         dss_vg_info_item_t *vg = &g_vgs_info->volume_group[i];
-        ret = cm_write_file(handle, &vg->dss_ctrl, sizeof(dss_ctrl_t));
+        uint32 software_version = dss_get_software_version(&vg->dss_ctrl->vg_info);
+        ret = dss_write_shm_memory_file_inner(handle, &length, &software_version, sizeof(uint32_t));
         if (ret != CM_SUCCESS) {
-            LOG_BLACKBOX_INF("Failed to explain shm ctrl info of vg %u\n.", i);
+            LOG_BLACKBOX_INF("Failed to write software version %u.\n", software_version);
+        }
+        ret = dss_write_shm_memory_file_inner(handle, &length, vg->dss_ctrl->vg_info.vg_name, DSS_MAX_NAME_LEN);
+        if (ret != CM_SUCCESS) {
+            LOG_BLACKBOX_INF("Failed to write vg name %s\n.", vg->dss_ctrl->vg_info.vg_name);
+        }
+        ret = dss_write_shm_memory_file_inner(handle, &length, vg->dss_ctrl, sizeof(dss_ctrl_t));
+        if (ret != CM_SUCCESS) {
+            LOG_BLACKBOX_INF("Failed to write ctrl info of vg %u\n.", i);
+        }
+    }
+    dss_update_shm_memory_length(handle, length, begin);
+}
+
+// length| vg_num|vg_name|size|buckets|map->num|vg_name|size|buckets|map->num|...|pool_size|pool->addr|pool->ex_pool_addr[0]|...|pool->ex_pool_addr[excount-1]|...
+void dss_write_hashmap_and_pool_info(int32 handle)
+{
+    int64 length = 0;
+    int64 begin = cm_seek_file(handle, 0, SEEK_CUR);
+    if (begin == -1) {
+        LOG_BLACKBOX_INF("Failed to seek file %d", handle);
+    } 
+    status_t ret = dss_write_shm_memory_file_inner(handle, &length, &length, sizeof(int64));
+    if (ret != CM_SUCCESS) {
+        LOG_BLACKBOX_INF("Failed to write length %lld\n.", length);
+    }
+    ret = dss_write_shm_memory_file_inner(handle, &length, &g_vgs_info->group_num, sizeof(uint32_t));
+    if (ret != CM_SUCCESS) {
+        LOG_BLACKBOX_INF("Failed to write vg num %u\n.", g_vgs_info->group_num);
+    }
+    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+        dss_vg_info_item_t *vg = &g_vgs_info->volume_group[i];
+        ret = dss_write_shm_memory_file_inner(handle, &length, vg->dss_ctrl->vg_info.vg_name, DSS_MAX_NAME_LEN);
+        if (ret != CM_SUCCESS) {
+            LOG_BLACKBOX_INF("Failed to write vg name %s\n.", vg->dss_ctrl->vg_info.vg_name);
         }
         shm_hashmap_t *map = vg->buffer_cache;
         uint64 size = map->num * (uint32)sizeof(shm_hashmap_bucket_t);
         shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
-        (void)snprintf_s(
-            explain_buf, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "\nshm hashmap of vg %u:\n", i);
-        ret = cm_write_file(handle, explain_buf, CM_FILE_NAME_BUFFER_SIZE);
+        ret = dss_write_shm_memory_file_inner(handle, &length, &size, sizeof(uint64_t));
         if (ret != CM_SUCCESS) {
-            LOG_BLACKBOX_INF("Failed to explain shm hashmap of vg %u\n.", i);
-        }
-        ret = cm_write_file(handle, (char *)buckets, size);
+            LOG_BLACKBOX_INF("Failed to write bucket size %llu\n.", size);
+        }  
+        ret = dss_write_shm_memory_file_inner(handle, &length, (char *)buckets, (int32)size);
         if (ret != CM_SUCCESS) {
             LOG_BLACKBOX_INF("Failed to write shm hashmap of vg %u\n.", i);
         }
+        ret = dss_write_shm_memory_file_inner(handle, &length, &map->num, sizeof(uint32_t));
+        if (ret != CM_SUCCESS) {
+            LOG_BLACKBOX_INF("Failed to write map_num %u of vg %u\n.", map->num, i);
+        }
     }
+    dss_write_block_pool(handle, &length, GA_8K_POOL);
+    dss_write_block_pool(handle, &length, GA_16K_POOL);
+    dss_update_shm_memory_length(handle, length, begin);
 }
 
-void dss_print_shm_memory(void) 
+void dss_write_shm_memory(void) 
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     bool8 blackbox_detail_on = inst_cfg->params.blackbox_detail_on;
@@ -312,9 +382,8 @@ void dss_print_shm_memory(void)
         LOG_BLACKBOX_INF("open %s failed.", file_name);
         return;            
     }
-    dss_print_share_vg_and_hashmap_info(handle);
-    dss_print_block_pool(handle, GA_8K_POOL);
-    dss_print_block_pool(handle, GA_16K_POOL);
+    dss_write_share_vg_info(handle);
+    dss_write_hashmap_and_pool_info(handle);
     cm_close_file(handle);
 }
 static void sig_print_excep_info(box_excp_item_t *excep_info, int32 sig_num, siginfo_t *siginfo, void *context)
@@ -337,7 +406,7 @@ static void sig_print_excep_info(box_excp_item_t *excep_info, int32 sig_num, sig
     dss_sig_collect_all_backtrace();
     dss_print_global_variable();
     dss_print_effect_param();
-    dss_print_shm_memory();
+    dss_write_shm_memory();
 }
 
 uint32 g_sign_mutex = 0;

@@ -175,6 +175,12 @@ typedef enum st_dss_bak_level_e {
     DSS_BAK_LEVEL_2,     // super block backed up on all volumes, fs and ft backed up at the end of each volume
 } dss_bak_level_e;
 
+typedef enum en_dss_software_version {
+    DSS_SOFTWARE_VERSION_0 = 0, /* version 0 */
+} dss_software_version_e;
+
+#define DSS_SOFTWARE_VERSION DSS_SOFTWARE_VERSION_0
+
 #define DSS_CTRL_VALID_FLAG 0x5f3759df
 typedef struct st_dss_disk_group_header_t {
     uint32 checksum;
@@ -252,6 +258,18 @@ typedef struct st_dss_ctrl {
     };
 } dss_ctrl_t;
 
+static inline void dss_set_software_version(dss_vg_header_t *vg_header, uint32 version)
+{
+    CM_ASSERT(vg_header != NULL);
+    vg_header->software_version = version;
+}
+
+static inline uint32 dss_get_software_version(dss_vg_header_t *vg_header)
+{
+    CM_ASSERT(vg_header != NULL);
+    return vg_header->software_version;
+}
+
 typedef enum en_dss_vg_status {
     DSS_VG_STATUS_RECOVERY = 1,
     DSS_VG_STATUS_ROLLBACK,
@@ -267,6 +285,12 @@ typedef enum en_latch_type {
     LATCH_FT_ROOT,
     LATCH_COUNT,  // must be last
 } latch_type_t;
+
+typedef enum en_dss_from_type {
+    FROM_SHM = 0,
+    FROM_BBOX,
+    FROM_DISK,
+} dss_from_type_e;
 
 typedef struct st_dss_vg_info_item_t {
     uint32 id;
@@ -284,6 +308,7 @@ typedef struct st_dss_vg_info_item_t {
     bilist_t open_file_list;  // open file bilist.
     latch_t disk_latch;       // just for lock vg to lock the local instance.
     latch_t latch[LATCH_COUNT];
+    dss_from_type_e from_type;
 } dss_vg_info_item_t;
 
 typedef struct st_dss_vg_info_t {

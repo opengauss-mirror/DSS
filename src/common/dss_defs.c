@@ -79,6 +79,19 @@ char *dss_get_cmd_desc(dss_cmd_type_e cmd_type)
     return g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(cmd_type)];
 }
 
+#define DSS_MAX_PRINT_LEVEL 4
+static char *g_dss_printf_tab[DSS_MAX_PRINT_LEVEL] = {
+    "",
+    "\t",
+    "\t\t",
+    "\t\t\t",
+};
+
+char *dss_get_print_tab(uint8 level)
+{
+    return g_dss_printf_tab[level];
+}
+
 void cm_decode_time(time_t time, date_detail_t *detail)
 {
     struct tm now_time;

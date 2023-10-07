@@ -41,7 +41,7 @@ status_t dss_find_block_objid_in_shm(
 char *dss_find_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
     dss_block_type_t type, bool32 check_version, ga_obj_id_t *out_obj_id, bool32 active_refresh);
 char *dss_find_block_in_shm_no_refresh(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
-    dss_block_type_t type, ga_obj_id_t *out_obj_id);
+    ga_obj_id_t *out_obj_id);
 status_t dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *map);
 status_t dss_get_block_from_disk(
     dss_vg_info_item_t *vg_item, dss_block_id_t block_id, char *buf, int64_t offset, int32 size, bool32 calc_checksum);

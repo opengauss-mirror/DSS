@@ -654,11 +654,13 @@ static status_t dss_check_dir_core(
 {
     uint32_t next_pos;
     status_t status;
-    output_param->vg_item = dss_find_vg_item(name);
-    if (output_param->vg_item == NULL) {
-        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, name);
-        LOG_DEBUG_ERR("Failed to find vg, %s.", name);
-        return CM_ERROR;
+    if (output_param->vg_item == NULL ||output_param->vg_item->from_type != FROM_BBOX) {
+        output_param->vg_item = dss_find_vg_item(name);
+        if (output_param->vg_item == NULL) {
+            DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, name);
+            LOG_DEBUG_ERR("Failed to find vg, %s.", name);
+            return CM_ERROR;
+        }
     }
     gft_node_t *node = dss_find_ft_node(session, output_param->vg_item, NULL, name, CM_TRUE);
     if (node == NULL) {
@@ -687,6 +689,10 @@ static status_t dss_check_dir_core(
 
         if (output_param->last_node->type == GFT_LINK) {
             LOG_DEBUG_INF("get dir is link name:%s.", output_param->last_node->name);
+            if (output_param->vg_item->from_type == FROM_BBOX) {
+                LOG_DEBUG_ERR("link is not supported to be queried from bbox file.");
+                return CM_ERROR;
+            }
             status = dss_check_link(session, dir_path, beg_pos, output_param);
             if (status != CM_SUCCESS && output_param->last_is_link) {
                 output_param->last_node = output_param->link_node;
@@ -782,6 +788,9 @@ status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_ty
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to get name from path %s.", dir_path));
     }
     dss_check_dir_param_t output_param = {NULL, NULL, NULL, NULL, CM_TRUE, CM_FALSE, CM_FALSE, CM_FALSE};
+    if (output_info->item != NULL && *output_info->item != NULL && (*output_info->item)->from_type == FROM_BBOX) {
+        output_param.vg_item = *output_info->item;  
+    }
     output_param.is_find_link = (type == GFT_LINK);
     status = dss_check_dir_core(session, dir_path, name, &beg_pos, &output_param);
     if (status == ERR_DSS_FILE_NOT_EXIST && is_throw_err) {
@@ -1191,6 +1200,43 @@ static status_t dss_check_node_delete(gft_node_t *node)
     return CM_ERROR;
 }
 
+gft_node_t* dss_get_gft_node_by_path(dss_session_t *session, dss_vg_info_item_t *vg_item, const char *path, dss_vg_info_item_t **dir_vg_item)
+{
+    gft_node_t *parent_node = NULL;
+    gft_node_t *node = NULL;
+    status_t status = CM_ERROR;
+    char name[DSS_MAX_NAME_LEN];
+    char dir_path[DSS_FILE_PATH_MAX_LENGTH];
+    do {
+        DSS_BREAK_IF_ERROR(dss_check_file(vg_item));
+        dss_get_dir_path(dir_path, DSS_FILE_PATH_MAX_LENGTH, path);
+        *dir_vg_item = vg_item;
+        dss_check_dir_output_t output_info = {&parent_node, dir_vg_item, NULL, CM_FALSE};
+        status = dss_check_dir(session, dir_path, GFT_PATH, &output_info, CM_TRUE);
+        DSS_BREAK_IF_ERROR(status);
+        uint32_t pos = dss_get_last_delimiter(path, '/');
+        status = dss_get_name_from_path(path, &pos, name);
+        DSS_BREAK_IF_ERROR(status);
+        if (name[0] == 0) {
+            LOG_DEBUG_INF("get root node ftid");
+            return parent_node;
+        }
+        node = dss_find_ft_node(session, *dir_vg_item, parent_node, name, CM_TRUE);
+        if (node == NULL) {
+            status = CM_ERROR;
+            DSS_BREAK_IFERR3(status, DSS_THROW_ERROR(ERR_DSS_FILE_NOT_EXIST, name, path),
+                LOG_DEBUG_ERR("path: %s not exist", path));
+        }
+        DSS_BREAK_IF_ERROR(dss_check_node_delete(node));
+        LOG_DEBUG_INF("Success to get ft_node[%llu] by path: %s", DSS_ID_TO_U64(node->id), path);
+        status = CM_SUCCESS;
+    } while (0);
+    if (status == CM_SUCCESS) {
+        return node;
+    }
+    return NULL;
+}
+
 status_t dss_get_ftid_by_path(dss_session_t *session, const char *path, ftid_t *ftid, dss_vg_info_item_t **dir_vg_item)
 {
     CM_ASSERT(path != NULL);
@@ -1198,42 +1244,13 @@ status_t dss_get_ftid_by_path(dss_session_t *session, const char *path, ftid_t *
     char name[DSS_MAX_NAME_LEN];
     CM_RETURN_IFERR(dss_find_vg_by_dir(path, name, &vg_item));
     dss_lock_vg_mem_and_shm_s(session, vg_item);
-    gft_node_t *parent_node;
-    gft_node_t *node;
     status_t status = CM_ERROR;
-    char dir_path[DSS_FILE_PATH_MAX_LENGTH];
-
-    do {
-        DSS_BREAK_IF_ERROR(dss_check_file(vg_item));
-
-        dss_get_dir_path(dir_path, DSS_FILE_PATH_MAX_LENGTH, path);
-        *dir_vg_item = vg_item;
-        dss_check_dir_output_t output_info = {&parent_node, dir_vg_item, NULL, CM_FALSE};
-        status = dss_check_dir(session, dir_path, GFT_PATH, &output_info, CM_TRUE);
-        DSS_BREAK_IF_ERROR(status);
-
-        uint32_t pos = dss_get_last_delimiter(path, '/');
-        status = dss_get_name_from_path(path, &pos, name);
-        DSS_BREAK_IF_ERROR(status);
-        if (name[0] == 0) {
-            LOG_DEBUG_INF("get root node ftid");
-            *ftid = parent_node->id;
-            status = CM_SUCCESS;
-            break;
-        }
-
-        node = dss_find_ft_node(session, *dir_vg_item, parent_node, name, CM_TRUE);
-        if (node == NULL) {
-            status = CM_ERROR;
-            DSS_BREAK_IFERR3(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FILE_NOT_EXIST, name, path),
-                LOG_DEBUG_ERR("path: %s not exist", path));
-        }
-        DSS_BREAK_IF_ERROR(dss_check_node_delete(node));
+    gft_node_t *node = dss_get_gft_node_by_path(session, vg_item, path, dir_vg_item);
+    if (node != NULL) {
         *ftid = node->id;
         LOG_DEBUG_INF("Success to get ftid[%llu] by path: %s", DSS_ID_TO_U64(*ftid), path);
         status = CM_SUCCESS;
-    } while (0);
-
+    }
     dss_unlock_vg_mem_and_shm(session, vg_item);
     return status;
 }
@@ -2360,7 +2377,7 @@ gft_node_t *dss_get_ft_node_by_ftid_no_refresh(dss_session_t *session, dss_vg_in
     } else {
         dss_block_id_t block_id = id;
         block_id.item = 0;
-        dss_ft_block_t *block = (dss_ft_block_t *)dss_find_block_in_shm_no_refresh(session, vg_item, block_id, DSS_BLOCK_TYPE_FT, NULL);
+        dss_ft_block_t *block = (dss_ft_block_t *)dss_find_block_in_shm_no_refresh(session, vg_item, block_id, NULL);
         if (block == NULL) {
             LOG_DEBUG_ERR("Failed to find block:%llu in mem.", *(uint64 *)&block_id);
             return NULL;
@@ -2578,6 +2595,9 @@ status_t dss_get_root_version(dss_vg_info_item_t *vg_item, uint64 *version)
 
 status_t dss_check_refresh_ft(dss_vg_info_item_t *vg_item)
 {
+    if (!dss_is_server()) {
+        return CM_SUCCESS;
+    }
     if (!DSS_STANDBY_CLUSTER && dss_is_readwrite()) {
         DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;

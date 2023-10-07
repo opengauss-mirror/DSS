@@ -59,6 +59,8 @@ status_t dss_verify_delay_clean_interval(void *lex, void *def);
 status_t dss_notify_delay_clean_interval(void *se, void *item, char *value);
 status_t dss_verify_cluster_run_mode(void *lex, void *def);
 status_t dss_notify_cluster_run_mode(void *se, void *item, char *value);
+status_t dss_verify_blackbox_detail_on(void *lex, void *def);
+status_t dss_notify_blackbox_detail_on(void *se, void *item, char *value);
 
 #ifdef __cplusplus
 }

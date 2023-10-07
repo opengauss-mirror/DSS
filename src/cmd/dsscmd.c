@@ -66,6 +66,10 @@
 #define DSS_ARG_IDX_3 3
 #define DSS_ARG_IDX_4 4
 #define DSS_ARG_IDX_5 5
+#define DSS_ARG_IDX_6 6
+#define DSS_ARG_IDX_7 7
+#define DSS_ARG_IDX_8 8
+#define DSS_ARG_IDX_9 9
 
 typedef enum en_dss_help_type {
     DSS_HELP_DETAIL = 0,
@@ -392,9 +396,19 @@ static status_t cmd_check_disk_id(const char *id_str)
         return CM_ERROR;
     }
     dss_block_id_t *block_id = (dss_block_id_t *)&id;
-    printf("id = %llu: \n", id);
     if (block_id->volume >= DSS_MAX_VOLUMES) {
-        DSS_PRINT_ERROR("block_id is invalid, volume:%u.\n", (uint32)block_id->volume);
+        DSS_PRINT_ERROR("block_id is invalid, id = %llu, volume:%u.\n", id, (uint32)block_id->volume);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t cmd_check_fid(const char *id_str)
+{
+    uint64 id = 0;
+    status_t status = cm_str2uint64(id_str, &id);
+    if (status == CM_ERROR) {
+        DSS_PRINT_ERROR("fid:%s is not a valid uint64\n", id_str);
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -1440,7 +1454,8 @@ static status_t dss_ls_print_node_info(gft_node_t *node, const char*measure)
     if (node->written_size != 0) {
         written_size = dss_convert_size(written_size, measure);
     }
-    (void)printf("%-5c%-20s%-14.05f %-14.05f %-64s\n", type, time, size, written_size, node->name);
+    (void)printf("%-5c%-20s%-14.05f %-14.05f %-64s%-5llu%-5llu\n", type, time, size, written_size, node->name,
+        node->fid, DSS_ID_TO_U64(node->id));
     return CM_SUCCESS;
 }
 
@@ -1453,7 +1468,7 @@ static status_t dss_ls_print_file(dss_conn_t *conn, const char *path, const char
         LOG_DEBUG_INF("Failed to find path %s with the file type", path);
         return CM_ERROR;
     }
-    (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
+    (void)printf("%-5s%-20s%-14s%-14s%-64s%-5s%-5s\n", "type", "time", "size", "written_size", "name", "fid", "node_id");
     return dss_ls_print_node_info(node, measure);
 }
 
@@ -1464,7 +1479,7 @@ static status_t dss_ls_try_print_link(dss_conn_t *conn, const char *path, const 
         dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE};
         DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE));
         if (node != NULL) {
-            (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
+            (void)printf("%-5s%-20s%-14s%-14s%-64s%-5s%-5s\n", "type", "time", "size", "written_size", "name", "fid", "node_id");
             return dss_ls_print_node_info(node, measure);
         }
     }
@@ -1510,7 +1525,7 @@ static status_t ls_proc_core(dss_conn_t *conn, const char *path, const char*meas
         DSS_PRINT_ERROR("Failed to open dir %s.\n", path);
         return CM_ERROR;
     }
-    (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
+    (void)printf("%-5s%-20s%-14s%-14s%-64s%-5s%-5s\n", "type", "time", "size", "written_size", "name", "fid", "node_id");
     while ((node = dss_read_dir_impl(conn, dir, CM_TRUE)) != NULL) {
         status = dss_ls_print_node_info(node, measure);
         if (status != CM_SUCCESS) {
@@ -1994,7 +2009,12 @@ static void auid_help(const char *prog_name, int print_flag)
 
 static status_t auid_proc(void)
 {
-    uint64 id = (uint64)atol(cmd_auid_args[DSS_ARG_IDX_0].input_args);
+    uint64 id = 0;
+    status_t status = cm_str2uint64(cmd_auid_args[DSS_ARG_IDX_0].input_args, &id);
+    if (status == CM_ERROR) {
+        DSS_PRINT_ERROR("auid:%s is not a valid uint64\n", cmd_auid_args[DSS_ARG_IDX_0].input_args);
+        return CM_ERROR;
+    }
     auid_t *auid = (auid_t *)&id;
     (void)printf("id:%llu:\n", id);
     (void)printf("  volumeid:%llu\n", (uint64)auid->volume);
@@ -2403,12 +2423,12 @@ static void showdisk_help(const char *prog_name, int print_flag)
     (void)printf("-s/--struct_name <struct_name>, <required>, the struct name of volume group, "
                  "the optional value(s):\n");
     (void)printf("    [core_ctrl | vg_header | volume_ctrl | root_ft_block]\n");
-    (void)printf("-b/--block_id <block_id>, <required>, block id\n");
-    (void)printf("-n/--node_id <node_id>, <required>, node id\n");
+    (void)printf("-b/--block_id <block_id>, <required>, fs block id or ft block id\n");
+    (void)printf("-n/--node_id <node_id>, <required>, node id in block\n");
     help_param_dsshome();
 }
 
-static status_t showdisk_get_vg_item(dss_vg_info_item_t **vg_item, const char *vg_name)
+static status_t dss_get_vg_item(dss_vg_info_item_t **vg_item, const char *vg_name)
 {
     dss_vg_info_item_t *tmp_vg_item = dss_find_vg_item(vg_name);
     if (tmp_vg_item == NULL) {
@@ -2419,10 +2439,19 @@ static status_t showdisk_get_vg_item(dss_vg_info_item_t **vg_item, const char *v
     return CM_SUCCESS;
 }
 
-static status_t showdisk_struct_name_print(dss_vg_info_item_t *vg_item, const char *struct_name)
+static status_t dss_print_struct_name(dss_vg_info_item_t *vg_item, const char *struct_name)
 {
-    status_t status;
-    status = dss_read_meta_from_disk(vg_item, struct_name);
+    dss_volume_t volume;
+    status_t status = CM_SUCCESS;
+    if (vg_item->from_type == FROM_DISK) {
+        status = dss_open_volume(vg_item->entry_path, NULL, DSS_CLI_OPEN_FLAG, &volume);
+        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR(
+            "Failed to open file %s.\nFailed to printf dss metadata.\n", vg_item->entry_path));
+    }
+    status = dss_print_struct_name_inner(vg_item, &volume, struct_name);
+    if (vg_item->from_type == FROM_DISK) {
+        dss_close_volume(&volume);
+    }
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to printf dss metadata.\n");
         return CM_ERROR;
@@ -2431,9 +2460,9 @@ static status_t showdisk_struct_name_print(dss_vg_info_item_t *vg_item, const ch
     return status;
 }
 
-static status_t showdisk_block_id_print(dss_vg_info_item_t *vg_item, uint64 block_id, uint64 node_id)
+static status_t dss_print_block_id(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 block_id, uint64 node_id)
 {
-    status_t status = printf_dss_block_with_blockid(vg_item, block_id, node_id);
+    status_t status = dss_printf_block_with_blockid(session, vg_item, block_id, node_id);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to printf dss file block with block_id:%llu.\n", block_id);
         return CM_ERROR;
@@ -2447,39 +2476,754 @@ static status_t showdisk_proc(void)
     const char *vg_name = cmd_showdisk_args[DSS_ARG_IDX_0].input_args;
     char *home = cmd_showdisk_args[DSS_ARG_IDX_4].input_args;
     status_t status;
-    dss_vg_info_item_t *vg_item = NULL;
     dss_config_t inst_cfg;
-
+    dss_vg_info_item_t *vg_item = NULL;
     status = set_config_info(home, &inst_cfg);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to load config info!\n");
         return status;
     }
-
     status = dss_load_vg_conf_info(&g_vgs_info, &inst_cfg);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load vg info from config, errcode is %d.\n", status);
         return status;
     }
-
-    status = showdisk_get_vg_item(&vg_item, vg_name);
+    status = dss_get_vg_item(&vg_item, vg_name);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to get vg %s.\n", vg_name);
         return status;
     }
+    vg_item->from_type = FROM_DISK;
     if (cmd_showdisk_args[DSS_ARG_IDX_2].inputed) {
-        // for block_id
-        uint64 block_id = (uint64)atol(cmd_showdisk_args[DSS_ARG_IDX_2].input_args);
-        uint64 node_id = (uint64)atol(cmd_showdisk_args[DSS_ARG_IDX_3].input_args);
-        status = showdisk_block_id_print(vg_item, block_id, node_id);
+        uint64 block_id = 0;
+        status = cm_str2uint64(cmd_showdisk_args[DSS_ARG_IDX_2].input_args, &block_id);
+        if (status == CM_ERROR) {
+            DSS_PRINT_ERROR("block_id:%s is not a valid uint64\n", cmd_showdisk_args[DSS_ARG_IDX_2].input_args);
+            return CM_ERROR;
+        } 
+        uint64 node_id = 0;
+        status = cm_str2uint64(cmd_showdisk_args[DSS_ARG_IDX_3].input_args, &node_id);
+        if (status == CM_ERROR) {
+            DSS_PRINT_ERROR("node_id:%s is not a valid uint64\n", cmd_showdisk_args[DSS_ARG_IDX_3].input_args);
+            return CM_ERROR;
+        } 
+        status = dss_print_block_id(NULL, vg_item, block_id, node_id);
     } else if (cmd_showdisk_args[DSS_ARG_IDX_1].inputed) {
         // for struct_name
-        status = showdisk_struct_name_print(vg_item, cmd_showdisk_args[DSS_ARG_IDX_1].input_args);
+        status = dss_print_struct_name(vg_item, cmd_showdisk_args[DSS_ARG_IDX_1].input_args);
     } else {
         DSS_PRINT_ERROR("none of struct_name and block_id.\n");
         return CM_ERROR;
     }
 
+    return status;
+}
+
+static dss_args_t cmd_showmem_args[] = {
+    {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
+    {'s', "struct_name", CM_TRUE, CM_TRUE, cmd_check_struct_name, NULL, NULL, 0, NULL, NULL, 0},
+    {'b', "block_id", CM_TRUE, CM_TRUE, cmd_check_disk_id, NULL, NULL, 0, NULL, NULL, 0},
+    {'i', "index_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
+    {'f', "fid", CM_TRUE, CM_TRUE, cmd_check_fid, NULL, NULL, 0, NULL, NULL, 0},
+    {'n', "node_id", CM_TRUE, CM_TRUE, cmd_check_disk_id, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'o', "offset", CM_TRUE, CM_TRUE, cmd_check_offset, NULL, NULL, 0, NULL, NULL, 0},
+    {'z', "size", CM_TRUE, CM_TRUE, cmd_check_read_size, NULL, NULL, 0, NULL, NULL, 0},
+    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
+        0},
+};
+
+static status_t showmem_check_args_with_offset(dss_args_t *cmd_args_set, int set_size)
+{
+    if (cmd_args_set[DSS_ARG_IDX_7].inputed && !cmd_args_set[DSS_ARG_IDX_8].inputed) {
+        DSS_PRINT_ERROR("should set the offset with size.\n");
+        return CM_ERROR;
+    }
+    if (!cmd_args_set[DSS_ARG_IDX_7].inputed && cmd_args_set[DSS_ARG_IDX_8].inputed) {
+        DSS_PRINT_ERROR("should not set the size without offset.\n");
+        return CM_ERROR;
+    }
+    if (cmd_args_set[DSS_ARG_IDX_7].inputed) {
+        if ((cmd_args_set[DSS_ARG_IDX_1].inputed || cmd_args_set[DSS_ARG_IDX_2].inputed)) {
+            DSS_PRINT_ERROR("should not set one way [struct_name | block_id] with offset.\n");
+            return CM_ERROR;
+        }
+        if (!(cmd_args_set[DSS_ARG_IDX_4].inputed || cmd_args_set[DSS_ARG_IDX_6].inputed)) {
+        DSS_PRINT_ERROR("param offset should be set with one way [fid | path] to show.\n");
+        return CM_ERROR;
+        }
+    }
+    return CM_SUCCESS;
+}
+
+static status_t showmem_check_args_with_vg_name(dss_args_t *cmd_args_set, int set_size)
+{
+    if (!cmd_args_set[DSS_ARG_IDX_1].inputed && !cmd_args_set[DSS_ARG_IDX_2].inputed && !cmd_args_set[DSS_ARG_IDX_4].inputed) {
+        DSS_PRINT_ERROR("should at least set one way [struct_name | block_id | fid] to show with vg_name.\n");
+        return CM_ERROR;
+    }
+    if ((cmd_args_set[DSS_ARG_IDX_1].inputed && (cmd_args_set[DSS_ARG_IDX_2].inputed || cmd_args_set[DSS_ARG_IDX_4].inputed)) ||
+        (cmd_args_set[DSS_ARG_IDX_2].inputed && cmd_args_set[DSS_ARG_IDX_4].inputed)) {
+        DSS_PRINT_ERROR("should only set one way [struct_name | block_id | fid] to show with vg_name.\n");
+        return CM_ERROR;
+    }
+    if (cmd_args_set[DSS_ARG_IDX_2].inputed && !cmd_args_set[DSS_ARG_IDX_3].inputed) {
+        DSS_PRINT_ERROR("should set the block_id with index_id.\n");
+        return CM_ERROR;
+    }
+    if (!cmd_args_set[DSS_ARG_IDX_2].inputed && cmd_args_set[DSS_ARG_IDX_3].inputed) {
+        DSS_PRINT_ERROR("should not set the index_id without block_id.\n");
+        return CM_ERROR;
+    }
+    if (cmd_args_set[DSS_ARG_IDX_4].inputed && !cmd_args_set[DSS_ARG_IDX_5].inputed) {
+        DSS_PRINT_ERROR("should set the fid with node_id.\n");
+        return CM_ERROR;
+    }
+    if (!cmd_args_set[DSS_ARG_IDX_4].inputed && cmd_args_set[DSS_ARG_IDX_5].inputed) {
+        DSS_PRINT_ERROR("should not set the node_id without fid.\n");
+        return CM_ERROR;
+    }
+    return showmem_check_args_with_offset(cmd_args_set, set_size);
+}
+
+static status_t showmem_check_args_with_path(dss_args_t *cmd_args_set, int set_size)
+{
+    if (cmd_args_set[DSS_ARG_IDX_1].inputed || cmd_args_set[DSS_ARG_IDX_2].inputed || cmd_args_set[DSS_ARG_IDX_3].inputed
+        || cmd_args_set[DSS_ARG_IDX_4].inputed || cmd_args_set[DSS_ARG_IDX_5].inputed) {
+        DSS_PRINT_ERROR("could not set other way if set the path.\n");
+        return CM_ERROR;  
+    }
+    return showmem_check_args_with_offset(cmd_args_set, set_size);
+}
+
+static status_t showmem_check_args(dss_args_t *cmd_args_set, int set_size)
+{
+    if (cmd_args_set == NULL || set_size <= 0) {
+        DSS_PRINT_ERROR("args error.\n");
+        return CM_ERROR;
+    }
+    if (cmd_args_set[DSS_ARG_IDX_0].inputed && cmd_args_set[DSS_ARG_IDX_6].inputed) {
+        DSS_PRINT_ERROR("should not set the vg name and path at the same time.\n");
+        return CM_ERROR;
+    }
+    if (!cmd_args_set[DSS_ARG_IDX_0].inputed && !cmd_args_set[DSS_ARG_IDX_6].inputed) {
+        DSS_PRINT_ERROR("should set the vg name or path to show.\n");
+        return CM_ERROR;
+    }
+    if (cmd_args_set[DSS_ARG_IDX_0].inputed) {
+        return showmem_check_args_with_vg_name(cmd_args_set, set_size);
+    }
+    if (cmd_args_set[DSS_ARG_IDX_6].inputed) {
+        return showmem_check_args_with_path(cmd_args_set, set_size);
+    }
+    return CM_SUCCESS;
+}
+
+static dss_args_set_t cmd_showmem_args_set = {
+    cmd_showmem_args,
+    sizeof(cmd_showmem_args) / sizeof(dss_args_t),
+    showmem_check_args,
+};
+
+static void showmem_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:%s showmem <-g vg_name> <-s struct_name> [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("      %s showmem <-g vg_name> <-b block_id> <-i index_id> [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("      %s showmem <-g vg_name> <-f fid> <-n node_id> [-o offset] [-z size] [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("      %s showmem <-p path> [-o offset] [-z size] [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("[client command] showmem information\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name\n");
+    (void)printf("-s/--struct_name <struct_name>, <required>, the struct name of volume group, "
+                 "the optional value(s):\n");
+    (void)printf("    [core_ctrl | vg_header | volume_ctrl | root_ft_block]\n");
+    (void)printf("-b/--block_id <block_id>, <required>, fs block id or ft block id\n");
+    (void)printf("-i/--index_id <index_id>, <required>, index id in block\n");
+    (void)printf("-f/--fid <fid>, <required>, file id\n");
+    (void)printf("-n/--node_id <node_id>, <required>, node id\n");
+    (void)printf("-p/--path <path>, <required>, dss file path\n");
+    (void)printf("-o/--offset <offset>, <required>, offset\n");
+    (void)printf("-z/--size <size>, <required>, size\n");
+    help_param_uds();
+}
+
+static status_t showmem_proc_by_block_id_and_index_id(dss_session_t *session, dss_vg_info_item_t *vg_item)
+{
+    uint64 block_id = 0;
+    status_t status = cm_str2uint64(cmd_showmem_args[DSS_ARG_IDX_2].input_args, &block_id);
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("block_id:%s is not a valid uint64\n", cmd_showmem_args[DSS_ARG_IDX_2].input_args));
+    uint64 node_id = 0;
+    status = cm_str2uint64(cmd_showmem_args[DSS_ARG_IDX_3].input_args, &node_id);
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("node_id:%s is not a valid uint64\n", cmd_showmem_args[DSS_ARG_IDX_3].input_args));
+    DSS_RETURN_IFERR2(dss_lock_vg_s(vg_item, session), DSS_PRINT_ERROR("Failed to lock vg %s.\n", vg_item->vg_name));
+    status = dss_print_block_id(session, vg_item, block_id, node_id);
+    DSS_UNLOCK_VG_META_S(vg_item, session);  
+    return status;
+}
+
+static status_t showmem_proc_by_path(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_show_param_t *show_param)
+{
+    status_t status;
+    const char *path = cmd_showmem_args[DSS_ARG_IDX_6].input_args;
+    errno_t errcode = strcpy_s(show_param->path, sizeof(show_param->path), path);
+    if (errcode != EOK) {
+        DSS_PRINT_ERROR("Failed to strcpy.\n");
+        return CM_ERROR;
+    }
+    if (cmd_showmem_args[DSS_ARG_IDX_8].inputed) {
+        status = cm_str2bigint(cmd_showmem_args[DSS_ARG_IDX_7].input_args, &show_param->offset);
+        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("offset:%s is not a valid int64\n", cmd_showmem_args[DSS_ARG_IDX_7].input_args));
+        status = cm_str2int(cmd_showmem_args[DSS_ARG_IDX_8].input_args, &show_param->size);
+        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("size:%s is not a valid int32\n", cmd_showmem_args[DSS_ARG_IDX_8].input_args));
+    }
+    DSS_RETURN_IFERR2(dss_lock_vg_s(vg_item, session), DSS_PRINT_ERROR("Failed to lock vg %s.\n", vg_item->vg_name));
+    status = dss_print_gft_node_by_path(session, vg_item, show_param);
+    DSS_UNLOCK_VG_META_S(vg_item, session);
+    return status;
+}
+
+static status_t showmem_proc_by_fid_and_node_id(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_show_param_t *show_param)
+{
+    status_t status = cm_str2uint64(cmd_showmem_args[DSS_ARG_IDX_4].input_args, &show_param->fid);
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("fid:%s is not a valid uint64\n", cmd_showmem_args[DSS_ARG_IDX_4].input_args));
+    status = cm_str2uint64(cmd_showmem_args[DSS_ARG_IDX_5].input_args, &show_param->ftid);
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("node_id:%s is not a valid uint64\n", cmd_showmem_args[DSS_ARG_IDX_5].input_args));
+    if (cmd_showmem_args[DSS_ARG_IDX_8].inputed) {
+        status = cm_str2bigint(cmd_showmem_args[DSS_ARG_IDX_7].input_args, &show_param->offset);
+        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("offset:%s is not a valid int64\n", cmd_showmem_args[DSS_ARG_IDX_7].input_args));
+        status = cm_str2int(cmd_showmem_args[DSS_ARG_IDX_8].input_args, &show_param->size);
+        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("size:%s is not a valid int32\n", cmd_showmem_args[DSS_ARG_IDX_8].input_args));
+    }
+    DSS_RETURN_IFERR2(dss_lock_vg_s(vg_item, session), DSS_PRINT_ERROR("Failed to lock vg %s.\n", vg_item->vg_name));
+    status = dss_print_gft_node_by_ftid_and_fid(session, vg_item, show_param);
+    DSS_UNLOCK_VG_META_S(vg_item, session);  
+    return status;
+}
+
+static status_t showmem_proc(void)
+{
+    const char *vg_name = cmd_showmem_args[DSS_ARG_IDX_0].input_args;
+    const char *path = cmd_showmem_args[DSS_ARG_IDX_6].input_args;
+    dss_vg_info_item_t *vg_item = NULL;
+    dss_conn_t conn;
+    status_t status = get_connection_by_input_args(cmd_showmem_args[DSS_ARG_IDX_9].input_args, &conn);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    dss_show_param_t show_param;
+    dss_init_show_param(&show_param);
+    do {
+        if (!cmd_showmem_args[DSS_ARG_IDX_0].inputed) {
+            char name[DSS_MAX_NAME_LEN];
+            DSS_BREAK_IFERR2(dss_find_vg_by_dir(path, name, &vg_item), DSS_PRINT_ERROR("Failed to get vg %s.\n", vg_name));
+        } else {
+            status = dss_get_vg_item(&vg_item, vg_name);
+            DSS_BREAK_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg %s.\n", vg_name));
+        }
+        vg_item->from_type = FROM_SHM;
+        if (cmd_showmem_args[DSS_ARG_IDX_1].inputed) {
+            DSS_BREAK_IFERR3(dss_lock_vg_s(vg_item, conn.session), status = CM_ERROR, DSS_PRINT_ERROR("Failed to lock vg %s.\n", vg_name)); 
+            status = dss_print_struct_name(vg_item, cmd_showmem_args[DSS_ARG_IDX_1].input_args);
+            DSS_UNLOCK_VG_META_S(vg_item, conn.session);
+        } else if (cmd_showmem_args[DSS_ARG_IDX_2].inputed) {
+            status = showmem_proc_by_block_id_and_index_id((dss_session_t *)conn.session, vg_item);
+        } else if (cmd_showmem_args[DSS_ARG_IDX_4].inputed) {
+            status = showmem_proc_by_fid_and_node_id((dss_session_t *)conn.session, vg_item, &show_param);
+        } else if (cmd_showmem_args[DSS_ARG_IDX_6].inputed) {
+            status = showmem_proc_by_path((dss_session_t *)conn.session, vg_item, &show_param);
+        } else {
+            status = CM_ERROR;
+            DSS_PRINT_ERROR("none of struct_name and block_id and fid.\n");
+        }
+    } while (CM_FALSE);
+    dss_disconnect_ex(&conn);
+    return status;
+}
+
+static dss_args_t cmd_fshowmem_args[] = {
+    {'m', "memory_file_path", CM_TRUE, CM_TRUE, dss_check_path_both, NULL, NULL, 0, NULL, NULL, 0},
+    {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
+    {'s', "struct_name", CM_TRUE, CM_TRUE, cmd_check_struct_name, NULL, NULL, 0, NULL, NULL, 0},
+    {'b', "block_id", CM_TRUE, CM_TRUE, cmd_check_disk_id, NULL, NULL, 0, NULL, NULL, 0},
+    {'i', "index_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
+    {'f', "fid", CM_TRUE, CM_TRUE, cmd_check_fid, NULL, NULL, 0, NULL, NULL, 0},
+    {'n', "node_id", CM_TRUE, CM_TRUE, cmd_check_disk_id, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'o', "offset", CM_TRUE, CM_TRUE, cmd_check_offset, NULL, NULL, 0, NULL, NULL, 0},
+    {'z', "size", CM_TRUE, CM_TRUE, cmd_check_read_size, NULL, NULL, 0, NULL, NULL, 0},
+    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
+};
+
+static status_t fshowmem_check_args_with_offset(dss_args_t *cmd_args_set, int set_size)
+{
+    if (cmd_args_set[DSS_ARG_IDX_8].inputed && !cmd_args_set[DSS_ARG_IDX_9].inputed) {
+        DSS_PRINT_ERROR("should set the offset with size.\n");
+        return CM_ERROR;
+    }
+    if (!cmd_args_set[DSS_ARG_IDX_8].inputed && cmd_args_set[DSS_ARG_IDX_9].inputed) {
+        DSS_PRINT_ERROR("should not set the size without offset.\n");
+        return CM_ERROR;
+    }
+    if (cmd_args_set[DSS_ARG_IDX_8].inputed) {
+        if ((cmd_args_set[DSS_ARG_IDX_2].inputed || cmd_args_set[DSS_ARG_IDX_3].inputed)) {
+            DSS_PRINT_ERROR("should not set one way [struct_name | block_id] with offset.\n");
+            return CM_ERROR;
+        }
+        if (!(cmd_args_set[DSS_ARG_IDX_5].inputed || cmd_args_set[DSS_ARG_IDX_7].inputed)) {
+        DSS_PRINT_ERROR("param offset should be set with one way [fid | path] to show.\n");
+        return CM_ERROR;
+        }
+    }
+    return CM_SUCCESS;
+}
+
+static status_t fshowmem_check_args_with_vg_name(dss_args_t *cmd_args_set, int set_size)
+{
+    if (!cmd_args_set[DSS_ARG_IDX_2].inputed && !cmd_args_set[DSS_ARG_IDX_3].inputed && !cmd_args_set[DSS_ARG_IDX_5].inputed) {
+        DSS_PRINT_ERROR("should at least set one way [struct_name | block_id | fid] to show with vg_name.\n");
+        return CM_ERROR;
+    }
+    if ((cmd_args_set[DSS_ARG_IDX_2].inputed && (cmd_args_set[DSS_ARG_IDX_3].inputed || cmd_args_set[DSS_ARG_IDX_5].inputed)) ||
+        (cmd_args_set[DSS_ARG_IDX_3].inputed && cmd_args_set[DSS_ARG_IDX_5].inputed)) {
+        DSS_PRINT_ERROR("should only set one way [struct_name | block_id | fid] to show with vg_name.\n");
+        return CM_ERROR;
+    }
+    if (cmd_args_set[DSS_ARG_IDX_3].inputed && !cmd_args_set[DSS_ARG_IDX_4].inputed) {
+        DSS_PRINT_ERROR("should set the block_id with index_id.\n");
+        return CM_ERROR;
+    }
+    if (!cmd_args_set[DSS_ARG_IDX_3].inputed && cmd_args_set[DSS_ARG_IDX_4].inputed) {
+        DSS_PRINT_ERROR("should not set the index_id without block_id.\n");
+        return CM_ERROR;
+    }
+    if (cmd_args_set[DSS_ARG_IDX_5].inputed && !cmd_args_set[DSS_ARG_IDX_6].inputed) {
+        DSS_PRINT_ERROR("should set the fid with node_id.\n");
+        return CM_ERROR;
+    }
+    if (!cmd_args_set[DSS_ARG_IDX_5].inputed && cmd_args_set[DSS_ARG_IDX_6].inputed) {
+        DSS_PRINT_ERROR("should not set the node_id without fid.\n");
+        return CM_ERROR;
+    }
+    return fshowmem_check_args_with_offset(cmd_args_set, set_size);
+}
+
+static status_t fshowmem_check_args_with_path(dss_args_t *cmd_args_set, int set_size)
+{
+    if (cmd_args_set[DSS_ARG_IDX_2].inputed || cmd_args_set[DSS_ARG_IDX_3].inputed ||
+        cmd_args_set[DSS_ARG_IDX_4].inputed || cmd_args_set[DSS_ARG_IDX_5].inputed ||
+        cmd_args_set[DSS_ARG_IDX_6].inputed) {
+        DSS_PRINT_ERROR("could not set other way if set path.\n");
+        return CM_ERROR;  
+    }
+    return fshowmem_check_args_with_offset(cmd_args_set, set_size);
+}
+
+static status_t fshowmem_check_args(dss_args_t *cmd_args_set, int set_size)
+{
+    if (cmd_args_set == NULL || set_size <= 0) {
+        DSS_PRINT_ERROR("args error.\n");
+        return CM_ERROR;
+    }
+    if (!cmd_args_set[DSS_ARG_IDX_0].inputed) {
+        DSS_PRINT_ERROR("should set the file path to load.\n");
+        return CM_ERROR;
+    }
+    if (cmd_args_set[DSS_ARG_IDX_1].inputed && cmd_args_set[DSS_ARG_IDX_7].inputed) {
+        DSS_PRINT_ERROR("should not set the vg name and path at the same time.\n");
+        return CM_ERROR;
+    }
+    if (!cmd_args_set[DSS_ARG_IDX_1].inputed && !cmd_args_set[DSS_ARG_IDX_7].inputed) {
+        DSS_PRINT_ERROR("should set the vg name or path to show.\n");
+        return CM_ERROR;
+    }
+    if (cmd_args_set[DSS_ARG_IDX_1].inputed) {
+        return fshowmem_check_args_with_vg_name(cmd_args_set, set_size);
+    }
+    if (cmd_args_set[DSS_ARG_IDX_7].inputed) {
+        return fshowmem_check_args_with_path(cmd_args_set, set_size);
+    }
+    return CM_SUCCESS;
+}
+
+static dss_args_set_t cmd_fshowmem_args_set = {
+    cmd_fshowmem_args,
+    sizeof(cmd_fshowmem_args) / sizeof(dss_args_t),
+    fshowmem_check_args,
+};
+
+static void fshowmem_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:%s fshowmem <-m memory_file_path> <-g vg_name> <-s struct_name>\n", prog_name);
+    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-b block_id> <-i index_id>\n", prog_name);
+    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-f fid> <-n node_id> [-o offset] [-z size]\n", prog_name);
+    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-p path> [-o offset] [-z size]\n", prog_name);
+    (void)printf("[client command] fshowmem information\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    (void)printf("-m/--memory_file_path <memory_file_path>, <required>, the file path to load\n");
+    (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name\n");
+    (void)printf("-s/--struct_name <struct_name>, <required>, the struct name of volume group, "
+                 "the optional value(s):\n");
+    (void)printf("    [core_ctrl | vg_header | volume_ctrl | root_ft_block]\n");
+    (void)printf("-b/--block_id <block_id>, <required>, fs block id or ft block id\n");
+    (void)printf("-i/--index_id <index_id>, <required>, index id in block\n");
+    (void)printf("-f/--fid <fid>, <required>, file id\n");
+    (void)printf("-n/--node_id <node_id>, <required>, node id\n");
+    (void)printf("-p/--path <path>, <required>, dss file path\n");
+    (void)printf("-o/--offset <offset>, <required>, offset\n");
+    (void)printf("-z/--size <size>, <required>, size\n");
+    help_param_dsshome();
+}
+
+int32 dss_open_memory_file(const char *file_name)
+{
+    int32 file_fd;
+    uint32 mode = O_RDONLY | O_BINARY;
+    char realpath[CM_FILE_NAME_BUFFER_SIZE] = {0};
+    if (realpath_file(file_name, realpath, CM_FILE_NAME_BUFFER_SIZE) != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to find realpath file %s", file_name);
+        return -1;
+    }
+    if (!cm_file_exist(realpath)) {
+        DSS_THROW_ERROR_EX(ERR_DSS_FILE_NOT_EXIST, "%s not exist, please check", realpath);
+        return -1;
+    }
+    if (cm_open_file(realpath, mode, &file_fd) != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to open memory file %s", realpath);
+        return -1;
+    }
+    return file_fd;
+}
+
+static void dss_free_buffer_pool_from_file()
+{
+    ga_pool_t *pool = &g_app_pools[GA_POOL_IDX(GA_8K_POOL)];
+    if (pool != NULL && pool->ctrl != NULL) {
+        CM_FREE_PTR(pool->ctrl);
+    }
+    pool = &g_app_pools[GA_POOL_IDX(GA_16K_POOL)];
+    if (pool != NULL && pool->ctrl != NULL) {
+        CM_FREE_PTR(pool->ctrl);
+    }
+}
+static status_t dss_load_buffer_pool_from_file(int32 file_fd, ga_pool_id_e pool_id)
+{
+    uint64 total_size;
+    int32 read_size;
+    status_t status = cm_read_file(file_fd, &total_size, sizeof(uint64), &read_size);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read pool size."));
+    char *pool_ft_block_buf = cm_malloc(total_size);
+    if (pool_ft_block_buf == NULL) {
+        LOG_DEBUG_ERR("Failed to malloc ft block pool.");
+        return CM_ERROR;
+    }
+    ga_pool_t *pool = &g_app_pools[GA_POOL_IDX((uint32)pool_id)];
+    if (pool == NULL) {
+        CM_FREE_PTR(pool_ft_block_buf);
+        LOG_DEBUG_ERR("Failed to get ga pool from file.");
+        return CM_ERROR;
+    }
+    status = cm_read_file(file_fd, pool_ft_block_buf, (int32)total_size, &read_size);
+    if (status != CM_SUCCESS) {
+        CM_FREE_PTR(pool_ft_block_buf);
+        LOG_DEBUG_ERR("Failed to read file.");
+        return CM_ERROR;
+    }
+    pool->addr = pool_ft_block_buf;
+    pool->ctrl = (ga_pool_ctrl_t *)pool->addr;
+    pool->def = pool->ctrl->def;
+    uint32 object_cost = pool->ctrl->def.object_size + (uint32)sizeof(ga_object_map_t);
+    uint64 ex_pool_size = (uint64)object_cost * pool->ctrl->def.object_count;
+    pool->capacity = CM_ALIGN_512((uint32)sizeof(ga_pool_ctrl_t)) + CM_ALIGN_512(ex_pool_size);
+    for (uint32 i = 0; i < pool->ctrl->ex_count; i++) {
+        pool->ex_pool_addr[i] = pool_ft_block_buf + pool->capacity + i * ex_pool_size;
+    }
+    return CM_SUCCESS;
+}
+
+static void dss_free_vg_item_from_file(dss_vg_info_item_t *vg_item)
+{
+    if (vg_item->dss_ctrl != NULL) {
+        CM_FREE_PTR(vg_item->dss_ctrl);
+    }
+    if (vg_item->buffer_cache != NULL) {
+        CM_FREE_PTR(vg_item->buffer_cache);
+    }
+}
+
+static status_t dss_load_dss_ctrl_from_file(int32 file_fd, dss_vg_info_item_t *vg_item)
+{
+    int32 read_size;
+    vg_item->dss_ctrl = cm_malloc(sizeof(dss_ctrl_t));
+    if (vg_item->dss_ctrl == NULL) {
+        LOG_DEBUG_ERR("Malloc dss_ctrl failed.\n");
+        return CM_ERROR;
+    }
+    status_t status = cm_read_file(file_fd, vg_item->dss_ctrl, sizeof(dss_ctrl_t), &read_size);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_buffer_cache_from_file(int32 file_fd, dss_vg_info_item_t *vg_item, int64 *offset)
+{
+    uint64 bucket_size;
+    int32 read_size;
+    char *buffer = NULL;
+    uint32 map_num;
+    status_t status = cm_read_file(file_fd, &bucket_size, sizeof(uint64), &read_size);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
+    buffer = cm_malloc(sizeof(shm_hashmap_t) + bucket_size);
+    if (buffer == NULL) {
+        LOG_DEBUG_ERR("Malloc failed.\n");
+        return CM_ERROR;
+    }
+    uint32 id = vg_item->id;
+    uint32 shm_key = cm_shm_key_of(SHM_TYPE_HASH, id);
+    vg_item->buffer_cache = (shm_hashmap_t *)buffer;
+    vg_item->buffer_cache->buckets = cm_trans_shm_offset_from_malloc(shm_key, buffer + sizeof(shm_hashmap_t));
+    vg_item->buffer_cache->shm_id = id;
+    vg_item->buffer_cache->func = cm_oamap_uint64_compare;
+    status = cm_read_file(file_fd, buffer + sizeof(shm_hashmap_t), (int32)bucket_size, &read_size);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
+    status = cm_read_file(file_fd, &map_num, sizeof(uint32), &read_size);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
+    vg_item->buffer_cache->num = map_num;
+    *offset = *offset + (int64)sizeof(uint64) + (int64)bucket_size + (int64)sizeof(uint32);
+    return CM_SUCCESS;
+}
+
+static status_t dss_get_group_num(int32 file_fd, int64 *offset, uint32 *group_num)
+{
+    int32 read_size = 0;
+    status_t status = cm_read_file(file_fd, group_num, sizeof(uint32), &read_size);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read group num."));
+    *offset += (int64)sizeof(uint32);
+    return CM_SUCCESS;
+}
+
+bool32 dss_check_software_version(int32 file_fd, int64 *offset)
+{
+    int32 read_size = 0;
+    uint32 software_version;
+    status_t status = cm_read_file(file_fd, &software_version, sizeof(uint32), &read_size);
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to read software_version");
+        return CM_FALSE;
+    }
+    if (software_version > (uint32)DSS_SOFTWARE_VERSION) {
+        LOG_DEBUG_ERR("The file software_version which is %u is bigger than the actural software_version which is %u.", software_version, (uint32)DSS_SOFTWARE_VERSION);
+        return CM_FALSE;
+    }
+    *offset += (int64)sizeof(uint32);
+    return CM_TRUE;
+}
+
+// length| vg_num| vg_name|size|buckets|map->num| vg_name|size|buckets|map->num|...|pool_size|pool->addr|pool->ex_pool_addr[0]|...|pool->ex_pool_addr[excount-1]|...
+status_t dss_load_buffer_cache_group_from_file(int32 file_fd, int64 *length, const char *vg_name, dss_vg_info_item_t *vg_item)
+{
+    uint32 group_num = 0;
+    int64 offset = *length;
+    int32 read_size = 0;
+    uint64 bucket_size;
+    bool32 result;
+    status_t status = cm_read_file(file_fd, length, sizeof(int64), &read_size);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
+    offset += (int64)sizeof(int64);
+    DSS_RETURN_IF_ERROR(dss_get_group_num(file_fd, &offset, &group_num));
+    char read_vg_name[DSS_MAX_NAME_LEN];
+    uint32 i;
+    bool32 find = CM_FALSE;
+    for (i = 0; i < group_num; i++) {
+        status = cm_read_file(file_fd, read_vg_name, DSS_MAX_NAME_LEN, &read_size);
+        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
+        offset += DSS_MAX_NAME_LEN;
+        if (strcmp(vg_name, read_vg_name) != 0) {
+            status = cm_read_file(file_fd, &bucket_size, sizeof(uint64), &read_size);
+            DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
+            offset = offset + sizeof(uint64) + bucket_size + sizeof(uint32);
+            result = (bool32)(cm_seek_file(file_fd, offset, SEEK_SET) != -1);
+            DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Failed to seek file %d", file_fd)); 
+            continue;
+        }
+        DSS_RETURN_IF_ERROR(dss_load_buffer_cache_from_file(file_fd, vg_item, &offset));
+        find = CM_TRUE;
+    }
+    if (!find) {
+        LOG_DEBUG_ERR("Failed to find vg: %s.", vg_name);
+        return CM_ERROR;
+    }
+    DSS_RETURN_IF_ERROR(dss_load_buffer_pool_from_file(file_fd, GA_8K_POOL));
+    DSS_RETURN_IF_ERROR(dss_load_buffer_pool_from_file(file_fd, GA_16K_POOL));
+    return CM_SUCCESS;
+}
+
+status_t dss_load_dss_ctrl_group_from_file(int32 file_fd, int64 *length, const char *vg_name, dss_vg_info_item_t *vg_item)
+{
+    uint32 group_num = 0;
+    int64 offset = 0;
+    int32 read_size = 0;
+    status_t status = cm_read_file(file_fd, length, sizeof(int64), &read_size);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
+    offset += (int64)sizeof(int64);
+    DSS_RETURN_IF_ERROR(dss_get_group_num(file_fd, &offset, &group_num));
+    char read_vg_name[DSS_MAX_NAME_LEN];
+    uint32 i;
+    bool32 find = CM_FALSE;
+    bool32 result = CM_FALSE;
+    for (i = 0; i < group_num; i++) {
+        DSS_RETURN_IF_FALSE2(dss_check_software_version(file_fd, &offset),
+            LOG_DEBUG_ERR("Failed to check software_version of vg %u", i));
+        status = cm_read_file(file_fd, read_vg_name, DSS_MAX_NAME_LEN, &read_size);
+        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
+        offset += DSS_MAX_NAME_LEN;
+        if (strcmp(vg_name, read_vg_name) != 0) {
+            offset += (int64)sizeof(dss_ctrl_t);
+            result = (bool32)(cm_seek_file(file_fd, offset, SEEK_SET) != -1);
+            DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Failed to seek file %d", file_fd));
+            continue;
+        }
+        DSS_RETURN_IF_ERROR(dss_load_dss_ctrl_from_file(file_fd, vg_item));
+        offset += (int64)sizeof(dss_ctrl_t);
+        find = CM_TRUE;
+    }
+    if (!find) {
+        LOG_DEBUG_ERR("Failed to find vg: %s.", vg_name);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+status_t dss_load_vg_item_and_pool_from_file(const char *file_name, const char *vg_name, dss_vg_info_item_t *vg_item)
+{
+    int32 file_fd = dss_open_memory_file(file_name);
+    if (file_fd == -1) {
+        LOG_DEBUG_ERR("Failed to open memory file %s", file_name);
+        return CM_ERROR;
+    }
+    int64 size = cm_file_size(file_fd);
+    if (size == -1) {
+        cm_close_file(file_fd);
+        LOG_DEBUG_ERR("Failed to read file size %s", file_name);
+        return CM_ERROR;
+    }
+    int64 length = -1;
+    status_t status;
+    bool32 result = (bool32)(cm_seek_file(file_fd, 0, SEEK_SET) != -1);
+    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Failed to seek file %s", file_name));
+    do {
+        status = dss_load_dss_ctrl_group_from_file(file_fd, &length, vg_name, vg_item);
+        if (status != CM_SUCCESS) {
+            if (length == -1) {
+                break;
+            }
+            result = (bool32)(cm_seek_file(file_fd, length, SEEK_SET) != -1);
+            DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Failed to seek file %s", file_name));
+        }
+        
+        status = dss_load_buffer_cache_group_from_file(file_fd, &length, vg_name, vg_item);
+        DSS_BREAK_IF_ERROR(status);
+    } while (CM_FALSE);
+    cm_close_file(file_fd);
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to load vg item %s", vg_name);
+    }
+    return status;
+}
+
+static status_t fshowmem_proc_by_block_id_and_index_id(dss_vg_info_item_t *vg_item)
+{
+    uint64 block_id = 0;
+    status_t status = cm_str2uint64(cmd_fshowmem_args[DSS_ARG_IDX_3].input_args, &block_id);
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("block_id:%s is not a valid uint64\n", cmd_fshowmem_args[DSS_ARG_IDX_3].input_args));
+    uint64 node_id = 0;
+    status = cm_str2uint64(cmd_fshowmem_args[DSS_ARG_IDX_4].input_args, &node_id);
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("node_id:%s is not a valid uint64\n", cmd_fshowmem_args[DSS_ARG_IDX_4].input_args));
+    status = dss_print_block_id(NULL, vg_item, block_id, node_id);
+    return status;
+}
+
+static status_t fshowmem_proc_by_path(dss_vg_info_item_t *vg_item, dss_show_param_t *show_param)
+{
+    status_t status;
+    const char *path = cmd_fshowmem_args[DSS_ARG_IDX_7].input_args;
+    errno_t errcode = strcpy_s(show_param->path, sizeof(show_param->path), path);
+    if (errcode != EOK) {
+        DSS_PRINT_ERROR("Failed to strcpy.\n");
+        return CM_ERROR;
+    }
+    if (cmd_fshowmem_args[DSS_ARG_IDX_8].inputed) {
+        status = cm_str2bigint(cmd_fshowmem_args[DSS_ARG_IDX_8].input_args, &show_param->offset);
+        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("offset:%s is not a valid int64\n", cmd_fshowmem_args[DSS_ARG_IDX_8].input_args));
+        status = cm_str2int(cmd_fshowmem_args[DSS_ARG_IDX_9].input_args, &show_param->size);
+        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("size:%s is not a valid int32\n", cmd_fshowmem_args[DSS_ARG_IDX_9].input_args));
+    }
+    status = dss_print_gft_node_by_path(NULL, vg_item, show_param);
+    return status;
+}
+
+static status_t fshowmem_proc_by_fid_and_node_id(dss_vg_info_item_t *vg_item, dss_show_param_t *show_param)
+{
+    status_t status = cm_str2uint64(cmd_fshowmem_args[DSS_ARG_IDX_5].input_args, &show_param->fid);
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("fid:%s is not a valid uint64\n", cmd_fshowmem_args[DSS_ARG_IDX_5].input_args));
+    status = cm_str2uint64(cmd_fshowmem_args[DSS_ARG_IDX_6].input_args, &show_param->ftid);
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("node_id:%s is not a valid uint64\n", cmd_fshowmem_args[DSS_ARG_IDX_6].input_args));
+    if (cmd_fshowmem_args[DSS_ARG_IDX_8].inputed) {
+        status = cm_str2bigint(cmd_fshowmem_args[DSS_ARG_IDX_8].input_args, &show_param->offset);
+        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("offset:%s is not a valid int64\n", cmd_fshowmem_args[DSS_ARG_IDX_8].input_args));
+        status = cm_str2int(cmd_fshowmem_args[DSS_ARG_IDX_9].input_args, &show_param->size);
+        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("size:%s is not a valid int32\n", cmd_fshowmem_args[DSS_ARG_IDX_9].input_args));
+    }
+    status = dss_print_gft_node_by_ftid_and_fid(NULL, vg_item, show_param);
+    return status;
+}
+static status_t fshowmem_proc(void)
+{
+    const char *file_name = cmd_fshowmem_args[DSS_ARG_IDX_0].input_args;
+    const char *path = cmd_fshowmem_args[DSS_ARG_IDX_7].input_args;
+    dss_vg_info_item_t vg_item = {0};
+    dss_show_param_t show_param;
+    dss_init_show_param(&show_param);
+    vg_item.from_type = FROM_BBOX;
+    status_t status;
+    do {
+        if (!cmd_fshowmem_args[DSS_ARG_IDX_1].inputed) {
+            char name[DSS_MAX_NAME_LEN];
+            uint32_t beg_pos = 0;
+            status = dss_get_name_from_path(path, &beg_pos, name);
+            if (status != CM_SUCCESS) {
+                DSS_PRINT_ERROR("Failed to get vg name from path %s.", path);
+                return status;
+            }
+            if (name[0] == 0) {
+                DSS_PRINT_ERROR("Failed to get vg name from path %s.", path);
+                return CM_ERROR;
+            }
+            status = dss_load_vg_item_and_pool_from_file(file_name, name, &vg_item);
+            DSS_BREAK_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg %s.\n", name));
+        } else {
+            const char *vg_name = cmd_fshowmem_args[DSS_ARG_IDX_1].input_args;
+            status = dss_load_vg_item_and_pool_from_file(file_name, vg_name, &vg_item);
+            DSS_BREAK_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg %s.\n", vg_name));
+        }
+        if (cmd_fshowmem_args[DSS_ARG_IDX_2].inputed) {
+            status = dss_print_struct_name(&vg_item, cmd_fshowmem_args[DSS_ARG_IDX_2].input_args);
+        } else if (cmd_fshowmem_args[DSS_ARG_IDX_3].inputed) {
+            status = fshowmem_proc_by_block_id_and_index_id(&vg_item);
+        } else if (cmd_fshowmem_args[DSS_ARG_IDX_5].inputed) {
+            status = fshowmem_proc_by_fid_and_node_id(&vg_item, &show_param);
+        } else if (cmd_fshowmem_args[DSS_ARG_IDX_7].inputed) {
+            status = fshowmem_proc_by_path(&vg_item, &show_param);
+        } else {
+            status = CM_ERROR;
+            DSS_PRINT_ERROR("none of struct_name and block_id and fid and path.\n");
+        }
+    } while (CM_FALSE);
+    dss_free_vg_item_from_file(&vg_item);
+    dss_free_buffer_pool_from_file();
     return status;
 }
 
@@ -2905,7 +3649,7 @@ static status_t setcfg_proc(void)
         cm_strcmpi(name, "_LOG_BACKUP_FILE_COUNT") != 0 && cm_strcmpi(name, "_AUDIT_MAX_FILE_SIZE") != 0 &&
         cm_strcmpi(name, "_AUDIT_BACKUP_FILE_COUNT") != 0 && cm_strcmpi(name, "_AUDIT_LEVEL") != 0 &&
         cm_strcmpi(name, "_ENABLE_CORE_STATE_COLLECT") != 0 && cm_strcmpi(name, "DELAY_CLEAN_INTERVAL") != 0 &&
-        cm_strcmpi(name, "CLUSTER_RUN_MODE") != 0) {
+        cm_strcmpi(name, "CLUSTER_RUN_MODE") != 0 && cm_strcmpi(name, "_BLACKBOX_DETAIL_ON") != 0) {
         DSS_PRINT_ERROR("Invalid name when set cfg.\n");
         return DSS_ERROR;
     }
@@ -3356,6 +4100,8 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set}
                                           &cmd_clean_vglock_args_set},
                                       {"repl", repl_help, repl_proc, &cmd_repl_args_set},
                                       {"rollback", rollback_help, rollback_proc, &cmd_rollback_args_set},
+                                      {"showmem", showmem_help, showmem_proc, &cmd_showmem_args_set},
+                                      {"fshowmem", fshowmem_help, fshowmem_proc, &cmd_fshowmem_args_set},
 };
 
 // clang-format on
