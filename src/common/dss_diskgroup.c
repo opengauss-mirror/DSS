@@ -700,13 +700,12 @@ status_t dss_file_lock_vg(dss_config_t *inst_cfg, struct flock *lk)
         return CM_ERROR;
     }
 
-    if (fcntl(g_dss_lock_vg_fd, F_SETLK, lk) != 0) {
+    if (cm_fcntl(g_dss_lock_vg_fd, F_SETLK, lk) != CM_SUCCESS) {
         cm_close_file(g_dss_lock_vg_fd);
         g_dss_lock_vg_fd = CM_INVALID_INT32;
         CM_THROW_ERROR(ERR_LOCK_FILE, errno);
         return CM_ERROR;
     }
-
     return CM_SUCCESS;
 }
 
