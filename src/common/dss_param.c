@@ -117,6 +117,14 @@ static config_item_t g_dss_params[] = {
         "GS_TYPE_INTEGER", NULL, 38, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "WORK_THREADS",       CM_TRUE, CM_FALSE, "16",   NULL, NULL, "-", "[16,128]",
         "GS_TYPE_INTEGER", NULL, 39, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "_BLACKBOX_DETAIL_ON",   CM_TRUE, CM_FALSE, "FALSE",  NULL, NULL, "-", "FALSE,TRUE",
+       "GS_TYPE_BOOLEAN", NULL, 40, EFFECT_REBOOT,  CFG_INS, NULL, NULL, NULL, NULL},
+    { "CLUSTER_RUN_MODE", CM_TRUE, CM_FALSE, "cluster_primary", NULL, NULL, "-", "-", 
+        "GS_TYPE_VARCHAR", NULL, 41, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "XLOG_VG_ID", CM_TRUE, CM_FALSE, "1", NULL, NULL, "-", "[1,64]",
+        "GS_TYPE_INTEGER", NULL, 42, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "MES_WAIT_TIMEOUT",  CM_TRUE, CM_FALSE, "2000",  NULL, NULL, "-", "[500,10000]",
+        "GS_TYPE_INTEGER", NULL, 43, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 // clang-format on
@@ -155,7 +163,7 @@ static status_t dss_load_session_cfg(dss_config_t *inst_cfg)
     status_t status = cm_str2int(value, &sessions);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MAX_SESSION_NUMS"));
 
-    if (sessions < DSS_MIN_SESSIONID_CFG || sessions > CM_MAX_SESSIONS) {
+    if (sessions < DSS_MIN_SESSIONID_CFG || sessions > DSS_MAX_SESSIONS) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MAX_SESSION_NUMS"));
     }
 
@@ -283,7 +291,7 @@ static status_t dss_load_random_file(uchar *value, int32 value_len)
     PRTS_RETURN_IFERR(snprintf_s(
         dir_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/dss_protect", g_inst_cfg->home));
     if (!cm_dir_exist(dir_name)) {
-        DSS_THROW_ERROR(ERR_DSS_DIR_NOT_EXIST, "dss_protect", g_inst_cfg->home);
+        DSS_THROW_ERROR(ERR_DSS_FILE_NOT_EXIST, "dss_protect", g_inst_cfg->home);
         return CM_ERROR;
     }
     PRTS_RETURN_IFERR(snprintf_s(file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/dss_protect/%s",
@@ -390,6 +398,20 @@ status_t dss_load_mes_ssl(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
+static status_t dss_load_mes_wait_timeout(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "MES_WAIT_TIMEOUT");
+    int32 timeout = 0;
+    status_t status = cm_str2int(value, &timeout);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MES_WAIT_TIMEOUT"));
+    if (timeout < DSS_MES_MIN_WAIT_TIMEOUT || timeout > DSS_MES_MAX_WAIT_TIMEOUT) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MES_WAIT_TIMEOUT");
+        return CM_ERROR;
+    }
+    inst_cfg->params.mes_wait_timeout = (uint32)timeout;
+    return CM_SUCCESS;
+}
+
 static status_t dss_load_mes_params(dss_config_t *inst_cfg)
 {
     CM_RETURN_IFERR(dss_load_mes_url(inst_cfg));
@@ -399,6 +421,7 @@ static status_t dss_load_mes_params(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_mes_pool_size(inst_cfg));
     CM_RETURN_IFERR(dss_load_mes_elapsed_switch(inst_cfg));
     CM_RETURN_IFERR(dss_load_mes_ssl(inst_cfg));
+    CM_RETURN_IFERR(dss_load_mes_wait_timeout(inst_cfg));
     return CM_SUCCESS;
 }
 
@@ -465,6 +488,39 @@ static status_t dss_load_disk_lock_file_path(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
+static status_t dss_load_cluster_run_mode(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "CLUSTER_RUN_MODE");
+
+    if (strcmp(value, "cluster_standby") == 0) {
+        inst_cfg->params.cluster_run_mode = CLUSTER_STANDBY;
+        LOG_RUN_INF("The cluster_run_mode is cluster_standby.");
+    } else if (strcmp(value, "cluster_primary") == 0) {
+        inst_cfg->params.cluster_run_mode = CLUSTER_PRIMARY;
+        LOG_RUN_INF("The cluster_run_mode is cluster_primary.");
+    } else {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid CLUSTER_RUN_MODE"));
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_xlog_vg_id(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "XLOG_VG_ID");
+    int32 xlog_vg_id = 0;
+    status_t status = cm_str2int(value, &xlog_vg_id);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "XLOG_VG_ID"));
+
+    /* the redo log of metadata in vg0, vg0 can not be synchronous copy disk */
+    if (xlog_vg_id < 1 || xlog_vg_id > 64) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "XLOG_VG_ID"));
+    }
+
+    inst_cfg->params.xlog_vg_id = (uint32)xlog_vg_id;
+    LOG_RUN_INF("The xlog vg id is %d.", inst_cfg->params.xlog_vg_id);
+    return CM_SUCCESS;
+}
+
 status_t dss_set_cfg_dir(const char *home, dss_config_t *inst_cfg)
 {
     char home_realpath[DSS_MAX_PATH_BUFFER_SIZE];
@@ -524,16 +580,31 @@ static status_t dss_load_shm_key(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
+static status_t dss_load_blackbox_detail_on(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "_BLACKBOX_DETAIL_ON");
+    if (cm_str_equal_ins(value, "TRUE")) {
+        inst_cfg->params.blackbox_detail_on = CM_TRUE;
+    } else if (cm_str_equal_ins(value, "FALSE")) {
+        inst_cfg->params.blackbox_detail_on = CM_FALSE;
+    } else {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_BLACKBOX_DETAIL_ON"));
+    }
+
+    LOG_RUN_INF("_BLACKBOX_DETAIL_ON = %u.", inst_cfg->params.blackbox_detail_on);
+    return CM_SUCCESS;
+}
+
 status_t dss_load_config(dss_config_t *inst_cfg)
 {
-    char file_name[DSS_FILE_PATH_MAX_LENGTH];
+    char file_name[DSS_FILE_NAME_BUFFER_SIZE];
     errno_t ret = memset_sp(&inst_cfg->params, sizeof(dss_params_t), 0, sizeof(dss_params_t));
     if (ret != EOK) {
         return CM_ERROR;
     }
 
     // get config info
-    ret = snprintf_s(file_name, DSS_FILE_PATH_MAX_LENGTH, DSS_FILE_PATH_MAX_LENGTH - 1, "%s/cfg/%s", inst_cfg->home,
+    ret = snprintf_s(file_name, DSS_FILE_NAME_BUFFER_SIZE, DSS_FILE_NAME_BUFFER_SIZE - 1, "%s/cfg/%s", inst_cfg->home,
         g_dss_config_file);
     if (ret == -1) {
         DSS_RETURN_IFERR2(
@@ -555,6 +626,28 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_threadpool_cfg(inst_cfg));
     CM_RETURN_IFERR(dss_load_cephrbd_params(inst_cfg));
     CM_RETURN_IFERR(dss_load_cephrbd_config_file(inst_cfg));
+    CM_RETURN_IFERR(dss_load_blackbox_detail_on(inst_cfg));
+    CM_RETURN_IFERR(dss_load_cluster_run_mode(inst_cfg));
+    CM_RETURN_IFERR(dss_load_xlog_vg_id(inst_cfg));
+    return CM_SUCCESS;
+}
+
+status_t dss_reload_cluster_run_mode_param(dss_config_t *inst_cfg)
+{
+    char file_name[DSS_FILE_PATH_MAX_LENGTH];
+
+    // get config info
+    errno_t ret = snprintf_s(file_name, DSS_FILE_PATH_MAX_LENGTH, DSS_FILE_PATH_MAX_LENGTH - 1, "%s/cfg/%s", inst_cfg->home,
+        g_dss_config_file);
+    if (ret == -1) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid config file path"));
+    }
+
+    status_t status = cm_load_config(g_dss_params, DSS_PARAM_COUNT, file_name, &inst_cfg->config, CM_FALSE);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load config"));
+
+    CM_RETURN_IFERR(dss_load_cluster_run_mode(inst_cfg));
     return CM_SUCCESS;
 }
 

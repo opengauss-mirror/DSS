@@ -17,15 +17,17 @@
  *
  *
  * IDENTIFICATION
- *    src/cmd/dsscmd_create_vg.c
+ *    src/cmd/dsscmd_volume.c
  *
  * -------------------------------------------------------------------------
  */
 
-#include "dsscmd_create_vg.h"
+#include "dsscmd_volume.h"
 #include "dss_file.h"
 #include "dss_redo.h"
 #include "dss_malloc.h"
+#include "dsscmd_inq.h"
+#include "dsscmd_encrypt.h"
 
 static void dss_get_vg_time(timeval_t *tv_begin)
 {
@@ -83,7 +85,7 @@ static void dss_static_assert_info(void)
 
 static status_t dss_check_volume_invalid(const char *volume_name)
 {
-    if (strlen(volume_name) >= DSS_FILE_PATH_MAX_LENGTH) {
+    if (strlen(volume_name) >= DSS_MAX_VOLUME_PATH_LEN) {
         DSS_THROW_ERROR_EX(
             ERR_DSS_VG_CREATE, "volume name %s is too long, cannot exceed %u.", volume_name, DSS_FILE_PATH_MAX_LENGTH);
         return CM_ERROR;
@@ -166,7 +168,6 @@ static status_t dss_initial_vg_ctrl(
     vg_ctrl->volume.defs[0].id = 0;
 
     vg_ctrl->core.volume_count = 1;
-    vg_ctrl->core.volume_attrs[0].flag = 1;
     vg_ctrl->core.volume_attrs[0].id = 0;
 
     vg_ctrl->core.volume_attrs[0].hwm = CM_CALC_ALIGN(DSS_VOLUME_HEAD_SIZE, au_size);
@@ -222,14 +223,15 @@ static status_t dss_set_vg_ctrl(
     status_t status;
     dss_ctrl_t *vg_ctrl = (dss_ctrl_t *)cm_malloc_align(DSS_ALIGN_SIZE, sizeof(dss_ctrl_t));
     if (vg_ctrl == NULL) {
-        dss_free_vg_info(g_vgs_info);
+        dss_free_vg_info();
         LOG_DEBUG_ERR("Failed to alloc memory, vg name is %s, volume name is %s.\n", vg_name, volume_name);
         DSS_THROW_ERROR(ERR_ALLOC_MEMORY, sizeof(dss_ctrl_t), "vg_ctrl");
         return CM_ERROR;
     }
+    (void)memset_s(vg_ctrl, sizeof(dss_ctrl_t), 0 , sizeof(dss_ctrl_t));
     vg_item->dss_ctrl = vg_ctrl;
     do {
-        status = dss_lock_vg_storage(vg_item, volume_name, inst_cfg);
+        status = dss_lock_vg_storage_w(vg_item, volume_name, inst_cfg);
         DSS_BREAK_IFERR2(status, LOG_DEBUG_ERR("Failed to lock vg %s.", volume_name));
         dss_volume_t volume;
         status = dss_open_volume(volume_name, NULL, DSS_INSTANCE_OPEN_FLAG, &volume);
@@ -261,7 +263,7 @@ static status_t dss_set_vg_ctrl(
         dss_unlock_vg_storage(vg_item, volume_name, inst_cfg);
     } while (0);
     DSS_FREE_POINT(vg_ctrl);
-    dss_free_vg_info(g_vgs_info);
+    dss_free_vg_info();
     return status;
 }
 
@@ -273,7 +275,6 @@ status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_
     dss_static_assert_info();
 
     LOG_RUN_INF("Begin to create vg %s.", vg_name);
-    LOG_DEBUG_INF("Begin to create vg %s.", vg_name);
     status = dss_load_vg_conf_info(&g_vgs_info, inst_cfg);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load vg info from config, vg name is %s, volume name is %s, errcode is %d.\n", vg_name,
@@ -283,7 +284,7 @@ status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_
 
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item == NULL) {
-        dss_free_vg_info(g_vgs_info);
+        dss_free_vg_info();
         LOG_DEBUG_ERR("Failed to find vg info from config, vg name is %s, volume name is %s, errcode is %d.\n", vg_name,
             volume_name, status);
         DSS_THROW_ERROR(ERR_DSS_VG_CREATE, vg_name, "Failed to find vg info from config");
@@ -291,7 +292,7 @@ status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_
     }
 
     if (vg_item->entry_path[0] == '\0' || cm_strcmpi(vg_item->entry_path, volume_name) != 0) {
-        dss_free_vg_info(g_vgs_info);
+        dss_free_vg_info();
         DSS_THROW_ERROR(
             ERR_DSS_VG_CREATE, vg_name, "Failed to cmp super-block name with entry_path config in dss_vg_conf.\n");
         return CM_ERROR;
@@ -300,7 +301,127 @@ status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_
     status = dss_set_vg_ctrl(vg_name, volume_name, vg_item, inst_cfg, size);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("dss set vg ctrl failed."));
     LOG_RUN_INF("End to create vg %s.", vg_name);
-    LOG_DEBUG_INF("End to create vg %s.", vg_name);
 
     return CM_SUCCESS;
+}
+
+static dss_vg_info_item_t* dss_find_vg_item_inner(dss_vg_info_t *vg_info, const char *vg_name)
+{
+    for (uint32_t i = 0; i < vg_info->group_num; i++) {
+        if (strcmp(vg_info->volume_group[i].vg_name, vg_name) == 0) {
+            return &vg_info->volume_group[i];
+        }
+    }
+    return NULL;
+}
+
+static status_t dss_write_volume_head(dss_vg_info_item_t* vg_item, const char *vol_path, uint32 id)
+{
+#ifndef WIN32
+    char buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_ALIGN_SIZE)));
+#else
+    char buf[DSS_DISK_UNIT_SIZE];
+#endif
+    dss_volume_header_t *vol_head = (dss_volume_header_t *)buf;
+    CM_RETURN_IFERR(
+        dss_open_volume(vg_item->dss_ctrl->volume.defs[id].name, NULL, DSS_CLI_OPEN_FLAG, &vg_item->volume_handle[id]));
+    status_t ret = dss_gen_volume_head(vol_head, vg_item, vol_path, id);
+    if (ret != CM_SUCCESS) {
+        dss_close_volume(&vg_item->volume_handle[id]);
+        return ret;
+    }
+    ret = dss_write_volume(&vg_item->volume_handle[id], 0, vol_head, (int32)sizeof(dss_volume_header_t));
+    dss_close_volume(&vg_item->volume_handle[id]);
+    return ret;
+}
+
+static status_t dss_add_volume_inner(dss_vg_info_item_t* vg_item, const char *vg_name, const char *vol_path)
+{
+    status_t ret = dss_recover_ctrlinfo(vg_item);
+    if (ret != CM_SUCCESS) {
+        LOG_DEBUG_ERR("dss ctrl of %s is invalid when add volume.", vg_name);
+        return ret;
+    }
+
+    if (dss_find_volume(vg_item, vol_path) != CM_INVALID_ID32) {
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_ADD_EXISTED, vol_path, vg_name);
+        return CM_ERROR;
+    }
+
+    uint32 id = dss_find_free_volume_id(vg_item);
+    if (id >= DSS_MAX_VOLUMES) {
+        LOG_DEBUG_ERR("Failed to add volume, exceed max volumes %d.", DSS_MAX_VOLUMES);
+        return CM_ERROR;
+    }
+
+    CM_RETURN_IFERR(dss_open_volume(vol_path, NULL, DSS_CLI_OPEN_FLAG, &vg_item->volume_handle[id]));
+    CM_RETURN_IFERR_EX(dss_cmp_volume_head(vg_item, vol_path, id), dss_close_volume(&vg_item->volume_handle[id]));
+    uint64 vol_size = dss_get_volume_size(&vg_item->volume_handle[id]);
+    dss_close_volume(&vg_item->volume_handle[id]);
+    if (vol_size  == DSS_INVALID_64) {
+        LOG_DEBUG_ERR("Failed to get volume size when add volume:%s.", vol_path);
+        return CM_ERROR;
+    }
+    CM_RETURN_IFERR(dss_add_volume_vg_ctrl(vg_item->dss_ctrl, id, vol_size, vol_path, VOLUME_FREE));
+
+    /*
+     * The client does not record redo log. Therefore, the two-phase method is used.
+     * Firstly, write the volume_ctrl to disk, where the status is free.
+     * Secondly, write the core_ctrl and volume_head to disk.
+     * Finally, update the status of volume_ctrl to disk, where the status is occupy.
+     */
+    CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
+    CM_RETURN_IFERR(dss_update_core_ctrl_disk(vg_item));
+    CM_RETURN_IFERR(dss_write_volume_head(vg_item, vol_path, id));
+    vg_item->dss_ctrl->volume.defs[id].flag =  VOLUME_OCCUPY;
+    CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
+    return CM_SUCCESS;
+}
+
+status_t dss_add_volume_offline(const char *home, const char *vg_name, const char *vol_path)
+{
+    char buff[LENGTH_EIGHT_BYTE];
+    (void)printf("Please ensure that the cluster is stopped, enter yes!\n");
+    CM_RETURN_IFERR(dss_receive_info_from_terminal(buff, LENGTH_EIGHT_BYTE, CM_TRUE));
+
+    if (cm_strcmpi(buff, "yes") != 0) {
+        (void)printf("Please ensure that the cluster is stopped, enter yes!\n");
+        CM_RETURN_IFERR(dss_receive_info_from_terminal(buff, LENGTH_EIGHT_BYTE, CM_TRUE));
+    }
+
+    if (cm_strcmpi(buff, "yes") != 0) {
+        DSS_PRINT_ERROR("Failed to add volume offline, the cluster must be stopped.\n");
+        return CM_ERROR;
+    }
+
+    status_t ret;
+    dss_config_t inst_cfg;
+    dss_vg_info_t *vg_info = NULL;
+    CM_RETURN_IFERR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
+    for (uint32 i = 0; i < vg_info->group_num; i++) {
+        ret = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], CM_TRUE);
+        if (ret != CM_SUCCESS) {
+            dss_inq_free_vg_info(vg_info);
+            DSS_PRINT_ERROR("Failed to get vg non entry info when add volume offline.\n");
+            return ret;
+        }
+    }
+
+    dss_vg_info_item_t *vg_item = dss_find_vg_item_inner(vg_info, vg_name);
+    if (vg_item == NULL) {
+        dss_inq_free_vg_info(vg_info);
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
+        return CM_ERROR;
+    }
+
+    if (dss_lock_vg_storage_w(vg_item, vg_item->entry_path, &inst_cfg) != CM_SUCCESS) {
+        dss_inq_free_vg_info(vg_info);
+        DSS_PRINT_ERROR("Failed to lock vg:%s.\n", vg_name);
+        return CM_ERROR;
+    }
+
+    ret = dss_add_volume_inner(vg_item, vg_name, vol_path);
+    dss_unlock_vg_storage(vg_item, vg_item->entry_path, &inst_cfg);
+    dss_inq_free_vg_info(vg_info);
+    return ret;
 }

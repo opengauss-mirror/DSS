@@ -24,9 +24,12 @@
 
 #include "dss_defs.h"
 #include "cm_num.h"
+#include "cm_text.h"
 #include "dss_errno.h"
 
 dss_kernel_instance_t g_dss_kernel_instance;
+
+auid_t dss_invalid_auid = {.volume = 0x3ff, .au = 0x3ffffffff, .block = 0x1ffff, .item = 0x7};
 
 #define DSS_CMD_TYPE_OFFSET(i) ((uint32)(i) - (uint32)DSS_CMD_BEGIN)
 static char *g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
@@ -60,13 +63,12 @@ static char *g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_SET_MAIN_INST)] = "set main inst",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_SWITCH_LOCK)] = "switch cm lock",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_HOME)] = "get home",
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST_FILE)] = "exist file",
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST_DIR)] = "exist dir",
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ISLINK)] = "is link",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST)] = "exist item",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_READLINK)] = "readlink",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_FTID_BY_PATH)] = "get ftid by path",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GETCFG)] = "getcfg",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_INST_STATUS)] = "get inst status",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_TIME_STAT)] = "get time stat",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXEC_REMOTE)] = "exec remote",
 };
 
@@ -154,194 +156,3 @@ void cm_destroy_thread_lock(thread_lock_t *lock)
 #endif
 }
 
-static bool32 dss_is_err(const char *err)
-{
-    if (err == NULL) {
-        return CM_FALSE;
-    }
-
-    while (*err != '\0') {
-        if (*err != ' ') {
-            return CM_TRUE;
-        }
-        err++;
-    }
-
-    return CM_FALSE;
-}
-
-static status_t cm_str2real(const char *str, double *value)
-{
-    char *err = NULL;
-    *value = strtod(str, &err);
-    if (dss_is_err(err)) {
-        CM_THROW_ERROR_EX(ERR_VALUE_ERROR, "Convert double failed, text = %s", str);
-        return CM_ERROR;
-    }
-
-    return CM_SUCCESS;
-}
-
-static status_t cm_text2real(const text_t *text_src, double *value)
-{
-    char buf[DSS_MAX_REAL_INPUT_STRLEN + 1] = {0};
-    text_t text = *text_src;
-
-    cm_trim_text(&text);
-
-    if (text.len > DSS_MAX_REAL_INPUT_STRLEN) {
-        CM_THROW_ERROR(ERR_DSS_STRING_TOO_LONG, text.len, DSS_MAX_REAL_INPUT_STRLEN, T2S(&text));
-        return CM_ERROR;
-    }
-    CM_RETURN_IFERR(cm_text2str(&text, buf, DSS_MAX_REAL_INPUT_STRLEN + 1));
-
-    return cm_str2real(buf, value);
-}
-
-status_t cm_text2size(const text_t *text, int64 *value)
-{
-    text_t num = *text;
-    uint64 unit = 1;
-    double size;
-
-    if (text->len < 2) {
-        *value = 0;
-        return CM_SUCCESS;
-    }
-    switch (CM_TEXT_END(text)) {
-        case 'k':
-        case 'K':
-            unit <<= 10;
-            break;
-
-        case 'm':
-        case 'M':
-            unit <<= 20;
-            break;
-
-        case 'g':
-        case 'G':
-            unit <<= 30;
-            break;
-
-        case 't':
-        case 'T':
-            unit <<= 40;
-            break;
-
-        case 'p':
-        case 'P':
-            unit <<= 50;
-            break;
-
-        case 'e':
-        case 'E':
-            unit <<= 60;
-            break;
-
-        default:
-        case 'b':
-        case 'B':
-            break;
-    }
-
-    if (unit != 1) {
-        num.len--;
-    }
-
-    CM_RETURN_IFERR(cm_text2real(&num, &size));
-    *value = (int64)(size * unit);
-    return CM_SUCCESS;
-}
-
-status_t cm_str2size(const char *str, int64 *value)
-{
-    text_t text;
-    cm_str2text((char *)str, &text);
-    return cm_text2size(&text, value);
-}
-
-static status_t cm_check_is_sign_number(const char *str)
-{
-    size_t len = strlen(str);
-    if (len == 0) {
-        return CM_ERROR;
-    }
-    if (len == 1 && CM_IS_SIGN_CHAR(str[0])) {
-        return CM_ERROR;
-    }
-    if (!CM_IS_SIGN_CHAR(str[0]) && !CM_IS_DIGIT(str[0])) {
-        return CM_ERROR;
-    }
-    for (size_t i = 1; i < len; i++) {
-        if (!CM_IS_DIGIT(str[i])) {
-            return CM_ERROR;
-        }
-    }
-    return CM_SUCCESS;
-}
-
-status_t cm_str2int(const char *str, int32 *value)
-{
-    char *err = NULL;
-    int ret = cm_check_is_sign_number(str);
-    if (ret != CM_SUCCESS) {
-        CM_THROW_ERROR_EX(ERR_VALUE_ERROR, "Convert int failed, the text is not number, text = %s", str);
-        return CM_ERROR;
-    }
-    int64 val_int64 = strtol(str, &err, CM_DEFAULT_DIGIT_RADIX);
-    if (dss_is_err(err)) {
-        CM_THROW_ERROR_EX(ERR_VALUE_ERROR, "Convert int failed, text = %s", str);
-        return CM_ERROR;
-    }
-
-    if (val_int64 > INT_MAX || val_int64 < INT_MIN) {
-        CM_THROW_ERROR_EX(
-            ERR_VALUE_ERROR, "Convert int failed, the number text is not in the range of int, text = %s", str);
-        return CM_ERROR;
-    }
-
-    *value = (int32)val_int64;
-    return CM_SUCCESS;
-}
-
-status_t cm_str2bigint(const char *str, int64 *value)
-{
-    char *err = NULL;
-    int ret = cm_check_is_sign_number(str);
-    if (ret != CM_SUCCESS) {
-        CM_THROW_ERROR_EX(ERR_VALUE_ERROR, "Convert int64 failed, the text is not number, text = %s", str);
-        return CM_ERROR;
-    }
-    *value = strtoll(str, &err, CM_DEFAULT_DIGIT_RADIX);
-    if (dss_is_err(err)) {
-        CM_THROW_ERROR_EX(ERR_VALUE_ERROR, "Convert int64 failed, text = %s", str);
-        return CM_ERROR;
-    }
-    // if str = "9223372036854775808", *value will be LLONG_MAX
-    if (*value == LLONG_MAX || *value == LLONG_MIN) {
-        if (strcmp(str, (const char *)SIGNED_LLONG_MIN) != 0 && strcmp(str, (const char *)SIGNED_LLONG_MAX) != 0) {
-            CM_THROW_ERROR_EX(ERR_VALUE_ERROR,
-                "Convert int64 failed, the number text is not in the range of signed long long, text = %s", str);
-            return CM_ERROR;
-        }
-    }
-
-    return CM_SUCCESS;
-}
-
-status_t cm_text2bigint(const text_t *text_src, int64 *value)
-{
-    char buf[CM_MAX_NUMBER_LEN + 1] = {0};  // '00000000000000000000000000000001'
-    text_t text = *text_src;
-
-    cm_trim_text(&text);
-
-    if (text.len > CM_MAX_NUMBER_LEN) {
-        CM_THROW_ERROR(ERR_DSS_STRING_TOO_LONG, text.len, CM_MAX_NUMBER_LEN, T2S(&text));
-        return CM_ERROR;
-    }
-
-    CM_RETURN_IFERR(cm_text2str(&text, buf, CM_MAX_NUMBER_LEN + 1));
-    return cm_str2bigint(buf, value);
-}

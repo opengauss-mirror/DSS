@@ -33,7 +33,6 @@
 #include "cm_checksum.h"
 #include "dss_file_def.h"
 #include "cm_checksum.h"
-#include "dss_skiplist.h"
 #include "dss_log.h"
 #include "dss_stack.h"
 #include "dss_session.h"
@@ -44,6 +43,14 @@ extern "C" {
 
 #define DSS_LOADDISK_BUFFER_SIZE SIZE_K(32)
 #define DSS_READ4STANDBY_ERR (int32)3
+/*
+    1、when the node is standby, just send message to primary to read volume
+    2、if the primary is just in recovery or switch, may wait the read request
+    3、if read failed, just retry.
+    4、may be standby switch to primary, just read volume from self;
+    5、may be primary just change to standby, just read volume from new primary;
+*/
+#define DSS_READ_REMOTE_INTERVAL 50
 
 // for lsvg
 typedef struct dss_volume_space_info_t {
@@ -76,7 +83,7 @@ extern dss_share_vg_info_t *g_dss_share_vg_info;
 // create vg only use in tool
 status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_t *inst_cfg, uint32 size);
 status_t dss_load_vg_conf_info(dss_vg_info_t **vgs, const dss_config_t *inst_cfg);
-void dss_free_vg_info(dss_vg_info_t *vgs_info);
+void dss_free_vg_info();
 dss_vg_info_item_t *dss_find_vg_item(const char *vg_name);
 status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **info);
 status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock);
@@ -85,14 +92,18 @@ status_t dss_load_vg_ctrl_part(dss_vg_info_item_t *vg_item, int64 offset, void *
 status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item);
 
 void dss_lock_vg_mem_x(dss_vg_info_item_t *vg_item);
+void dss_lock_vg_mem_x2ix(dss_vg_info_item_t *vg_item);
+void dss_lock_vg_mem_ix2x(dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_s(dss_vg_info_item_t *vg_item);
+void dss_lock_vg_mem_s_force(dss_vg_info_item_t *vg_item);
 void dss_unlock_vg_mem(dss_vg_info_item_t *vg_item);
 
 status_t dss_file_lock_vg_w(dss_config_t *inst_cfg);
 void dss_file_unlock_vg(void);
 status_t dss_lock_disk_vg(const char *entry_path, dss_config_t *inst_cfg);
 void dss_unlock_vg_raid(dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id);
-status_t dss_lock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
+status_t dss_lock_vg_storage_r(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
+status_t dss_lock_vg_storage_w(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
 void dss_unlock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
 status_t dss_check_lock_instid(dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id, bool32 *is_lock);
 
@@ -116,6 +127,10 @@ void dss_destroy_vol_handle(dss_vg_info_item_t *vg_item, dss_vol_handles_t *vol_
 extern dss_vg_info_t *g_vgs_info;
 #define VGS_INFO (g_vgs_info)
 status_t dss_check_volume(dss_vg_info_item_t *vg_item, uint32 volumeid);
+uint32_t dss_find_volume(dss_vg_info_item_t *vg_item, const char *volume_name);
+uint32_t dss_find_free_volume_id(const dss_vg_info_item_t *vg_item);
+status_t dss_cmp_volume_head(dss_vg_info_item_t *vg_item, const char *volume_name, uint32 id);
+
 
 static inline dss_vg_info_item_t *dss_get_first_vg_item()
 {
@@ -138,6 +153,13 @@ static inline void dss_check_checksum(uint32 checksum0, uint32 checksum1)
         LOG_DEBUG_ERR("Failed to check checksum:%u,%u.", checksum0, checksum1);
         cm_panic(0);
     }
+}
+
+static inline bool32 dss_read_remote_checksum(void *buf, int32 size)
+{
+    uint32 sum1 = *(uint32 *)buf;
+    uint32 sum2 = dss_get_checksum(buf, (uint32)size);
+    return sum1 == sum2;
 }
 
 uint64 dss_get_vg_latch_shm_offset(dss_vg_info_item_t *vg_item);
@@ -183,10 +205,14 @@ status_t dss_load_vg_conf_inner(dss_vg_info_t *vgs_info, const dss_config_t *ins
 typedef status_t (*dss_remote_read_proc_t)(
     const char *vg_name, dss_volume_t *volume, int64 offset, void *buf, int size);
 void regist_remote_read_proc(dss_remote_read_proc_t proc);
-status_t dss_read_volume_4standby(const char *vg_name, uint32 volum_id, int64 offset, void *buf, int32 size);
+status_t dss_read_volume_4standby(const char *vg_name, uint32 volume_id, int64 offset, void *buf, uint32 size);
 status_t dss_remove_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item, const char *vg_name,
     const char *volume_name, dss_config_t *inst_cfg);
 status_t dss_load_ctrl_core(dss_vg_info_item_t *vg_item, uint32 index);
+status_t dss_add_volume_vg_ctrl(
+    dss_ctrl_t *vg_ctrl, uint32 id, uint64 vol_size, const char *volume_name, volume_slot_e volume_flag);
+status_t dss_gen_volume_head(
+    dss_volume_header_t *vol_head, dss_vg_info_item_t *vg_item, const char *volume_name, uint32 id);
 
 #ifdef __cplusplus
 }

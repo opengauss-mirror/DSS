@@ -129,7 +129,7 @@ status_t dss_iof_kick_all_volumes(dss_vg_info_t *dss_vg_info, int64 rk, int64 rk
 
         // volume_attrs[0] is the sys dev
         for (j = 1; j < DSS_MAX_VOLUMES; j++) {
-            if (item->dss_ctrl->core.volume_attrs[j].flag == VOLUME_FREE) {
+            if (item->dss_ctrl->volume.defs[j].flag == VOLUME_FREE) {
                 continue;
             }
 
@@ -152,15 +152,15 @@ status_t dss_iof_sync_vginfo(dss_session_t *session, dss_vg_info_item_t *vg_item
 
     dss_config_t *inst_cfg = dss_get_inst_cfg();
 
-    if (dss_lock_vg_storage(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
+    if (dss_lock_vg_storage_r(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to lock vg entry %s.", vg_item->entry_path);
         return CM_ERROR;
     }
 
-    dss_lock_shm_meta_x(session, vg_item->vg_latch);
+    dss_lock_vg_mem_and_shm_x(session, vg_item);
 
     if (dss_get_core_version(vg_item, &version) != CM_SUCCESS) {
-        dss_unlock_shm_meta(session, vg_item->vg_latch);
+        dss_unlock_vg_mem_and_shm(session, vg_item);
         dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
         LOG_DEBUG_ERR("Failed to get core version, vg %s.", vg_item->entry_path);
         return CM_ERROR;
@@ -168,20 +168,20 @@ status_t dss_iof_sync_vginfo(dss_session_t *session, dss_vg_info_item_t *vg_item
 
     if (dss_compare_version(version, vg_item->dss_ctrl->core.version)) {
         if (dss_check_volume(vg_item, CM_INVALID_ID32) != CM_SUCCESS) {
-            dss_unlock_shm_meta(session, vg_item->vg_latch);
+            dss_unlock_vg_mem_and_shm(session, vg_item);
             dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
             LOG_DEBUG_ERR("Failed to check volume, vg %s.", vg_item->entry_path);
             return CM_ERROR;
         }
 
         if (dss_load_core_ctrl(vg_item, &vg_item->dss_ctrl->core) != CM_SUCCESS) {
-            dss_unlock_shm_meta(session, vg_item->vg_latch);
+            dss_unlock_vg_mem_and_shm(session, vg_item);
             dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
             LOG_DEBUG_ERR("Failed to get core ctrl, vg %s.", vg_item->entry_path);
             return CM_ERROR;
         }
     }
-    dss_unlock_shm_meta(session, vg_item->vg_latch);
+    dss_unlock_vg_mem_and_shm(session, vg_item);
     dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
 #endif
     return CM_SUCCESS;
@@ -269,16 +269,6 @@ status_t dss_iof_unregister_single(int64 rk, char *dev)
     return CM_SUCCESS;
 }
 
-static void dss_get_vg_info_is_server(bool32 is_server, dss_vg_info_t **dss_vg_info)
-{
-    if (is_server) {
-        *dss_vg_info = VGS_INFO;
-    } else {
-        dss_env_t *dss_env = dss_get_env();
-        *dss_vg_info = dss_env->dss_vg_info;
-    }
-}
-
 status_t dss_iof_register_core(int64 rk, dss_vg_info_t *dss_vg_info)
 {
     status_t ret;
@@ -290,31 +280,12 @@ status_t dss_iof_register_core(int64 rk, dss_vg_info_t *dss_vg_info)
         }
         // volume_attrs[0] is the sys dev
         for (uint32 j = 1; j < DSS_MAX_VOLUMES; j++) {
-            if (item->dss_ctrl->core.volume_attrs[j].flag == VOLUME_FREE) {
+            if (item->dss_ctrl->volume.defs[j].flag == VOLUME_FREE) {
                 continue;
             }
             DSS_RETURN_IF_ERROR(dss_iof_register_single(rk, item->dss_ctrl->volume.defs[j].name));
         }
     }
-    return CM_SUCCESS;
-}
-
-status_t dss_iof_register_all(int64 rk, bool32 is_server)
-{
-#ifdef WIN32
-#else
-    dss_vg_info_t *dss_vg_info = NULL;
-
-    LOG_DEBUG_INF("Begin register all, rk %lld, is server %u.", rk + 1, (uint32)is_server);
-    dss_get_vg_info_is_server(is_server, &dss_vg_info);
-    bool32 result = (bool32)(dss_vg_info != NULL);
-    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Can't get vgs info, is_server %u.", (uint32)is_server));
-    status_t ret = dss_iof_register_core(rk, dss_vg_info);
-    if (ret != CM_SUCCESS) {
-        return ret;
-    }
-#endif
-    LOG_RUN_INF("IOfence register all succ.");
     return CM_SUCCESS;
 }
 
@@ -329,32 +300,13 @@ status_t dss_iof_unregister_core(int64 rk, dss_vg_info_t *dss_vg_info)
         }
         // volume_attrs[0] is the sys dev
         for (uint32 j = 1; j < DSS_MAX_VOLUMES; j++) {
-            if (item->dss_ctrl->core.volume_attrs[j].flag == VOLUME_FREE) {
+            if (item->dss_ctrl->volume.defs[j].flag == VOLUME_FREE) {
                 continue;
             }
             DSS_RETURN_IF_ERROR(dss_iof_unregister_single(rk, item->dss_ctrl->volume.defs[j].name));
         }
     }
     LOG_DEBUG_INF("Unregister all succ.");
-    return CM_SUCCESS;
-}
-
-status_t dss_iof_unregister_all(int64 rk, bool32 is_server)
-{
-#ifdef WIN32
-#else
-    dss_vg_info_t *dss_vg_info = NULL;
-
-    LOG_DEBUG_INF("Begin Unregister all, rk %lld, is server %u.", rk + 1, (uint32)is_server);
-    dss_get_vg_info_is_server(is_server, &dss_vg_info);
-    bool32 result = (bool32)(dss_vg_info != NULL);
-    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Can't get vgs info, is_server %u.", (uint32)is_server));
-    status_t ret = dss_iof_unregister_core(rk, dss_vg_info);
-    if (ret != CM_SUCCESS) {
-        return ret;
-    }
-#endif
-    LOG_RUN_INF("IOfence unregister all succ.");
     return CM_SUCCESS;
 }
 
@@ -383,7 +335,7 @@ status_t dss_inquiry_luns_from_ctrl(dss_vg_info_item_t *item, ptlist_t *lunlist)
 {
     status_t status;
     for (uint32 j = 1; j < DSS_MAX_VOLUMES; j++) {
-        if (item->dss_ctrl->core.volume_attrs[j].flag == VOLUME_FREE) {
+        if (item->dss_ctrl->volume.defs[j].flag == VOLUME_FREE) {
             continue;
         }
 
@@ -453,7 +405,7 @@ status_t dss_iof_inql_regs_core(ptlist_t *reglist, dss_vg_info_item_t *item)
     errno_t ret;
     // volume_attrs[0] is the sys dev
     for (uint32 j = 1; j < DSS_MAX_VOLUMES; j++) {
-        if (item->dss_ctrl->core.volume_attrs[j].flag == VOLUME_FREE) {
+        if (item->dss_ctrl->volume.defs[j].flag == VOLUME_FREE) {
             continue;
         }
 

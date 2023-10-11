@@ -60,7 +60,6 @@ extern "C" {
 /* A node is deleted only when it fails to be started for 5 consecutive times within 30 seconds.
    Therefore, the startup failure time cannot exceed 6 seconds. */
 #define DSS_CONN_DEFAULT_TIME_OUT 3000
-#define DSS_CONN_RETRY_INTERVAL 5
 char g_dss_inst_path[CM_MAX_PATH_LEN] = {0};
 typedef struct st_dss_conn_info {
     // protect connections
@@ -113,7 +112,7 @@ static void dss_clt_env_init(void)
     }
 }
 
-static status_t dss_conn_retry(dss_conn_t *conn)
+static status_t dss_try_conn(dss_conn_opt_t *options, dss_conn_t *conn)
 {
     // establish connection
     status_t status = CM_SUCCESS;
@@ -121,45 +120,26 @@ static status_t dss_conn_retry(dss_conn_t *conn)
     do {
         // avoid buffer leak when disconnect
         dss_free_packet_buffer(&conn->pack);
-        status = dss_connect(dss_get_inst_path(), NULL, NULL, conn);
-        DSS_BREAK_IFERR2(status, LOG_RUN_ERR("Dss client connet server failed."));
+        status = dss_connect(dss_get_inst_path(), options, conn);
+        DSS_BREAK_IFERR2(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client connet server failed."));
         char *home = NULL;
         status = dss_get_home_sync(conn, &home);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client get home from server failed."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client get home from server failed."), dss_disconnect(conn));
 
         uint32 max_open_file = DSS_MAX_OPEN_FILES;
         status = dss_init(max_open_file, home);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client init failed."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client init failed."), dss_disconnect(conn));
 
         status = dss_set_session_sync(conn);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client failed to initialize session."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client failed to initialize session."), dss_disconnect(conn));
 
         status = dss_init_vol_handle_sync(conn);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR("Dss client init vol handle failed."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client init vol handle failed."), dss_disconnect(conn));
 
         g_dss_conn_info.conn_num++;
     } while (0);
     cm_unlatch(&g_dss_conn_info.conn_latch, NULL);
     return status;
-}
-
-status_t dss_conn_sync(dss_conn_t *conn)
-{
-    status_t ret = CM_ERROR;
-    int timeout = g_dss_conn_info.timeout;
-    int wait_time = 0;
-    while (timeout == DSS_CONN_NEVER_TIMEOUT || timeout > wait_time) {
-        ret = dss_conn_retry(conn);
-        if (ret == CM_SUCCESS) {
-            break;
-        }
-        if (cm_get_os_error() == ENOENT) {
-            break;
-        }
-        cm_sleep(DSS_CONN_RETRY_INTERVAL);
-        wait_time += DSS_CONN_RETRY_INTERVAL;
-    }
-    return ret;
 }
 
 status_t dss_conn_create(pointer_t *result)
@@ -172,16 +152,22 @@ status_t dss_conn_create(pointer_t *result)
 
     errno_t rc = memset_s(conn, sizeof(dss_conn_t), 0, sizeof(dss_conn_t));
     if (rc != EOK) {
+        DSS_THROW_ERROR(ERR_SYSTEM_CALL, rc);
         DSS_FREE_POINT(conn);
         return CM_ERROR;
     }
 
     // init packet
     dss_init_packet(&conn->pack, conn->pipe.options);
-    if (dss_conn_sync(conn) != CM_SUCCESS) {
+    dss_conn_opt_t options = {.timeout = DSS_CONN_DEFAULT_TIME_OUT};
+    if (dss_try_conn(&options, conn) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CONNECT_FAILED, cm_get_os_error(), strerror(cm_get_os_error()));
         DSS_FREE_POINT(conn);
         return CM_ERROR;
     }
+#ifdef ENABLE_DSSTEST
+    conn->conn_pid = getpid();
+#endif
     *result = conn;
     return CM_SUCCESS;
 }
@@ -193,6 +179,20 @@ static status_t dss_get_conn(dss_conn_t **conn)
     if (cm_get_thv(GLOBAL_THV_OBJ0, (pointer_t *)conn) != CM_SUCCESS) {
         return CM_ERROR;
     }
+
+#ifdef ENABLE_DSSTEST
+    if ((*conn)->flag && (*conn)->conn_pid != getpid()) {
+        LOG_RUN_INF("Dss client need re-connect, last conn pid:%llu.", (uint64)(*conn)->conn_pid);
+        dss_disconnect(*conn);
+        if (dss_try_conn(NULL, *conn) != CM_SUCCESS) {
+            LOG_RUN_ERR("[DSS API] ABORT INFO: dss server stoped, application need restart.");
+            cm_fync_logfile();
+            _exit(1);
+        }
+        (*conn)->conn_pid = getpid();
+    }
+#endif
+
     if ((*conn)->pipe.link.uds.closed) {
         LOG_RUN_ERR("[DSS API] ABORT INFO : dss server stoped, application need restart.");
         cm_fync_logfile();
@@ -260,8 +260,12 @@ dss_dir_handle dss_dopen(const char *dir_path)
 int dss_dread(dss_dir_handle dir, dss_dir_item_t item, dss_dir_item_t *result)
 {
     if (item == NULL || result == NULL) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "errcodss_dir_item_t");
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "dss_dir_item_t");
         return DSS_ERROR;
+    }
+    *result = NULL;
+    if (dir == NULL) {
+        return DSS_SUCCESS;
     }
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
@@ -269,15 +273,13 @@ int dss_dread(dss_dir_handle dir, dss_dir_item_t item, dss_dir_item_t *result)
 
     gft_node_t *node = dss_read_dir_impl(conn, (dss_dir_t *)dir, CM_TRUE);
     if (node == NULL) {
-        *result = NULL;
         return DSS_SUCCESS;
     }
-    item->d_type = node->type;
+    item->d_type = (dss_item_type_t)node->type;
 
     int32 errcode = memcpy_s(item->d_name, DSS_MAX_NAME_LEN, node->name, DSS_MAX_NAME_LEN);
     if (SECUREC_UNLIKELY(errcode != EOK)) {
         DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
-        *result = NULL;
         return DSS_ERROR;
     }
     *result = item;
@@ -385,12 +387,12 @@ int dss_fopen(const char *file, int flag, int *handle)
     return (int)ret;
 }
 
-int dss_get_inst_status(int *status)
+int dss_get_inst_status(dss_server_status_t *dss_status)
 {
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when get inst status"));
-    return (int)dss_get_inst_status_on_server(conn, status);
+    return (int)dss_get_inst_status_on_server(conn, dss_status);
 }
 
 int dss_set_main_inst(void)
@@ -412,28 +414,6 @@ int dss_fclose(int handle)
     return (int)ret;
 }
 
-int dss_fexist(const char *name, bool *result)
-{
-    dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fexist get conn error."));
-
-    ret = dss_exist_file_impl(conn, name, result);
-    dss_get_api_volume_error();
-    return (int)ret;
-}
-
-int dss_dexist(const char *name, bool *result)
-{
-    dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("dexist get conn error."));
-
-    ret = dss_exist_dir_impl(conn, name, result);
-    dss_get_api_volume_error();
-    return (int)ret;
-}
-
 int dss_symlink(const char *oldpath, const char *newpath)
 {
     dss_conn_t *conn = NULL;
@@ -441,18 +421,6 @@ int dss_symlink(const char *oldpath, const char *newpath)
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("symlink get conn error."));
 
     return (int)dss_symlink_impl(conn, oldpath, newpath);
-}
-
-int dss_islink(const char *name, bool *result)
-{
-    dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
-    if (ret != CM_SUCCESS) {
-        LOG_RUN_ERR("islink get conn error.");
-        return ret;
-    }
-
-    return (int)dss_islink_impl(conn, name, result);
 }
 
 int dss_readlink(const char *link_path, char *buf, int bufsize)
@@ -466,7 +434,7 @@ int dss_readlink(const char *link_path, char *buf, int bufsize)
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("readlink get conn error."));
 
-    bool is_link = false;
+    bool32 is_link = false;
     CM_RETURN_IFERR(dss_islink_impl(conn, link_path, &is_link));
     if (!is_link) {
         DSS_THROW_ERROR(ERR_DSS_LINK_READ_NOT_LINK, link_path);
@@ -515,6 +483,8 @@ int dss_fread(int handle, void *buf, int size, int *read_size)
 
 int dss_pwrite(int handle, const void *buf, int size, long long offset)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     if (size < 0) {
         LOG_DEBUG_ERR("File size is invalid:%d.", size);
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "size must be a positive integer");
@@ -531,11 +501,18 @@ int dss_pwrite(int handle, const void *buf, int size, long long offset)
 
     ret = dss_pwrite_file_impl(conn, HANDLE_VALUE(handle), buf, size, offset);
     dss_get_api_volume_error();
+    if (ret == CM_SUCCESS) {
+        dss_end_stat(conn->session, &begin_tv, DSS_PWRITE);
+    }
+
     return (int)ret;
 }
 
 int dss_pread(int handle, void *buf, int size, long long offset, int *read_size)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
+
     if (read_size == NULL) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "read _size is NULL");
         return CM_ERROR;
@@ -556,6 +533,9 @@ int dss_pread(int handle, void *buf, int size, long long offset, int *read_size)
 
     ret = dss_pread_file_impl(conn, HANDLE_VALUE(handle), buf, size, offset, read_size);
     dss_get_api_volume_error();
+    if (ret == CM_SUCCESS) {
+        dss_end_stat(conn->session, &begin_tv, DSS_PREAD);
+    }
     return (int)ret;
 }
 
@@ -677,16 +657,6 @@ void dss_fsize_maxwr(const char *fname, long long *fsize)
 void dss_get_error(int *errcode, const char **errmsg)
 {
     cm_get_error(errcode, errmsg);
-
-    if (*errcode == 0) {
-        return;
-    }
-
-    if (*errcode < ERR_DSS_FLOOR || *errcode > ERR_DSS_CEIL) {
-        LOG_DEBUG_ERR("dss_get_error failed, errcode: %d", *errcode);
-        *errcode = -1;
-        *errmsg = "Failed to get dss errcode";
-    }
 }
 
 int dss_get_fname(int handle, char *fname, int fname_size)
@@ -805,11 +775,10 @@ int32 dss_init_logger(char *log_home, unsigned int log_level, unsigned int log_b
     log_param->audit_backup_file_count = log_backup_file_count;
     log_param->max_log_file_size = log_max_file_size;
     log_param->max_audit_file_size = log_max_file_size;
+    log_param->log_compressed = DSS_TRUE;
+    log_param->log_compress_buf = malloc(CM_LOG_COMPRESS_BUFSIZE);
     if (log_param->log_compress_buf == NULL) {
-        log_param->log_compress_buf = malloc(CM_LOG_COMPRESS_BUFSIZE);
-        if (log_param->log_compress_buf == NULL) {
-            return ERR_DSS_INIT_LOGGER_FAILED;
-        }
+        return ERR_DSS_INIT_LOGGER_FAILED;
     }
     cm_log_set_file_permissions(600);
     cm_log_set_path_permissions(700);
@@ -849,7 +818,7 @@ int dss_aio_prep_pread(void *iocb, int handle, void *buf, size_t count, long lon
     DSS_RETURN_IF_ERROR(ret);
 
     int dev_fd = DSS_INVALID_HANDLE;
-    long long new_offset;
+    long long new_offset = 0;
     ret = dss_get_fd_by_offset(conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_TRUE, &dev_fd, &new_offset);
     DSS_RETURN_IF_ERROR(ret);
 
@@ -869,7 +838,7 @@ int dss_aio_prep_pwrite(void *iocb, int handle, void *buf, size_t count, long lo
     DSS_RETURN_IF_ERROR(ret);
 
     int dev_fd = DSS_INVALID_HANDLE;
-    long long new_offset;
+    long long new_offset = 0;
     ret = dss_get_fd_by_offset(conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_FALSE, &dev_fd, &new_offset);
     DSS_RETURN_IF_ERROR(ret);
 

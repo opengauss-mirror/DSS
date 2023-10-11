@@ -47,7 +47,8 @@ status_t dss_get_block_from_disk(
     dss_vg_info_item_t *vg_item, dss_block_id_t block_id, char *buf, int64_t offset, int32 size, bool32 calc_checksum);
 status_t dss_check_block_version(
     dss_vg_info_item_t *vg_item, dss_block_id_t blockid, dss_block_type_t type, char *addr, bool32 *is_changed);
-
+status_t dss_refresh_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
+    dss_block_type_t type, char *buf, char **shm_buf);
 static inline int64 dss_get_block_offset(dss_vg_info_item_t *vg_item, uint64 block_size, uint64 blockid, uint64 auid)
 {
     return (int64)(block_size * blockid + dss_get_vg_au_size(vg_item->dss_ctrl) * auid);

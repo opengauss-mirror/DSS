@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
  *
  * DSS is licensed under Mulan PSL v2.
@@ -32,9 +32,9 @@
 #include "cm_signal.h"
 #include "cm_utils.h"
 #include "dss_errno.h"
-#include "dss_signal.h"
 #include "dss_instance.h"
 #include "dss_mes.h"
+#include "dss_blackbox.h"
 
 #ifndef _NSIG
 #define MAX_SIG_NUM 32
@@ -61,9 +61,7 @@ status_t dss_signal_proc_with_graceful_exit(void)
 
 status_t dss_signal_proc(void)
 {
-    DSS_RETURN_IF_ERROR(dss_ignore_signal_proc());
-    DSS_RETURN_IF_ERROR(cm_regist_signal(SIGINT, SIG_DFL));
-    DSS_RETURN_IF_ERROR(dss_coredump_signal_proc());
+    DSS_RETURN_IF_ERROR(dss_sigcap_handle_reg());
     return dss_signal_proc_with_graceful_exit();
 }
 #endif
@@ -108,7 +106,6 @@ static void dss_clean_server()
         cm_close_file(g_dss_instance.lock_fd);
     }
     CM_FREE_PTR(cm_log_param_instance()->log_compress_buf);
-    dss_destroy_reactors();
 }
 
 static void handle_main_wait(void)
@@ -125,6 +122,9 @@ static void handle_main_wait(void)
         if (periods == MILLISECS_PER_SECOND * SECONDS_PER_DAY / interval) {
             periods = 0;
             dss_ssl_ca_cert_expire();
+        }
+        if (dss_is_readwrite()) {
+            dss_check_unreg_volume();
         }
         cm_sleep(interval);
         periods++;
@@ -152,9 +152,6 @@ static status_t dss_init_background_tasks(void)
     return status;
 }
 
-typedef struct st_dss_srv_args {
-    char dss_home[DSS_MAX_PATH_BUFFER_SIZE];
-} dss_srv_args_t;
 typedef status_t (*dss_srv_arg_parser)(int argc, char **argv, int *argIdx, dss_srv_args_t *dss_args);
 typedef struct st_dss_srv_arg_handler {
     char name[DSS_MAX_PATH_BUFFER_SIZE];
@@ -184,7 +181,17 @@ status_t dss_srv_parse_home(int argc, char **argv, int *argIdx, dss_srv_args_t *
     (*argIdx)++;
     return CM_SUCCESS;
 }
-dss_srv_arg_handler_t g_dss_args_handler[] = {{"-D", dss_srv_parse_home}};
+
+status_t dss_srv_parse_maintain(int argc, char **argv, int *argIdx, dss_srv_args_t *dss_args)
+{
+    dss_args->is_maintain = true;
+    return CM_SUCCESS;
+}
+
+dss_srv_arg_handler_t g_dss_args_handler[] = {
+    {"-D", dss_srv_parse_home}, 
+    {"-M", dss_srv_parse_maintain}
+};
 
 status_t dss_srv_parse_one_agr(int argc, char **argv, dss_srv_args_t *dss_args, int *argIdx)
 {
@@ -216,6 +223,7 @@ static void dss_srv_usage()
                  "       dssserver [-h]\n"
                  "       dssserver [-D dss_home_path]\n"
                  "Option:\n"
+                 "\t -M                 DSS_MAINTAIN mode.\n"
                  "\t -h                 show the help information.\n"
                  "\t -D                 specify dss server home path.\n");
 }
@@ -238,7 +246,6 @@ int main(int argc, char **argv)
             return CM_SUCCESS;
         }
     }
-
     dss_srv_args_t dss_args;
     errno_t errcode = memset_s(&dss_args, sizeof(dss_args), 0, sizeof(dss_args));
     securec_check_ret(errcode);
@@ -246,8 +253,12 @@ int main(int argc, char **argv)
         (void)fflush(stdout);
         return CM_ERROR;
     }
-
-    if (dss_startup(&g_dss_instance, dss_args.dss_home) != CM_SUCCESS) {
+#ifndef WIN32
+    sigset_t sign_old_mask;
+    (void)sigprocmask(0, NULL, &sign_old_mask);
+    (void)sigprocmask(SIG_UNBLOCK, &sign_old_mask, NULL);
+#endif  
+    if (dss_startup(&g_dss_instance, dss_args) != CM_SUCCESS) {
         printf("dss failed to startup.\n");
         fflush(stdout);
         dss_clean_server();

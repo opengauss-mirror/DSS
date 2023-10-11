@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
  *
  * DSS is licensed under Mulan PSL v2.
@@ -26,6 +26,7 @@
 #include "dss_shm.h"
 #include "cm_timer.h"
 #include "cm_error.h"
+#include "cm_iofence.h"
 #include "dss_errno.h"
 #include "dss_defs.h"
 #include "dss_api.h"
@@ -35,7 +36,6 @@
 #include "dss_lsnr.h"
 #include "dss_redo.h"
 #include "dss_service.h"
-#include "dss_signal.h"
 #include "dss_instance.h"
 #include "dss_simulation_cm.h"
 #include "dss_reactor.h"
@@ -51,6 +51,7 @@ dss_log_def_t g_dss_instance_log[] = {
     {LOG_RUN, "run/dssinstance.rlog"},
     {LOG_ALARM, "alarm/dssinstance.alog"},
     {LOG_AUDIT, "audit/dssinstance.aud"},
+    {LOG_BLACKBOX, "blackbox/dssinstance.blog"},
 };
 
 static void instance_set_pool_def(ga_pool_id_e pool_id, uint32 obj_count, uint32 obj_size, uint32 ex_max)
@@ -284,6 +285,8 @@ status_t dss_recover_no_cm(dss_instance_t *inst)
         LOG_RUN_INF("inst %u set status flag %u when server start.", curr_id, DSS_STATUS_READWRITE);
         ret = dss_recover_from_instance(inst);
         if (ret == CM_SUCCESS) {
+            // when no cm, set in cluster
+            g_dss_instance.is_join_cluster = CM_TRUE;
             inst->status = DSS_STATUS_OPEN;
         }
         return ret;
@@ -308,9 +311,13 @@ status_t dss_recover_no_cm(dss_instance_t *inst)
                 cm_fync_logfile();
                 _exit(1);
             }
+            // when no cm, set in cluster
+            g_dss_instance.is_join_cluster = CM_TRUE;
             inst->status = DSS_STATUS_OPEN;
         } else {
             dss_set_server_status_flag(DSS_STATUS_READONLY);
+            // when no cm, set in cluster
+            g_dss_instance.is_join_cluster = CM_TRUE;
             inst->status = DSS_STATUS_OPEN;
         }
         return CM_SUCCESS;
@@ -322,6 +329,8 @@ status_t dss_recover_no_cm(dss_instance_t *inst)
         LOG_RUN_INF("inst %u set status flag %u when server start.", curr_id, DSS_STATUS_READWRITE);
         ret = dss_recover_from_instance(inst);
         if (ret == CM_SUCCESS) {
+            // when no cm, set in cluster
+            g_dss_instance.is_join_cluster = CM_TRUE;
             inst->status = DSS_STATUS_OPEN;
         }
         return ret;
@@ -373,10 +382,15 @@ static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
     return CM_SUCCESS;
 }
 
-static void dss_init_maintain(dss_instance_t *inst)
+static void dss_init_maintain(dss_instance_t *inst, dss_srv_args_t dss_args)
 {
-    char *maintain_env = getenv(DSS_MAINTAIN_ENV);
-    inst->is_maintain = (maintain_env != NULL && cm_strcmpi(maintain_env, "TRUE") ==0);
+    if (dss_args.is_maintain) {
+        inst->is_maintain = true;
+    } else {
+        char *maintain_env = getenv(DSS_MAINTAIN_ENV);
+        inst->is_maintain = (maintain_env != NULL && cm_strcmpi(maintain_env, "TRUE") ==0);
+    }
+    
     if (inst->is_maintain) {
         LOG_RUN_INF("DSS_MAINTAIN is TRUE");
     } else {
@@ -407,15 +421,23 @@ static status_t instance_init(dss_instance_t *inst)
     return CM_SUCCESS;
 }
 
-status_t dss_startup(dss_instance_t *inst, char *home)
+static void dss_init_cluster_proto_ver(dss_instance_t *inst)
+{
+    for (uint32 i = 0; i < DSS_MAX_INSTANCES; i++) {
+        inst->cluster_proto_vers[i] = DSS_INVALID_VERSION;
+    }
+}
+
+status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
 {
     status_t status;
     errno_t errcode = memset_s(inst, sizeof(dss_instance_t), 0, sizeof(dss_instance_t));
     securec_check_ret(errcode);
+    dss_init_cluster_proto_ver(inst);
     inst->lock_fd = CM_INVALID_INT32;
     dss_set_server_flag();
     g_dss_instance_status = &inst->status;
-    status = dss_set_cfg_dir(home, &inst->inst_cfg);
+    status = dss_set_cfg_dir(dss_args.dss_home, &inst->inst_cfg);
     DSS_RETURN_IFERR2(status, (void)printf("Environment variant DSS_HOME not found!\n"));
     status = dss_load_config(&inst->inst_cfg);
     DSS_RETURN_IFERR2(status, (void)printf("%s\nFailed to load parameters!\n", cm_get_errormsg(cm_get_error_code())));
@@ -424,7 +446,7 @@ status_t dss_startup(dss_instance_t *inst, char *home)
     status = dss_init_loggers(
         &inst->inst_cfg, g_dss_instance_log, sizeof(g_dss_instance_log) / sizeof(dss_log_def_t), "dssserver");
     DSS_RETURN_IFERR2(status, (void)printf("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code())));
-    dss_init_maintain(inst);
+    dss_init_maintain(inst, dss_args);
     LOG_RUN_INF("DSS instance begin to initialize.");
     status = instance_init(inst);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to initialized!"));
@@ -687,12 +709,10 @@ bool32 dss_check_whether_recovery(dss_instance_t *inst, uint32 curr_id)
 
 void dss_recovery_when_get_lock(dss_instance_t *inst, uint32 curr_id, bool32 grab_lock)
 {
-    cm_spin_lock(&g_dss_instance.switch_lock, NULL);
     bool32 first_start = CM_FALSE;
     if (!grab_lock) {
         bool32 need_recovery = dss_check_whether_recovery(inst, curr_id);
         if (!need_recovery) {
-            cm_spin_unlock(&g_dss_instance.switch_lock);
             return;
         }
         first_start = (inst->status == DSS_STATUS_PREPARE);
@@ -709,7 +729,6 @@ void dss_recovery_when_get_lock(dss_instance_t *inst, uint32 curr_id, bool32 gra
     inst->status = DSS_STATUS_RECOVERY;
     status_t ret = dss_recover_from_instance(inst);
     if (ret != CM_SUCCESS) {
-        cm_spin_unlock(&g_dss_instance.switch_lock);
         LOG_RUN_ERR("[DSS] ABORT INFO: Recover failed when get cm lock.");
         cm_fync_logfile();
         _exit(1);
@@ -717,13 +736,11 @@ void dss_recovery_when_get_lock(dss_instance_t *inst, uint32 curr_id, bool32 gra
     if (!first_start) {
         dss_session_t *session = NULL;
         if (dss_create_session(NULL, &session) != CM_SUCCESS) {
-            cm_spin_unlock(&g_dss_instance.switch_lock);
             LOG_RUN_ERR("[DSS] ABORT INFO: Refresh meta info failed when create session.");
             cm_fync_logfile();
             _exit(1);
         }
         if (dss_refresh_meta_info(session) != CM_SUCCESS) {
-            cm_spin_unlock(&g_dss_instance.switch_lock);
             LOG_RUN_ERR("[DSS] ABORT INFO: Refresh meta info failed after recovery.");
             cm_fync_logfile();
             _exit(1);
@@ -733,8 +750,9 @@ void dss_recovery_when_get_lock(dss_instance_t *inst, uint32 curr_id, bool32 gra
     }
     dss_set_server_status_flag(DSS_STATUS_READWRITE);
     LOG_RUN_INF("inst %u set status flag %u when get cm lock.", curr_id, DSS_STATUS_READWRITE);
+    // when primary, no need to check result
+    g_dss_instance.is_join_cluster = CM_TRUE;
     inst->status = DSS_STATUS_OPEN;
-    cm_spin_unlock(&g_dss_instance.switch_lock);
 }
 /*
     1、old_master_id == master_id, just return;
@@ -745,31 +763,53 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
     if (!inst->cm_res.is_valid) {
         return;
     }
+    cm_spin_lock(&g_dss_instance.switch_lock, NULL);
     uint32 old_master_id = dss_get_master_id();
     bool32 grab_lock = CM_FALSE;
     uint32 master_id = dss_get_cm_lock_owner(inst, &grab_lock, CM_TRUE);
-    // master no change
-    if (old_master_id == master_id) {
-        return;
-    }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)inst_cfg->params.inst_id;
+    // master no change
+    if (old_master_id == master_id) {
+        // primary, no need check
+        if (master_id == curr_id) {
+            cm_spin_unlock(&g_dss_instance.switch_lock);
+            return;
+        }
+        if (inst->is_join_cluster) {
+            cm_spin_unlock(&g_dss_instance.switch_lock);
+            return;
+        }
+        // before set open, join to cluster
+        if (!dss_check_join_cluster()) {
+            cm_spin_unlock(&g_dss_instance.switch_lock);
+            return;
+        }
+        inst->status = DSS_STATUS_OPEN;
+    }
     // standby is started or masterid has been changed
     if (master_id != curr_id) {
         dss_set_master_id(master_id);
         dss_set_server_status_flag(DSS_STATUS_READONLY);
         LOG_RUN_INF("inst %u set status flag %u when not get cm lock.", curr_id, DSS_STATUS_READONLY);
+        // before set open, join to cluster
+        if (!dss_check_join_cluster()) {
+            cm_spin_unlock(&g_dss_instance.switch_lock);
+            return;
+        }
         inst->status = DSS_STATUS_OPEN;
+        cm_spin_unlock(&g_dss_instance.switch_lock);
         return;
     }
     /*1、grab lock success 2、set main,other switch lock 3、restart, lock no transfer*/
     dss_recovery_when_get_lock(inst, curr_id, grab_lock);
-    return;
+    cm_spin_unlock(&g_dss_instance.switch_lock);
 }
 
 #define DSS_RECOVERY_INTERVAL 500
 void dss_get_cm_lock_and_recover(thread_t *thread) 
 {
+    cm_set_thread_name("recovery");
     while (!thread->closed) {
         dss_instance_t *inst = (dss_instance_t *)thread->argument;
         dss_get_cm_lock_and_recover_inner(inst);
@@ -828,4 +868,115 @@ uint64 dss_get_inst_work_status(void)
 void dss_set_inst_work_status(uint64 cur_inst_map)
 {
     (void)cm_atomic_set((atomic_t *)&g_dss_instance.inst_work_status_map, (int64)cur_inst_map);
+}
+
+bool32 dss_check_join_cluster()
+{
+    if (g_dss_instance.is_join_cluster) {
+        return CM_TRUE;
+    }
+
+    if (dss_get_master_id() == g_dss_instance.inst_cfg.params.inst_id) {
+        g_dss_instance.is_join_cluster = CM_TRUE;
+        LOG_RUN_INF("Join cluster success by primary.");
+    } else {
+        // try register to new master to join
+        bool32 join_succ = CM_FALSE;
+        status_t status = dss_join_cluster(&join_succ);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Join cluster fail, wait next try.");
+            cm_reset_error();
+            return CM_FALSE;
+        }
+        LOG_DEBUG_INF("Join cluster result [%u].", (uint32)join_succ);
+        if (!join_succ) {
+            return CM_FALSE;
+        }
+        g_dss_instance.is_join_cluster = CM_TRUE;
+        LOG_RUN_INF("Join cluster success by standby.");
+    }
+
+    return CM_TRUE;
+}
+
+static bool32 dss_find_unreg_volume(char **dev, uint8 *vg_idx, uint8 *volume_id)
+{
+    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+        for (uint32 j = 0; j < DSS_MAX_VOLUMES; j++) {
+            if (g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].flag != VOLUME_PREPARE) {
+                continue;
+            }
+            dss_lock_vg_mem_and_shm_s(NULL, &g_vgs_info->volume_group[i]);
+            if (g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].flag != VOLUME_PREPARE) {
+                dss_unlock_vg_mem_and_shm(NULL, &g_vgs_info->volume_group[i]);
+                continue;
+            }
+            *dev = g_vgs_info->volume_group[i].dss_ctrl->volume.defs[j].name;
+            *vg_idx = (uint8)i;
+            *volume_id = (uint8)j;
+            dss_unlock_vg_mem_and_shm(NULL, &g_vgs_info->volume_group[i]);
+            return CM_TRUE;
+        }
+    }
+    return CM_FALSE;
+}
+
+static bool32 dss_is_register(iof_reg_in_t *reg_info, int64 host_id)
+{
+    for (int32 i = 0; i < reg_info->key_count; i++) {
+        if (reg_info->reg_keys[i] == host_id + 1) {
+            return CM_TRUE;
+        }
+    }
+    return CM_FALSE;
+}
+
+void dss_check_unreg_volume(void)
+{
+    uint8 vg_idx, volume_id;
+    iof_reg_in_t reg_info;
+    (void)memset_s(&reg_info, sizeof(reg_info), 0 ,sizeof(reg_info));
+
+    bool32 is_unreg = dss_find_unreg_volume(&reg_info.dev, &vg_idx, &volume_id);
+    if (!is_unreg) {
+        return;
+    }
+    status_t ret = cm_iof_inql(&reg_info);
+    if (ret != CM_SUCCESS) {
+        return;
+    }
+    bool32 remote = CM_FALSE;
+    dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[0];
+    if (dss_lock_vg_storage_r(vg_item, vg_item->entry_path, g_inst_cfg) != CM_SUCCESS) {
+        return;
+    }
+    dss_lock_vg_mem_and_shm_s(NULL, vg_item);
+    ret = dss_load_vg_ctrl_part(vg_item, (int64)(DSS_VOLUME_HEAD_SIZE - DSS_DISK_UNIT_SIZE),
+        &vg_item->dss_ctrl->global_ctrl, DSS_DISK_UNIT_SIZE, &remote);
+    dss_unlock_vg_mem_and_shm(NULL, vg_item);
+    dss_unlock_vg_storage(vg_item, vg_item->entry_path, g_inst_cfg);
+    if (ret != CM_SUCCESS) {
+        return;
+    }
+
+    bool32 is_reg = CM_FALSE;
+    for (uint8 i = 0; i < CM_MAX_INSTANCES; i++) {
+        is_reg = cm_bitmap64_exist(&vg_item->dss_ctrl->global_ctrl.cluster_node_info, i);
+        if (is_reg && !dss_is_register(&reg_info, i)) {
+            return;
+        }
+    }
+
+    vg_item = &g_vgs_info->volume_group[vg_idx];
+    dss_lock_vg_mem_and_shm_x(NULL, vg_item);
+    if (vg_item->dss_ctrl->volume.defs[volume_id].flag == VOLUME_FREE) {
+        dss_unlock_vg_mem_and_shm(NULL, vg_item);
+        return;
+    }
+    vg_item->dss_ctrl->volume.defs[volume_id].flag = VOLUME_OCCUPY;
+    ret = dss_update_volume_ctrl(vg_item);
+    dss_unlock_vg_mem_and_shm(NULL, vg_item);
+    if (ret != CM_SUCCESS) {
+        return;
+    }
 }

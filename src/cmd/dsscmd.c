@@ -31,7 +31,7 @@
 #include "cm_config.h"
 #include "cm_dlock.h"
 #include "cm_list.h"
-#include "dss_system.h"
+#include "cm_system.h"
 #include "cm_cipher.h"
 #include "cm_encrypt.h"
 #include "cm_utils.h"
@@ -47,7 +47,7 @@
 #include "dss_api_impl.h"
 #include "dsscmd_inq.h"
 #include "dsscmd_cli_msg.h"
-#include "dsscmd_create_vg.h"
+#include "dsscmd_volume.h"
 #include "dsscmd_showdisk.h"
 #include "dsscmd_du.h"
 #include "dsscmd_find.h"
@@ -67,6 +67,11 @@
 #define DSS_ARG_IDX_4 4
 #define DSS_ARG_IDX_5 5
 
+typedef enum en_dss_help_type {
+    DSS_HELP_DETAIL = 0,
+    DSS_HELP_SIMPLE,
+} dss_help_type;
+
 // cmd format : cmd subcmd [-f val]
 #define CMD_ARGS_AT_LEAST 2
 #define CMD_COMMAND_INJECTION_COUNT 22
@@ -74,6 +79,7 @@
 #define DSS_DEFAULT_MEASURE "B"
 #define DSS_SUBSTR_UDS_PATH "UDS:"
 #define DSS_DEFAULT_VG_TYPE 't' /* show vg information in table format by default */
+static const char dss_ls_print_flag[] = {'d', '-', 'l'};
 
 // clang-format off
 config_item_t g_dss_admin_parameters[] = {
@@ -136,7 +142,7 @@ typedef struct st_dss_args_set_t {
     cmd_parse_check_t args_check;
 } dss_args_set_t;
 
-typedef void (*dss_admin_help)(char *prog_name);
+typedef void (*dss_admin_help)(const char *prog_name, int print_flag);
 typedef status_t (*dss_admin_cmd_proc)(void);
 typedef struct st_dss_admin_cmd_t {
     char cmd[CM_MAX_NAME_LEN];
@@ -184,7 +190,7 @@ static status_t cmd_check_dss_home(const char *dss_home)
 static status_t cmd_check_uds(const char *uds)
 {
     const char *uds_prefix = "UDS:";
-    if (strlen(uds) < strlen(uds_prefix) + 1 || memcmp(uds, uds_prefix, strlen(uds_prefix)) != 0) {
+    if (strlen(uds) < strlen(uds_prefix) || memcmp(uds, uds_prefix, strlen(uds_prefix)) != 0) {
         DSS_PRINT_ERROR("uds name should start with %s.\n", uds_prefix);
         return CM_ERROR;
     }
@@ -683,6 +689,17 @@ static status_t cmd_parse_args(int argc, char **argv, dss_args_set_t *args_set)
     return cmd_parse_check(args_set->cmd_args, args_set->args_size);
 }
 
+static inline void help_param_dsshome(void)
+{
+    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
+}
+
+static inline void help_param_uds(void)
+{
+    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
+                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+}
+
 static dss_args_t cmd_cv_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
     {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
@@ -696,15 +713,18 @@ static dss_args_set_t cmd_cv_args_set = {
     NULL,
 };
 
-static void cv_help(char *prog_name)
+static void cv_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s cv <-g vg_name> <-v vol_name> [-s au_size] [-D DSS_HOME]\n", prog_name);
     (void)printf("[manage command] create volume group\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name\n");
     (void)printf("-v/--vol_name <vol_name>, <required>, the volume name\n");
     (void)printf("-s/--au_size [au_size], [optional], the size of single alloc unit of volume, unit is KB, "
                  "at least 2MB, default value is 2MB\n");
-    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
+    help_param_dsshome();
 }
 
 static status_t cv_proc(void)
@@ -759,13 +779,13 @@ static status_t dss_uds_get_connection(const char *server_locator, dss_conn_t *c
             return CM_ERROR;
         }
 
-        status = dss_connect_ex((const char *)abs_server_path, NULL, NULL, conn);
+        status = dss_connect_ex((const char *)abs_server_path, NULL, conn);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to connect,url:%s.\n", abs_server_path);
             return status;
         }
     } else {
-        status = dss_connect_ex(server_locator, NULL, NULL, conn);
+        status = dss_connect_ex(server_locator, NULL, conn);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to connect,url:%s.\n", server_locator);
             return status;
@@ -787,47 +807,18 @@ static dss_args_set_t cmd_lsvg_args_set = {
     NULL,
 };
 
-static void lsvg_help(char *prog_name)
+static void lsvg_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s lsvg [-m measure_type] [-t show_type] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]Show information of volume group and disk usage space\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-m/--measure_type <measure_type>, [optional], B show size by Byte, K show size by kB ,"
                  "M show size by MB ,G show size by GB,  T show size by TB, default show size by Byte\n");
     (void)printf("-t/--show_type <show_type>, [optional], d show information in detail , t show information in table, "
                  "default value is 't'\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
-}
-
-static int dss_load_ctrl_sync(dss_conn_t *connection, const char *vg_name, uint32 index)
-{
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
-    // make up packet
-    dss_init_set(&connection->pack);
-    send_pack = &connection->pack;
-    send_pack->head->cmd = DSS_CMD_LOAD_CTRL;
-    send_pack->head->flags = 0;
-
-    // name
-    CM_RETURN_IFERR(dss_check_name(vg_name));
-    CM_RETURN_IFERR(dss_put_str(send_pack, vg_name));
-    CM_RETURN_IFERR(dss_put_int32(send_pack, index));
-
-    // send it and wait for ack
-    ack_pack = &connection->pack;
-    CM_RETURN_IFERR(dss_call_ex(&connection->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-    return CM_SUCCESS;
+    help_param_uds();
 }
 
 static status_t dss_load_volumes(vg_vlm_space_info_t *volume_space, dss_volume_def_t *defs, const dss_ctrl_t *dss_ctrl)
@@ -835,7 +826,7 @@ static status_t dss_load_volumes(vg_vlm_space_info_t *volume_space, dss_volume_d
     double dss_vg_free = 0;
     double dss_vg_size = 0;
     for (uint32 vol_id = 0; vol_id < DSS_MAX_VOLUMES; vol_id++) {
-        if (defs[vol_id].flag != 1) {
+        if (defs[vol_id].flag == VOLUME_FREE) {
             continue;
         }
 
@@ -911,11 +902,11 @@ static status_t dss_load_vginfo_sync(dss_conn_t *connection, dss_allvg_vlm_space
     status_t status;
     dss_env_t *dss_env = dss_get_env();
     if (!dss_env->initialized) {
+        DSS_THROW_ERROR(ERR_DSS_ENV_NOT_INITIALIZED);
         return CM_ERROR;
     }
-    dss_vg_info_t *dss_vg_info = dss_env->dss_vg_info;
     dss_latch_s(&dss_env->latch);
-    status = dss_load_vginfo_sync_core(connection, allvg_vlm_space_t, dss_vg_info);
+    status = dss_load_vginfo_sync_core(connection, allvg_vlm_space_t, g_vgs_info);
     dss_unlatch(&dss_env->latch);
     return status;
 }
@@ -1167,6 +1158,8 @@ static status_t dss_load_local_server_config(
 static dss_args_t cmd_adv_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
     {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -1176,14 +1169,16 @@ static dss_args_set_t cmd_adv_args_set = {
     NULL,
 };
 
-static void adv_help(char *prog_name)
+static void adv_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s adv <-g vg_name> <-v vol_name> [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("\nUsage:%s adv <-g vg_name> <-v vol_name> [-D DSS_HOME] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]add volume in volume group\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name need to add volume\n");
     (void)printf("-v/--vol_name <vol_name>, <required>, the volume name need to be added to volume group\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t get_connection_by_input_args(char *input_args, dss_conn_t *connection)
@@ -1205,22 +1200,29 @@ static status_t get_connection_by_input_args(char *input_args, dss_conn_t *conne
 
 static status_t adv_proc(void)
 {
-    const char *path = cmd_adv_args[DSS_ARG_IDX_0].input_args;
-    const char *vol_name = cmd_adv_args[DSS_ARG_IDX_1].input_args;
+    const char *vg_name = cmd_adv_args[DSS_ARG_IDX_0].input_args;
+    const char *vol_path = cmd_adv_args[DSS_ARG_IDX_1].input_args;
+    const char *home = cmd_adv_args[DSS_ARG_IDX_2].input_args;
     dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_adv_args[DSS_ARG_IDX_2].input_args, &connection);
+    status_t status = get_connection_by_input_args(cmd_adv_args[DSS_ARG_IDX_3].input_args, &connection);
     if (status != CM_SUCCESS) {
+        status = dss_add_volume_offline(home, vg_name, vol_path);
+        if (status != CM_SUCCESS) {
+            DSS_PRINT_ERROR("Failed to add volume offline, vg_name is %s, volume path is %s.\n", vg_name, vol_path);
+        } else {
+            DSS_PRINT_INF("Succeed to add volume offline, vg_name is %s, volume path is %s.\n", vg_name, vol_path);
+        }
         return status;
     }
 
-    status = dsscmd_adv_impl(&connection, path, vol_name);
+    status = dsscmd_adv_impl(&connection, vg_name, vol_path);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to add volume, path is %s, volume name is %s.\n", path, vol_name);
+        DSS_PRINT_ERROR("Failed to add volume online, vg_name is %s, volume path is %s.\n", vg_name, vol_path);
     } else {
-        DSS_PRINT_INF("Succeed to add volume, path is %s, volume name is %s.\n", path, vol_name);
+        DSS_PRINT_INF("Succeed to add volume online, vg_name is %s, volume path is %s.\n", vg_name, vol_path);
     }
-    dss_disconnect_ex(&connection);
 
+    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -1236,14 +1238,16 @@ static dss_args_set_t cmd_mkdir_args_set = {
     NULL,
 };
 
-static void mkdir_help(char *prog_name)
+static void mkdir_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s mkdir <-p path> <-d dir_name> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]make dir\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-p/--path <path>, <required>, the name need to add dir\n");
     (void)printf("-d/--dir_name <dir_name>, <required>, the dir name need to be added to path\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t mkdir_proc(void)
@@ -1278,13 +1282,15 @@ static dss_args_set_t cmd_touch_args_set = {
     NULL,
 };
 
-static void touch_help(char *prog_name)
+static void touch_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s touch <-p path> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]create file\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-p/--path <path>, <required>, file need to touch, path must begin with '+'\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t touch_proc(void)
@@ -1306,6 +1312,59 @@ static status_t touch_proc(void)
     return status;
 }
 
+static dss_args_t cmd_ts_args[] = {
+    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
+        0},
+};
+
+static dss_args_set_t cmd_ts_args_set = {
+    cmd_ts_args,
+    sizeof(cmd_ts_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+static void ts_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:%s ts [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("[client command]Show current API invoking time\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    help_param_uds();
+}
+
+static status_t ts_proc(void)
+{
+    dss_conn_t connection;
+    status_t status = get_connection_by_input_args(cmd_ts_args[DSS_ARG_IDX_0].input_args, &connection);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+
+    dss_session_stat_t time_stat[DSS_EVT_COUNT];
+    status = dss_get_time_stat_on_server(&connection, time_stat, DSS_EVT_COUNT);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to get time stat.\n");
+        dss_disconnect_ex(&connection);
+        return CM_ERROR;
+    }
+    char *time_stat_event[] = {"DSS_PREAD", "DSS_PWRITE"};
+    (void)printf("|      event     |   count   | total_wait_time | avg_wait_time | max_single_time \n");
+    (void)printf("+----------------+-----------+-----------------+---------------+-----------------\n");
+    for (int i = 0; i < DSS_EVT_COUNT; i++) {
+        if (time_stat[i].wait_count == 0) {
+            (void)printf("|%-16s|%-11d|%-17d|%-15d|%-17d\n", time_stat_event[i], 0, 0, 0, 0);
+            continue;
+        }
+        (void)printf("|%-16s|%-11lld|%-17lld|%-15lld|%-17lld\n", time_stat_event[i], time_stat[i].wait_count,
+            time_stat[i].total_wait_time, time_stat[i].total_wait_time / time_stat[i].wait_count,
+            time_stat[i].max_single_time);
+    }
+    (void)printf("+----------------+-----------+-----------------+---------------+-----------------\n");
+    dss_disconnect_ex(&connection);
+    return CM_SUCCESS;
+}
+
 static dss_args_t cmd_ls_args[] = {
     {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
     {'m', "measure_type", CM_FALSE, CM_TRUE, cmd_check_measure_type, NULL, NULL, 0, NULL, NULL, 0},
@@ -1318,15 +1377,17 @@ static dss_args_set_t cmd_ls_args_set = {
     NULL,
 };
 
-static void ls_help(char *prog_name)
+static void ls_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s ls <-p path> [-m measure_type] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]Show information of volume group and disk usage space\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-p/--path <path>, <required>, show information for it\n");
     (void)printf("-m/--measure_type <measure_type>, [optional], B show size by Byte, K show size by kB ,"
                  "M show size by MB ,G show size by GB,  T show size by TB, default show size by Byte\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t ls_get_parameter(const char **path, const char **measure, char *server_locator)
@@ -1347,12 +1408,114 @@ static status_t ls_get_parameter(const char **path, const char **measure, char *
     return CM_SUCCESS;
 }
 
+static status_t dss_ls_print_node_info(gft_node_t *node, const char*measure)
+{
+    char time[512] = {0};
+    if (cm_time2str(node->create_time, "YYYY-MM-DD HH24:mi:ss", time, sizeof(time)) != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to get create time of node %s.\n", node->name);
+        return CM_ERROR;
+    }
+    double size = (double)node->size;
+    if (node->size != 0) {
+        size = dss_convert_size(size, measure);
+    }
+    if (node->type >GFT_LINK) {
+        DSS_PRINT_ERROR("Invalid node type %u.\n", node->type);
+        return CM_ERROR;
+    }
+    char type = dss_ls_print_flag[node->type];
+    double written_size = (double)node->written_size;
+    if (node->written_size != 0) {
+        written_size = dss_convert_size(written_size, measure);
+    }
+    (void)printf("%-5c%-20s%-14.05f %-14.05f %-64s\n", type, time, size, written_size, node->name);
+    return CM_SUCCESS;
+}
+
+static status_t dss_ls_print_file(dss_conn_t *conn, const char *path, const char*measure)
+{
+    gft_node_t *node = NULL;
+    dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE, CM_TRUE};
+    DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_FILE, &output_info, CM_FALSE));
+    if (node == NULL) {
+        LOG_DEBUG_INF("Failed to find path %s with the file type", path);
+        return CM_ERROR;
+    }
+    (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
+    return dss_ls_print_node_info(node, measure);
+}
+
+static status_t dss_ls_try_print_link(dss_conn_t *conn, const char *path, const char*measure)
+{
+    if (dss_is_valid_link_path(path)) {
+        gft_node_t *node = NULL;
+        dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE, CM_TRUE};
+        DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE));
+        if (node != NULL) {
+            (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
+            return dss_ls_print_node_info(node, measure);
+        }
+    }
+    LOG_DEBUG_INF("Failed to try print path %s with the link type", path);
+    return CM_ERROR;
+}
+
+static status_t ls_proc_core(dss_conn_t *conn, const char *path, const char*measure)
+{
+    gft_node_t *node = NULL;
+    dss_vg_info_item_t *vg_item = NULL;
+    char name[DSS_MAX_NAME_LEN] = {0};
+    status_t status = CM_ERROR;
+    bool32 exist = false;
+    gft_item_type_t type;
+    DSS_RETURN_IFERR2(
+        dss_find_vg_by_dir(path, name, &vg_item), DSS_PRINT_ERROR("Failed to find vg when ls the path %s.\n", path));
+    DSS_RETURN_IFERR2(
+        dss_exist_impl(conn, path, &exist, &type), DSS_PRINT_ERROR("Failed to check the path %s exists.\n", path));
+    if (!exist) {
+        DSS_PRINT_ERROR("The path %s is not exist.\n", path);
+        return CM_ERROR;
+    }
+    if (type == GFT_FILE) {
+        DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
+        status = dss_ls_print_file(conn, path, measure);
+        DSS_UNLOCK_VG_META_S(vg_item, conn->session);
+        if (status == CM_SUCCESS) {
+            DSS_PRINT_INF("Succeed to ls file info.\n");
+            return status;
+        }
+    } else if (type == GFT_LINK || type == GFT_LINK_TO_FILE || type == GFT_LINK_TO_PATH) {
+        DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
+        status = dss_ls_try_print_link(conn, path, measure);
+        DSS_UNLOCK_VG_META_S(vg_item, conn->session);
+        if (status == CM_SUCCESS) {
+            DSS_PRINT_INF("Succeed to ls link info.\n");
+            return status;
+        }
+    }
+    dss_dir_t *dir = dss_open_dir_impl(conn, path, CM_TRUE);
+    if (dir == NULL) {
+        DSS_PRINT_ERROR("Failed to open dir %s.\n", path);
+        return CM_ERROR;
+    }
+    (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
+    while ((node = dss_read_dir_impl(conn, dir, CM_TRUE)) != NULL) {
+        status = dss_ls_print_node_info(node, measure);
+        if (status != CM_SUCCESS) {
+            (void)dss_close_dir_impl(conn, dir);
+            return CM_ERROR;
+        }
+    }
+    (void)dss_close_dir_impl(conn, dir);
+    DSS_PRINT_INF("Succeed to ls dir info.\n");
+    return CM_SUCCESS;
+}
+
 static status_t ls_proc(void)
 {
     const char *path = NULL;
     char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
     const char *measure = NULL;
-
     status_t status = ls_get_parameter(&path, &measure, server_locator);
     if (status != CM_SUCCESS) {
         return status;
@@ -1365,38 +1528,9 @@ static status_t ls_proc(void)
         return status;
     }
 
-    dss_dir_t *dir = dss_open_dir_impl(&connection, path, CM_TRUE);
-    if (!dir) {
-        DSS_PRINT_ERROR("Failed to open dir %s.\n", path);
-        dss_disconnect_ex(&connection);
-        return CM_ERROR;
-    }
-    (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
-    gft_node_t *node;
-    char time[512];
-    while ((node = dss_read_dir_impl(&connection, dir, CM_TRUE)) != NULL) {
-        if (cm_time2str(node->create_time, "YYYY-MM-DD HH24:mi:ss", time, sizeof(time)) != CM_SUCCESS) {
-            DSS_PRINT_ERROR("Failed to get create time of node %s.\n", node->name);
-            (void)dss_close_dir_impl(&connection, dir);
-            dss_disconnect_ex(&connection);
-            return CM_ERROR;
-        }
-        double size = (double)node->size;
-        if (node->size != 0) {
-            size = dss_convert_size(size, measure);
-        }
-        char type = node->type == GFT_PATH ? 'd' : node->type == GFT_FILE ? '-' : 'l';
-        double written_size = (double)node->written_size;
-        if (node->written_size != 0) {
-            written_size = dss_convert_size(written_size, measure);
-        }
-        (void)printf("%-5c%-20s%-14.05f %-14.05f %-64s\n", type, time, size, written_size, node->name);
-    }
-
-    (void)dss_close_dir_impl(&connection, dir);
+    status = ls_proc_core(&connection, path, measure);
     dss_disconnect_ex(&connection);
-    DSS_PRINT_INF("Succeed to ls.\n");
-    return CM_SUCCESS;
+    return status;
 }
 
 static dss_args_t cmd_cp_args[] = {
@@ -1411,14 +1545,16 @@ static dss_args_set_t cmd_cp_args_set = {
     NULL,
 };
 
-static void cp_help(char *prog_name)
+static void cp_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s cp <-s src_file> <-d dest_file> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]copy source file to destination file\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-s/--src_file <src_file>, <required>, source file\n");
     (void)printf("-d/--dest_file <dest_file>, <required>, destination file\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t cp_proc(void)
@@ -1455,13 +1591,15 @@ static dss_args_set_t cmd_rm_args_set = {
     NULL,
 };
 
-static void rm_help(char *prog_name)
+static void rm_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s rm <-p path> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]remove device\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-p/--path <path>, <required>, device path, must begin with '+'\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t rm_proc(void)
@@ -1495,14 +1633,16 @@ static dss_args_set_t cmd_rmv_args_set = {
     NULL,
 };
 
-static void rmv_help(char *prog_name)
+static void rmv_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s rmv <-g vg_name> <-v vol_name> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]remove volume of volume group\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name need to remove volume\n");
     (void)printf("-v/--vol_name <vol_name>, <required>, the volue name need to be removed from volume group\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t rmv_proc(void)
@@ -1537,20 +1677,22 @@ static dss_args_set_t cmd_rmdir_args_set = {
     NULL,
 };
 
-static void rmdir_help(char *prog_name)
+static void rmdir_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s rmdir <-p path> [-r] [-U UDS:socket_domain path]\n", prog_name);
     (void)printf("[client command] remove dir or with it's contents recursively\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-p/--path <path>, <required>, the name need to remove\n");
     (void)printf("-r/--recursive  [optional], remove dir and it's contents recursively\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t rmdir_proc(void)
 {
     const char *path = cmd_rmdir_args[DSS_ARG_IDX_0].input_args;
-    bool recursive = cmd_rmdir_args[DSS_ARG_IDX_1].inputed ? CM_TRUE : CM_FALSE;
+    bool32 recursive = cmd_rmdir_args[DSS_ARG_IDX_1].inputed ? CM_TRUE : CM_FALSE;
     dss_conn_t connection;
     status_t status = get_connection_by_input_args(cmd_rmdir_args[DSS_ARG_IDX_2].input_args, &connection);
     if (status != CM_SUCCESS) {
@@ -1578,13 +1720,16 @@ static dss_args_set_t cmd_inq_args_set = {
     NULL,
 };
 
-static void inq_help(char *prog_name)
+static void inq_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s inq <-t inq_type> [-D DSS_HOME]\n", prog_name);
     (void)printf("[raid command] inquiry LUN information or reservations\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-t/--type <inq_type>, <required>, the type need to inquiry, values [lun|reg]"
                  "lun :inquiry LUN information, reg:inquiry reservations\n");
-    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
+    help_param_dsshome();
 }
 
 static status_t inq_proc(void)
@@ -1622,15 +1767,20 @@ static dss_args_set_t cmd_inq_req_args_set = {
     NULL,
 };
 
-static void inq_reg_help(char *prog_name)
+static void inq_reg_help(const char *prog_name, int print_flag)
 {
-    (void)printf("Usage:%s inq_reg <-i inst_id> [-D DSS_HOME]\n", prog_name);
+    (void)printf("\nUsage:%s inq_reg <-i inst_id> [-D DSS_HOME]\n", prog_name);
     (void)printf("[raid command]check whether the node is registered\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-i/--inst_id <inst_id>, <required>, the id of the host need to reg\n");
-    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
+    help_param_dsshome();
 }
+
 static status_t inq_reg_proc(void)
 {
+    DSS_PRINT_INF("Begin to inq reg.\n");
     int64 host_id = atoll(cmd_inq_req_args[DSS_ARG_IDX_0].input_args);
     char *home = cmd_inq_req_args[DSS_ARG_IDX_1].input_args;
     status_t status = dss_inq_reg_core(home, host_id);
@@ -1648,7 +1798,7 @@ static dss_args_set_t cmd_lscli_args_set = {
     NULL,
 };
 
-static void lscli_help(char *prog_name)
+static void lscli_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s lscli\n", prog_name);
     (void)printf("[client command] Show information of client\n");
@@ -1685,16 +1835,20 @@ static dss_args_set_t cmd_kickh_args_set = {
     NULL,
 };
 
-static void kickh_help(char *prog_name)
+static void kickh_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s kickh <-i inst_id> [-D DSS_HOME]\n", prog_name);
     (void)printf("[client command] kick off the host from the array\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-i/--inst_id <inst_id>, <required>, the id of the host need to kick off\n");
-    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
+    help_param_dsshome();
 }
 
 static status_t kickh_proc(void)
 {
+    DSS_PRINT_INF("Begin to kick.\n");
     int64 kick_hostid = atoll(cmd_kickh_args[DSS_ARG_IDX_0].input_args);
     char *home = cmd_kickh_args[DSS_ARG_IDX_1].input_args;
 
@@ -1717,15 +1871,19 @@ static dss_args_set_t cmd_reghl_args_set = {
     NULL,
 };
 
-static void reghl_help(char *prog_name)
+static void reghl_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s reghl [-D DSS_HOME]\n", prog_name);
     (void)printf("[manage command] register host to array\n");
-    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    help_param_dsshome();
 }
 
 static status_t reghl_proc(void)
 {
+    DSS_PRINT_INF("Begin to register.\n");
     char *home = cmd_reghl_args[DSS_ARG_IDX_0].input_args;
     status_t status = dss_reghl_core(home);
     if (status != CM_SUCCESS) {
@@ -1747,12 +1905,15 @@ static dss_args_set_t cmd_unreghl_args_set = {
     NULL,
 };
 
-static void unreghl_help(char *prog_name)
+static void unreghl_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s unreghl [-t type] [-D DSS_HOME]\n", prog_name);
     (void)printf("[manage command] unregister host from array\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-t/--type <type>, [optional], value is int, 0 without lock, otherwise with lock\n");
-    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
+    help_param_dsshome();
 }
 
 static status_t unreghl_proc(void)
@@ -1767,6 +1928,7 @@ static status_t unreghl_proc(void)
         }
     }
 
+    DSS_PRINT_INF("Begin to unregister.\n");
     char *home = cmd_unreghl_args[DSS_ARG_IDX_1].input_args;
     status = dss_unreghl_core(home, (type == 0) ? CM_FALSE : CM_TRUE);
     if (status != CM_SUCCESS) {
@@ -1786,10 +1948,13 @@ static dss_args_set_t cmd_auid_args_set = {
     NULL,
 };
 
-static void auid_help(char *prog_name)
+static void auid_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s auid <-a auid>\n", prog_name);
     (void)printf("[tool command] show auid\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-a/--auid <auid>, <required>, the auid will to show");
 }
 
@@ -1825,20 +1990,22 @@ static dss_args_set_t cmd_examine_args_set = {
     NULL,
 };
 
-static void examine_help(char *prog_name)
+static void examine_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s examine <-p path> <-o offset> <-f format> [-s read_size] [-D DSS_HOME] "
                  "[-U UDS:socket_domain]\n",
         prog_name);
     (void)printf("[client command] display dss file content\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-p/--path <path>, <required>, device path, must begin with '+'\n");
     (void)printf("-o/--offset <offset>, <required>, the offset of the file need to examine\n");
     (void)printf("-f/--format <format>, <required>, value is[c|h|u|l|s|x]\n"
                  "c char, h unsigned short, u unsigned int, l unsigned long, s string, x hex.\n");
     (void)printf("-s/--read_size <DSS_HOME>, [optional], size to show, default value is 512byte\n");
-    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_dsshome();
+    help_param_uds();
 }
 
 static inline char escape_char(char c)
@@ -1935,25 +2102,18 @@ static status_t get_examine_opt_parameter(char *server_locator, char **home, int
     return CM_SUCCESS;
 }
 
-static status_t set_config_info(char *home)
+static status_t set_config_info(char *home, dss_config_t *inst_cfg)
 {
     status_t status;
-    dss_config_t inst_cfg;
-    status = dss_set_cfg_dir(home, &inst_cfg);
+    status = dss_set_cfg_dir(home, inst_cfg);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Environment variant DSS_HOME not found!\n");
         return status;
     }
 
-    status = dss_load_config(&inst_cfg);
+    status = dss_load_config(inst_cfg);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load parameters!\n");
-        return status;
-    }
-
-    status = dss_load_vg_conf_info(&g_vgs_info, &inst_cfg);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to load vg info from config, errcode is %d.\n", status);
         return status;
     }
     return CM_SUCCESS;
@@ -2031,6 +2191,7 @@ static status_t examine_proc(void)
     char *home = NULL;
     char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
     dss_conn_t connection;
+    dss_config_t inst_cfg;
 
     status_t status = get_examine_parameter(&path, &offset, &format);
     if (status != CM_SUCCESS) {
@@ -2040,7 +2201,8 @@ static status_t examine_proc(void)
     if (status != CM_SUCCESS) {
         return status;
     }
-    status = set_config_info(home);
+
+    status = set_config_info(home, &inst_cfg);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to load config info!\n");
         return status;
@@ -2096,10 +2258,13 @@ static dss_args_set_t cmd_dev_args_set = {
     NULL,
 };
 
-static void dev_help(char *prog_name)
+static void dev_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s dev <-p path> <-o offset> <-f format> \n", prog_name);
     (void)printf("[client command] display dev file content\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-p/--path <path>, <required>, the path of the host need to display\n");
     (void)printf("-o/--offset <offset>, <required>, the offset of the dev need to display\n");
     (void)printf("-f/--format <format>, <required>, value is[c|h|u|l|s|x]"
@@ -2192,18 +2357,21 @@ static dss_args_set_t cmd_showdisk_args_set = {
     showdisk_check_args,
 };
 
-static void showdisk_help(char *prog_name)
+static void showdisk_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s showdisk <-g vg_name> <-s struct_name> [-D DSS_HOME]\n", prog_name);
     (void)printf("      %s showdisk <-g vg_name> <-b block_id> <-n node_id> [-D DSS_HOME]\n", prog_name);
     (void)printf("[client command] show disk information\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name\n");
     (void)printf("-s/--struct_name <struct_name>, <required>, the struct name of volume group, "
                  "the optional value(s):\n");
     (void)printf("    [core_ctrl | vg_header | volume_ctrl | root_ft_block]\n");
     (void)printf("-b/--block_id <block_id>, <required>, block id\n");
     (void)printf("-n/--node_id <node_id>, <required>, node id\n");
-    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
+    help_param_dsshome();
 }
 
 static status_t showdisk_get_vg_item(dss_vg_info_item_t **vg_item, const char *vg_name)
@@ -2246,9 +2414,17 @@ static status_t showdisk_proc(void)
     char *home = cmd_showdisk_args[DSS_ARG_IDX_4].input_args;
     status_t status;
     dss_vg_info_item_t *vg_item = NULL;
-    status = set_config_info(home);
+    dss_config_t inst_cfg;
+
+    status = set_config_info(home, &inst_cfg);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to load config info!\n");
+        return status;
+    }
+
+    status = dss_load_vg_conf_info(&g_vgs_info, &inst_cfg);
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to load vg info from config, errcode is %d.\n", status);
         return status;
     }
 
@@ -2285,14 +2461,16 @@ static dss_args_set_t cmd_rename_args_set = {
     NULL,
 };
 
-static void rename_help(char *prog_name)
+static void rename_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s rename <-o old_name> <-n new_name> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command] rename file, all file name must begin with '+'\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-o/--old_name <old_name>, <required>, the old file name\n");
     (void)printf("-n/--new_name <new_name>, <required>, the new file name\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t rename_proc(void)
@@ -2327,18 +2505,20 @@ static dss_args_set_t cmd_du_args_set = {
     NULL,
 };
 
-static void du_help(char *prog_name)
+static void du_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s du <-p path> [-f format] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command] show disk usage of the file/dir with optional params\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-p/--path <path>, <required>, the old file name\n");
     (void)printf("-f/--format [format], [optional], the format to show, default value is Bs\n");
     (void)printf("support 3 types of format, do not need any separators between params\n");
     (void)printf("        [BKMGT] B: Byte, K: kB ,M: MB , G: GB, T: TB\n");
     (void)printf("        [sa] s: summarize, a: count all files, not just directories\n");
     (void)printf("        [S] S: for directories do not include size of subdirectories\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t du_proc(void)
@@ -2386,15 +2566,17 @@ static dss_args_set_t cmd_find_args_set = {
     NULL,
 };
 
-static void find_help(char *prog_name)
+static void find_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s find <-p path> <-n name> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]find files by name from path recursively\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-p/--path <path>, <required>, the path to find from\n");
     (void)printf("-n/--name <name>, <required>, the name to find, support unix style wildcards "
                  "(man 7 glob for detail)\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t find_proc(void)
@@ -2452,14 +2634,16 @@ static dss_args_set_t cmd_ln_args_set = {
     NULL,
 };
 
-static void ln_help(char *prog_name)
+static void ln_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s ln <-s src_path> <-t target_path> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]make links between files\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-s/--src_path <src_path>, <required>, the source path to link\n");
     (void)printf("-t/--target_path <target_path>, <required>, the target path to link\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t ln_proc(void)
@@ -2493,13 +2677,15 @@ static dss_args_set_t cmd_readlink_args_set = {
     NULL,
 };
 
-static void readlink_help(char *prog_name)
+static void readlink_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s readlink <-p path> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]read link path\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-p/--path <path>, <required>, the link path to read\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t readlink_proc(void)
@@ -2511,7 +2697,7 @@ static status_t readlink_proc(void)
         return status;
     }
 
-    bool is_link = false;
+    bool32 is_link = false;
     status = dss_islink_impl(&connection, link_path, &is_link);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to confirm that the path %s is a soft link.\n", link_path);
@@ -2547,13 +2733,15 @@ static dss_args_set_t cmd_unlink_args_set = {
     NULL,
 };
 
-static void unlink_help(char *prog_name)
+static void unlink_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s unlink <-p path> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command] unlink path\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-p/--path <path>, <required>, the link path to unlink\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t unlink_proc(void)
@@ -2581,7 +2769,7 @@ static dss_args_set_t cmd_encrypt_args_set = {
     NULL,
 };
 
-static void encrypt_help(char *prog_name)
+static void encrypt_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s encrypt\n", prog_name);
     (void)printf("[client command] password encrypt\n");
@@ -2659,10 +2847,13 @@ static dss_args_set_t cmd_setcfg_args_set = {
     NULL,
 };
 
-static void setcfg_help(char *prog_name)
+static void setcfg_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s setcfg <-n name> <-v value> [-s scope] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command] set config value by name\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-n/--name <name>, <required>, the config name to set\n");
     (void)printf("-v/--value <value>, <required>, the value of the config name to set\n");
     (void)printf("-s/--scope <scope>, [optional], the scope to save the config\n");
@@ -2670,8 +2861,7 @@ static void setcfg_help(char *prog_name)
                  "Memory indicates that the modification is made in memory and takes effect immediately;\n"
                  "Pfile indicates that the modification is performed in the pfile. \n"
                  "The database must be restarted for the modification to take effect.\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t setcfg_proc(void)
@@ -2714,13 +2904,15 @@ static dss_args_set_t cmd_getcfg_args_set = {
     NULL,
 };
 
-static void getcfg_help(char *prog_name)
+static void getcfg_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s getcfg <-n name> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command] get config value by name\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-n/--name <name>, <required>, the config name to set\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    help_param_uds();
 }
 
 static status_t getcfg_proc(void)
@@ -2755,12 +2947,14 @@ static dss_args_set_t cmd_getstatus_args_set = {
     NULL,
 };
 
-static void getstatus_help(char *prog_name)
+static void getstatus_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s getstatus [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command] get dss server status\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    help_param_uds();
 }
 
 static status_t getstatus_proc(void)
@@ -2770,12 +2964,13 @@ static status_t getstatus_proc(void)
     if (status != CM_SUCCESS) {
         return status;
     }
-    int server_status = 0;
-    status = dss_get_inst_status_on_server(&connection, &server_status);
+    dss_server_status_t dss_status;
+    status = dss_get_inst_status_on_server(&connection, &dss_status);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to get server status.\n");
     } else {
-        DSS_PRINT_INF("Server status is %d.\n", server_status);
+        DSS_PRINT_INF("Server status of instance %d is %s and %s.\nMaster id is %d .\n", dss_status.local_instance_id,
+            dss_status.instance_status, dss_status.server_status, dss_status.master_id);
     }
     dss_disconnect_ex(&connection);
     return status;
@@ -2791,12 +2986,14 @@ static dss_args_set_t cmd_stopdss_args_set = {
     NULL,
 };
 
-static void stopdss_help(char *prog_name)
+static void stopdss_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s stopdss [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command] stop dss server\n");
-    (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    help_param_uds();
 }
 
 static status_t stopdss_proc(void)
@@ -2891,10 +3088,13 @@ static dss_args_set_t cmd_scandisk_args_set = {
     NULL,
 };
 
-static void scandisk_help(char *prog_name)
+static void scandisk_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s scandisk <-t type> <-p path> <-u user_name> <-g group_name>\n", prog_name);
     (void)printf("[client command] Scan disk to rebuild soft link\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
     (void)printf("-t/--type <type>, <required>, file type\n");
     (void)printf("-p/--path <path>, <required>, find disk path\n");
     (void)printf("-u/--user_name <user_name>, <required>, user name\n");
@@ -2963,11 +3163,14 @@ static dss_args_set_t cmd_clean_vglock_args_set = {
     NULL,
 };
 
-static void clean_vglock_help(char *prog_name)
+static void clean_vglock_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s clean_vglock [-D DSS_HOME]\n", prog_name);
     (void)printf("[manage command] clean vg lock\n");
-    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    help_param_dsshome();
 }
 
 static status_t clean_vglock_proc(void)
@@ -2988,6 +3191,7 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set}
                                       {"adv", adv_help, adv_proc, &cmd_adv_args_set},
                                       {"mkdir", mkdir_help, mkdir_proc, &cmd_mkdir_args_set},
                                       {"touch", touch_help, touch_proc, &cmd_touch_args_set},
+                                      {"ts", ts_help, ts_proc, &cmd_ts_args_set},
                                       {"ls", ls_help, ls_proc, &cmd_ls_args_set},
                                       {"cp", cp_help, cp_proc, &cmd_cp_args_set},
                                       {"rm", rm_help, rm_proc, &cmd_rm_args_set},
@@ -3020,12 +3224,15 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set}
 };
 
 // clang-format on
-static void help(char *prog_name)
+static void help(char *prog_name, dss_help_type help_type)
 {
+    (void)printf("Usage:dsscmd [command] [OPTIONS]\n\n");
     (void)printf("Usage:%s -h/--help show help information of dsscmd\n", prog_name);
+    (void)printf("Usage:%s -a/--all show all help information of dsscmd\n", prog_name);
     (void)printf("Usage:%s -v/--version show version information of dsscmd\n", prog_name);
+    (void)printf("commands:\n");
     for (uint32 i = 0; i < sizeof(g_dss_admin_cmd) / sizeof(g_dss_admin_cmd[0]); ++i) {
-        g_dss_admin_cmd[i].help(prog_name);
+        g_dss_admin_cmd[i].help(prog_name, help_type);
     }
     (void)printf("\n\n");
 }
@@ -3106,25 +3313,30 @@ void execute_help_cmd(int argc, char **argv, uint32_t *idx)
 {
     if (argc < CMD_ARGS_AT_LEAST) {
         (void)printf("dsscmd: no operation specified.\n");
-        (void)printf("dsscmd: Try \"dsscmd -h/--help\" for more information.\n");
+        (void)printf("dsscmd: Try \"dsscmd -h/--help\" for help information.\n");
+        (void)printf("dsscmd: Try \"dsscmd -a/--all\" for detailed help information.\n");
         exit(EXIT_FAILURE);
     }
     if (cm_str_equal(argv[1], "-v") || cm_str_equal(argv[1], "--version")) {
         (void)printf("dsscmd %s\n", (char *)DEF_DSS_VERSION);
         exit(EXIT_SUCCESS);
     }
-    if (cm_str_equal(argv[1], "-h") || cm_str_equal(argv[1], "--help") || argc < CMD_ARGS_AT_LEAST) {
-        help(argv[0]);
+    if (cm_str_equal(argv[1], "-a") || cm_str_equal(argv[1], "--all")) {
+        help(argv[0], DSS_HELP_DETAIL);
+        exit(EXIT_SUCCESS);
+    }
+    if (cm_str_equal(argv[1], "-h") || cm_str_equal(argv[1], "--help")) {
+        help(argv[0], DSS_HELP_SIMPLE);
         exit(EXIT_SUCCESS);
     }
     if (!get_cmd_idx(argc, argv, idx)) {
         (void)printf("cmd:%s can not find.\n", argv[DSS_ARG_IDX_1]);
-        help(argv[0]);
+        help(argv[0], DSS_HELP_SIMPLE);
         exit(EXIT_FAILURE);
     }
     if (argc > DSS_ARG_IDX_2 &&
         (strcmp(argv[DSS_ARG_IDX_2], "-h") == 0 || strcmp(argv[DSS_ARG_IDX_2], "--help") == 0)) {
-        g_dss_admin_cmd[*idx].help(argv[0]);
+        g_dss_admin_cmd[*idx].help(argv[0], DSS_HELP_DETAIL);
         exit(EXIT_SUCCESS);
     }
 }
@@ -3134,6 +3346,11 @@ static status_t execute_cmd(int argc, char **argv, uint32 idx)
     status_t status = execute_one_cmd(argc, argv, idx);
     dss_cmd_oper_log(argc, argv, status);
     return status;
+}
+
+static void clean_cmd()
+{
+    dss_free_vg_info();
 }
 
 int main(int argc, char **argv)
@@ -3176,5 +3393,7 @@ int main(int argc, char **argv)
         return ret;
     }
     cm_reset_error();
-    return execute_cmd(argc, argv, idx);
+    ret = execute_cmd(argc, argv, idx);
+    clean_cmd();
+    return ret;
 }

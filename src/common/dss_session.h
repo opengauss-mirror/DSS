@@ -32,6 +32,7 @@
 #include "cm_thread_pool.h"
 #include "dss_protocol.h"
 #include "dss_latch.h"
+#include "cm_date.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -81,6 +82,19 @@ typedef enum en_dss_session_status {
     DSS_SESSION_STATUS_PAUSED,
 } dss_session_status_t;
 
+typedef enum en_dss_wait_event {
+    DSS_PREAD = 0,
+    DSS_PWRITE,
+
+    DSS_EVT_COUNT,
+} dss_wait_event_e;
+
+typedef struct st_dss_session_stat {
+    atomic_t total_wait_time;
+    atomic_t max_single_time;
+    atomic_t wait_count;
+} dss_session_stat_t;
+
 typedef struct st_dss_session {
     uint32 id;
     bool32 is_closed;
@@ -103,7 +117,28 @@ typedef struct st_dss_session {
     dss_session_status_t status;
     void *reactor;
     void *workthread_ctx;
+    dss_session_stat_t dss_session_stat[DSS_EVT_COUNT];
+    uint32 client_version; /* client version */
+    uint32 proto_version;  /* client and server negotiated version */
 } dss_session_t;
+
+static inline void dss_begin_stat(timeval_t *begin_tv)
+{
+    (void)cm_gettimeofday(begin_tv);
+}
+
+static inline void dss_end_stat(dss_session_t *session, timeval_t *begin_tv, dss_wait_event_e event)
+{
+    timeval_t end_tv;
+    uint64 usecs;
+
+    (void)cm_gettimeofday(&end_tv);
+    usecs = (uint64)TIMEVAL_DIFF_US(begin_tv, &end_tv);
+    (void)cm_atomic_add(&session->dss_session_stat[event].total_wait_time, (int64)usecs);
+    (void)cm_atomic_set(&session->dss_session_stat[event].max_single_time,
+        (int64)MAX((uint64)session->dss_session_stat[event].max_single_time, usecs));
+    (void)cm_atomic_inc(&session->dss_session_stat[event].wait_count);
+}
 
 static inline char *dss_init_sendinfo_buf(char *input)
 {
@@ -124,10 +159,14 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session);
 void dss_destroy_session(dss_session_t *session);
 
 status_t dss_lock_shm_meta_s(dss_session_t *session, const dss_latch_offset_t *offset, latch_t *latch, int32 timeout);
+status_t dss_lock_shm_meta_s_without_session(latch_t *latch, bool32 is_force, int32 timeout);
 status_t dss_cli_lock_shm_meta_s(
     dss_session_t *session, dss_latch_offset_t *offset, latch_t *latch, latch_should_exit should_exit);
 void dss_lock_shm_meta_x(const dss_session_t *session, latch_t *latch);
+void dss_lock_shm_meta_x2ix(dss_session_t *session, latch_t *latch);
+void dss_lock_shm_meta_ix2x(dss_session_t *session, latch_t *latch);
 void dss_unlock_shm_meta(dss_session_t *session, latch_t *latch);
+void dss_unlock_shm_meta_without_session(latch_t *latch);
 status_t dss_lock_shm_meta_bucket_s(dss_session_t *session, uint32 id, latch_t *latch);
 void dss_lock_shm_meta_bucket_x(latch_t *latch);
 void dss_unlock_shm_meta_bucket(dss_session_t *session, latch_t *latch);

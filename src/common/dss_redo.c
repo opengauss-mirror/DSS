@@ -1007,17 +1007,22 @@ static status_t rp_redo_set_file_size_inner(dss_vg_info_item_t *vg_item, dss_red
     }
     gft_node_t *node;
     dss_ft_block_t *cur_block = NULL;
-    *ftid = ((dss_redo_set_file_size_t *)entry->data)->ftid;
+    dss_redo_set_file_size_t *set_file_size = (dss_redo_set_file_size_t *)entry->data;
+    *ftid = set_file_size->ftid;
     node = dss_get_ft_node_by_ftid(NULL, vg_item, *ftid, check_version, CM_FALSE);
     if (!node) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
     }
     dss_redo_set_file_size_t *size_info = (dss_redo_set_file_size_t *)entry->data;
-    LOG_DEBUG_INF("Begin to replay set file:%llu, size:%llu, oldsize:%llu, vg name:%s.", DSS_ID_TO_U64(size_info->ftid),
-        size_info->size, size_info->oldsize, vg_item->vg_name);
+    LOG_DEBUG_INF("Begin to replay set file:%llu, size:%llu, oldsize:%llu, node size:%llu,vg name:%s.", DSS_ID_TO_U64(size_info->ftid),
+        size_info->size, size_info->oldsize, node->size, vg_item->vg_name);
 
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
-        node->size = ((dss_redo_set_file_size_t *)entry->data)->size;
+        node->size = set_file_size->size;
+    }
+    if (set_file_size->size < set_file_size->oldsize) {
+        node->file_ver++;
+        LOG_RUN_INF("Update ft block:%llu file_ver to:%llu.", DSS_ID_TO_U64(*ftid), node->file_ver);
     }
     cur_block = dss_get_ft_block_by_node(node);
     CM_RETURN_IFERR_EX(dss_update_ft_block_disk(vg_item, cur_block, *ftid),
@@ -1116,6 +1121,71 @@ void rb_redo_clean_resource(dss_vg_info_item_t *item, auid_t auid, ga_pool_id_e 
     ga_free_object_list(pool_id, &queue);
 }
 
+static status_t rp_redo_set_node_flag(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+{
+    CM_ASSERT(vg_item != NULL);
+    CM_ASSERT(entry != NULL);
+
+    if (entry->size == 0) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_REDO_ILL, "invalid entry log size 0."));
+    }
+    gft_node_t *node;
+    dss_ft_block_t *cur_block = NULL;
+    dss_redo_set_file_flag_t *file_flag = (dss_redo_set_file_flag_t *)entry->data;
+
+    bool32 check_version = CM_FALSE;
+    if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
+        check_version = CM_TRUE;
+    }
+    node = dss_get_ft_node_by_ftid(NULL, vg_item, file_flag->ftid, check_version, CM_FALSE);
+    if (!node) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
+    }
+    LOG_DEBUG_INF("Begin to replay set file:%llu, flags:%u, old_flags:%u, vg_name:%s.", DSS_ID_TO_U64(file_flag->ftid),
+        file_flag->flags, file_flag->old_flags, vg_item->vg_name);
+
+    if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
+        node->flags = file_flag->flags;
+    }
+    cur_block = dss_get_ft_block_by_node(node);
+    CM_RETURN_IFERR_EX(dss_update_ft_block_disk(vg_item, cur_block, file_flag->ftid),
+        LOG_DEBUG_ERR(
+            "Failed to update ft block:%llu, vg_name:%s to disk.", DSS_ID_TO_U64(file_flag->ftid), vg_item->vg_name));
+    LOG_DEBUG_INF("Success to replay set file:%llu, flags:%u, old_flag:%u, vg_name:%s.",
+        DSS_ID_TO_U64(file_flag->ftid), file_flag->flags, file_flag->old_flags, vg_item->vg_name);
+    return CM_SUCCESS;
+}
+
+static status_t rb_redo_set_node_flag(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+{
+    CM_ASSERT(vg_item != NULL);
+    CM_ASSERT(entry != NULL);
+
+    if (entry->size == 0) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_REDO_ILL, "invalid entry log size 0."));
+    }
+    gft_node_t *node;
+    dss_ft_block_t *cur_block = NULL;
+    dss_redo_set_file_flag_t *file_flag = (dss_redo_set_file_flag_t *)entry->data;
+
+    node = dss_get_ft_node_by_ftid(NULL, vg_item, file_flag->ftid, CM_FALSE, CM_FALSE);
+    if (!node) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
+    }
+    LOG_DEBUG_INF("Begin to replay  rollback set file:%llu, flags:%u, old_flags:%u, vg_name:%s.",
+        DSS_ID_TO_U64(file_flag->ftid), file_flag->flags, file_flag->old_flags, vg_item->vg_name);
+
+    node->flags = file_flag->old_flags;
+
+    cur_block = dss_get_ft_block_by_node(node);
+    CM_RETURN_IFERR_EX(dss_update_ft_block_disk(vg_item, cur_block, file_flag->ftid),
+        LOG_DEBUG_ERR(
+            "Failed to update ft block:%llu, vg_name:%s to disk.", DSS_ID_TO_U64(file_flag->ftid), vg_item->vg_name));
+    LOG_DEBUG_INF("Success to replay rollback set file:%llu, flags:%u, old_flag:%u, vg_name:%s.",
+        DSS_ID_TO_U64(file_flag->ftid), file_flag->flags, file_flag->old_flags, vg_item->vg_name);
+    return CM_SUCCESS;
+}
+
 status_t rb_redo_format_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
@@ -1159,7 +1229,9 @@ static dss_redo_handler_t g_dss_handlers[] = {{DSS_RT_UPDATE_CORE_CTRL, rp_updat
     // initialize fs_block on gft_node
     {DSS_RT_INIT_FILE_FS_BLOCK, rp_redo_init_fs_block, rb_redo_init_fs_block},
     // adds or removes a managed object of fs_block
-    {DSS_RT_SET_FILE_FS_BLOCK, rp_redo_set_fs_block, rb_redo_set_fs_block}};
+    {DSS_RT_SET_FILE_FS_BLOCK, rp_redo_set_fs_block, rb_redo_set_fs_block},
+    {DSS_RT_SET_NODE_FLAG, rp_redo_set_node_flag, rb_redo_set_node_flag},
+};
 
 static status_t dss_replay(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
@@ -1169,6 +1241,9 @@ static status_t dss_replay(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
     if (vg_item->id != entry->vg_id) {
         // load vg_item
         actual_vg_item = &g_vgs_info->volume_group[entry->vg_id];
+    }
+    if (DSS_STANDBY_CLUSTER_XLOG_VG(actual_vg_item->id)) {
+        return CM_SUCCESS;
     }
     return handler->replay(actual_vg_item, entry);
 }
@@ -1278,16 +1353,78 @@ static status_t dss_recover_root_ft_ctrlinfo(dss_vg_info_item_t *vg_item)
     return status;
 }
 
+static status_t dss_recover_volume_head(dss_vg_info_item_t* vg_item, const char *volume_name, uint32 id)
+{
+    if (strlen(volume_name) == 0) {
+        return CM_SUCCESS;
+    }
+#ifndef WIN32
+    char buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_ALIGN_SIZE)));
+#else
+    char buf[DSS_DISK_UNIT_SIZE];
+#endif
+    dss_volume_header_t *vol_head = (dss_volume_header_t *)buf;
+    CM_RETURN_IFERR(
+        dss_open_volume(vg_item->dss_ctrl->volume.defs[id].name, NULL, DSS_CLI_OPEN_FLAG, &vg_item->volume_handle[id]));
+    status_t ret = dss_read_volume(&vg_item->volume_handle[id], 0, vol_head, (int32)sizeof(dss_volume_header_t));
+    if (ret != CM_SUCCESS) {
+        dss_close_volume(&vg_item->volume_handle[id]);
+        return ret;
+    }
+    if (vol_head->valid_flag != DSS_CTRL_VALID_FLAG) {
+        dss_close_volume(&vg_item->volume_handle[id]);
+        return CM_SUCCESS;
+    }
+    vol_head->valid_flag = 0;
+    vol_head->software_version = 0;
+    ret = dss_write_volume(&vg_item->volume_handle[id], 0, vol_head, (int32)sizeof(dss_volume_header_t));
+    dss_close_volume(&vg_item->volume_handle[id]);
+    return ret;
+}
+
 /*
  * Check and recover dss ctrl info from backup area, including core ctrl, volume ctrl and root FTB ctrl.
  * Ctrl info that doesn't need recovery must be backed up.
  * Bug note 08272021: ctrl info that is recovered must be synced. Otherwise checksum would fail supposedly.
+ * In standby cluster, xlog vg is copy from primary cluster,
+ * we do not need to recover ctrlinfo in standby cluster before it promote
  */
 status_t dss_recover_ctrlinfo(dss_vg_info_item_t *vg_item)
 {
+    if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
+        return CM_SUCCESS;
+    }
     DSS_RETURN_IF_ERROR(dss_recover_core_ctrlinfo(vg_item));
     DSS_RETURN_IF_ERROR(dss_recover_volume_ctrlinfo(vg_item));
     DSS_RETURN_IF_ERROR(dss_recover_root_ft_ctrlinfo(vg_item));
+
+    if (vg_item->dss_ctrl->core.volume_count == 1) {
+        return CM_SUCCESS;
+    }
+    uint32 volume_count = 1;
+    for (uint32 i = 1; i < DSS_MAX_VOLUMES; i++) {
+        // The adv is executed successfully, not need to be restored.
+        if (vg_item->dss_ctrl->volume.defs[i].flag != VOLUME_FREE) {
+            volume_count++;
+            continue;
+        }
+        // The volume has beeb flushed to disk, but core_ctrl has not been flushed to disk.
+        if (vg_item->dss_ctrl->volume.defs[i].id != vg_item->dss_ctrl->core.volume_attrs[i].id) {
+            continue;
+        }
+        // The volume has been removed.
+        if (vg_item->dss_ctrl->volume.defs[i].id == 0) {
+            continue;
+        }
+        vg_item->dss_ctrl->core.volume_attrs[i].id = 0;
+        DSS_RETURN_IF_ERROR(dss_recover_volume_head(
+            vg_item, vg_item->dss_ctrl->volume.defs[i].name, vg_item->dss_ctrl->volume.defs[i].id));
+    }
+
+    if (volume_count != vg_item->dss_ctrl->core.volume_count) {
+        vg_item->dss_ctrl->core.volume_count = volume_count;
+        DSS_RETURN_IF_ERROR(dss_update_core_ctrl_disk(vg_item));
+    }
     return CM_SUCCESS;
 }
 

@@ -40,3 +40,23 @@ void dss_unlatch(latch_t *latch)
 {
     cm_unlatch(latch, NULL);
 }
+
+void dss_latch_x2(latch_t *latch, uint32 sid)
+{
+    cm_latch_x(latch, sid, NULL);
+}
+
+void dss_latch_s2(latch_t *latch, uint32 sid, bool32 is_force, latch_statis_t *stat)
+{
+    cm_latch_s(latch, sid, is_force, stat);
+}
+
+void dss_latch_x2ix(latch_t *latch, uint32 sid, latch_statis_t *stat)
+{
+    cm_latch_x2ix(latch, sid, stat);
+}
+
+void dss_latch_ix2x(latch_t *latch, uint32 sid, latch_statis_t *stat)
+{
+    cm_latch_ix2x(latch, sid, stat);
+}

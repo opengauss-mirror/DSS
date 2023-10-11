@@ -28,7 +28,7 @@
 #include "dss_param.h"
 #include "dss_param_verify.h"
 #include "dss_session.h"
-#include "dss_system.h"
+#include "cm_system.h"
 
 /*
  * one error no corresponds to one error desc
@@ -52,27 +52,27 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_VOLUME_REMOVE_NOEXIST] = "Remove a non-existent volume %s of volume-group %s failed",
     [ERR_DSS_VOLUME_REMOVE_NONEMPTY] = "Remove a nonempty volume %s failed",
     [ERR_DSS_VOLUME_REMOVE_SUPER_BLOCK] = "Remove super block %s failed",
-    [ERR_DSS_FILE_SEEK] = "Failed to seek file, vgid:%u, fid:%llu, offset:%llu, file size:%llu, "
-                          "check if disk space is full",
+    [ERR_DSS_FILE_SEEK] = "Failed to seek file, vgid:%u, fid:%llu, offset:%lld, file size:%llu",
     [ERR_DSS_FILE_REMOVE_OPENING] = "DSS file is open",
     [ERR_DSS_FILE_RENAME] = "Rename failed, reason %s",
     [ERR_DSS_FILE_RENAME_DIFF_VG] = "Failed to rename from vg %s to another vg %s, function not supported",
     [ERR_DSS_FILE_RENAME_EXIST] = "Rename failed, reason %s",
     [ERR_DSS_FILE_RENAME_OPENING_REMOTE] = "Failed to rename %s to %s, while source file is opend by other instance.",
-    [ERR_DSS_FILE_CREATE] = "create file failed, reason %s",
+    [ERR_DSS_FILE_CLOSE] = "Close file failed, reason %s",
+    [ERR_DSS_FILE_CREATE] = "Create file failed, reason %s",
     [ERR_DSS_FILE_RDWR_INSUFF_PER] = "Insufficient permission to %s file, while the permission is %u.",
     [ERR_DSS_FILE_NOT_EXIST] = "The file %s of %s does not exist",
-    [ERR_DSS_FILE_OPENING_REMOTE] = "The file is open in other inst: %d, command:%d exec failed.",
+    [ERR_DSS_FILE_OPENING_REMOTE] = "The file is open in other inst: %hhu, command:%u exec failed.",
     [ERR_DSS_FILE_TYPE_MISMATCH] = "The type of directory link or file %s is not matched.",
     [ERR_DSS_FILE_PATH_ILL] = "Path %s decode error %s",
     [ERR_DSS_FILE_INVALID_SIZE] = "Invalid extend offset %lld, size %d.",
     [ERR_DSS_FILE_INVALID_WRITTEN_SIZE] = "Invalid written size %lld.",
     [ERR_DSS_DIR_REMOVE_NOT_EMPTY] = "The dir is not empty, can not remove.",
     [ERR_DSS_DIR_CREATE_DUPLICATED] = "Make dir or Create file failed, %s has already existed",
-    [ERR_DSS_DIR_NOT_EXIST] = "The dir %s of %s is not existed.",
     [ERR_DSS_LINK_READ_NOT_LINK] = "The path %s is not a soft link.",
+    [ERR_DSS_LINK_CREATE] = "Fail to create symbolic link, reason %s",
     [ERR_DSS_CONFIG_FILE_OVERSIZED] = "The size of config file %s is too large",
-    [ERR_DSS_CONFIG_LOAD] = "Please check DSS_vg_conf.ini, reason %s",
+    [ERR_DSS_CONFIG_LOAD] = "Please check dss_vg_conf.ini, reason %s",
     [ERR_DSS_CONFIG_LINE_OVERLONG] = "The length of row %d is too long",
     [ERR_DSS_REDO_ILL] = "DSS redo log error, reason %s",
     [ERR_DSS_OAMAP_INSERT] = "Failed to insert hash map ",
@@ -86,6 +86,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_SHM_CHECK] = "Failed to check shared memory ctrl, key=0x%08x, reason=%s",
     [ERR_DSS_SHM_LOCK] = "Failed to lock vg shared memory, reason=%s",
     [ERR_DSS_GA_INIT] = "DSS ga init error, reason %s",
+    [ERR_DSS_GA_GET_ADDR] = "DSS ga get addr error, pool id %d, object id%u.",
     [ERR_DSS_SESSION_INVALID_ID] = "Invalid session %d",
     [ERR_DSS_SESSION_CREATE] = "Create new DSS session failed, no free sessions, %d sessions used",
     [ERR_DSS_INVALID_PARAM] = "Invalid DSS parameter: %s",
@@ -102,9 +103,15 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_UDS_INVALID_URL] = "Invalid unix domain socket url:%s, length %d. \
                                 Eg:server_locator=\"UDS:UNIX_emserver.domain\"",
     [ERR_DSS_RECV_MSG_FAILED] = "Recv msg failed, errcode:%d, inst:%u.",
-    [ERR_DSS_LINK_NOT_EXIST] = "The link %s of %s does not exist.",
+    [ERR_DSS_INIT_LOGGER_FAILED] = "Log init failed.",
+    [ERR_DSS_OUT_OF_MEM] = "Failed to apply for memory.",
     [ERR_DSS_INVALID_ID] = "Invalid %s id : %llu.",
     [ERR_DSS_PROCESS_REMOTE] = "Failed to process remote, errcode: %d, errmsg: %s.",
+    [ERR_DSS_CONNECT_FAILED] = "Failed to connect dss server, errcode: %d, errmsg: %s.",
+    [ERR_DSS_VERSION_NOT_MATCH] =
+        "Protocol version need be changed, old protocol version is %u, new protocol version is %u.",
+    [ERR_DSS_INVALID_BLOCK_TYPE] =
+        "Get Invalid block type, expect type is %u, but the type in share memory is %u.",
 };
 
 static status_t dss_init_log_file(log_param_t *log_param, dss_config_t *inst_cfg)
@@ -244,10 +251,6 @@ status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32
     log_param_t *log_param = cm_log_param_instance();
     log_param->log_level = 0;
     log_param->log_compressed = DSS_TRUE;
-    log_param->log_compress_buf = malloc(CM_LOG_COMPRESS_BUFSIZE);
-    if (log_param->log_compress_buf == NULL) {
-        return ERR_DSS_INIT_LOGGER_FAILED;
-    }
 
     if (dss_init_log_home(inst_cfg, log_param) != CM_SUCCESS) {
         return CM_ERROR;
@@ -289,7 +292,7 @@ static void sql_audit_init_assist(
     int32 ret, tz_hour, tz_min;
     const char *err_msg = NULL;
     char *user_name = cm_sys_user_name();
-    cm_save_remote_host(&session->pipe, assist->os_host);
+    cm_get_remote_host(&session->pipe, assist->os_host);
     MEMS_RETVOID_IFERR(strcpy_s(assist->db_user, CM_NAME_BUFFER_SIZE, (const char *)user_name));
 
     // DATE

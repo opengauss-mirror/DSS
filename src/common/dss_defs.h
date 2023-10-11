@@ -107,13 +107,12 @@ typedef enum {
     DSS_CMD_MODIFY_END,
     DSS_CMD_QUERY_BEGIN = DSS_CMD_MODIFY_END,
     DSS_CMD_GET_HOME = DSS_CMD_QUERY_BEGIN,
-    DSS_CMD_EXIST_FILE,  // 30
-    DSS_CMD_EXIST_DIR,
-    DSS_CMD_ISLINK,
+    DSS_CMD_EXIST,  // 30
     DSS_CMD_READLINK,
     DSS_CMD_GET_FTID_BY_PATH,
     DSS_CMD_GETCFG,
     DSS_CMD_GET_INST_STATUS,
+    DSS_CMD_GET_TIME_STAT,
     DSS_CMD_QUERY_END,
     DSS_CMD_EXEC_REMOTE = DSS_CMD_QUERY_END,
     DSS_CMD_END  // must be the last item
@@ -137,6 +136,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_VG_DATA_SIZE 512
 #define DSS_MIN_BUFFER_BLOCKS 32
 #define DSS_MIN_SESSIONID 0
+#define DSS_MAX_SESSIONS 16320
 #define DSS_MIN_SESSIONID_CFG 16  // allow config min sessionid in dss_inst.ini
 #define DSS_MIN_INST_ID 0
 #define DSS_MAX_INST_ID DSS_MAX_INSTANCES
@@ -228,6 +228,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define CM_DEF_UDS_FILE_PERMISSIONS (uint16)600
 
 #define DSS_MAX_PACKET_SIZE (uint32) SIZE_K(1)
+#define DSS_MAX_PACKET_DATA_SIZE (((DSS_MAX_PACKET_SIZE) - sizeof(dss_packet_head_t)) - sizeof(uint32))
 
 #define DSS_PARAM_BUFFER_SIZE (uint32)1024
 #define DSS_ALIGN_SIZE (uint32)512
@@ -412,6 +413,11 @@ typedef struct st_auid_t {  // id of allocation unit, 8 Bytes
 typedef auid_t dss_block_id_t;
 typedef auid_t ftid_t;
 
+extern auid_t dss_invalid_auid;
+#define DSS_INVALID_AUID (dss_invalid_auid)
+#define DSS_INVALID_BLOCK_ID (dss_invalid_auid)
+#define DSS_INVALID_FTID (dss_invalid_auid)
+
 typedef struct st_dss_addr_t {
     uint64 volumeid : 10;
     uint64 offset : 54;
@@ -529,21 +535,12 @@ static inline uint64 dss_get_log_offset(uint64 au_size)
     return au_size;
 }
 
-#define SIGNED_LLONG_MAX "9223372036854775807"
-#define SIGNED_LLONG_MIN "-9223372036854775808"
-
 time_t cm_encode_time(date_detail_t *detail);
 void cm_decode_time(time_t time, date_detail_t *detail);
 time_t cm_date2time(date_t date);
 status_t cm_time2str(time_t time, const char *fmt, char *str, uint32 str_max_size);
 
 void cm_destroy_thread_lock(thread_lock_t *lock);
-#define DSS_MAX_REAL_INPUT_STRLEN (uint32)(1024)
-status_t cm_str2size(const char *str, int64 *value);
-status_t cm_str2int(const char *str, int32 *value);
-status_t cm_str2bigint(const char *str, int64 *value);
-status_t cm_text2bigint(const text_t *text_src, int64 *value);
-status_t cm_text2size(const text_t *text, int64 *value);
 char *dss_get_cmd_desc(dss_cmd_type_e cmd_type);
 
 #ifdef __cplusplus

@@ -30,14 +30,21 @@
 #include "cs_pipe.h"
 #include "ceph_rbd_param.h"
 #include "mes_metadata.h"
-#include "mes.h"
+#include "mes_interface.h"
 #include "dss_errno.h"
+#include "dss_api.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define DSS_MIN_WORK_THREAD_COUNT (2)
 #define DSS_MAX_WORK_THREAD_COUNT (64)
+// for most time, standby nodes rerad meta from primary
+#define DSS_WORK_THREAD_LOAD_DATA_PERCENT 0.5
+
+#define DSS_MES_MAX_WAIT_TIMEOUT 10000  // 10s
+#define DSS_MES_MIN_WAIT_TIMEOUT 500  // 500ms
+
 #define DSS_MIN_RECV_MSG_BUFF_SIZE (uint64) SIZE_M(1)
 #define DSS_MAX_RECV_MSG_BUFF_SIZE (uint64) SIZE_G(1)
 
@@ -47,6 +54,12 @@ typedef enum en_dss_mode {
     DSS_MODE_RAID = 2,          // A DATANODE's RAID
     DSS_MODE_DISK = 3           // A DATANODE's DISK
 } dss_mode_e;
+
+/* use for dorado cluster */
+typedef enum cluster_run_mode_t {
+    CLUSTER_PRIMARY = 0,
+    CLUSTER_STANDBY = 1
+} cluster_run_mode_t;
 
 typedef struct st_dss_params {
     char *root_name;  // root volume name
@@ -71,8 +84,12 @@ typedef struct st_dss_params {
     uint32 ssl_detect_day;
     uint32 iothread_count;
     uint32 workthread_count;
+    uint32 xlog_vg_id;
     rbd_config_params_t rbd_config_params;
     char ceph_config[DSS_FILE_NAME_BUFFER_SIZE];
+    bool32 blackbox_detail_on;
+    cluster_run_mode_t cluster_run_mode;
+    uint32 mes_wait_timeout;
 } dss_params_t;
 
 typedef struct st_dss_config {
@@ -82,20 +99,14 @@ typedef struct st_dss_config {
 } dss_config_t;
 extern dss_config_t *g_inst_cfg;
 
-typedef enum en_dss_instance_status {
-    DSS_STATUS_PREPARE = 0,
-    DSS_STATUS_RECOVERY,
-    DSS_STATUS_SWITCH,
-    DSS_STATUS_OPEN,
-} dss_instance_status_e;
 extern dss_instance_status_e *g_dss_instance_status;
-
 #define DSS_UNIX_DOMAIN_SOCKET_NAME ".dss_unix_d_socket"
 #define DSS_MAX_SSL_PERIOD_DETECTION 180
 #define DSS_MIN_SSL_PERIOD_DETECTION 1
 
 status_t dss_load_config(dss_config_t *inst_cfg);
 status_t dss_set_cfg_dir(const char *home, dss_config_t *inst_cfg);
+status_t dss_reload_cluster_run_mode_param(dss_config_t *inst_cfg);
 
 static inline int32 dss_storage_mode(dss_config_t *inst_cfg)
 {

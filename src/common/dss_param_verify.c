@@ -182,7 +182,7 @@ status_t dss_verify_log_file_size(void *lex, void *def)
     }
 
     int32 iret_snprintf =
-        snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, PRINT_FMT_UINT64, num);
+        snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, "%s", T2S(&text));
     DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
     return CM_SUCCESS;
 }
@@ -265,7 +265,7 @@ status_t dss_verify_audit_file_size(void *lex, void *def)
     }
 
     int32 iret_snprintf =
-        snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, PRINT_FMT_UINT64, num);
+        snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, "%s", T2S(&text));
     DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
     return CM_SUCCESS;
 }

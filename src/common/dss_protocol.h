@@ -39,25 +39,21 @@ extern "C" {
 #endif
 
 typedef struct st_dss_packet_head {
+    uint32 version;
     uint32 size;
     uint8 cmd;    /* command in request packet */
     uint8 result; /* code in response packet, success(0) or error(1) */
     uint16 flags;
-    uint8 version;
-    uint8 minor_version;
-    uint8 major_version;
-    uint8 reserved;
     uint32 serial_number;
+    uint8 reserve[64];
 } dss_packet_head_t;
 
 typedef enum en_dss_packet_version {
-    CS_VERSION_0 = 0, /* version 0 */
-} cs_packet_version_t;
+    DSS_VERSION_0 = 0, /* version 0 */
+} dss_packet_version_e;
 
-#define CS_LOCAL_MAJOR_VER_WEIGHT 1000000
-#define CS_LOCAL_MINOR_VER_WEIGHT 1000
-#define CS_LOCAL_MAJOR_VERSION 0
-#define CS_LOCAL_MINOR_VERSION 0
+#define DSS_PROTO_VERSION DSS_VERSION_0
+#define DSS_INVALID_VERSION (int32)0x7FFFFFFF
 
 #define DSS_PACKET_SIZE(pack) ((pack)->head->size)
 #define DSS_WRITE_ADDR(pack) ((pack)->buf + (pack)->head->size)
@@ -88,16 +84,13 @@ static inline void dss_init_packet(dss_packet_t *pack, uint32 options)
 static inline void dss_set_version(dss_packet_t *pack, uint32 version)
 {
     CM_ASSERT(pack != NULL);
-    pack->head->version = (uint8)(version % CS_LOCAL_MINOR_VER_WEIGHT);
-    pack->head->minor_version = (uint8)((version % CS_LOCAL_MAJOR_VER_WEIGHT) / CS_LOCAL_MINOR_VER_WEIGHT);
-    pack->head->major_version = (uint8)(version / CS_LOCAL_MAJOR_VER_WEIGHT);
+    pack->head->version = version;
 }
 
 static inline uint32 dss_get_version(dss_packet_t *pack)
 {
     CM_ASSERT(pack != NULL);
-    return pack->head->version + pack->head->minor_version * CS_LOCAL_MINOR_VER_WEIGHT +
-           pack->head->major_version * CS_LOCAL_MAJOR_VER_WEIGHT;
+    return pack->head->version;
 }
 
 static inline void dss_init_get(dss_packet_t *pack)
@@ -108,18 +101,14 @@ static inline void dss_init_get(dss_packet_t *pack)
     pack->offset = (uint32)sizeof(dss_packet_head_t);
 }
 
-static inline void dss_init_set(dss_packet_t *pack)
+static inline void dss_init_set(dss_packet_t *pack, uint32 proto_version)
 {
     if (pack == NULL) {
         return;
     }
-
+    (void)memset_s(pack->head, sizeof(dss_packet_head_t), 0, sizeof(dss_packet_head_t));
     pack->head->size = (uint32)sizeof(dss_packet_head_t);
-    pack->head->result = 0;
-    pack->head->flags = 0;
-    dss_set_version(pack, CS_LOCAL_VERSION);
-
-    pack->head->reserved = 0;
+    dss_set_version(pack, proto_version);
 }
 
 static inline status_t dss_put_str(dss_packet_t *pack, const char *str)
@@ -176,6 +165,24 @@ static inline status_t dss_put_int32(dss_packet_t *pack, uint32 value)
 
     *(uint32 *)DSS_WRITE_ADDR(pack) = (CS_DIFFERENT_ENDIAN(pack->options) != 0) ? cs_reverse_int32(value) : value;
     pack->head->size += (uint32)sizeof(uint32);
+    return CM_SUCCESS;
+}
+
+static inline status_t dss_reserv_text_buf(dss_packet_t *pack, uint32 size, char **data_buf)
+{
+    CM_ASSERT(pack != NULL);
+    CM_ASSERT(data_buf != NULL);
+    if (CM_ALIGN4(size) > DSS_REMAIN_SIZE(pack) - sizeof(uint32)) {
+        CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, size, DSS_REMAIN_SIZE(pack) - 1);
+        return CM_ERROR;
+    }
+
+    // record the size first
+    *(uint32 *)DSS_WRITE_ADDR(pack) = (CS_DIFFERENT_ENDIAN(pack->options) != 0) ? cs_reverse_int32(size) : size;
+    pack->head->size += (uint32)sizeof(uint32);
+
+    *data_buf = DSS_WRITE_ADDR(pack);
+    pack->head->size += CM_ALIGN4(size);
     return CM_SUCCESS;
 }
 

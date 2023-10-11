@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
  *
  * DSS is licensed under Mulan PSL v2.
@@ -68,6 +68,11 @@ typedef struct st_dss_cm_res {
     cm_res_mgr_t mgr;
 } dss_cm_res;
 
+typedef struct st_dss_srv_args {
+    char dss_home[DSS_MAX_PATH_BUFFER_SIZE];
+    bool is_maintain;
+} dss_srv_args_t;
+
 typedef struct st_dss_instance {
     int32 lock_fd;
     spinlock_t switch_lock;
@@ -82,11 +87,14 @@ typedef struct st_dss_instance {
     uint64 inst_work_status_map; // one bit one inst, bit value is 1 means inst ok, 0 means inst not ok
     spinlock_t inst_work_lock;
     dss_kernel_instance_t *kernel_instance;
+    int32 cluster_proto_vers[DSS_MAX_INSTANCES];
     bool8 is_maintain;
+    uint8 reserve[3];
+    bool32 is_join_cluster;
 } dss_instance_t;
 
 status_t dss_lock_instance(void);
-status_t dss_startup(dss_instance_t *inst, char *home);
+status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args);
 
 extern dss_instance_t g_dss_instance;
 #define ZFS_INST (&g_dss_instance)
@@ -106,6 +114,8 @@ void dss_set_inst_work_status(uint64 cur_inst_map);
 uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try_lock);
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id);
 void dss_get_cm_lock_and_recover(thread_t *thread);
+bool32 dss_check_join_cluster();
+void dss_check_unreg_volume(void);
 
 #ifdef __cplusplus
 }
