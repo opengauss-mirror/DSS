@@ -35,7 +35,7 @@ extern "C" {
 
 status_t dss_rename_file(dss_session_t *session, const char *src, const char *dst);
 // only rm empty dir
-status_t dss_remove_dir(dss_session_t *session, const char *dir, bool recursive);
+status_t dss_remove_dir(dss_session_t *session, const char *dir, bool32 recursive);
 status_t dss_remove_file(dss_session_t *session, const char *file);
 status_t dss_remove_link(dss_session_t *session, const char *file);
 status_t dss_remove_dir_file_by_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node);

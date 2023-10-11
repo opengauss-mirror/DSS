@@ -31,15 +31,6 @@
 #include <termios.h>
 #endif
 
-void dss_receive_password_tip(bool32 isfirst)
-{
-    if (isfirst) {
-        (void)printf("Please enter password to encrypt: \n");
-    } else {
-        (void)printf("Please input password again: \n");
-    }
-}
-
 static int32 dss_get_one_char()
 {
 #ifdef WIN32
@@ -64,14 +55,13 @@ static int32 dss_get_one_char()
 #endif
 }
 
-status_t dss_receive_password_from_terminal(char *buff, int32 buff_size, bool32 isfirst)
+status_t dss_receive_info_from_terminal(char *buff, int32 buff_size, bool32 is_plain_text)
 {
     int32 pos = 0;
     char char_ascii;
     int32 key = 0;
     bool32 len_exceed = CM_FALSE;
     CM_POINTER(buff);
-    dss_receive_password_tip(isfirst);
     do {
         key = dss_get_one_char();
         if (key < 0) {
@@ -110,8 +100,12 @@ status_t dss_receive_password_from_terminal(char *buff, int32 buff_size, bool32 
                 len_exceed = CM_TRUE;
                 continue;
             }
-            /* Faking a mask star * */
-            (void)printf("*");
+            if (is_plain_text) {
+                (void)printf("%c", char_ascii);
+            } else {
+                /* Faking a mask star * */
+                (void)printf("*");
+            }
             buff[pos] = char_ascii;
             pos++;
         }
@@ -151,10 +145,12 @@ status_t dss_catch_input_text(char *plain, uint32 plain_size)
     status_t ret;
     errno_t errcode;
     do {
-        ret = dss_receive_password_from_terminal(first, (int32)sizeof(first), CM_TRUE);
+         (void)printf("Please enter password to encrypt: \n");
+        ret = dss_receive_info_from_terminal(first, (int32)sizeof(first), CM_TRUE);
         DSS_BREAK_IF_ERROR(ret);
 
-        ret = dss_receive_password_from_terminal(second, (int32)sizeof(second), CM_FALSE);
+         (void)printf("Please input password again: \n");
+        ret = dss_receive_info_from_terminal(second, (int32)sizeof(second), CM_FALSE);
         DSS_BREAK_IF_ERROR(ret);
 
         ret = dss_verify_password_str(first, second);

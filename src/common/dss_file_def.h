@@ -31,9 +31,9 @@
 #include "cm_latch.h"
 #include "dss_ga.h"
 #include "cm_date.h"
+#include "cm_bilist.h"
 #include "dss_shm_hashmap.h"
 #include "dss_param.h"
-#include "dss_skiplist.h"
 #include "dss_stack.h"
 #include "ceph_interface.h"
 
@@ -41,6 +41,7 @@
 #define DSS_FT_NODE_FLAG_SYSTEM 0x00000001
 #define DSS_FT_NODE_FLAG_DEL 0x00000002
 #define DSS_FT_NODE_FLAG_NORMAL 0x00000004
+#define DSS_FT_NODE_FLAG_INVALID_FS_META 0x00000008
 
 #define DSS_GET_ROOT_BLOCK(dss_ctrl_p) ((dss_root_ft_block_t *)((dss_ctrl_p)->root))
 #define DSS_MAX_FT_AU_NUM 10
@@ -52,7 +53,7 @@
 #define DSS_RECYLE_DIR_NAME ".recycle"
 
 #define DSS_CTRL_RESERVE_SIZE1 (SIZE_K(727) + 512)
-#define DSS_CTRL_RESERVE_SIZE2 (SIZE_K(15))
+#define DSS_CTRL_RESERVE_SIZE2 (SIZE_K(15) -  512)
 
 #define DSS_CTRL_CORE_OFFSET OFFSET_OF(dss_ctrl_t, core_data)
 #define DSS_CTRL_VOLUME_OFFSET OFFSET_OF(dss_ctrl_t, volume_data)
@@ -70,6 +71,10 @@
 #define DSS_VOLUME_HEAD_SIZE SIZE_M(4)
 
 #define DSS_VG_IS_VALID(ctrl_p) ((ctrl_p)->vg_info.valid_flag == DSS_CTRL_VALID_FLAG)
+
+#define DSS_STANDBY_CLUSTER (g_inst_cfg->params.cluster_run_mode == CLUSTER_STANDBY)
+#define DSS_IS_XLOG_VG(VG_ID) (VG_ID == g_inst_cfg->params.xlog_vg_id)
+#define DSS_STANDBY_CLUSTER_XLOG_VG(VG_ID) (DSS_STANDBY_CLUSTER && DSS_IS_XLOG_VG(VG_ID))
 
 #define DSS_FS_BLOCK_ROOT_SIZE 64
 #define DSS_AU_ROOT_SIZE (((DSS_DISK_UNIT_SIZE) - (24)) - (DSS_FS_BLOCK_ROOT_SIZE))
@@ -103,8 +108,8 @@ typedef int32 volume_handle_t;
 
 typedef struct st_dss_volume_def {
     uint64 id : 16;
-    uint64 flag : 1;
-    uint64 reserve : 47;
+    uint64 flag : 3;
+    uint64 reserve : 45;
     uint64 version;
     char name[DSS_MAX_VOLUME_PATH_LEN];
     char code[DSS_VOLUME_CODE_SIZE];
@@ -113,13 +118,14 @@ typedef struct st_dss_volume_def {
 
 typedef enum en_volume_slot {
     VOLUME_FREE = 0,  // free
-    VOLUME_OCCUPY = 1
+    VOLUME_OCCUPY = 1,
+    VOLUME_PREPARE = 2, // not registered
 } volume_slot_e;
 
 typedef struct st_dss_volume_attr {
-    uint64 flag : 1;  // volume_slot_e
+    uint64 reverse1 : 1;
     uint64 id : 16;
-    uint64 reserve : 47;
+    uint64 reserve2 : 47;
     uint64 size;
     uint64 hwm;
     uint64 free;
@@ -213,6 +219,10 @@ typedef struct st_refvol_ctrl {  // UNUSED
     dss_volume_ctrl_t volume;
 } dss_refvol_ctrl_t;
 
+typedef struct st_dss_group_global_ctrl {
+    uint64 cluster_node_info;
+} dss_group_global_ctrl_t;
+
 typedef struct st_dss_ctrl {
     union {
         dss_vg_header_t vg_info;
@@ -232,6 +242,10 @@ typedef struct st_dss_ctrl {
     char reserve1[DSS_CTRL_RESERVE_SIZE1];   // 727K + 512
     char lock[DSS_DISK_LOCK_LEN];     // align with 16K
     char reserve2[DSS_CTRL_RESERVE_SIZE2];
+    union {
+        dss_group_global_ctrl_t global_ctrl;
+        char global_data[DSS_DISK_UNIT_SIZE]; // client disk info, size is 512
+    };
 } dss_ctrl_t;
 
 typedef enum en_dss_vg_status {
@@ -263,9 +277,8 @@ typedef struct st_dss_vg_info_item_t {
     char *align_buf;
     dss_stack stack;
     latch_t open_file_latch;
-    skip_list_t open_file_list;  // open file skip list index.
-    skip_list_t open_pid_list;   // process open file skip list index.
-    latch_t disk_latch;          // just for lock vg to lock the local instance.
+    bilist_t open_file_list;  // open file bilist.
+    latch_t disk_latch;       // just for lock vg to lock the local instance.
     latch_t latch[LATCH_COUNT];
 } dss_vg_info_item_t;
 
@@ -304,7 +317,9 @@ typedef struct st_dss_share_vg_info_t {
 typedef enum en_zft_item_type {
     GFT_PATH,  // path
     GFT_FILE,
-    GFT_LINK
+    GFT_LINK,
+    GFT_LINK_TO_PATH,
+    GFT_LINK_TO_FILE
 } gft_item_type_t;
 
 typedef struct st_zft_list {
@@ -332,6 +347,8 @@ typedef union st_gft_node {
         uint64 fid;
         uint64 written_size;
         ftid_t parent;
+        uint64 file_ver; // the current ver of the file, when create, it's zero, when truncate the content of the file
+                         // to small size, update it by in old file_ver with step 1
     };
     char ft_node[256];  // to ensure that the structure size is 256
 } gft_node_t;
@@ -344,14 +361,19 @@ typedef struct st_dss_check_dir_param_t {
     dss_vg_info_item_t *vg_item;
     gft_node_t *p_node;
     gft_node_t *last_node;
-    bool32 is_throw_err;
-    bool32 is_skip_delay_file;
+    gft_node_t *link_node;
+    bool8 is_skip_delay_file;
+    bool8 not_exist_err;
+    bool8 is_find_link;
+    bool8 last_is_link;
 } dss_check_dir_param_t;
 
 typedef struct st_dss_check_dir_output_t {
     gft_node_t **out_node;
     dss_vg_info_item_t **item;
     gft_node_t **parent_node;
+    bool8 is_lock_x;
+    bool8 is_local_req;
 } dss_check_dir_output_t;
 
 #define DSS_GET_COMMON_BLOCK_HEAD(au) ((dss_common_block_t *)((char *)(au)))
@@ -374,6 +396,9 @@ typedef struct st_dss_common_block_t {
 } dss_common_block_t;
 
 typedef struct st_dss_block_ctrl {
+    uint64 fid;             // it's the owner's gft_node_t.fid
+    uint64 file_ver;        // it's the owner's fgt_node_t.file_ver
+    bool32 is_refresh_ftid; // just for dss_ft_block_t
     latch_t latch;
     sh_mem_p hash_next;
     sh_mem_p hash_prev;
@@ -483,10 +508,12 @@ typedef struct st_dss_env {
     latch_t conn_latch;
     uint32 conn_count;
     dss_file_context_t *files;
-    dss_vg_info_t *dss_vg_info;
     void *session;
     thread_t thread_heartbeat;
     dss_config_t inst_cfg;
+#ifdef ENABLE_DSSTEST
+    pid_t inittor_pid;
+#endif
 } dss_env_t;
 
 typedef struct st_dss_dir_t {
@@ -494,104 +521,12 @@ typedef struct st_dss_dir_t {
     uint64 version;
     ftid_t cur_ftid;
     gft_node_t cur_node;
-    uint64 pftid;  // path ftid
+    ftid_t pftid;  // path ftid
 } dss_dir_t;
 
 typedef struct st_dss_find_node_t {
     ftid_t ftid;
     char vg_name[DSS_MAX_NAME_LEN];
 } dss_find_node_t;
-
-// redo struct allocate file table node
-#define DSS_REDO_ALLOC_FT_NODE_NUM 3
-typedef struct st_dss_redo_alloc_ft_node_t {
-    gft_root_t ft_root;
-    gft_node_t node[DSS_REDO_ALLOC_FT_NODE_NUM];
-} dss_redo_alloc_ft_node_t;
-
-#define DSS_REDO_FREE_FT_NODE_NUM 4
-typedef struct st_dss_redo_free_ft_node_t {
-    gft_root_t ft_root;
-    gft_node_t node[DSS_REDO_FREE_FT_NODE_NUM];
-} dss_redo_free_ft_node_t;
-
-#define DSS_REDO_RECYCLE_FT_NODE_NUM 3
-typedef struct st_dss_redo_recycle_ft_node_t {
-    gft_node_t node[DSS_REDO_RECYCLE_FT_NODE_NUM];
-} dss_redo_recycle_ft_node_t;
-
-typedef struct st_dss_redo_format_ft_t {
-    auid_t auid;
-    uint32 obj_id;
-    uint32 count;
-    dss_block_id_t old_last_block;
-    gft_list_t old_free_list;
-} dss_redo_format_ft_t;
-
-typedef struct st_dss_redo_free_fs_block_t {
-    char head[DSS_DISK_UNIT_SIZE];
-} dss_redo_free_fs_block_t;
-
-typedef struct st_dss_redo_alloc_fs_block_t {
-    dss_block_id_t id;
-    dss_fs_block_root_t root;
-} dss_redo_alloc_fs_block_t;
-
-typedef struct st_dss_redo_rename_t {
-    gft_node_t node;
-    char name[DSS_MAX_NAME_LEN];
-    char old_name[DSS_MAX_NAME_LEN];
-} dss_redo_rename_t;
-
-typedef struct st_dss_redo_volhead_t {
-    char head[DSS_DISK_UNIT_SIZE];
-    char name[DSS_MAX_NAME_LEN];
-} dss_redo_volhead_t;
-
-typedef struct st_dss_redo_volop_t {
-    char attr[DSS_DISK_UNIT_SIZE];
-    char def[DSS_DISK_UNIT_SIZE];
-    bool32 is_add;
-    uint32 volume_count;
-    uint64 core_version;
-    uint64 volume_version;
-} dss_redo_volop_t;
-
-typedef struct st_dss_redo_format_fs_t {
-    auid_t auid;
-    uint32 obj_id;
-    uint32 count;
-    dss_fs_block_list_t old_free_list;
-} dss_redo_format_fs_t;
-
-typedef struct st_dss_redo_init_fs_block_t {
-    dss_block_id_t id;
-    dss_block_id_t second_id;
-    uint16 index;
-    uint16 used_num;
-    uint16 reserve[2];
-} dss_redo_init_fs_block_t;
-
-typedef struct st_dss_redo_set_fs_block_t {
-    dss_block_id_t id;
-    dss_block_id_t value;
-    dss_block_id_t old_value;
-    uint16 index;
-    uint16 used_num;
-    uint16 old_used_num;
-    uint16 reserve;
-} dss_redo_set_fs_block_t;
-
-typedef struct st_dss_redo_set_file_size_t {
-    ftid_t ftid;
-    uint64 size;
-    uint64 oldsize;  // old size
-} dss_redo_set_file_size_t;
-
-typedef struct st_dss_redo_set_fs_block_list_t {
-    dss_block_id_t id;
-    dss_block_id_t next;
-    uint16 reserve[4];
-} dss_redo_set_fs_block_list_t;
 
 #endif  // __DSS_FILE_DEF_H__

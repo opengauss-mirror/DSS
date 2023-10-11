@@ -73,17 +73,42 @@ typedef enum en_dss_log_id {
 #define DSS_CONN_NEVER_TIMEOUT (-1)
 #define DSS_VERSION_MAX_LEN 256
 
-typedef enum en_dss_item_type { DSS_PATH, DSS_FILE, DSS_LINK } dss_item_type_t;
+typedef enum en_dss_item_type {
+    DSS_PATH,
+    DSS_FILE,
+    DSS_LINK,
+    DSS_LINK_TO_PATH,
+    DSS_LINK_TO_FILE,
+} dss_item_type_t;
 
 typedef struct st_dss_dirent {
     dss_item_type_t d_type;
     char d_name[DSS_MAX_NAME_LEN];
 } dss_dirent_t;
 
-typedef enum en_dss_server_status {
+typedef enum en_dss_rdwr_type_e {
     DSS_STATUS_NORMAL = 0,
     DSS_STATUS_READONLY,
     DSS_STATUS_READWRITE,
+    DSS_SERVER_STATUS_END,
+} dss_rdwr_type_e;
+
+typedef enum en_dss_instance_status {
+    DSS_STATUS_PREPARE = 0,
+    DSS_STATUS_RECOVERY,
+    DSS_STATUS_SWITCH,
+    DSS_STATUS_OPEN,
+    DSS_INSTANCE_STATUS_END,
+} dss_instance_status_e;
+
+#define DSS_MAX_STATUS_LEN 16
+typedef struct st_dss_server_status_t {
+    dss_instance_status_e instance_status_id;
+    char instance_status[DSS_MAX_STATUS_LEN];
+    dss_rdwr_type_e server_status_id;
+    char server_status[DSS_MAX_STATUS_LEN];
+    unsigned int local_instance_id;
+    unsigned int master_id;
 } dss_server_status_t;
 
 typedef struct st_dss_stat {
@@ -113,13 +138,11 @@ DSS_DECLARE int dss_dremove(const char *dir);
 DSS_DECLARE dss_dir_handle dss_dopen(const char *dir_path);
 DSS_DECLARE int dss_dread(dss_dir_handle dir, dss_dir_item_t item, dss_dir_item_t *result);
 DSS_DECLARE int dss_dclose(dss_dir_handle dir);
-DSS_DECLARE int dss_dexist(const char *name, bool *result);
 // file
 DSS_DECLARE int dss_fcreate(const char *name, int flag);
 DSS_DECLARE int dss_fremove(const char *file);
 DSS_DECLARE int dss_fopen(const char *file, int flag, int *handle);
 DSS_DECLARE int dss_fclose(int handle);
-DSS_DECLARE int dss_fexist(const char *name, bool *result);
 DSS_DECLARE long long dss_fseek(int handle, long long offset, int origin);
 DSS_DECLARE int dss_fwrite(int handle, const void *buf, int size);
 DSS_DECLARE int dss_fread(int handle, void *buf, int size, int *read_size);
@@ -140,7 +163,6 @@ DSS_DECLARE int dss_aio_post_pwrite(void *iocb, int handle, size_t count, long l
 
 // link
 DSS_DECLARE int dss_unlink(const char *link);
-DSS_DECLARE int dss_islink(const char *name, bool *result);
 DSS_DECLARE int dss_readlink(const char *link_path, char *buf, int bufsize);
 DSS_DECLARE int dss_symlink(const char *oldpath, const char *newpath);
 // au
@@ -159,7 +181,7 @@ DSS_DECLARE int dss_set_svr_path(const char *conn_path);
 DSS_DECLARE int dss_set_conn_timeout(int timeout);
 // instance param
 DSS_DECLARE int dss_set_main_inst(void);
-DSS_DECLARE int dss_get_inst_status();
+DSS_DECLARE int dss_get_inst_status(dss_server_status_t *dss_status);
 
 DSS_DECLARE int dss_stat(const char *path, dss_stat_info_t item);
 DSS_DECLARE int dss_lstat(const char *path, dss_stat_info_t item);

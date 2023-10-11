@@ -27,6 +27,7 @@
 
 #include "dss_diskgroup.h"
 #include "dss_file_def.h"
+#include "dss_malloc.h"
 #include "dss_session.h"
 
 typedef struct st_dss_open_file_info_t {
@@ -34,13 +35,21 @@ typedef struct st_dss_open_file_info_t {
     uint64 pid;
     uint64 ref;
     int64 start_time;
+    bilist_node_t link;
 } dss_open_file_info_t;
 
 status_t dss_init_open_file_index(dss_vg_info_item_t *vg_item);
 void dss_destroy_open_file_index(dss_vg_info_item_t *vg_item);
 
-status_t dss_insert_open_file_index(dss_vg_info_item_t *vg_item, uint64 ftid, uint64 pid, int64 start_time);
-status_t dss_delete_open_file_index(dss_vg_info_item_t *vg_item, uint64 ftid, uint64 pid, int64 start_time);
-status_t dss_check_open_file(dss_vg_info_item_t *vg_item, uint64 fid, bool32 *is_open);
-
+status_t dss_insert_open_file_index(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, uint64 pid, int64 start_time);
+status_t dss_delete_open_file_index(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, uint64 pid, int64 start_time);
+status_t dss_check_open_file(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *is_open);
+static inline void dss_free_open_file_node(bilist_node_t *node, bilist_t *bilist)
+{
+    cm_bilist_del(node, bilist);
+    dss_open_file_info_t *open_file = BILIST_NODE_OF(dss_open_file_info_t, node, link);
+    cm_free(open_file);
+}
 #endif

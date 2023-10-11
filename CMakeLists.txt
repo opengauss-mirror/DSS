@@ -173,7 +173,7 @@ set (LIBRARY_OUTPUT_PATH        ${CMAKE_CURRENT_SOURCE_DIR}/output/lib)
 set (EXECUTABLE_OUTPUT_PATH     ${CMAKE_CURRENT_SOURCE_DIR}/output/bin)
 
 CONFIGURE_FILE(config.h.in ${DSS_COMMON_API_PATH}/config.h)
-
+CONFIGURE_FILE(config.h.in ${DSS_SER_PATH}/config.h)
 ## add source
 link_directories(${LIBRARY_OUTPUT_PATH} ${SECUREC_LIB_PATH} ${LIBZ_PATH} ${CBB_LIB_PATH})
 IF (ENABLE_FUZZASAN)

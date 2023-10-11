@@ -49,4 +49,9 @@ static inline void dss_latch(latch_t *latch, dss_latch_mode_e latch_mode, uint32
 {
     latch_mode == LATCH_MODE_SHARE ? cm_latch_s(latch, sid, CM_FALSE, NULL) : cm_latch_x(latch, sid, NULL);
 }
+
+void dss_latch_s2(latch_t *latch, uint32 sid, bool32 is_force, latch_statis_t *stat);
+void dss_latch_x2ix(latch_t *latch, uint32 sid, latch_statis_t *stat);
+void dss_latch_ix2x(latch_t *latch, uint32 sid, latch_statis_t *stat);
+
 #endif

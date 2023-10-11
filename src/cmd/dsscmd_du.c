@@ -119,49 +119,69 @@ static double du_traverse_node(
 
 static status_t du_try_print_link(dss_conn_t *conn, char *path, const char *params)
 {
-    size_t len = strlen(path);
-    if (len > 0 && path[len - 1] != '/') {
+    if (dss_is_valid_link_path(path)) {
         gft_node_t *node = NULL;
-
-        dss_check_dir_output_t output_info = {&node, NULL, NULL};
-        dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_TRUE);
-        if (node) {  // print the link du
+        dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE, CM_TRUE};
+        DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE));
+        if (node != NULL) {  // print the link du
             du_print(node->size, params, path + 1);
             return CM_SUCCESS;
         }
     }
+    LOG_DEBUG_INF("Failed to try print path %s with the link type", path);
     return CM_ERROR;
 }
 
 status_t du_traverse_path(char *path, size_t path_size, dss_conn_t *conn, const char *params, size_t params_size)
 {
-    bool exist = false;
+    bool32 exist = false;
+    gft_item_type_t type;
     gft_node_t *node = NULL;
+    dss_vg_info_item_t *vg_item = NULL;
+    dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE, CM_TRUE};
+    char name[DSS_MAX_NAME_LEN] = {0};
     size_t len = strlen(path);
+    status_t status = CM_ERROR;
 
-    DSS_RETURN_IF_SUCCESS(du_try_print_link(conn, path, params));
-
-    dss_exist_file_impl(conn, path, &exist);
-    if (exist) {
-        dss_check_dir_output_t output_info = {&node, NULL, NULL};
-        dss_check_dir(conn->session, path, GFT_FILE, &output_info, CM_TRUE);
-        if (!node) {
-            DSS_PRINT_ERROR("Failed to check file node.\n");
-            return CM_ERROR;
-        }
-        du_print(node->size, params, path + 1);
-        return CM_SUCCESS;
+    DSS_RETURN_IF_ERROR(dss_find_vg_by_dir(path, name, &vg_item));
+    DSS_RETURN_IF_ERROR(dss_exist_impl(conn, path, &exist, &type));
+    if (!exist) {
+        DSS_PRINT_ERROR("The path %s is not exist.\n", path);
+        return CM_ERROR;
     }
-
-    dss_dir_t *dir = dss_open_dir_impl(conn, path, CM_TRUE);
-    dss_check_dir_output_t output_info = {&node, NULL, NULL};
-    dss_check_dir(conn->session, path, GFT_PATH, &output_info, CM_TRUE);
-
-    if (!dir || !node) {
-        if (dir) {
-            (void)dss_close_dir_impl(conn, dir);
+    if (type == GFT_FILE) {
+        DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
+        status = dss_check_dir(conn->session, path, GFT_FILE, &output_info, CM_FALSE);
+        if (status == CM_SUCCESS && node != NULL) {
+            du_print(node->size, params, path + 1);
+            DSS_UNLOCK_VG_META_S(vg_item, conn->session);
+            DSS_PRINT_INF("Succeed to du file info.\n");
+            return CM_SUCCESS;
         }
-        DSS_PRINT_ERROR("Failed to open/check dir %s.\n", path);
+        DSS_UNLOCK_VG_META_S(vg_item, conn->session);
+    } else if (type == GFT_LINK || type == GFT_LINK_TO_FILE || type == GFT_LINK_TO_PATH) {
+        DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
+        status = du_try_print_link(conn, path, params);
+        DSS_UNLOCK_VG_META_S(vg_item, conn->session);
+        if (status == CM_SUCCESS) {
+            return status;
+        }
+    }
+    dss_dir_t *dir = dss_open_dir_impl(conn, path, CM_TRUE);
+    if (dir == NULL) {
+        DSS_PRINT_ERROR("Failed to open dir %s.\n", path);
+        return CM_ERROR;
+    }
+    if (SECUREC_UNLIKELY(dss_lock_vg_s(dir->vg_item, conn->session) != CM_SUCCESS)) {
+        (void)dss_close_dir_impl(conn, dir);
+        return CM_ERROR;
+    }
+    node = dss_get_ft_node_by_ftid(conn->session, dir->vg_item, dir->pftid, CM_FALSE, CM_FALSE);
+    if (node == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "dir ftid", *(uint64 *)&dir->pftid);
+        DSS_PRINT_ERROR("Failed to get ft node %s.\n", path);
+        DSS_UNLOCK_VG_META_S(dir->vg_item, conn->session);
+        (void)dss_close_dir_impl(conn, dir);
         return CM_ERROR;
     }
 
@@ -175,8 +195,6 @@ status_t du_traverse_path(char *path, size_t path_size, dss_conn_t *conn, const 
     double total_size = du_traverse_node(conn, node, dir->vg_item, params, path);
     char granularity = params[DSS_ARG_IDX_1];
 
-    (void)dss_close_dir_impl(conn, dir);
-
     path[strlen(path)] = '/';
     text_t path_text, name_text;
     cm_str2text(path, &path_text);
@@ -186,5 +204,7 @@ status_t du_traverse_path(char *path, size_t path_size, dss_conn_t *conn, const 
     if (granularity == 's') {
         du_print(total_size, params, path);
     }
+    DSS_UNLOCK_VG_META_S(dir->vg_item, conn->session);
+    (void)dss_close_dir_impl(conn, dir);
     return CM_SUCCESS;
 }

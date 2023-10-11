@@ -133,7 +133,7 @@ status_t dss_write_packet(cs_pipe_t *pipe, dss_packet_t *pack)
     }
     status_t status = VIO_SEND_TIMED(pipe, pack->buf, pack->head->size, DSS_DEFAULT_NULL_VALUE);
     DSS_RETURN_IFERR2(
-        status, CM_THROW_ERROR(ERR_PACKET_SEND, pack->buf_size, pack->head->size, DSS_DEFAULT_NULL_VALUE));
+        status, CM_THROW_ERROR(ERR_PACKET_SEND, pack->buf_size, pack->head->size, pack->head->size));
     return CM_SUCCESS;
 }
 

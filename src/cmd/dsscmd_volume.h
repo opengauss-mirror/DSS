@@ -13,41 +13,23 @@
  * See the Mulan PSL v2 for more details.
  * -------------------------------------------------------------------------
  *
- * dss_system.h
+ * dsscmd_volume.h
  *
  *
  * IDENTIFICATION
- *    src/common/dss_system.h
+ *    src/cmd/dsscmd_volume.h
  *
  * -------------------------------------------------------------------------
  */
-#ifndef __DSS_SYSTEM_H__
-#define __DSS_SYSTEM_H__
 
-#include <stdio.h>
-#include <string.h>
+#ifndef DSSCMD_VOLUME_H_
+#define DSSCMD_VOLUME_H_
 
-#include "cm_defs.h"
-#include "cm_error.h"
-#include "cs_pipe.h"
+#include "dss_param.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#define LENGTH_EIGHT_BYTE 8
 
-uint64 cm_sys_pid(void);
-char *cm_sys_program_name(void);
-char *cm_sys_user_name(void);
-char *cm_sys_host_name(void);
-char *cm_sys_platform_name(void);
-int64 cm_sys_ticks(void);
-int64 cm_sys_process_start_time(uint64 pid);
-bool32 cm_sys_process_alived(uint64 pid, int64 start_time);
-void cm_try_init_system(void);
-void cm_save_remote_host(cs_pipe_t *pipe, char *os_host);
-
-#ifdef __cplusplus
-}
-#endif
+status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_t *inst_cfg, uint32 size);
+status_t dss_add_volume_offline(const char *home, const char *vg_name, const char *vol_path);
 
 #endif

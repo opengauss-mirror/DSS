@@ -27,7 +27,7 @@
 #include "dss_malloc.h"
 #include "dss_file.h"
 #include "dss_redo.h"
-#include "dss_system.h"
+#include "cm_system.h"
 #include "dss_session.h"
 
 #ifdef __cplusplus
@@ -117,6 +117,9 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
     g_dss_session_ctrl.sessions[id].is_closed = CM_FALSE;
     g_dss_session_ctrl.sessions[id].proto_type = PROTO_TYPE_UNKNOWN;
     g_dss_session_ctrl.sessions[id].status = DSS_SESSION_STATUS_IDLE;
+    errcode = memset_s(g_dss_session_ctrl.sessions[id].dss_session_stat, DSS_EVT_COUNT * sizeof(dss_session_stat_t), 0,
+        DSS_EVT_COUNT * sizeof(dss_session_stat_t));
+    securec_check_ret(errcode);
     *session = &g_dss_session_ctrl.sessions[id];
     return CM_SUCCESS;
 }
@@ -266,12 +269,11 @@ static bool32 dss_is_timeout(int32 timeout, int32 sleep_times, int32 sleeps)
     return (bool32)(((timeout * 1000) / (sleeps)) < sleep_times);
 }
 
-status_t dss_lock_shm_meta_s_without_session(latch_t *latch, int32 timeout)
+status_t dss_lock_shm_meta_s_without_session(latch_t *latch, bool32 is_force, int32 timeout)
 {
     int32 sleep_times = 0;
     latch_statis_t *stat = NULL;
     uint32 count = 0;
-    bool32 is_force = CM_FALSE;
     uint32 invalid_sid = DSS_DEFAULT_SESSIONID;
 
     do {
@@ -383,7 +385,7 @@ status_t dss_lock_shm_meta_bucket_s(dss_session_t *session, uint32 id, latch_t *
         latch_offset.offset.shm_offset = cm_trans_shm_offset(key, latch);
         return dss_lock_shm_meta_s(session, &latch_offset, latch, SPIN_WAIT_FOREVER);
     } else {
-        return dss_lock_shm_meta_s_without_session(latch, SPIN_WAIT_FOREVER);
+        return dss_lock_shm_meta_s_without_session(latch, CM_FALSE, SPIN_WAIT_FOREVER);
     }
 }
 
@@ -444,6 +446,20 @@ void dss_lock_shm_meta_x(const dss_session_t *session, latch_t *latch)
             }
         }
     } while (CM_TRUE);
+}
+
+void dss_lock_shm_meta_x2ix(dss_session_t *session, latch_t *latch)
+{
+    latch_statis_t *stat = NULL;
+    uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
+    dss_latch_x2ix(latch, sid, stat);
+}
+
+void dss_lock_shm_meta_ix2x(dss_session_t *session, latch_t *latch)
+{
+    latch_statis_t *stat = NULL;
+    uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
+    dss_latch_ix2x(latch, sid, stat);
 }
 
 void dss_lock_shm_meta_bucket_x(latch_t *latch)

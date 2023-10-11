@@ -46,17 +46,19 @@ typedef struct st_dss_node_data {
 } dss_node_data_t;
 
 status_t dss_make_dir(dss_session_t *session, const char *parent, const char *dir_name);
-status_t dss_open_dir(dss_session_t *session, const char *dir_path, bool32 is_refresh);
+status_t dss_open_dir(dss_session_t *session, const char *dir_path, bool32 is_refresh, dss_find_node_t *find_info);
 void dss_close_dir(dss_session_t *session, char *vg_name, uint64 ftid);
 status_t dss_find_vg_by_dir(const char *dir_path, char *name, dss_vg_info_item_t **vg_item);
 void dss_lock_vg_mem_s_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item);
+void dss_lock_vg_mem_and_shm_x2ix(dss_session_t *session, dss_vg_info_item_t *vg_item);
+void dss_lock_vg_mem_and_shm_ix2x(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_unlock_vg_mem_and_shm(dss_session_t *session, dss_vg_info_item_t *vg_item);
 
 status_t dss_create_file(dss_session_t *session, const char *parent, const char *name, int32_t flag);
-status_t dss_exist_item(dss_session_t *session, const char *item, gft_item_type_t type, bool32 *result);
-status_t dss_open_file(dss_session_t *session, const char *file, int32_t flag);
+status_t dss_exist_item(dss_session_t *session, const char *item, bool32 *result, gft_item_type_t *output_type);
+status_t dss_open_file(dss_session_t *session, const char *file, int32_t flag, dss_find_node_t *find_info);
 status_t dss_close_file(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid);
 status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data);
 status_t dss_extend(dss_session_t *session, dss_node_data_t *node_data);
@@ -84,8 +86,7 @@ void dss_free_ft_node_inner(
 void dss_free_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node,
     bool32 real_del, bool32 latch_safe);
 gft_node_t *dss_find_ft_node(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, bool32 skip_del);
-char *dss_find_ft_block_latch(dss_vg_info_item_t *vg_item, ftid_t ftid, ga_obj_id_t *out_obj_id);
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, bool8 skip_del);
 gft_node_t *dss_get_ft_node_by_ftid(
     dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id, bool32 check_version, bool32 active_refresh);
 gft_node_t *dss_get_ft_node_by_ftid_no_refresh(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id);
@@ -111,8 +112,9 @@ typedef struct st_dss_alloc_fs_block_judge {
 } dss_alloc_fs_block_judge;
 
 status_t dss_alloc_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, char **block, ga_obj_id_t *out_obj_id,
-    dss_alloc_fs_block_judge *judge);
-status_t dss_init_file_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t *block_id);
+    dss_alloc_fs_block_judge *judge, gft_node_t *node);
+status_t dss_init_file_fs_block(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t *block_id, gft_node_t *node);
 void dss_free_fs_block_addr(dss_session_t *session, dss_vg_info_item_t *vg_item, char *block, ga_obj_id_t obj_id);
 int64 dss_get_fs_block_offset(dss_vg_info_item_t *vg_item, dss_block_id_t blockid);
 status_t dss_update_fs_bitmap_block_disk(
@@ -133,6 +135,7 @@ status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_ty
 dss_env_t *dss_get_env(void);
 dss_config_t *dss_get_inst_cfg(void);
 status_t dss_get_root_version(dss_vg_info_item_t *vg_item, uint64 *version);
+bool32 dss_is_valid_link_path(const char *path);
 status_t dss_check_name(const char *name);
 status_t dss_check_path(const char *path);
 status_t dss_check_volume_path(const char *path);
@@ -144,9 +147,7 @@ status_t dss_refresh_vginfo(dss_vg_info_item_t *vg_item);
 /* AU is usually NOT serial/continuous within a single file, judged from R/W file behaviors */
 status_t dss_get_fs_block_info_by_offset(
     int64 offset, uint64 au_size, uint32 *block_count, uint32 *block_au_count, uint32 *au_offset);
-status_t dss_check_open_file_remote(const char *vg_name, uint64 ftid, bool32 *is_open);
-void dss_clean_file_meta_core(dss_vg_info_item_t *vg_item, uint64 ftid);
-void dss_clean_file_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid);
+status_t dss_check_open_file_remote(dss_session_t *session, const char *vg_name, uint64 ftid, bool32 *is_open);
 void dss_mv_to_recycle_dir(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node);
 status_t dss_recycle_empty_file(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node);
@@ -157,6 +158,91 @@ status_t dss_open_file_check(dss_session_t *session, const char *file, dss_vg_in
 gft_node_t *dss_find_parent_node_by_node(dss_vg_info_item_t *vg_item, gft_node_t *node);
 status_t dss_check_rm_file(
     dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t ftid, bool32 *should_rm_file, gft_node_t **file_node);
+
+status_t dss_invalidate_fs_meta_remote(dss_session_t *session, const char *vg_name, uint64 ftid, bool32 *invalid_ack);
+void dss_set_node_flag(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, bool32 is_set, uint32 flags);
+void dss_validate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node);
+status_t dss_invalidate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node);
+
+static inline bool32 dss_is_fs_meta_valid(gft_node_t *node)
+{
+    return !(node->flags & DSS_FT_NODE_FLAG_INVALID_FS_META);
+}
+
+static inline dss_block_ctrl_t *dss_get_ft_block_ctrl(dss_ft_block_t *ft_block)
+{
+    return (dss_block_ctrl_t *)((char *)ft_block + DSS_BLOCK_CTRL_SIZE);
+}
+
+static inline dss_block_ctrl_t *dss_get_fs_block_ctrl(dss_fs_block_t *fs_block)
+{
+    return (dss_block_ctrl_t *)((char *)fs_block + DSS_FILE_SPACE_BLOCK_SIZE);
+}
+
+static inline bool32 dss_is_fs_block_valid(gft_node_t *node, dss_fs_block_t *fs_block)
+{
+    dss_block_ctrl_t *block_ctrl = dss_get_fs_block_ctrl(fs_block);
+    return ((node->fid == block_ctrl->fid) && (node->file_ver == block_ctrl->file_ver));
+}
+
+static inline void dss_set_fs_block_file_ver(gft_node_t *node, dss_fs_block_t *fs_block)
+{
+    dss_block_ctrl_t *block_ctrl = dss_get_fs_block_ctrl(fs_block);
+    block_ctrl->fid = node->fid;
+    block_ctrl->file_ver = node->file_ver;
+}
+
+static inline uint64 dss_get_fs_block_fid(dss_fs_block_t *fs_block)
+{
+    dss_block_ctrl_t *block_ctrl = dss_get_fs_block_ctrl(fs_block);
+    return block_ctrl->fid;
+}
+
+static inline uint64 dss_get_fs_block_file_ver(dss_fs_block_t *fs_block)
+{
+    dss_block_ctrl_t *block_ctrl = dss_get_fs_block_ctrl(fs_block);
+    return block_ctrl->file_ver;
+}
+
+static inline dss_ft_block_t *dss_get_ft_block(gft_node_t *node)
+{
+    return (dss_ft_block_t *)(((char *)node - node->id.item * sizeof(gft_node_t)) - sizeof(dss_ft_block_t));
+}
+
+static inline gft_node_t *dss_get_ft_node_by_block(dss_ft_block_t *block, uint32 item)
+{
+    return (gft_node_t *)(((char *)block + sizeof(dss_ft_block_t)) + item * sizeof(gft_node_t));
+}
+
+static inline bool32 dss_get_is_refresh_ftid(gft_node_t *node)
+{
+    dss_ft_block_t *ft_block = dss_get_ft_block(node);
+    dss_block_ctrl_t *block_ctrl = dss_get_ft_block_ctrl(ft_block);
+    return block_ctrl->is_refresh_ftid;
+}
+
+static inline void dss_set_is_refresh_ftid(gft_node_t *node, bool32 is_refresh_ftid)
+{
+    dss_ft_block_t *ft_block = dss_get_ft_block(node);
+    dss_block_ctrl_t *block_ctrl = dss_get_ft_block_ctrl(ft_block);
+    block_ctrl->is_refresh_ftid = is_refresh_ftid;
+}
+
+static inline bool32 is_ft_root_block(ftid_t ftid)
+{
+    return ftid.au == 0 && ftid.block == 0;
+}
+
+typedef status_t (*dss_invalidate_other_nodes_proc_t)(
+    dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
+void regist_invalidate_other_nodes_proc(dss_invalidate_other_nodes_proc_t proc);
+
+typedef status_t (*dss_refresh_ft_by_primary_proc_t)(dss_block_id_t blockid, uint32 vgid, char *vg_name);
+void regist_refresh_ft_by_primary_proc(dss_refresh_ft_by_primary_proc_t proc);
+typedef status_t (*dss_get_node_by_path_remote_proc_t)(dss_session_t *session, const char *dir_path,
+    gft_item_type_t type, dss_check_dir_output_t *output_info, bool32 is_throw_err);
+void regist_get_node_by_path_remote_proc(dss_get_node_by_path_remote_proc_t proc);
 
 #ifdef __cplusplus
 }

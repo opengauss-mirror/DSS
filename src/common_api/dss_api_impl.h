@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include "dss_errno.h"
 #include "dss_interaction.h"
+#include "dss_session.h"
 #include "dss_api.h"
 
 #ifdef __cplusplus
@@ -45,25 +46,70 @@ typedef struct st_dss_rw_param {
     bool32 is_read;
 } dss_rw_param_t;
 
-struct __dss_conn_opt;
-typedef struct __dss_conn_opt *dss_conn_opt_t;
+typedef struct st_dss_load_ctrl_info {
+    const char *vg_name;
+    uint32 index;
+} dss_load_ctrl_info_t;
+
+typedef struct st_dss_open_file_info {
+    const char *file_path;
+    int flag;
+} dss_open_file_info_t;
+
+typedef struct st_dss_open_dir_info {
+    const char *dir_path;
+    bool32 refresh_recursive;
+} dss_open_dir_info_t;
+
+typedef struct st_dss_add_or_remove_info {
+    const char *vg_name;
+    const char *volume_name;
+} dss_add_or_remove_info_t;
+
+typedef struct st_dss_extend_info {
+    uint64 fid;
+    uint64 ftid;
+    uint64 offset;
+    uint32 size;
+    const char *vg_name;
+    uint32 vg_id;
+} dss_extend_info_t;
+
+typedef struct st_dss_make_dir_info {
+    const char *parent;
+    const char *name;
+} dss_make_dir_info_t;
+
+typedef struct st_dss_remove_dir_info {
+    const char *name;
+    bool recursive;
+} dss_remove_dir_info_t;
+
+typedef struct st_dss_conn_opt {
+    int32 timeout;
+    char *user_name;
+} dss_conn_opt_t;
 
 #define DSSAPI_BLOCK_SIZE 512
 #define DSS_HOME "DSS_HOME"
 #define SYS_HOME "HOME"
 #define DSS_DEFAULT_UDS_PATH "UDS:/tmp/.dss_unix_d_socket"
 
+status_t dss_load_ctrl_sync(dss_conn_t *conn, const char *vg_name, uint32 index);
+status_t dss_add_or_remove_volume(dss_conn_t *conn, const char *vg_name, const char *volume_name, uint8 cmd);
+status_t dss_kick_host_sync(dss_conn_t *conn, int64 kick_hostid);
 status_t dss_alloc_conn(dss_conn_t **conn);
 void dss_free_conn(dss_conn_t *conn);
-status_t dss_connect(const char *server_locator, dss_conn_opt_t options, char *user_name, dss_conn_t *conn);
+status_t dss_connect(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn);
 void dss_disconnect(dss_conn_t *conn);
 
 // NOTE:just for dsscmd because not support many threads in one process.
-status_t dss_connect_ex(const char *server_locator, dss_conn_opt_t options, char *user_name, dss_conn_t *conn);
+status_t dss_connect_ex(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn);
 void dss_disconnect_ex(dss_conn_t *conn);
+status_t dss_lock_vg_s(dss_vg_info_item_t *vg_item, dss_session_t *session);
 
 status_t dss_make_dir_impl(dss_conn_t *conn, const char *parent, const char *dir_name);
-status_t dss_remove_dir_impl(dss_conn_t *conn, const char *dir, bool recursive);
+status_t dss_remove_dir_impl(dss_conn_t *conn, const char *dir, bool32 recursive);
 dss_dir_t *dss_open_dir_impl(dss_conn_t *conn, const char *dir_path, bool32 refresh_recursive);
 gft_node_t * dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 skip_delete);
 status_t dss_close_dir_impl(dss_conn_t *conn, dss_dir_t *dir);
@@ -71,9 +117,8 @@ status_t dss_create_file_impl(dss_conn_t *conn, const char *file_path, int flag)
 status_t dss_remove_file_impl(dss_conn_t *conn, const char *file_path);
 status_t dss_open_file_impl(dss_conn_t *conn, const char *file_path, int flag, int *handle);
 status_t dss_close_file_impl(dss_conn_t *conn, int handle);
-status_t dss_exist_file_impl(dss_conn_t *conn, const char *name, bool *result);
-status_t dss_exist_dir_impl(dss_conn_t *conn, const char *name, bool *result);
-status_t dss_islink_impl(dss_conn_t *conn, const char *name, bool *result);
+status_t dss_exist_impl(dss_conn_t *conn, const char *path, bool32 *result, gft_item_type_t *type);
+status_t dss_islink_impl(dss_conn_t *conn, const char *name, bool32 *result);
 int64 dss_seek_file_impl(dss_conn_t *conn, int handle, int64 offset, int origin);
 status_t dss_write_file_impl(dss_conn_t *conn, int handle, const void *buf, int size);
 status_t dss_read_file_impl(dss_conn_t *conn, int handle, void *buf, int size, int *read_size);
@@ -112,6 +157,7 @@ status_t dss_stop_server_impl(dss_conn_t *conn);
 void dss_get_api_volume_error(void);
 status_t dss_get_phy_size_impl(dss_conn_t *conn, int handle, long long *size);
 status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long offset, int size);
+status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ack);
 
 #define DSS_SET_PTR_VALUE_IF_NOT_NULL(ptr, value) \
     do {                                          \
@@ -120,6 +166,21 @@ status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long o
         }                                         \
     } while (0)
 
+#define DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, session)                          \
+    do {                                                                           \
+        if (SECUREC_UNLIKELY(dss_lock_vg_s((vg_item), (session)) != CM_SUCCESS)) { \
+            return CM_ERROR;                                                       \
+        }                                                                          \
+    } while (0)
+
+#define DSS_LOCK_VG_META_S_RETURN_NULL(vg_item, session)                           \
+    do {                                                                           \
+        if (SECUREC_UNLIKELY(dss_lock_vg_s((vg_item), (session)) != CM_SUCCESS)) { \
+            return NULL;                                                           \
+        }                                                                          \
+    } while (0)
+
+#define DSS_UNLOCK_VG_META_S(vg_item, session) dss_unlock_shm_meta((session), (vg_item)->vg_latch)
 #ifdef __cplusplus
 }
 #endif

@@ -49,8 +49,6 @@ status_t dss_iof_sync_all_vginfo(dss_session_t *session, dss_vg_info_t *dss_vg_i
 status_t dss_iof_kick_all(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, int64 rk, int64 rk_kick);
 status_t dss_iof_register_core(int64 rk, dss_vg_info_t *dss_vg_info);
 status_t dss_iof_unregister_core(int64 rk, dss_vg_info_t *dss_vg_info);
-status_t dss_iof_register_all(int64 rk, bool32 is_server);
-status_t dss_iof_unregister_all(int64 rk, bool32 is_server);
 
 // inquire lun info
 status_t dss_inquiry_luns_from_ctrl(dss_vg_info_item_t *item, ptlist_t *lunlist);

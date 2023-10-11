@@ -33,36 +33,6 @@
 extern "C" {
 #endif
 
-static status_t dss_notify_check_file_open(
-    dss_vg_info_item_t *vg_item, dss_session_t *session, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *is_open)
-{
-    if (g_dss_instance.is_maintain) {
-        return CM_SUCCESS;
-    }
-    dss_check_file_open_param check;
-    check.ftid = ftid;
-    *is_open = CM_FALSE;
-    errno_t err = strncpy_sp(check.vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name, DSS_MAX_NAME_LEN);
-    if (err != EOK) {
-        DSS_THROW_ERROR(ERR_SYSTEM_CALL, err);
-        return CM_ERROR;
-    }
-    LOG_DEBUG_INF("notify other dss instance to check file open, ftid:%llu in vg:%s.", ftid, vg_item->vg_name);
-    dss_recv_msg_t recv_msg = {CM_TRUE, CM_FALSE};
-    status_t status = dss_notify_sync(session, cmd, (char *)&check, sizeof(dss_check_file_open_param), &recv_msg);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("[DSS] ABORT INFO: Failed to notify other dss instance, cmd: %u, file: %llu, vg: %s, errcode:%d, "
-                    "OS errno:%d, OS errmsg:%s.",
-            cmd, ftid, vg_item->vg_name, cm_get_error_code(), errno, strerror(errno));
-        cm_fync_logfile();
-        _exit(1);
-    }
-    if (recv_msg.open_flag) {
-        *is_open = CM_TRUE;
-    }
-    return status;
-}
-
 static status_t dss_check_two_path_in_same_vg(const char *path1, const char *path2, char *vg_name)
 {
     uint32 beg_pos1 = 0;
@@ -89,14 +59,14 @@ static status_t dss_rename_file_check(
     status_t status = dss_check_file(*vg_item);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check file,errcode:%d.", cm_get_error_code()));
 
-    dss_check_dir_output_t output_info = {out_node, NULL, NULL};
-    dss_vg_info_item_t *file_vg_item;
+    dss_check_dir_output_t output_info = {out_node, NULL, NULL, CM_TRUE, CM_TRUE};
+    dss_vg_info_item_t *file_vg_item = *vg_item;
     output_info.item = &file_vg_item;
     status = dss_check_dir(session, src, GFT_FILE, &output_info, CM_TRUE);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check dir,errcode:%d.", cm_get_error_code()));
 
     gft_node_t *out_node_tmp = NULL;
-    dss_check_dir_output_t output_info_tmp = {&out_node_tmp, NULL, NULL};
+    dss_check_dir_output_t output_info_tmp = {&out_node_tmp, NULL, NULL, CM_TRUE, CM_TRUE};
     if (dss_check_dir(session, dst, GFT_FILE, &output_info_tmp, CM_TRUE) != CM_SUCCESS) {
         int32 errcode = cm_get_error_code();
         if (errcode != ERR_DSS_FILE_NOT_EXIST) {
@@ -158,49 +128,6 @@ status_t dss_rename_file_check_path_and_name(
     return CM_SUCCESS;
 }
 
-status_t dss_rename_file(dss_session_t *session, const char *src, const char *dst)
-{
-    char vg_name[DSS_MAX_NAME_LEN];
-    char dst_name[DSS_MAX_NAME_LEN];
-    CM_RETURN_IFERR(dss_rename_file_check_path_and_name(session, src, dst, vg_name, dst_name));
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
-    if (vg_item == NULL) {
-        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
-        return CM_ERROR;
-    }
-    if (cm_strcmpi(src, dst) == 0) {
-        DSS_THROW_ERROR(ERR_DSS_FILE_RENAME, "src name is the same as dst");
-        return CM_ERROR;
-    }    
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    dss_lock_vg_mem_and_shm_x(session, vg_item);
-    status_t ret = CM_ERROR;
-    do {
-        gft_node_t *out_node = NULL;
-        DSS_BREAK_IF_ERROR(dss_rename_file_check(session, src, dst, &vg_item, &out_node));
-        if (out_node == NULL) {
-            LOG_DEBUG_ERR("Failed to rename file %s.", src);
-            break;
-        }
-        bool32 is_open = CM_FALSE;
-        DSS_BREAK_IF_ERROR(
-            dss_notify_check_file_open(vg_item, session, BCAST_REQ_RENAME, *(uint64 *)&out_node->id, &is_open));
-        if (is_open) {
-            // logic same as before
-            DSS_THROW_ERROR(ERR_DSS_FILE_RENAME_OPENING_REMOTE, src, dst);
-            break;
-        }
-        DSS_BREAK_IF_ERROR(dss_rename_file_put_redo_log(session, out_node, dst_name, vg_item, inst_cfg));
-        ret = CM_SUCCESS;
-    } while (0);
-    if (ret != CM_SUCCESS) {
-        // error_handle: rollback memory
-        dss_rollback_mem_update(session->log_split, vg_item);
-    }
-    dss_unlock_vg_mem_and_shm(session, vg_item);
-    return ret;
-}
-
 static status_t dss_rm_dir_file_r(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, gft_node_t *parent_node)
 {
@@ -219,7 +146,7 @@ static status_t dss_rm_dir_file_r(
         while (!dss_cmp_auid(sub_node->next, DSS_INVALID_ID64)) {
             gft_node_t *cur_sub_node = sub_node;
             bool32 is_open;
-            status_t status = dss_check_open_file(vg_item, *(uint64 *)&cur_sub_node->id, &is_open);
+            status_t status = dss_check_open_file(session, vg_item, *(uint64 *)&cur_sub_node->id, &is_open);
             if (status != CM_SUCCESS) {
                 LOG_DEBUG_ERR(
                     "Failed to check open file, file %s, ftid:%llu.", cur_sub_node->name, *(uint64 *)&cur_sub_node->id);
@@ -252,8 +179,8 @@ static status_t dss_rm_dir_file_r(
     return CM_SUCCESS;
 }
 
-status_t dss_rm_dir_by_path(
-    dss_session_t *session, gft_node_t **node_array, const char *dir_name, bool recursive, dss_vg_info_item_t *vg_item)
+status_t dss_rm_dir_by_path(dss_session_t *session, gft_node_t **node_array, const char *dir_name, bool32 recursive,
+    dss_vg_info_item_t *vg_item)
 {
     gft_node_t *node = node_array[0];
     gft_node_t *parent_node = node_array[1];
@@ -304,8 +231,8 @@ status_t dss_check_vg_ft_dir(dss_session_t *session, dss_vg_info_item_t **vg_ite
 {
     CM_RETURN_IFERR(dss_check_file(*vg_item));
 
-    dss_vg_info_item_t *tmp_vg_item;
-    dss_check_dir_output_t output_info = {node, &tmp_vg_item, parent_node};
+    dss_vg_info_item_t *tmp_vg_item = *vg_item;
+    dss_check_dir_output_t output_info = {node, &tmp_vg_item, parent_node, CM_TRUE, CM_TRUE};
     status_t status = dss_check_dir(session, path, type, &output_info, CM_TRUE);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to check dir, errcode: %d.", status);
@@ -318,7 +245,7 @@ status_t dss_check_vg_ft_dir(dss_session_t *session, dss_vg_info_item_t **vg_ite
     }
 
     bool32 is_open;
-    status = dss_check_open_file(*vg_item, *(uint64 *)&(*node)->id, &is_open);
+    status = dss_check_open_file(session, *vg_item, *(uint64 *)&(*node)->id, &is_open);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to check open file, path %s, ftid:%llu.", path, *(uint64 *)&(*node)->id);
         return CM_ERROR;
@@ -360,90 +287,190 @@ static status_t dss_check_and_mark_file(dss_vg_info_item_t *vg_item, gft_node_t 
     return CM_ERROR;
 }
 
-static status_t dss_rm_dir_file(dss_session_t *session, const char *dir_name, gft_item_type_t type, bool recursive)
+static status_t dss_rm_dir_file_inner(dss_session_t *session, dss_vg_info_item_t **vg_item, gft_node_t **node,
+    const char *dir_name, gft_item_type_t type, bool32 recursive)
 {
-    CM_ASSERT(dir_name != NULL);
-    gft_node_t *node;
     gft_node_t *parent_node = NULL;
-    bool32 need_abort = DSS_FALSE;
-    status_t status = CM_ERROR;
-
-    dss_vg_info_item_t *vg_item = NULL;
-    char name[DSS_MAX_NAME_LEN];
-    CM_RETURN_IFERR(dss_find_vg_by_dir(dir_name, name, &vg_item));
-    dss_lock_vg_mem_and_shm_x(session, vg_item);
-
-    do {
-        if (dss_check_vg_ft_dir(session, &vg_item, dir_name, type, &node, &parent_node) != CM_SUCCESS) {
-            if ((cm_get_error_code() == ERR_DSS_FILE_REMOVE_OPENING) && (node->flags & DSS_FT_NODE_FLAG_DEL)) {
-                cm_reset_error();
-                status = CM_SUCCESS;
-                break;
-            }
-            break;
+    status_t status = dss_check_vg_ft_dir(session, vg_item, dir_name, type, node, &parent_node);
+    if (status != CM_SUCCESS) {
+        if ((cm_get_error_code() == ERR_DSS_FILE_REMOVE_OPENING) && ((*node)->flags & DSS_FT_NODE_FLAG_DEL)) {
+            cm_reset_error();
+            return CM_SUCCESS;
         }
-        bool32 is_open = CM_FALSE;
-        DSS_BREAK_IF_ERROR(
-            dss_notify_check_file_open(vg_item, session, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&node->id, &is_open));
-        if (is_open) {
-            status = dss_check_and_mark_file(vg_item, node, dir_name);
-            if (status != CM_SUCCESS && (cm_get_error_code() == ERR_DSS_FILE_REMOVE_OPENING) &&
-                (node->flags & DSS_FT_NODE_FLAG_DEL)) {
-                cm_reset_error();
-                status = CM_SUCCESS;
-                break;
-            }
-            break;
-        }
-
-        LOG_RUN_INF("Begin to rm dir or file:%s in vg:%s.", dir_name, vg_item->vg_name);
-        if (type == GFT_PATH) {
-            gft_node_t *node_array[DSS_REMOVE_DIR_NEED_NODE_NUM] = {node, parent_node};
-            DSS_BREAK_IF_ERROR(dss_rm_dir_by_path(session, node_array, dir_name, recursive, vg_item));
-        } else {
-            DSS_BREAK_IF_ERROR(dss_rm_dir_file_r(session, vg_item, node, parent_node));
-        }
-
-        if (dss_process_redo_log(session, vg_item) != CM_SUCCESS) {
-            LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
-                cm_get_error_code(), errno, strerror(errno));
-            need_abort = DSS_TRUE;
-            break;
-        }
-        LOG_RUN_INF("Succeed to rm dir or file:%s in vg:%s.", dir_name, vg_item->vg_name);
-        status = CM_SUCCESS;
-    } while (0);
-    if (status == CM_SUCCESS) {
-        dss_clean_file_meta_core(vg_item, *(uint64 *)&node->id);
+        return status;
     }
-    dss_unlock_vg_mem_and_shm(session, vg_item);
-    if (need_abort) {
-        cm_fync_logfile();
-        _exit(1);
+
+    bool32 is_open = CM_FALSE;
+    gft_node_t *old_node = *node;
+    dss_unlock_vg_mem_and_shm(session, *vg_item);
+    DSS_RETURN_IFERR2(
+        dss_notify_expect_bool_ack(*vg_item, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&(*node)->id, &is_open),
+        dss_lock_vg_mem_and_shm_x(session, *vg_item));
+    dss_lock_vg_mem_and_shm_x(session, *vg_item);
+
+    status = dss_check_vg_ft_dir(session, vg_item, dir_name, type, node, &parent_node);
+    if (status != CM_SUCCESS) {
+        if ((cm_get_error_code() == ERR_DSS_FILE_REMOVE_OPENING) && ((*node)->flags & DSS_FT_NODE_FLAG_DEL)) {
+            cm_reset_error();
+            return CM_SUCCESS;
+        }
+        return status;
+    }
+
+    if (old_node->fid != (*node)->fid) {
+        DSS_THROW_ERROR_EX(ERR_DSS_FILE_NOT_EXIST, "%s not exist, old fid is %llu, new fid is %llu.",
+            old_node->name, old_node->fid, (*node)->fid);
+        return CM_ERROR;
+    }
+    if (is_open) {
+        status = dss_check_and_mark_file(*vg_item, *node, dir_name);
+        if (status != CM_SUCCESS && (cm_get_error_code() == ERR_DSS_FILE_REMOVE_OPENING) &&
+            ((*node)->flags & DSS_FT_NODE_FLAG_DEL)) {
+            cm_reset_error();
+            return CM_SUCCESS;
+        }
+        return status;
+    }
+
+    LOG_RUN_INF("Begin to rm dir or file:%s in vg:%s.", dir_name, (*vg_item)->vg_name);
+    if (type == GFT_PATH) {
+        gft_node_t *node_array[DSS_REMOVE_DIR_NEED_NODE_NUM] = {*node, parent_node};
+        status = dss_rm_dir_by_path(session, node_array, dir_name, recursive, *vg_item);
+    } else {
+        status = dss_rm_dir_file_r(session, *vg_item, *node, parent_node);
     }
     return status;
 }
 
-status_t dss_remove_dir(dss_session_t *session, const char *dir, bool recursive)
+static status_t dss_rm_dir_file(dss_session_t *session, const char *dir_name, gft_item_type_t type, bool32 recursive)
+{
+    CM_ASSERT(dir_name != NULL);
+
+    gft_node_t *node = NULL;
+    char name[DSS_MAX_NAME_LEN];
+    dss_vg_info_item_t *vg_item = NULL;
+    CM_RETURN_IFERR(dss_find_vg_by_dir(dir_name, name, &vg_item));
+
+    dss_lock_vg_mem_and_shm_x(session, vg_item);
+    status_t status = dss_rm_dir_file_inner(session, &vg_item, &node, dir_name, type, recursive);
+    if (status != CM_SUCCESS) {
+        dss_unlock_vg_mem_and_shm(session, vg_item);
+        LOG_RUN_ERR("Failed to remove dir or file, name : %s.", dir_name);
+        return status;
+    }
+
+    if (dss_process_redo_log(session, vg_item) != CM_SUCCESS) {
+        dss_unlock_vg_mem_and_shm(session, vg_item);
+        LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
+            cm_get_error_code(), errno, strerror(errno));
+        cm_fync_logfile();
+        _exit(1);
+    }
+
+    LOG_RUN_INF("Succeed to rm dir or file:%s in vg:%s.", dir_name, vg_item->vg_name);
+    dss_unlock_vg_mem_and_shm(session, vg_item);
+    return CM_SUCCESS;
+}
+
+static status_t dss_rm_dir_file_in_rename(
+    dss_session_t *session, dss_vg_info_item_t **vg_item, const char *dir_name, gft_item_type_t type, bool32 recursive)
+{
+    CM_ASSERT(dir_name != NULL);
+    gft_node_t *node = NULL;
+
+    status_t status = dss_rm_dir_file_inner(session, vg_item, &node, dir_name, type, recursive);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to remove dir or file, name : %s.", dir_name);
+        return status;
+    }
+
+    if (dss_process_redo_log(session, *vg_item) != CM_SUCCESS) {
+        LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
+            cm_get_error_code(), errno, strerror(errno));
+        cm_fync_logfile();
+        _exit(1);
+    }
+
+    LOG_RUN_INF("Succeed to rm dir or file:%s in vg:%s.", dir_name, (*vg_item)->vg_name);
+    return CM_SUCCESS;
+}
+
+static status_t dss_rename_file_inner(dss_session_t *session, dss_vg_info_item_t **vg_item, dss_config_t *inst_cfg,
+    const char *src, const char *dst, const char *dst_name)
+{
+    gft_node_t *out_node = NULL;
+    status_t ret = dss_rename_file_check(session, src, dst, vg_item, &out_node);
+    if (ret != CM_SUCCESS) {
+        return ret;
+    }
+
+    return dss_rename_file_put_redo_log(session, out_node, dst_name, *vg_item, inst_cfg);
+}
+
+status_t dss_rename_file(dss_session_t *session, const char *src, const char *dst)
+{
+    char vg_name[DSS_MAX_NAME_LEN];
+    char dst_name[DSS_MAX_NAME_LEN];
+    CM_RETURN_IFERR(dss_rename_file_check_path_and_name(session, src, dst, vg_name, dst_name));
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
+    if (vg_item == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
+        return CM_ERROR;
+    }
+    if (cm_strcmpi(src, dst) == 0) {
+        DSS_THROW_ERROR(ERR_DSS_FILE_RENAME, "src name is the same as dst.");
+        return CM_ERROR;
+    }    
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    dss_lock_vg_mem_and_shm_x(session, vg_item);
+    status_t ret = dss_rename_file_inner(session, &vg_item, inst_cfg, src, dst, dst_name);
+    if (ret == CM_SUCCESS) {
+        dss_unlock_vg_mem_and_shm(session, vg_item);
+        return ret;
+    }
+
+    // error_handle: rollback memory
+    dss_rollback_mem_update(session->log_split, vg_item);
+    int32 err_code = cm_get_error_code();
+    if (err_code != ERR_DSS_FILE_RENAME_EXIST) {
+        dss_unlock_vg_mem_and_shm(session, vg_item);
+        return ret;
+    }
+
+    cm_reset_error();
+    ret = dss_rm_dir_file_in_rename(session, &vg_item, dst, GFT_FILE, CM_FALSE);
+    if (ret != CM_SUCCESS) {
+        dss_unlock_vg_mem_and_shm(session, vg_item);
+        return ret;
+    }
+
+    ret = dss_rename_file_inner(session, &vg_item, inst_cfg, src, dst, dst_name);
+    if (ret != CM_SUCCESS) {
+        dss_rollback_mem_update(session->log_split, vg_item);
+    }
+    dss_unlock_vg_mem_and_shm(session, vg_item);
+    return ret;
+}
+
+status_t dss_remove_dir(dss_session_t *session, const char *dir, bool32 recursive)
 {
     return dss_rm_dir_file(session, dir, GFT_PATH, recursive);
 }
 
 status_t dss_remove_file(dss_session_t *session, const char *file)
 {
-    return dss_rm_dir_file(session, file, GFT_FILE, false);
+    return dss_rm_dir_file(session, file, GFT_FILE, CM_FALSE);
 }
 
 status_t dss_remove_link(dss_session_t *session, const char *file)
 {
-    return dss_rm_dir_file(session, file, GFT_LINK, false);
+    return dss_rm_dir_file(session, file, GFT_LINK, CM_FALSE);
 }
 
-static status_t dss_remove_dir_file_by_node_inner(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, gft_node_t **parent_node)
+static status_t dss_remove_dir_file_by_node_inner_check(
+    dss_vg_info_item_t *vg_item, gft_node_t *node, gft_node_t **parent_node)
 {
     DSS_RETURN_IF_ERROR(dss_check_file(vg_item));
-
     LOG_RUN_INF("Begin to get parent node of node: %s", node->name);
     *parent_node = dss_find_parent_node_by_node(vg_item, node);
     if (*parent_node == NULL) {
@@ -451,9 +478,26 @@ static status_t dss_remove_dir_file_by_node_inner(
         return CM_ERROR;
     }
     LOG_RUN_INF("Success to get parent node: %s of node: %s", (*parent_node)->name, node->name);
+    return  CM_SUCCESS;
+}
+
+static status_t dss_remove_dir_file_by_node_inner(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, gft_node_t **parent_node)
+{
+    DSS_RETURN_IF_ERROR(dss_remove_dir_file_by_node_inner_check(vg_item, node, parent_node));
     bool32 is_open = CM_FALSE;
-    DSS_RETURN_IF_ERROR(
-        dss_notify_check_file_open(vg_item, session, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&node->id, &is_open));
+    gft_node_t *old_node = node;
+    dss_unlock_vg_mem_and_shm(session, vg_item);
+    DSS_RETURN_IFERR2(
+        dss_notify_expect_bool_ack(vg_item, BCAST_REQ_DEL_DIR_FILE, *(uint64 *)&node->id, &is_open),
+        dss_lock_vg_mem_and_shm_x(session, vg_item));
+    dss_lock_vg_mem_and_shm_x(session, vg_item);
+    DSS_RETURN_IF_ERROR(dss_remove_dir_file_by_node_inner_check(vg_item, node, parent_node));
+    if (old_node->fid != node->fid) {
+        DSS_THROW_ERROR_EX(ERR_DSS_FILE_NOT_EXIST, "The file %s not exist, old fid is %llu, new fid is %llu.",
+            old_node->name, old_node->fid, node->fid);
+        return CM_ERROR;
+    }
     if (is_open) {
         LOG_DEBUG_INF("Failed to remove delay file when close file, because file is opened in other instance ftid: "
                       "%llu, name: %s, v:%u, au:%llu, block:%u, item:%u.",
@@ -474,7 +518,6 @@ static status_t dss_remove_dir_file_by_node_inner(
         cm_fync_logfile();
         _exit(1);
     }
-    dss_clean_file_meta_core(vg_item, *(uint64 *)&node->id);
     DSS_LOG_DEBUG_OP("Succeed to rm %s in vg:%s.", node->name, vg_item->vg_name);
     return CM_SUCCESS;
 }
@@ -598,13 +641,14 @@ static void dss_close_handle(dss_session_t *session, dss_vg_info_item_t *vg_item
     if ((node->flags & DSS_FT_NODE_FLAG_DEL) != 0) {
         dss_unlatch(&vg_item->open_file_latch);
         status_t status = dss_remove_dir_file_by_node(session, vg_item, node);
-        dss_latch_x(&vg_item->open_file_latch);
+        dss_latch_x2(&vg_item->open_file_latch, session->id);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_INF(
                 "Failed to remove delay file when close file, ftid%llu, fid:%llu, vg: %s, session pid:%llu, v:%u, "
                 "au:%llu, block:%u, item:%u.",
                 *(int64 *)&ftid, node->fid, vg_item->vg_name, session->cli_info.cli_pid, ftid.volume, (uint64)ftid.au,
                 ftid.block, ftid.item);
+            cm_reset_error();
             return;
         }
         LOG_DEBUG_INF(
@@ -612,74 +656,33 @@ static void dss_close_handle(dss_session_t *session, dss_vg_info_item_t *vg_item
             "au:%llu, block:%u, item:%u.",
             *(uint64 *)&ftid, node->fid, vg_item->vg_name, session->cli_info.cli_pid, ftid.volume, (uint64)ftid.au,
             ftid.block, ftid.item);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_INF("Failed to check remove delay file when session disconn close file, vg: %s.", vg_item->vg_name);
-        }
     }
 }
 
 void dss_clean_open_files_in_vg(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 pid)
 {
-    skip_list_t *list = &vg_item->open_pid_list;
-    skip_list_iterator_t itr;
-    skip_list_range_t range;
-    dss_open_file_info_t left_key;
-    left_key.ftid = 0;
-    left_key.pid = pid;
-    left_key.ref = 1;
-
-    dss_open_file_info_t right_key;
-    right_key.ftid = CM_INVALID_ID64;
-    right_key.pid = pid;
-    right_key.ref = 1;
-
-    range.is_left_include = CM_TRUE;
-    range.is_right_include = CM_FALSE;
-    range.left_key = &left_key;
-    range.left_value = NULL;
-    range.right_key = &right_key;
-    range.right_value = NULL;
-
-    uint32 count = 0;
-    uint32 count_fail = 0;
-    dss_open_file_info_t *next_key;
-    int32 ret = SKLIST_FETCH_END;
-    dss_latch_x(&vg_item->open_file_latch);
-
-    do {
-        sklist_create_iterator(list, &range, &itr);
-        ret = sklist_fetch_next(&itr, (void **)&next_key, NULL, 0);
-        if (ret != SKIP_LIST_FOUND) {
-            sklist_close_iterator(&itr);
-            LOG_DEBUG_INF("Not find skiplist index, ret:%d.", ret);
-            break;
+    dss_open_file_info_t *open_file = NULL;
+    dss_latch_x2(&vg_item->open_file_latch, session->id);
+    bilist_node_t *curr_node = cm_bilist_head(&vg_item->open_file_list);
+    bilist_node_t *next_node = NULL;
+    while (curr_node != NULL) {
+        next_node = curr_node->next;
+        open_file = BILIST_NODE_OF(dss_open_file_info_t, curr_node, link);
+        if (open_file->pid == pid) {
+            ftid_t ftid = *(ftid_t *)&open_file->ftid;
+            dss_free_open_file_node(curr_node, &vg_item->open_file_list);
+            if (dss_is_readwrite()) {
+                DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
+                dss_close_handle(session, vg_item, ftid);
+                // open_file_latch may has been released in dss_close_handle, the linked list may have been modified.
+                // In this case,you need to start traversing again.
+                curr_node = cm_bilist_head(&vg_item->open_file_list);
+                continue;
+            }
         }
-        sklist_close_iterator(&itr);
-        ftid_t ftid = *(ftid_t *)&next_key->ftid;
-        uint32 err = sklist_delete(&vg_item->open_file_list, next_key, next_key);
-        if (err != CM_SUCCESS) {
-            count_fail++;
-            LOG_DEBUG_INF("Failed to delete file skiplist index, ftid:%llu, pid:%llu.", next_key->ftid, next_key->pid);
-        }
-
-        err = sklist_delete(list, next_key, next_key);
-        if (err != CM_SUCCESS) {
-            count_fail++;
-            LOG_DEBUG_INF("Failed to delete pid skiplist index, ftid:%llu, pid:%llu.", next_key->ftid, next_key->pid);
-        }
-        if (dss_is_readwrite()) {
-            DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
-            dss_close_handle(session, vg_item, ftid);
-        }
-        DSS_LOG_DEBUG_OP(
-            "Succeed to close file, ftid:%llu, vg: %s, session pid:%llu, v:%u, au:%llu, block:%u, item:%u.",
-            *(uint64 *)&ftid, vg_item->vg_name, session->cli_info.cli_pid, ftid.volume, (uint64)ftid.au, ftid.block,
-            ftid.item);
-        count++;
-    } while (ret == SKIP_LIST_FOUND);
+        curr_node = next_node;
+    }
     dss_unlatch(&vg_item->open_file_latch);
-
-    LOG_RUN_INF("Succeed to clean open files, count:%u, fail count:%u.", count, count_fail);
 }
 
 #ifdef __cplusplus
