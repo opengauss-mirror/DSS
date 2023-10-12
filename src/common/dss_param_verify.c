@@ -127,7 +127,7 @@ status_t dss_verify_lsnr_path(char *path)
     }
     return CM_SUCCESS;
 }
-status_t dss_verify_log_file_dir(char *path)
+status_t dss_verify_log_file_dir_name(char *path)
 {
     char input_path_buffer[CM_MAX_LOG_HOME_LEN];
     char *input_path = NULL;
@@ -156,7 +156,11 @@ status_t dss_verify_log_file_dir(char *path)
     if (cm_check_exist_special_char(input_path, len)) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_INVALID_DIR, input_path));
     }
+    return CM_SUCCESS;
+}
 
+status_t dss_verify_log_file_real_path(char *path)
+{
     char real_path[CM_MAX_LOG_HOME_LEN] = {0};
     CM_RETURN_IFERR(realpath_file(path, real_path, CM_MAX_LOG_HOME_LEN));
     if (!cm_dir_exist(path)) {
