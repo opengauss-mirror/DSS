@@ -162,6 +162,7 @@ static status_t dss_init_log_file(log_param_t *log_param, dss_config_t *inst_cfg
 static status_t dss_init_log_home(dss_config_t *inst_cfg, log_param_t *log_param)
 {
     errno_t errcode = 0;
+    bool32 verify_flag = CM_FALSE;
     // register error callback function
     char *value = cm_get_config_value(&inst_cfg->config, "LOG_HOME");
     uint32 val_len = (value == NULL) ? 0 : (uint32)strlen(value);
@@ -173,16 +174,18 @@ static status_t dss_init_log_home(dss_config_t *inst_cfg, log_param_t *log_param
             DSS_THROW_ERROR(ERR_SYSTEM_CALL, (errcode));
             return CM_ERROR;
         }
+        verify_flag = CM_TRUE;
     } else {
         char *home = dss_get_cfg_dir(inst_cfg);
         if (snprintf_s(log_param->log_home, DSS_MAX_PATH_BUFFER_SIZE, CM_MAX_PATH_LEN, "%s/log", home) == -1) {
             cm_panic(0);
         }
     }
-
-    status_t status = dss_verify_log_file_dir(log_param->log_home);
+    status_t status = dss_verify_log_file_dir_name(log_param->log_home);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid LOG_HOME"));
-
+    if (verify_flag && dss_verify_log_file_real_path(log_param->log_home) != CM_SUCCESS) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid LOG_HOME"));
+    }
     return CM_SUCCESS;
 }
 
