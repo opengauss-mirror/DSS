@@ -49,6 +49,7 @@ status_t dss_insert_open_file_index(
     if (node != NULL) {
         open_file = BILIST_NODE_OF(dss_open_file_info_t, node, link);
         open_file->ref++;
+        LOG_DEBUG_INF("Succeed to insert open file index, ftid:%llu, pid:%llu, ref:%llu.", ftid, pid, open_file->ref);
         dss_unlatch(&vg_item->open_file_latch);
         return CM_SUCCESS;
     }
@@ -63,6 +64,7 @@ status_t dss_insert_open_file_index(
     if (ret != EOK) {
         dss_unlatch(&vg_item->open_file_latch);
         CM_FREE_PTR(open_file);
+        DSS_THROW_ERROR(ERR_SYSTEM_CALL, ret);
         return CM_ERROR;
     }
     open_file->ftid = ftid;
@@ -82,10 +84,11 @@ status_t dss_delete_open_file_index(
     bilist_node_t *node = dss_find_open_file_node(&vg_item->open_file_list, ftid, pid, start_time);
     if (node == NULL) {
         dss_unlatch(&vg_item->open_file_latch);
-        DSS_THROW_ERROR(ERR_DSS_FILE_CLOSE, "failed to delete open file info, ftid:%llu, pid:%llu.", ftid, pid);
+        DSS_THROW_ERROR_EX(ERR_DSS_FILE_CLOSE, "Failed to delete open file index, ftid:%llu, pid:%llu.", ftid, pid);
         return CM_ERROR;
     }
     dss_open_file_info_t *open_file = BILIST_NODE_OF(dss_open_file_info_t, node, link);
+    LOG_DEBUG_INF("Succeed to delete open file index, ftid:%llu, pid:%llu, old ref is %llu.", ftid, pid, open_file->ref);
     if (open_file->ref > 1) {
         open_file->ref--;
     } else {
