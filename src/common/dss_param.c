@@ -634,10 +634,10 @@ status_t dss_load_config(dss_config_t *inst_cfg)
 
 status_t dss_reload_cluster_run_mode_param(dss_config_t *inst_cfg)
 {
-    char file_name[DSS_FILE_PATH_MAX_LENGTH];
+    char file_name[DSS_FILE_NAME_BUFFER_SIZE];
 
     // get config info
-    errno_t ret = snprintf_s(file_name, DSS_FILE_PATH_MAX_LENGTH, DSS_FILE_PATH_MAX_LENGTH - 1, "%s/cfg/%s", inst_cfg->home,
+    errno_t ret = snprintf_s(file_name, DSS_FILE_NAME_BUFFER_SIZE, DSS_FILE_NAME_BUFFER_SIZE - 1, "%s/cfg/%s", inst_cfg->home,
         g_dss_config_file);
     if (ret == -1) {
         DSS_RETURN_IFERR2(
