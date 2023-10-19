@@ -79,7 +79,7 @@ status_t dss_lock_instance(void)
         return CM_ERROR;
     }
 
-    if (cm_lock_fd(g_dss_instance.lock_fd) != CM_SUCCESS) {
+    if (cm_lock_fd(g_dss_instance.lock_fd, SPIN_SLEEP_TIME) != CM_SUCCESS) {
         cm_close_file(g_dss_instance.lock_fd);
         g_dss_instance.lock_fd = CM_INVALID_INT32;
         return CM_ERROR;
