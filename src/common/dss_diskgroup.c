@@ -375,7 +375,7 @@ bool32 dss_check_dup_vg(text_t *name, text_t *entry_path, dss_vg_info_t *config,
         }
         path_len = (uint32)strlen(config->volume_group[i].entry_path);
         if (path_len == entry_path->len) {
-            if (cm_strcmpni(name->str, config->volume_group[i].entry_path, path_len) == 0) {
+            if (cm_strcmpni(entry_path->str, config->volume_group[i].entry_path, path_len) == 0) {
                 return DSS_TRUE;
             }
         }
