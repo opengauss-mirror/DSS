@@ -138,9 +138,11 @@ static void dss_proc_broadcast_req_inner(dss_session_t *session, dss_notify_req_
             LOG_DEBUG_ERR("invalid broadcast req type");
             return;
     }
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    dss_params_t *param = &inst_cfg->params;
     dss_message_head_t *req_head = &req->dss_head;
     uint16 dst_inst = req_head->src_inst;
-    uint16 src_inst = req_head->dst_inst;
+    uint16 src_inst = (uint16)param->inst_id;
     uint32 version = req_head->msg_proto_ver;
     ruid_type ruid = req_head->ruid;
     dss_notify_ack_msg_t ack_check;
@@ -177,8 +179,10 @@ int32 dss_process_broadcast_ack(dss_notify_ack_msg_t *ack, dss_recv_msg_t *recv_
 
 static void dss_ack_version_not_match(dss_session_t *session, dss_message_head_t *req_head, uint32 version)
 {
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    dss_params_t *param = &inst_cfg->params;
     uint16 dst_inst = req_head->src_inst;
-    uint16 src_inst = req_head->dst_inst;
+    uint16 src_inst = (uint16)param->inst_id;
     ruid_type ruid = req_head->ruid;
     dss_message_head_t ack_head;
     uint32 cmd = (req_head->dss_cmd == DSS_CMD_REQ_BROADCAST) ? DSS_CMD_ACK_BROADCAST_WITH_MSG : DSS_CMD_ACK_SYB2ACTIVE;
@@ -503,11 +507,7 @@ static void dss_process_message(uint32 work_idx, ruid_type ruid, mes_msg_t *msg)
     dss_message_head_t *dss_head = (dss_message_head_t *)msg->buffer;
     LOG_DEBUG_INF("Proc msg cmd:%u, src node:%u, dst node:%u begin.", 
         (uint32)(dss_head->dss_cmd), (uint32)(dss_head->src_inst), (uint32)(dss_head->dst_inst));
-    if (dss_head->dss_cmd >= DSS_CMD_CEIL) {
-        LOG_DEBUG_ERR("Invalid request received,cmd is %u.", (uint8)dss_head->dss_cmd);
-        mes_release_msg(msg);
-        return;
-    }
+
     dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
     dss_session_t *session = &session_ctrl->sessions[work_idx];
     status_t ret;
@@ -520,6 +520,11 @@ static void dss_process_message(uint32 work_idx, ruid_type ruid, mes_msg_t *msg)
     if (dss_head->msg_proto_ver > DSS_PROTO_VERSION) {
         uint32 curr_proto_ver = MIN(dss_head->sw_proto_ver, DSS_PROTO_VERSION);
         dss_ack_version_not_match(session, dss_head, curr_proto_ver);
+        mes_release_msg(msg);
+        return;
+    }
+    if (dss_head->dss_cmd >= DSS_CMD_CEIL) {
+        LOG_DEBUG_ERR("Invalid request received,cmd is %u.", (uint8)dss_head->dss_cmd);
         mes_release_msg(msg);
         return;
     }
