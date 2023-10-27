@@ -1041,7 +1041,7 @@ static void dss_load_shm_lock_s_force(char *vg_name)
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item != NULL) {
         dss_lock_vg_mem_s_force(vg_item);
-        (void)dss_lock_shm_meta_s_without_session(vg_item->vg_latch, CM_TRUE, SPIN_WAIT_FOREVER);
+        (void)dss_lock_shm_meta_s_without_stack(NULL, vg_item->vg_latch, CM_TRUE, SPIN_WAIT_FOREVER);
     }
 }
 
@@ -1050,7 +1050,7 @@ static void dss_load_shm_unlock(char *vg_name)
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item != NULL) {
         dss_unlock_vg_mem(vg_item);
-        dss_unlock_shm_meta_without_session(vg_item->vg_latch);
+        dss_unlock_shm_meta_without_stack(NULL, vg_item->vg_latch);
     }
 }
 

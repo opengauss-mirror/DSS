@@ -34,6 +34,9 @@
 #include "dss_open_file.h"
 #include "dss_redo.h"
 #include "dss_syncpoint.h"
+#include "cm_system.h"
+#include "dss_latch.h"
+#include "dss_session.h"
 
 dss_env_t g_dss_env;
 dss_env_t *dss_get_env(void)
@@ -275,22 +278,23 @@ void dss_lock_vg_mem_and_shm_ix2x(dss_session_t *session, dss_vg_info_item_t *vg
 void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
     dss_lock_vg_mem_s(vg_item);
-    if (session != NULL) {
-        dss_latch_offset_t latch_offset;
-        latch_offset.type = DSS_LATCH_OFFSET_SHMOFFSET;
-        latch_offset.offset.shm_offset = dss_get_vg_latch_shm_offset(vg_item);
-        (void)dss_lock_shm_meta_s(session, &latch_offset, vg_item->vg_latch, SPIN_WAIT_FOREVER);
+    if (dss_is_server() || session == NULL) {
+        (void)dss_lock_shm_meta_s_without_stack(session, vg_item->vg_latch, CM_FALSE, SPIN_WAIT_FOREVER);
         return;
     }
-    (void)dss_lock_shm_meta_s_without_session(vg_item->vg_latch, CM_FALSE, SPIN_WAIT_FOREVER);
+
+    dss_latch_offset_t latch_offset;
+    latch_offset.type = DSS_LATCH_OFFSET_SHMOFFSET;
+    latch_offset.offset.shm_offset = dss_get_vg_latch_shm_offset(vg_item);
+    (void)dss_lock_shm_meta_s_with_stack(session, &latch_offset, vg_item->vg_latch, SPIN_WAIT_FOREVER);
 }
 
 void dss_unlock_vg_mem_and_shm(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-    if (session != NULL) {
-        dss_unlock_shm_meta(session, vg_item->vg_latch);
+    if (dss_is_server() || session == NULL) {
+        dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);
     } else {
-        dss_unlock_shm_meta_without_session(vg_item->vg_latch);
+        dss_unlock_shm_meta_with_stack(NULL, vg_item->vg_latch);
     }
     dss_unlock_vg_mem(vg_item);
 }
@@ -3480,7 +3484,7 @@ status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32
     status_t status;
     dss_lock_shm_meta_x(session, vg_item->vg_latch);
     status = dss_check_volume(vg_item, volumeid);
-    dss_unlock_shm_meta(session, vg_item->vg_latch);
+    dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);
     return status;
 }
 
@@ -3577,7 +3581,7 @@ status_t dss_invalidate_fs_meta_remote(dss_session_t *session, const char *vg_na
         dss_set_node_flag(session, vg_item, node, CM_FALSE, DSS_FT_NODE_FLAG_INVALID_FS_META);
     }
 
-    dss_unlock_shm_meta(session, vg_item->vg_latch);
+    dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);
 
     *invalid_ack = CM_TRUE;
     LOG_DEBUG_INF(
@@ -3643,4 +3647,42 @@ status_t dss_update_file_written_size(
         "Success to update written_size:%llu of file:%s, node size:%llu.", node->written_size, node->name, node->size);
     dss_unlock_vg_mem_and_shm(session, vg_item);
     return status;
+}
+
+void dss_clean_all_sessions_latch()
+{
+    uint64 cli_pid = 0;
+    int64 start_time = 0;
+    bool32 cli_pid_alived = 0;
+    uint32 sid = 0;
+    dss_session_t *session = NULL;
+
+    // check all used && connected session may occopy latch by dead client
+    dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
+    CM_ASSERT(session_ctrl != NULL);
+    while (sid < session_ctrl->total) {
+        session = dss_get_session(sid);
+        CM_ASSERT(session != NULL);
+        // ready next session
+        sid++;
+        // connected make sure the cli_pid and start_time are valid
+        if (!session->is_used || !session->connected) {
+            continue;
+        }
+
+        if (session->cli_info.cli_pid == 0 ||
+            (session->cli_info.cli_pid == cli_pid && start_time == session->cli_info.start_time && cli_pid_alived)) {
+            continue;
+        }
+
+        cli_pid = session->cli_info.cli_pid;
+        start_time = session->cli_info.start_time;
+        cli_pid_alived = cm_sys_process_alived(session->cli_info.cli_pid, session->cli_info.start_time);
+        if (cli_pid_alived) {
+            continue;
+        }
+
+        // clean the session lock and latch
+        dss_clean_session_latch(session, CM_TRUE);
+    }
 }

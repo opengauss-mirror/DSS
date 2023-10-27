@@ -244,6 +244,8 @@ typedef status_t (*dss_get_node_by_path_remote_proc_t)(dss_session_t *session, c
     gft_item_type_t type, dss_check_dir_output_t *output_info, bool32 is_throw_err);
 void regist_get_node_by_path_remote_proc(dss_get_node_by_path_remote_proc_t proc);
 
+void dss_clean_all_sessions_latch();
+
 #ifdef __cplusplus
 }
 #endif

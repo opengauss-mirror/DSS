@@ -181,7 +181,7 @@ status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ac
         }                                                                          \
     } while (0)
 
-#define DSS_UNLOCK_VG_META_S(vg_item, session) dss_unlock_shm_meta((session), (vg_item)->vg_latch)
+#define DSS_UNLOCK_VG_META_S(vg_item, session) dss_unlock_shm_meta_with_stack((session), (vg_item)->vg_latch)
 #ifdef __cplusplus
 }
 #endif
