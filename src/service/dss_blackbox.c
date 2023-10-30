@@ -317,10 +317,7 @@ void dss_print_shm_memory(void)
 static void sig_print_excep_info(box_excp_item_t *excep_info, int32 sig_num, siginfo_t *siginfo, void *context)
 {
     cm_reset_error();
-    (void)memset_sp((void *)excep_info, sizeof(box_excp_item_t), 0, sizeof(box_excp_item_t));
     cm_proc_sig_get_header(excep_info, sig_num, siginfo, context);
-    char *version = (char *)DEF_DSS_VERSION;
-    (void)strncpy_s(excep_info->version, BOX_VERSION_LEN, version, strlen(version));
     char signal_name[CM_NAME_BUFFER_SIZE];
     signal_name[0] = 0x00;
     dss_get_signal_info(sig_num, signal_name, sizeof(signal_name) - 1);
@@ -399,10 +396,25 @@ static status_t dss_sig_reg_backtrace()
     return CM_SUCCESS;
 }
 
+static status_t dss_proc_sign_init()
+{
+    if (cm_proc_sign_init(&g_excep_info) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+    cm_proc_sig_get_fixed_header(&g_excep_info);
+    char *version = (char *)DEF_DSS_VERSION;
+    errno_t errcode = strncpy_s(g_excep_info.version, BOX_VERSION_LEN, version, strlen(version));
+    if (errcode != EOK) {
+        CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
 status_t dss_sigcap_handle_reg()
 {
     cm_init_backtrace_handle();
-    if (cm_proc_sign_init(&g_excep_info) != CM_SUCCESS) {
+    if (dss_proc_sign_init() != CM_SUCCESS) {
         return CM_ERROR;
     }
     for (uint32 sig_num = 0; sig_num < ARRAY_NUM(g_sign_array); sig_num++) {
