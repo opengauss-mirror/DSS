@@ -919,7 +919,10 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
             LOG_RUN_INF("Main server %u is set successfully by %u.", curr_id, master_id);
             return CM_SUCCESS;
         }
-        cm_spin_lock(&g_dss_instance.switch_lock, NULL);
+        if (!cm_spin_timed_lock(&g_dss_instance.switch_lock, DSS_PROCESS_REMOTE_INTERVAL)) {
+            LOG_DEBUG_INF("Spin switch lock timed out, just continue.");
+            continue;
+        }
         if (!g_dss_instance.is_maintain) {
             status = dss_process_remote_switch_lock(session, curr_id, master_id);
             if (status != CM_SUCCESS) {
