@@ -146,7 +146,7 @@ status_t dss_catch_input_text(char *plain, uint32 plain_size)
     errno_t errcode;
     do {
          (void)printf("Please enter password to encrypt: \n");
-        ret = dss_receive_info_from_terminal(first, (int32)sizeof(first), CM_TRUE);
+        ret = dss_receive_info_from_terminal(first, (int32)sizeof(first), CM_FALSE);
         DSS_BREAK_IF_ERROR(ret);
 
          (void)printf("Please input password again: \n");
