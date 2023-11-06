@@ -44,7 +44,7 @@ uint32 g_shm_key = 0;
 /* shared memory mapping */
 cm_shm_map_t g_shm_map;
 static thread_lock_t g_shm_map_lock;
-static bool32 g_shm_inited = CM_FALSE;
+bool32 g_shm_inited = CM_FALSE;
 
 #define CM_INVALID_SHM_KEY (0)
 
@@ -316,8 +316,6 @@ static void *cm_do_attach_shm(cm_shm_key_t key, uint64 size, uint32 flag, bool32
     return cm_do_attach_shm_without_register(key, size, flag, logging_open_err);
 }
 
-#define CM_SHM_CTRL_KEY CM_SHM_IDX_TO_KEY((uint32)SHM_ID_MNG_CTRL)
-
 static status_t cm_create_shm_ctrl(void)
 {
     if (cm_create_shm(CM_SHM_CTRL_KEY, CM_SHM_SIZE_OF_CTRL, CM_SHM_ATTACH_RW, CM_SHM_PERMISSION) == NULL) {
@@ -518,7 +516,7 @@ static bool32 cm_do_del_shm(cm_shm_key_t key)
     return cm_do_detach_shm(key, CM_TRUE) ? cm_del_shm_block(key) : CM_FALSE;
 }
 
-static bool32 del_shm_by_key(cm_shm_key_t key)
+bool32 del_shm_by_key(cm_shm_key_t key)
 {
     cm_lock_shm_map();
     bool32 result = cm_do_del_shm(key);

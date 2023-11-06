@@ -35,6 +35,7 @@
 #include "dss_shm_hashmap.h"
 #include "dss_param.h"
 #include "dss_stack.h"
+#include "dss_shm.h"
 #include "ceph_interface.h"
 
 // gft_node_t flag
@@ -47,7 +48,7 @@
 #define DSS_MAX_FT_AU_NUM 10
 #define DSS_GET_FT_AU_LIST(ft_au_list_p) ((dss_ft_au_list_t *)(ft_au_list_p))
 #define DSS_GET_FS_BLOCK_ROOT(dss_ctrl_p) ((dss_fs_block_root_t *)((dss_ctrl_p)->core.fs_block_root))
-#define DSS_MAX_VOLUME_GROUP_NUM 65
+#define DSS_MAX_VOLUME_GROUP_NUM (CM_HASH_SHM_MAX_ID)
 
 #define DSS_VG_CONF_NAME "dss_vg_conf.ini"
 #define DSS_RECYLE_DIR_NAME ".recycle"
