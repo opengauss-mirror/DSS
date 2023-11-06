@@ -712,7 +712,7 @@ status_t dss_notify_expect_bool_ack(
     if (g_dss_instance.is_maintain) {
         return CM_SUCCESS;
     }
-    dss_recv_msg_t recv_msg = {CM_TRUE, CM_FALSE, DSS_PROTO_VERSION, 0, 0};
+    dss_recv_msg_t recv_msg = {CM_TRUE, *cmd_ack, DSS_PROTO_VERSION, 0, 0};
     recv_msg.broadcast_proto_ver = dss_get_broadcast_proto_ver(0);
     dss_notify_req_msg_t req;
     status_t status;
@@ -721,7 +721,6 @@ status_t dss_notify_expect_bool_ack(
     do {
         req.ftid = ftid;
         req.type = cmd;
-        *cmd_ack = CM_FALSE;
         errno_t err = strncpy_s(req.vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name, strlen(vg_item->vg_name));
         if (err != EOK) {
             DSS_THROW_ERROR(ERR_SYSTEM_CALL, err);
@@ -750,9 +749,7 @@ status_t dss_notify_expect_bool_ack(
         cm_fync_logfile();
         _exit(1);
     }
-    if (recv_msg.cmd_ack) {
-        *cmd_ack = CM_TRUE;
-    }
+    *cmd_ack = recv_msg.cmd_ack;
     return status;
 }
 
