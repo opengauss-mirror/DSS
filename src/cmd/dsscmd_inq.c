@@ -324,7 +324,7 @@ status_t dss_inq_reg(const char *home)
 bool32 is_register(iof_reg_in_t *reg, int64 host_id, int64 *iofence_key)
 {
     for (int32 i = 0; i < reg->key_count; i++) {
-        if (reg->reg_keys[i] < 1 || reg->reg_keys[i] > CM_MAX_INSTANCES) {
+        if (reg->reg_keys[i] < 1 || reg->reg_keys[i] > DSS_MAX_INSTANCES) {
             continue;
         }
         iofence_key[reg->reg_keys[i] - 1]++;

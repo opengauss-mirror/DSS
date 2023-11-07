@@ -141,8 +141,9 @@ static void dss_sig_collect_recovery_bt(void)
 
 static void dss_sig_collect_mes_task_bt(void) 
 {
-    for (uint32 i = 0; i < MES_GLOBAL_INST_MSG.profile.work_thread_cnt; i++) {
-        cm_sig_collect_backtrace(LOG_BLACKBOX, &MES_GLOBAL_INST_MSG.mq_ctx.tasks[i].thread, "mes task %d", i);
+    uint32 count = mes_get_started_task_count(CM_FALSE);
+    for (uint32 i = 0; i < count; i++) {
+        cm_sig_collect_backtrace(LOG_BLACKBOX, &MES_GLOBAL_INST_MSG.recv_mq.tasks[i].thread, "mes task %d", i);
     }
 }
 
