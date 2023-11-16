@@ -495,7 +495,7 @@ static status_t cmd_check_cfg_name(const char *name)
     }
     for (uint32 i = 0; i < len; i++) {
         if (!isalpha((int)name[i]) && !isdigit((int)name[i]) && name[i] != '-' && name[i] != '_') {
-            DSS_PRINT_ERROR("The name's letter should be [aplha|digit|-|_].\n");
+            DSS_PRINT_ERROR("The name's letter should be [alpha|digit|-|_].\n");
             return CM_ERROR;
         }
     }
