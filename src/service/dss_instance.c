@@ -416,16 +416,19 @@ static status_t instance_init(dss_instance_t *inst)
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to initialize shared memory!"));
 
     status = instance_init_ga(inst);
-    DSS_RETURN_IFERR3(status, cm_destroy_shm(), LOG_RUN_ERR("DSS instance failed to initialize ga!"));
+    DSS_RETURN_IFERR4(status, (void)del_shm_by_key(CM_SHM_CTRL_KEY), cm_destroy_shm(), LOG_RUN_ERR("DSS instance failed to initialize ga!"));
 
     uint32 objectid = ga_alloc_object(GA_INSTANCE_POOL, CM_INVALID_ID32);
     if (objectid == CM_INVALID_ID32) {
-        DSS_RETURN_IFERR4(CM_ERROR, ga_detach_area(), cm_destroy_shm(),
-            DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to alloc instance object!"));
+        (void)del_shm_by_key(CM_SHM_CTRL_KEY);
+        ga_detach_area();
+        cm_destroy_shm();
+        DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to alloc instance object!");
+        return CM_ERROR;
     }
 
     status = instance_init_core(inst, objectid);
-    DSS_RETURN_IFERR3(status, ga_detach_area(), cm_destroy_shm());
+    DSS_RETURN_IFERR4(status, (void)del_shm_by_key(CM_SHM_CTRL_KEY), ga_detach_area(), cm_destroy_shm());
     LOG_RUN_INF("DSS instance begin to run.");
     return CM_SUCCESS;
 }

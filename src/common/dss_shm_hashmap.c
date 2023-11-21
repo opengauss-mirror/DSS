@@ -115,6 +115,7 @@ int32 shm_hashmap_init(shm_hashmap_t *map, uint32 init_bucket_capacity, uint32 i
     errno_t err = memset_s(addr, size, 0, size);
     if (err != EOK) {
         CM_THROW_ERROR(ERR_SYSTEM_CALL, err);
+        (void)cm_del_shm(SHM_TYPE_HASH, id);
         return CM_ERROR;
     }
 

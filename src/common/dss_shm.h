@@ -44,19 +44,18 @@ extern "C" {
 #ifdef WIN32
 typedef HANDLE cm_shm_handle_t;
 #define CM_INVALID_SHM_HANDLE INVALID_HANDLE_VALUE
-typedef unsigned long db_pid;
 #else
 typedef int32 cm_shm_handle_t;
 #define CM_INVALID_SHM_HANDLE (-1)
-typedef pid_t db_pid;
 #endif
 
 extern uint32 g_shm_key;
+extern bool32 g_shm_inited;
 
-/* max share memory blocks in system */
-#define CM_SHM_MAX_BLOCK 20544U
-#define CM_HASH_SHM_MAX_ID (16)
+#define CM_FIXED_SHM_MAX_ID 3
+#define CM_HASH_SHM_MAX_ID 65
 #define CM_GA_SHM_MAX_ID 20480U
+#define CM_SHM_MAX_BLOCK ((CM_FIXED_SHM_MAX_ID) + (CM_HASH_SHM_MAX_ID) + (CM_GA_SHM_MAX_ID))
 /* share memory manager control block magic string, must be 8Bytes aligned, now 48Bytes */
 #define CM_SHM_MAGIC "Huawei Tech. Co., Ltd. gauss100 DB DSS Software"
 
@@ -82,7 +81,6 @@ typedef uint32 cm_shm_key_t;
 #endif
 
 #define CM_SHM_CTRL_CURRENT_VERSION 6u
-
 #define CM_INVALID_SHM_IDX 0xFFFFFFFF
 #define CM_SHM_MAKE_KEY(shm_key, idx) ((uint32)(((uint32)(shm_key) & (0xFFFF)) << 16) | (uint32)((idx) & (0xFFFF)))
 #define CM_SHM_KEY2IDX(key) ((uint32)((key) & (0xFFFF)))
@@ -90,26 +88,12 @@ typedef uint32 cm_shm_key_t;
 #define CM_SHM_IDX_TO_KEY(idx) CM_SHM_MAKE_KEY(g_shm_key, idx)
 #define CM_SHM_SIZE_OF_CTRL (sizeof(cm_shm_ctrl_t))
 
-typedef struct tagcm_shm_block {
-    bool32 used;
-    cm_shm_key_t key;
-    uint64 size;
-    uint64 create_time;
-    db_pid pids[CM_SHM_BLOCK_PID_CNT]; /* The PIDs of attaching processes */
-    char reserve[CM_SHM_BLOCK_RESERVED];
-} cm_shm_block_t;
-
 typedef struct tagcm_shm_ctrl {
     char magic[sizeof(CM_SHM_MAGIC)]; /* share memory control block magic string */
     uint32 self_version;              /* share memory control block version */
     uint32 instance_id;               /* mdb instance ID, to identify the share memory control block */
-
     spinlock_t lock_for_self;
-
-    cm_shm_block_t blocks[CM_SHM_MAX_BLOCK]; /* share memory blocks */
     uint64 flag;                             /* flag for database instance initialization integrality */
-    db_pid pid;                              /* database instance process id */
-    spinlock_t lock_for_gmsrv;
     char reserved[CM_SHM_CTRL_RESERVED]; /* reserved */
 } cm_shm_ctrl_t;
 
@@ -118,6 +102,8 @@ typedef enum tagcm_fixed_shm_id {
     SHM_ID_APP_GA,
     CM_FIXED_SHM_ID_TAIL
 } cm_fixed_shm_id_e;
+
+#define CM_SHM_CTRL_KEY CM_SHM_IDX_TO_KEY((uint32)SHM_ID_MNG_CTRL)
 
 typedef struct sh_mem_struct {
     uint64_t offset : 32;
@@ -170,6 +156,7 @@ void *cm_trans_shm_addr(const void *shmem_ptr);
 sh_mem_p cm_trans_shm_offset(uint32_t key, void *ptr);
 void *cm_do_attach_shm_without_register(cm_shm_key_t key, uint64 size, uint32 flag, bool32 logging_open_err);
 void cm_set_shm_ctrl_flag(uint64 value);
+bool32 del_shm_by_key(cm_shm_key_t key);
 
 typedef struct tagcm_shm_map_entry {
     cm_shm_handle_t handle;

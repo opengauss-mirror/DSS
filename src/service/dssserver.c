@@ -95,6 +95,20 @@ static void dss_close_thread(dss_instance_t *inst)
     cm_close_timer(g_timer());
 }
 
+// only detach success, will destory shm memory 
+static void dss_destory_shm_memory()
+{
+    if (!g_shm_inited) {
+        return;
+    }
+    for (uint32 i = 0; i < CM_HASH_SHM_MAX_ID; i++) {
+        (void)cm_del_shm(SHM_TYPE_HASH, i);
+    }
+    ga_destroy_global_area();
+    (void)del_shm_by_key(CM_SHM_CTRL_KEY);
+    cm_destroy_shm();
+}
+
 static void dss_clean_server()
 {
     dss_close_thread(&g_dss_instance);
@@ -106,6 +120,7 @@ static void dss_clean_server()
         cm_close_file(g_dss_instance.lock_fd);
     }
     CM_FREE_PTR(cm_log_param_instance()->log_compress_buf);
+    dss_destory_shm_memory();
 }
 
 static void handle_main_wait(void)

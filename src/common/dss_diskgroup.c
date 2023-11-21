@@ -191,6 +191,7 @@ status_t dss_load_vg_conf_info(dss_vg_info_t **vgs, const dss_config_t *inst_cfg
 
 void dss_free_vg_info()
 {
+    LOG_RUN_INF("free g_vgs_info.");
     DSS_FREE_POINT(g_vgs_info);
 }
 
@@ -318,6 +319,12 @@ static status_t dss_get_vg_info_core(uint32 i, dss_share_vg_info_t *share_vg_inf
     return CM_SUCCESS;
 }
 
+void dss_free_shm_hashmap_memory(uint32 num)
+{
+    for (uint32 i = 0; i <= num; i ++) {
+        (void)cm_del_shm(SHM_TYPE_HASH, i);
+    }
+}
 status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **info)
 {
     bool32 is_server = dss_is_server();
@@ -342,6 +349,9 @@ status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **inf
         int32 ret =
             shm_hashmap_init(&share_vg_info->vg[i].buffer_cache, DSS_BLOCK_HASH_SIZE, i, cm_oamap_uint64_compare);
         if (ret != CM_SUCCESS) {
+            if (i != 0) {
+                dss_free_shm_hashmap_memory(i - 1);
+            }
             DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
             LOG_RUN_ERR("DSS instance failed to initialize buffer cache, %d!", ret);
             DSS_THROW_ERROR(ret);
@@ -350,7 +360,7 @@ status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **inf
         status = dss_get_vg_info_core(i, share_vg_info);
         if (status != CM_SUCCESS) {
             DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
-            shm_hashmap_destroy(&share_vg_info->vg[i].buffer_cache, i);
+            dss_free_shm_hashmap_memory(i);
             dss_free_vg_info();
             return status;
         }
