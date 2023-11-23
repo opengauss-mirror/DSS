@@ -40,12 +40,13 @@ extern "C" {
 
 typedef struct st_dss_packet_head {
     uint32 version;
+    uint32 client_version;
     uint32 size;
     uint8 cmd;    /* command in request packet */
     uint8 result; /* code in response packet, success(0) or error(1) */
     uint16 flags;
     uint32 serial_number;
-    uint8 reserve[64];
+    uint8 reserve[60];
 } dss_packet_head_t;
 
 typedef enum en_dss_packet_version {
@@ -81,10 +82,22 @@ static inline void dss_init_packet(dss_packet_t *pack, uint32 options)
     pack->options = options;
 }
 
+static inline void dss_set_client_version(dss_packet_t *pack, uint32 version)
+{
+    CM_ASSERT(pack != NULL);
+    pack->head->client_version = version;
+}
+
 static inline void dss_set_version(dss_packet_t *pack, uint32 version)
 {
     CM_ASSERT(pack != NULL);
     pack->head->version = version;
+}
+
+static inline uint32 dss_get_client_version(dss_packet_t *pack)
+{
+    CM_ASSERT(pack != NULL);
+    return pack->head->client_version;
 }
 
 static inline uint32 dss_get_version(dss_packet_t *pack)
@@ -109,6 +122,7 @@ static inline void dss_init_set(dss_packet_t *pack, uint32 proto_version)
     (void)memset_s(pack->head, sizeof(dss_packet_head_t), 0, sizeof(dss_packet_head_t));
     pack->head->size = (uint32)sizeof(dss_packet_head_t);
     dss_set_version(pack, proto_version);
+    dss_set_client_version(pack, DSS_PROTO_VERSION);
 }
 
 static inline status_t dss_put_str(dss_packet_t *pack, const char *str)

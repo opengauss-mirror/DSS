@@ -85,6 +85,11 @@ typedef struct st_dss_remove_dir_info {
     bool recursive;
 } dss_remove_dir_info_t;
 
+typedef struct st_dss_get_server_info {
+    char *home;
+    uint32 sid;
+} dss_get_server_info_t;
+
 typedef struct st_dss_conn_opt {
     int32 timeout;
     char *user_name;
@@ -131,11 +136,10 @@ status_t dss_remove_volume_impl(dss_conn_t *conn, const char *vg_name, const cha
 status_t dss_fstat_impl(dss_conn_t *conn, int handle, dss_stat_info_t item);
 status_t dss_set_stat_info(dss_stat_info_t item, gft_node_t *node);
 
-status_t dss_set_session_sync(dss_conn_t *conn);
 status_t dss_init_vol_handle_sync(dss_conn_t *conn);
 
 void dss_destroy_vol_handle_sync(dss_conn_t *conn);
-status_t dss_get_home_sync(dss_conn_t *conn, char **home);
+status_t dss_cli_handshake(dss_conn_t *conn, uint32 max_open_file);
 status_t dss_init(uint32 max_open_files, char *home);
 void dss_destroy(void);
 status_t dss_symlink_impl(dss_conn_t *conn, const char *oldpath, const char *newpath);

@@ -70,7 +70,8 @@ extern "C" {
 #else
 #define DSS_INVALID_HANDLE (-1)
 #endif
-
+// The value of each command type cannot be changed for compatibility reasons.
+// If you want to add a command type, add it at the end. Before DSS_CMD_END
 typedef enum {
     DSS_CMD_BASE,
     DSS_CMD_BEGIN,
@@ -96,7 +97,6 @@ typedef enum {
     DSS_CMD_REFRESH_VOLUME,
     DSS_CMD_KICKH,  // 20
     DSS_CMD_LOAD_CTRL,
-    DSS_CMD_SET_SESSIONID,
     DSS_CMD_UPDATE_WRITTEN_SIZE,
     DSS_CMD_STOP_SERVER,
     DSS_CMD_SETCFG,
@@ -106,7 +106,7 @@ typedef enum {
     DSS_CMD_SWITCH_LOCK,
     DSS_CMD_MODIFY_END,
     DSS_CMD_QUERY_BEGIN = DSS_CMD_MODIFY_END,
-    DSS_CMD_GET_HOME = DSS_CMD_QUERY_BEGIN,
+    DSS_CMD_HANDSHAKE = DSS_CMD_QUERY_BEGIN,
     DSS_CMD_EXIST,  // 30
     DSS_CMD_READLINK,
     DSS_CMD_GET_FTID_BY_PATH,
@@ -120,8 +120,7 @@ typedef enum {
 
 static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 {
-    return ((type == DSS_CMD_GET_INST_STATUS) || (type == DSS_CMD_GET_HOME) || (type == DSS_CMD_SET_SESSIONID) ||
-            (type == DSS_CMD_STOP_SERVER));
+    return ((type == DSS_CMD_GET_INST_STATUS) || (type == DSS_CMD_HANDSHAKE) || (type == DSS_CMD_STOP_SERVER));
 }
 
 #define DSS_DEFAULT_AU_SIZE SIZE_M(8)
@@ -207,6 +206,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_UNIX_PATH_MAX (uint32)108
 #define DSS_MAX_INSTANCES 64
 #define DSS_VERSION_MAX_LEN 256
+#define DSS_WAIT_TIMEOUT 5
 
 #define DSS_ENV_HOME (char *)"DSS_HOME"
 

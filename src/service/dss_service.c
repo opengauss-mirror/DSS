@@ -105,7 +105,7 @@ static status_t dss_process_remote(dss_session_t *session)
     return remote_result;
 }
 
-static status_t dss_diag_proto_type(dss_session_t *session)
+status_t dss_diag_proto_type(dss_session_t *session)
 {
     link_ready_ack_t ack;
     uint32 proto_code = 0;
@@ -153,20 +153,7 @@ void dss_release_session_res(dss_session_t *session)
 
 status_t dss_process_single_cmd(dss_session_t **session)
 {
-    status_t status;
-    if ((*session)->proto_type == PROTO_TYPE_UNKNOWN) {
-        LOG_DEBUG_INF("session %u begin check protocal type.", (*session)->id);
-        /* fetch protocol type */
-        status = dss_diag_proto_type(*session);
-        if (status != CM_SUCCESS) {
-            LOG_RUN_ERR("Failed to get protocol type!");
-            dss_clean_reactor_session(*session);
-            *session = NULL;
-            return CM_ERROR;
-        }
-    } else {
-        status = dss_process_command(*session);
-    }
+    status_t status = dss_process_command(*session);
     if ((*session)->is_closed) {
         LOG_RUN_INF("Session:%u end to do service.", (*session)->id);
         dss_clean_reactor_session(*session);
@@ -214,6 +201,8 @@ static void dss_return_success(dss_session_t *session)
     send_pack->head->cmd = session->recv_pack.head->cmd;
     send_pack->head->result = (uint8)CM_SUCCESS;
     send_pack->head->flags = 0;
+    dss_set_version(send_pack, session->proto_version);
+    dss_set_client_version(send_pack, session->client_version);
 
     status = dss_write(&session->pipe, send_pack);
     if (status != CM_SUCCESS) {
@@ -492,19 +481,27 @@ static status_t dss_process_refresh_file(dss_session_t *session)
     return dss_refresh_file(session, fid, ftid, name_str, blockid);
 }
 
-static status_t dss_process_get_home(dss_session_t *session)
+static status_t dss_process_handshake(dss_session_t *session)
 {
     dss_init_get(&session->recv_pack);
     session->client_version = dss_get_version(&session->recv_pack);
     uint32 current_proto_ver = dss_get_master_proto_ver();
     session->proto_version = MIN(session->client_version, current_proto_ver);
+    dss_cli_info *cli_info;
+    DSS_RETURN_IF_ERROR(dss_get_data(&session->recv_pack, sizeof(dss_cli_info), (void **)&cli_info));
+    errno_t errcode;
+    errcode = memcpy_s(&session->cli_info, sizeof(dss_cli_info), cli_info, sizeof(dss_cli_info));
+    securec_check_ret(errcode);
+    LOG_RUN_INF("[DSS_CONNECT]The client has connected, session id:%u, pid:%llu, process name:%s.st_time:%lld",
+        session->id, session->cli_info.cli_pid, session->cli_info.process_name, session->cli_info.start_time);
     char *server_home = dss_get_cfg_dir(ZFS_CFG);
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", server_home));
-    DSS_LOG_DEBUG_OP("Server home is %s, when get home.", server_home);
+    LOG_RUN_INF("[DSS_CONNECT]Server home is %s, when get home.", server_home);
     text_t data;
     cm_str2text(server_home, &data);
     data.len++; // for keeping the '\0'
-    return dss_put_text(&session->send_pack, &data);
+    DSS_RETURN_IF_ERROR(dss_put_text(&session->send_pack, &data));
+    return dss_put_int32(&session->send_pack, session->id);
 }
 
 static status_t dss_process_refresh_volume(dss_session_t *session)
@@ -548,22 +545,6 @@ static status_t dss_process_loadctrl(dss_session_t *session)
         dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "vg_name:%s, index:%u", vg_name, index));
 
     return dss_load_ctrl(session, vg_name, index);
-}
-
-static status_t dss_process_set_sessionid(dss_session_t *session)
-{
-    dss_init_get(&session->recv_pack);
-    dss_cli_info *cli_info;
-    DSS_RETURN_IF_ERROR(dss_get_data(&session->recv_pack, sizeof(dss_cli_info), (void **)&cli_info));
-    errno_t errcode;
-    errcode = memcpy_s(&session->cli_info, sizeof(dss_cli_info), cli_info, sizeof(dss_cli_info));
-    securec_check_ret(errcode);
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%u", session->id));
-
-    LOG_RUN_INF("The client has connected, session id:%u, pid:%llu, process name:%s.st_time:%lld", session->id,
-        session->cli_info.cli_pid, session->cli_info.process_name, session->cli_info.start_time);
-
-    return dss_put_int32(&session->send_pack, session->id);
 }
 
 static status_t dss_process_refresh_file_table(dss_session_t *session)
@@ -976,7 +957,6 @@ static dss_cmd_hdl_t g_dss_cmd_handle[] = {
     { DSS_CMD_REMOVE_VOLUME, dss_process_remove_volume, NULL, CM_TRUE },
     { DSS_CMD_REFRESH_VOLUME, dss_process_refresh_volume, NULL, CM_FALSE },
     { DSS_CMD_LOAD_CTRL, dss_process_loadctrl, NULL, CM_FALSE },
-    { DSS_CMD_SET_SESSIONID, dss_process_set_sessionid, NULL, CM_FALSE },
     { DSS_CMD_UPDATE_WRITTEN_SIZE, dss_process_update_file_written_size, NULL, CM_TRUE },
     { DSS_CMD_STOP_SERVER, dss_process_stop_server, NULL, CM_FALSE },
     { DSS_CMD_SETCFG, dss_process_setcfg, NULL, CM_FALSE },
@@ -985,7 +965,7 @@ static dss_cmd_hdl_t g_dss_cmd_handle[] = {
     { DSS_CMD_SET_MAIN_INST, dss_process_set_main_inst, NULL, CM_FALSE },
     { DSS_CMD_SWITCH_LOCK, dss_process_switch_lock, NULL, CM_FALSE },
     // query
-    { DSS_CMD_GET_HOME, dss_process_get_home, NULL, CM_FALSE },
+    { DSS_CMD_HANDSHAKE, dss_process_handshake, NULL, CM_FALSE },
     { DSS_CMD_EXIST, dss_process_exist, NULL, CM_FALSE },
     { DSS_CMD_READLINK, dss_process_readlink, NULL, CM_FALSE },
     { DSS_CMD_GET_FTID_BY_PATH, dss_process_get_ftid_by_path, NULL, CM_FALSE },
@@ -1026,13 +1006,13 @@ static dss_cmd_hdl_t *dss_get_cmd_handle(int32 cmd, bool32 local_req)
 
 static status_t dss_check_proto_version(dss_session_t *session)
 {
+    session->client_version = dss_get_client_version(&session->recv_pack);
     uint32 current_proto_ver = dss_get_master_proto_ver();
     current_proto_ver = MIN(current_proto_ver, session->client_version);
     session->proto_version = current_proto_ver;
-    if (session->recv_pack.head->cmd != DSS_CMD_GET_HOME &&
-        session->proto_version != dss_get_version(&session->recv_pack)) {
+    if (session->proto_version != dss_get_version(&session->recv_pack)) {
         LOG_RUN_INF(
-            "The client protocol version need be changed, old protocol version is %u, new protocol version is %u.",
+            "[CHECK_PROTO]The client protocol version need be changed, old protocol version is %u, new protocol version is %u.",
             dss_get_version(&session->recv_pack), session->proto_version);
         DSS_THROW_ERROR(ERR_DSS_VERSION_NOT_MATCH, dss_get_version(&session->recv_pack), session->proto_version);
         return CM_ERROR;
@@ -1044,16 +1024,10 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
 {
     DSS_LOG_DEBUG_OP(
         "Receive command:%d, server status is %d.", session->recv_pack.head->cmd, (int32)g_dss_instance.status);
-
+    // remote req need process for proto_version
+    session->proto_version = dss_get_version(&session->recv_pack);
     dss_cmd_hdl_t *handle = NULL;
     if (session->recv_pack.head->cmd < DSS_CMD_END) {
-        if (local_req) {
-            // check proto_version is or not need changed and try again
-            DSS_RETURN_IF_ERROR(dss_check_proto_version(session));
-        } else {
-            // remote req need process for proto_version
-            session->proto_version = dss_get_version(&session->recv_pack);
-        }
         handle = dss_get_cmd_handle(session->recv_pack.head->cmd, local_req);
     }
 
@@ -1070,7 +1044,6 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
     return status;
 }
 
-#define DSS_WAIT_TIMEOUT 5
 status_t dss_process_command(dss_session_t *session)
 {
     status_t status = CM_SUCCESS;
@@ -1094,6 +1067,11 @@ status_t dss_process_command(dss_session_t *session)
     }
     date_t time_start = g_timer()->now;
     date_t time_now = 0;
+    status = dss_check_proto_version(session);
+    if (status != CM_SUCCESS) {
+        dss_return_error(session);
+        return CM_ERROR;
+    }
     while (g_dss_instance.status != DSS_STATUS_OPEN) {
         if (dss_can_cmd_type_no_open(session->recv_pack.head->cmd)) {
             status = dss_exec_cmd(session, CM_TRUE);
@@ -1139,6 +1117,50 @@ status_t dss_proc_standby_req(dss_session_t *session)
     return dss_exec_cmd(session, CM_FALSE);
 }
 
+status_t dss_process_handshake_cmd(dss_session_t *session, dss_cmd_type_e cmd)
+{
+    status_t status = CM_ERROR;
+    bool32 ready = CM_FALSE;
+    do
+    {
+        cm_reset_error();
+        if (cs_wait(&session->pipe, CS_WAIT_FOR_READ, session->pipe.socket_timeout, &ready) != CM_SUCCESS) {
+            LOG_RUN_ERR("[DSS_CONNECT]session %u wait handshake cmd %u failed.", session->id, cmd);
+            return CM_ERROR;
+        }
+        if (ready == CM_FALSE) {
+            LOG_RUN_ERR("[DSS_CONNECT]session %u wait handshake cmd %u timeout.", session->id, cmd);
+            return CM_ERROR;
+        }
+        dss_init_set(&session->send_pack, session->proto_version);
+        status = dss_read(&session->pipe, &session->recv_pack, CM_FALSE);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("[DSS_CONNECT]session %u read handshake cmd %u msg failed.", session->id, cmd);
+            return CM_ERROR;
+        }
+        status = dss_check_proto_version(session);
+        if (status != CM_SUCCESS) {
+            dss_return_error(session);
+            continue;
+        }
+        break;
+    } while (CM_TRUE);
+    if (session->recv_pack.head->cmd != cmd) {
+        LOG_RUN_ERR("[DSS_CONNECT]session %u wait handshake cmd %u, but get msg cmd %u.", session->id, cmd,
+            session->recv_pack.head->cmd);
+        return CM_ERROR;
+    }
+    status = dss_exec_cmd(session, CM_TRUE);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR(
+            "[DSS_CONNECT]Failed to execute command:%d, session %u.", session->recv_pack.head->cmd, session->id);
+        dss_return_error(session);
+        return CM_ERROR;
+    } else {
+        dss_return_success(session);
+    }
+    return status;
+}
 #ifdef __cplusplus
 }
 #endif

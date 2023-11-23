@@ -212,6 +212,23 @@ void dss_proc_broadcast_req(dss_session_t *session, mes_msg_t *msg)
     return;
 }
 
+static void dss_set_cluster_proto_vers(uint8 inst_id, uint32 version)
+{
+    if (inst_id >= DSS_MAX_INSTANCES) {
+        LOG_DEBUG_ERR("Invalid request inst_id:%hhu, version is %u.", inst_id, version);
+        return;
+    }
+    bool32 set_flag = CM_FALSE;
+    do {
+        uint32 cur_version = (uint32)cm_atomic32_get((atomic32_t *)&g_dss_instance.cluster_proto_vers[inst_id]);
+        if (cur_version == version) {
+            break;
+        }
+        set_flag = cm_atomic32_cas(
+            (atomic32_t *)&g_dss_instance.cluster_proto_vers[inst_id], (int32)cur_version, (int32)version);
+    } while (!set_flag);
+}
+
 static int dss_handle_broadcast_msg(mes_msg_list_t *responses, dss_recv_msg_t *recv_msg_output)
 {
     int ret;
@@ -220,8 +237,9 @@ static int dss_handle_broadcast_msg(mes_msg_list_t *responses, dss_recv_msg_t *r
     for (uint32 i = 0; i < responses->count; i++) {
         mes_msg_t *msg = &responses->messages[i];
         ack_head = (dss_message_head_t *)msg->buffer;
+        src_inst = responses->messages[i].src_inst;
+        dss_set_cluster_proto_vers((uint8)src_inst, ack_head->sw_proto_ver);
         if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {
-            src_inst = responses->messages[i].src_inst;
             recv_msg_output->version_not_match_inst |= ((uint64)0x1 << src_inst);
             continue;
         }
@@ -473,23 +491,6 @@ static status_t dss_process_remote_ack_prepare(dss_session_t *session, mes_msg_t
     return CM_SUCCESS;
 }
 
-static void dss_set_cluster_proto_vers(uint8 inst_id, uint32 version)
-{
-    if (inst_id >= DSS_MAX_INSTANCES) {
-        LOG_DEBUG_ERR("Invalid request inst_id:%hhu, version is %u.", inst_id, version);
-        return;
-    }
-    bool32 set_flag = CM_FALSE;
-    do {
-        uint32 cur_version = (uint32)cm_atomic32_get((atomic32_t *)&g_dss_instance.cluster_proto_vers[inst_id]);
-        if (cur_version == version) {
-            break;
-        }
-        set_flag = cm_atomic32_cas(
-            (atomic32_t *)&g_dss_instance.cluster_proto_vers[inst_id], (int32)cur_version, (int32)version);
-    } while (!set_flag);
-}
-
 static void dss_process_message(uint32 work_idx, ruid_type ruid, mes_msg_t *msg)
 {
     cm_reset_error();
@@ -732,7 +733,7 @@ status_t dss_notify_expect_bool_ack(
         status = dss_notify_sync((char *)&req, req.dss_head.size, &recv_msg);
         if (status == ERR_DSS_VERSION_NOT_MATCH) {
             uint32 new_proto_ver = dss_get_broadcast_proto_ver(recv_msg.succ_inst);
-            LOG_RUN_INF("broadcast msg proto version has changed, old is %hhu, new is %hhu",
+            LOG_RUN_INF("[CHECK_PROTO]broadcast msg proto version has changed, old is %hhu, new is %hhu",
                 recv_msg.broadcast_proto_ver, new_proto_ver);
             recv_msg.broadcast_proto_ver = new_proto_ver;
             recv_msg.version_not_match_inst = 0;
@@ -813,6 +814,22 @@ static uint32 dss_get_remote_proto_ver(uint32 remoteid)
     return remote_proto_ver;
 }
 
+static int dss_get_mes_response(ruid_type ruid, mes_msg_t *response, int timeout_ms)
+{
+    int ret = mes_get_response(ruid, response, timeout_ms);
+    if (ret == CM_SUCCESS) {
+        dss_message_head_t *ack_head = (dss_message_head_t *)response->buffer;
+        if (ack_head->size < DSS_MES_MSG_HEAD_SIZE) {
+            LOG_RUN_ERR("Invalid message size");
+            DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
+            mes_release_msg(response);
+            return ERR_DSS_MES_ILL;
+        }
+        dss_set_cluster_proto_vers((uint8)ack_head->src_inst, ack_head->sw_proto_ver);
+    }
+    return ret;
+}
+
 status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result)
 {
     status_t ret = CM_ERROR;
@@ -833,18 +850,19 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
         char *err_msg = "The dss server fails to send messages to the remote node";
         DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("%s, src node(%u), dst node(%u).", err_msg, currtid, remoteid));
         // 3. receive msg from remote
-        ret = mes_get_response(dss_head.ruid, &msg, timeout);
+        ret = dss_get_mes_response(dss_head.ruid, &msg, timeout);
         DSS_RETURN_IFERR2(ret,
             LOG_RUN_ERR("dss server receive msg from remote failed, src node:%u, dst node:%u, cmd:%u.",
                 currtid, remoteid, session->recv_pack.head->cmd));
         // 4. attach remote execution result
         ack_head = (dss_message_head_t *)msg.buffer;
         if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {
+            session->client_version = dss_get_client_version(&session->recv_pack);
             new_proto_ver = MIN(ack_head->sw_proto_ver, DSS_PROTO_VERSION);
             new_proto_ver = MIN(new_proto_ver, session->client_version);
             session->proto_version = new_proto_ver;
             if (session->proto_version != dss_get_version(&session->recv_pack)) {
-                LOG_RUN_INF("The client protocol version need be changed, old protocol version is %u, new protocol "
+                LOG_RUN_INF("[CHECK_PROTO]The client protocol version need be changed, old protocol version is %u, new protocol "
                             "version is %u",
                     dss_get_version(&session->recv_pack), session->proto_version);
                 DSS_THROW_ERROR(
@@ -914,7 +932,7 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
             return ERR_DSS_MES_ILL;
         }
         // 3. receive msg from remote
-        ret = mes_get_response(dss_head->ruid, &msg, timeout);
+        ret = dss_get_mes_response(dss_head->ruid, &msg, timeout);
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("Exec cmd:%u on remote node:%u  recv msg fail.", (uint32)cmd, remoteid);
             dss_destroy_session(session);
@@ -1058,8 +1076,8 @@ static int32 dss_batch_load_core(dss_session_t *session, dss_loaddisk_req_t *req
     big_packets_ctrl_t ctrl;
     dss_message_head_t *req_dss_head = &req->dss_head;
     (void)memset_s(&ctrl, sizeof(big_packets_ctrl_t), 0, sizeof(big_packets_ctrl_t));
-    dss_init_mes_head(
-        &ctrl.dss_head, DSS_CMD_ACK_LOAD_DISK, 0, req_dss_head->dst_inst, req_dss_head->src_inst, 0, version, req_dss_head->ruid);
+    dss_init_mes_head(&ctrl.dss_head, DSS_CMD_ACK_LOAD_DISK, 0, req_dss_head->dst_inst, req_dss_head->src_inst,
+        sizeof(big_packets_ctrl_t), version, req_dss_head->ruid);
     ctrl.totalsize = req->size;
     while (remain > 0) {
         if (session && session->is_closed) {
@@ -1182,7 +1200,7 @@ static status_t dss_rec_msgs(ruid_type ruid, void *buf, uint32 size)
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 timeout = inst_cfg->params.mes_wait_timeout;
     do {
-        status_t ret = mes_get_response(ruid, &msg, timeout);
+        status_t ret = dss_get_mes_response(ruid, &msg, timeout);
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("dss server receive msg from remote node failed, result:%d.", ret);
             return ret;

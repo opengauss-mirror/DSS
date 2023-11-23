@@ -44,12 +44,13 @@ int32 dss_get_pack_err(dss_conn_t *conn, dss_packet_t *pack)
         conn->server_version = dss_get_version(pack);
         uint32 new_proto_version = MIN(DSS_PROTO_VERSION, conn->server_version);
         LOG_RUN_INF(
-            "The client protocol version need be changed, old protocol version is %hhu, new protocol version is %hhu.",
+            "[CHECK_PROTO]The client protocol version need be changed, old protocol version is %hhu, new protocol version is %hhu.",
             conn->proto_version, new_proto_version);
         conn->proto_version = new_proto_version;
         // if msg version has changed, you need to put new version msg;
         // if msg version has not changed, just change the proto_version and try again.
         dss_set_version(&conn->pack, conn->proto_version);
+        dss_set_client_version(&conn->pack, DSS_PROTO_VERSION);
         return errcode;
     } else {
         DSS_THROW_ERROR_EX(errcode, "%s", errmsg);

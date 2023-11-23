@@ -588,14 +588,34 @@ status_t dss_init_vol_handle_sync(dss_conn_t *conn)
     return CM_SUCCESS;
 }
 
-status_t dss_get_home_sync(dss_conn_t *conn, char **home)
+status_t dss_set_session_id(dss_conn_t *conn, uint32 sid)
 {
-    CM_RETURN_IFERR(dss_msg_interact(conn, DSS_CMD_GET_HOME, NULL, (void *)home));
-    LOG_DEBUG_INF("Client get home is %s.", *home);
+    dss_env_t *dss_env = dss_get_env();
+    uint32 max_cfg_sess = dss_env->inst_cfg.params.cfg_session_num;
+    if (dss_env->inst_cfg.params.inst_cnt > 1) {
+        max_cfg_sess += dss_env->inst_cfg.params.channel_num + dss_env->inst_cfg.params.work_thread_cnt;
+    }
+
+    if (sid >= max_cfg_sess) {
+        LOG_DEBUG_ERR("sid error");
+        return ERR_DSS_SESSION_INVALID_ID;
+    }
+    dss_session_t *sessions = (dss_session_t *)(dss_env->session);
+    conn->session = &(sessions[sid]);
     return CM_SUCCESS;
 }
 
-status_t dss_set_session_sync(dss_conn_t *conn)
+static status_t dss_set_server_info(dss_conn_t *conn, char *home, uint32 sid, uint32 max_open_file)
+{
+    status_t status = dss_init(max_open_file, home);
+    DSS_RETURN_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client init failed."), dss_disconnect(conn));
+
+    status = dss_set_session_id(conn, sid);
+    DSS_RETURN_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client failed to initialize session."), dss_disconnect(conn));
+    return CM_SUCCESS;
+}
+
+status_t dss_cli_handshake(dss_conn_t *conn, uint32 max_open_file)
 {
     dss_cli_info cli_info;
     cli_info.cli_pid = cm_sys_pid();
@@ -609,75 +629,32 @@ status_t dss_set_session_sync(dss_conn_t *conn)
         return CM_ERROR;
     }
 
-    uint32 sid = DSS_INVALID_SESSIONID;
-    CM_RETURN_IFERR(dss_msg_interact(conn, DSS_CMD_SET_SESSIONID, (void *)&cli_info, (void *)&sid));
-    dss_env_t *dss_env = dss_get_env();
-    uint32 max_cfg_sess = dss_env->inst_cfg.params.cfg_session_num;
-    if (dss_env->inst_cfg.params.inst_cnt > 1) {
-        max_cfg_sess += dss_env->inst_cfg.params.channel_num + dss_env->inst_cfg.params.work_thread_cnt;
-    }
-
-    if (sid >= max_cfg_sess) {
-        LOG_DEBUG_ERR("sid error");
-        return ERR_DSS_SESSION_INVALID_ID;
-    }
-
-    dss_session_t *sessions = (dss_session_t *)(dss_env->session);
-    conn->session = &(sessions[sid]);
-
-    return CM_SUCCESS;
+    dss_get_server_info_t output_info = {NULL, DSS_INVALID_SESSIONID};
+    CM_RETURN_IFERR(dss_msg_interact(conn, DSS_CMD_HANDSHAKE, (void *)&cli_info, (void *)&output_info));
+    return dss_set_server_info(conn, output_info.home, output_info.sid, max_open_file);
 }
 
 // NOTE:just for dsscmd because not support many threads in one process.
 status_t dss_connect_ex(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn)
 {
-    status_t status;
+    status_t status = CM_ERROR;
     dss_env_t *dss_env = dss_get_env();
     dss_init_conn(conn);
-    status = dss_connect(server_locator, options, conn);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to connect to DSS server via server locator:%s.", server_locator);
-        return status;
-    }
+    do {
+        status = dss_connect(server_locator, options, conn);
+        DSS_BREAK_IFERR2(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss cmd connet server failed."));
+        uint32 max_open_file = DSS_DEFAULT_OPEN_FILES_NUM;
+        conn->proto_version = DSS_PROTO_VERSION;
+        status = dss_cli_handshake(conn, max_open_file);
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss cmd handshake to server failed."),
+            dss_disconnect(conn));
 
-    char *home = NULL;
-    status = dss_get_home_sync(conn, &home);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to read DSS_INSTANCE start up dir.");
-        dss_disconnect(conn);
-        return status;
-    }
-
-    dss_latch_x(&dss_env->conn_latch);
-
-    status = dss_init(DSS_DEFAULT_OPEN_FILES_NUM, home);
-    if (status != CM_SUCCESS) {
-        dss_unlatch(&dss_env->conn_latch);
-        LOG_DEBUG_ERR("Failed to init env.");
-        dss_disconnect(conn);
-        return status;
-    }
-
-    status = dss_set_session_sync(conn);
-    if (status != CM_SUCCESS) {
-        dss_unlatch(&dss_env->conn_latch);
-        LOG_DEBUG_ERR("Failed to initialize session.");
-        dss_disconnect(conn);
-        return status;
-    }
-
-    status = dss_init_vol_handle_sync(conn);
-    if (status != CM_SUCCESS) {
-        dss_unlatch(&dss_env->conn_latch);
-        LOG_DEBUG_ERR("Failed to initialize volume handles.");
-        dss_disconnect(conn);
-        return status;
-    }
-
-    dss_env->conn_count++;
-    dss_unlatch(&dss_env->conn_latch);
-
-    return CM_SUCCESS;
+        status = dss_init_vol_handle_sync(conn);
+        DSS_BREAK_IFERR3(
+            status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss cmd init vol handle failed."), dss_disconnect(conn));
+        dss_env->conn_count++;
+    } while (0);
+    return status;
 }
 
 void dss_disconnect_ex(dss_conn_t *conn)
@@ -2810,33 +2787,23 @@ static status_t dss_encode_load_ctrl(dss_conn_t *conn, dss_packet_t *pack, void 
     return CM_SUCCESS;
 }
 
-static status_t dss_encode_get_home(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
-{
-    dss_set_version(pack, DSS_PROTO_VERSION);
-    return CM_SUCCESS;
-}
-
-static status_t dss_decode_get_home(dss_packet_t *ack_pack, void *ack)
-{
-    text_t ack_info = CM_NULL_TEXT;
-    CM_RETURN_IFERR(dss_get_text(ack_pack, &ack_info));
-    if (ack_info.len == 0 || ack_info.len >= DSS_MAX_PATH_BUFFER_SIZE) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_HOME), "get home info length error");
-        return CM_ERROR;
-    }
-    *(char **)ack = ack_info.str;
-    return CM_SUCCESS;
-}
-
-static status_t dss_encode_set_session(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+static status_t dss_encode_handshake(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
 {
     CM_RETURN_IFERR(dss_put_data(pack, send_info, sizeof(dss_cli_info)));
     return CM_SUCCESS;
 }
 
-static status_t dss_decode_set_session(dss_packet_t *ack_pack, void *ack)
+static status_t dss_decode_handshake(dss_packet_t *ack_pack, void *ack)
 {
-    CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)ack));
+    text_t ack_info = CM_NULL_TEXT;
+    CM_RETURN_IFERR(dss_get_text(ack_pack, &ack_info));
+    if (ack_info.len == 0 || ack_info.len >= DSS_MAX_PATH_BUFFER_SIZE) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_HANDSHAKE), "get home info length error");
+        return CM_ERROR;
+    }
+    dss_get_server_info_t *output_info = (dss_get_server_info_t *)ack;
+    output_info->home = ack_info.str;
+    CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&output_info->sid));
     return CM_SUCCESS;
 }
 
@@ -2942,8 +2909,7 @@ dss_packet_proc_t g_dss_packet_proc[DSS_CMD_END] = {
     [DSS_CMD_REMOVE_VOLUME] = {dss_encode_add_or_remove_volume, NULL, "remove volume"},
     [DSS_CMD_KICKH] = {dss_encode_kickh, NULL, "kickh"},
     [DSS_CMD_LOAD_CTRL] = {dss_encode_load_ctrl, NULL, "load ctrl"},
-    [DSS_CMD_SET_SESSIONID] = {dss_encode_set_session, dss_decode_set_session, "set session"},
-    [DSS_CMD_GET_HOME] = {dss_encode_get_home, dss_decode_get_home, "get home"},
+    [DSS_CMD_HANDSHAKE] = {dss_encode_handshake, dss_decode_handshake, "handshake with server"},
 };
 
 status_t dss_decode_packet(dss_packet_proc_t *make_proc, dss_packet_t *ack_pack, void *ack)
@@ -2982,10 +2948,8 @@ status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ac
         }
         break;
     } while (1);
-    if (cmd == DSS_CMD_GET_HOME) {
-        conn->server_version = dss_get_version(ack_pack);
-        conn->proto_version = MIN(DSS_PROTO_VERSION, conn->server_version);
-    }
+    conn->server_version = dss_get_version(ack_pack);
+    conn->proto_version = MIN(DSS_PROTO_VERSION, conn->server_version);
     return dss_decode_packet(make_proc, ack_pack, ack);
 }
 
