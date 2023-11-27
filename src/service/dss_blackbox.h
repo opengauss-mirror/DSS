@@ -27,5 +27,5 @@
 
 #include "cm_blackbox.h"
 status_t dss_sigcap_handle_reg();
-
+status_t dss_update_state_file(bool32 coredump);
 #endif

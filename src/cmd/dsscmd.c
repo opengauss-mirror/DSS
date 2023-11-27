@@ -2869,7 +2869,8 @@ static status_t setcfg_proc(void)
     char *name = cmd_setcfg_args[DSS_ARG_IDX_0].input_args;
     if (cm_strcmpi(name, "_LOG_LEVEL") != 0 && cm_strcmpi(name, "_LOG_MAX_FILE_SIZE") != 0 &&
         cm_strcmpi(name, "_LOG_BACKUP_FILE_COUNT") != 0 && cm_strcmpi(name, "_AUDIT_MAX_FILE_SIZE") != 0 &&
-        cm_strcmpi(name, "_AUDIT_BACKUP_FILE_COUNT") != 0 && cm_strcmpi(name, "_AUDIT_LEVEL") != 0) {
+        cm_strcmpi(name, "_AUDIT_BACKUP_FILE_COUNT") != 0 && cm_strcmpi(name, "_AUDIT_LEVEL") != 0 &&
+        cm_strcmpi(name, "_ENABLE_CORE_STATE_COLLECT") != 0) {
         DSS_PRINT_ERROR("Invalid name when set cfg.\n");
         return DSS_ERROR;
     }
