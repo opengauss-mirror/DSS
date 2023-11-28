@@ -80,7 +80,7 @@ static void cs_try_uds_accept(uds_lsnr_t *lsnr, cs_pipe_t *pipe)
         }
         return;
     }
-
+    status_t status = CM_ERROR;
     for (loop = 0; loop < ret; loop++) {
         sock_ready = evnts[loop].data.fd;
         if (!cs_uds_create_link(sock_ready, pipe)) {
@@ -92,7 +92,10 @@ static void cs_try_uds_accept(uds_lsnr_t *lsnr, cs_pipe_t *pipe)
             continue;
         }
         is_emerg = (sock_ready == lsnr->socks[0]);
-        (void)lsnr->action(is_emerg, lsnr, pipe);
+        status = lsnr->action(is_emerg, lsnr, pipe);
+        if (status != CM_SUCCESS) {
+            cs_uds_disconnect(&pipe->link.uds);
+        }
     }
 }
 

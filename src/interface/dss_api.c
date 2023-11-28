@@ -122,23 +122,18 @@ static void dss_clt_env_init(void)
 static status_t dss_try_conn(dss_conn_opt_t *options, dss_conn_t *conn)
 {
     // establish connection
-    status_t status = CM_SUCCESS;
+    status_t status = CM_ERROR;
     cm_latch_x(&g_dss_conn_info.conn_latch, 1, NULL);
     do {
         // avoid buffer leak when disconnect
         dss_free_packet_buffer(&conn->pack);
         status = dss_connect(dss_get_inst_path(), options, conn);
         DSS_BREAK_IFERR2(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client connet server failed."));
-        char *home = NULL;
-        status = dss_get_home_sync(conn, &home);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client get home from server failed."), dss_disconnect(conn));
-
         uint32 max_open_file = DSS_MAX_OPEN_FILES;
-        status = dss_init(max_open_file, home);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client init failed."), dss_disconnect(conn));
-
-        status = dss_set_session_sync(conn);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client failed to initialize session."), dss_disconnect(conn));
+        conn->proto_version = DSS_PROTO_VERSION;
+        status = dss_cli_handshake(conn, max_open_file);
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client handshake to server failed."),
+            dss_disconnect(conn));
 
         status = dss_init_vol_handle_sync(conn);
         DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client init vol handle failed."), dss_disconnect(conn));

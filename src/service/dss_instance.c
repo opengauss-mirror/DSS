@@ -39,6 +39,7 @@
 #include "dss_instance.h"
 #include "dss_simulation_cm.h"
 #include "dss_reactor.h"
+#include "dss_service.h"
 
 #define DSS_MAINTAIN_ENV "DSS_MAINTAIN"
 dss_instance_t g_dss_instance;
@@ -467,16 +468,49 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
     return CM_SUCCESS;
 }
 
+static status_t dss_handshake_core(dss_session_t *session)
+{
+    dss_init_packet(&session->recv_pack, CM_FALSE);
+    dss_init_packet(&session->recv_pack, CM_FALSE);
+    session->pipe.socket_timeout = (int32)CM_NETWORK_IO_TIMEOUT;
+    status_t status = dss_process_handshake_cmd(session, DSS_CMD_HANDSHAKE);
+    return status;
+}
+
+static status_t dss_handshake(dss_session_t *session)
+{
+    LOG_RUN_INF("[DSS_CONNECT]session %u begin check protocal type.", session->id);
+    /* fetch protocol type */
+    status_t status = dss_diag_proto_type(session);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[DSS_CONNECT]Failed to get protocol type!");
+        return CM_ERROR;
+    }
+    status = dss_handshake_core(session);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[DSS_CONNECT]Failed to process get server info!");
+        return CM_ERROR;
+    }
+    return status;
+}
+
 static status_t dss_lsnr_proc(bool32 is_emerg, uds_lsnr_t *lsnr, cs_pipe_t *pipe)
 {
     dss_session_t *session = NULL;
     status_t status;
     status = dss_create_session(pipe, &session);
-    DSS_RETURN_IFERR3(
-        status, LOG_RUN_ERR("dss_lsnr_proc create session failed.\n"), cs_uds_disconnect(&pipe->link.uds));
+    DSS_RETURN_IFERR2(
+        status, LOG_RUN_ERR("[DSS_CONNECT]dss_lsnr_proc create session failed.\n"));
+    // process_handshake
+    status = dss_handshake(session);
+    DSS_RETURN_IFERR3(status,
+        LOG_RUN_ERR("[DSS_CONNECT]Session:%u socket:%u handshake with client failed.", session->id, pipe->link.uds.sock),
+        dss_destroy_session(session));
     status = dss_reactors_add_session(session);
-    DSS_RETURN_IFERR3(status, dss_destroy_session(session),
-        LOG_RUN_ERR("Session:%u socket:%u closed.", session->id, pipe->link.uds.sock));
+    DSS_RETURN_IFERR3(status,
+        LOG_RUN_ERR("[DSS_CONNECT]Session:%u socket:%u closed.", session->id, pipe->link.uds.sock),
+        dss_destroy_session(session));
+    LOG_RUN_INF("[DSS_CONNECT]The client has connected, session %u.", session->id);
     return CM_SUCCESS;
 }
 
