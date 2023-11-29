@@ -55,12 +55,13 @@ typedef enum en_dss_mes_command {
 #define DSS_IS_INST_SEND(bits, id) (((bits) >> (id)) & 0x1)
 #define DSS_BUFFER_POOL_NUM (3)
 #define DSS_MSG_BUFFER_QUEUE_NUM (8)
-#define DSS_FIRST_BUFFER_LENGTH (64)
-#define DSS_SECOND_BUFFER_LENGTH (128)
+#define DSS_FIRST_BUFFER_LENGTH (128)
+#define DSS_SECOND_BUFFER_LENGTH (256)
 #define DSS_THIRD_BUFFER_LENGTH (SIZE_K(32) + 256)
 #define DSS_CKPT_NOTIFY_TASK_RATIO (1.0f / 4)
 #define DSS_CLEAN_EDP_TASK_RATIO (1.0f / 4)
 #define DSS_TXN_INFO_TASK_RATIO (1.0f / 16)
+#define DSS_RECV_WORK_THREAD_RATIO (1.0f / 4)
 #define DSS_FIRST_BUFFER_RATIO (1.0f / 4)
 #define DSS_SECOND_BUFFER_RATIO (1.0f / 4)
 #define DSS_THIRDLY_BUFFER_RATIO (1.0f / 2)
@@ -77,7 +78,7 @@ typedef struct st_dss_processor {
     dss_message_proc_t proc;
     bool32 is_enqueue;
     bool32 is_req;
-    mes_task_group_id_t group_id;
+    mes_priority_t prio_id;
     char *name;
 } dss_processor_t;
 

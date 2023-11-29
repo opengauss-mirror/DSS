@@ -31,17 +31,17 @@ set(COMMON_ALL_SRC
 ADD_EXECUTABLE(dsscmd ${COMMON_ALL_SRC})
 
 if (ENABLE_FUZZASAN)
-    target_link_libraries(dsscmd dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} ${fuzz_lib} -Wl,--no-whole-archive)
+    target_link_libraries(dsscmd dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${lz4} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} ${fuzz_lib} -Wl,--no-whole-archive)
 else()
-    target_link_libraries(dsscmd dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
+    target_link_libraries(dsscmd dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${lz4} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
 endif(ENABLE_FUZZASAN)
 
 if (ENABLE_DSSTEST)
     add_library(dsscmd_test SHARED ${COMMON_ALL_SRC})
     if (ENABLE_FUZZASAN)
-        target_link_libraries(dsscmd_test dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} ${fuzz_lib} -Wl,--no-whole-archive)
+        target_link_libraries(dsscmd_test dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${lz4} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} ${fuzz_lib} -Wl,--no-whole-archive)
     else()
-        target_link_libraries(dsscmd_test dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
+        target_link_libraries(dsscmd_test dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${lz4} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
     endif(ENABLE_FUZZASAN)
 endif(ENABLE_DSSTEST)
 

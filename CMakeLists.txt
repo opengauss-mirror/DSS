@@ -159,6 +159,7 @@ set(DSS_OPENSSL_PATH            "${CMAKE_CURRENT_SOURCE_DIR}/library/openssl/inc
 set(DSS_CBB_PATH                "${CMAKE_CURRENT_SOURCE_DIR}/library/cbb/include")
 set(LIBAIO_INC_PATH            "${CMAKE_CURRENT_SOURCE_DIR}/library/libaio/include")
 set(ZLIB_INC_PATH               "${CMAKE_CURRENT_SOURCE_DIR}/library/zlib/include")
+set(LZ4_INC_PATH               "${CMAKE_CURRENT_SOURCE_DIR}/library/lz4/include")
 set(JAVA_HOME               "$ENV{JAVA_HOME}/include")
 set(JAVA_HOME_INCLUDE               "$ENV{JAVA_HOME}/include/linux")
 
@@ -167,6 +168,7 @@ set(SECUREC_LIB_PATH            "${CMAKE_CURRENT_SOURCE_DIR}/library/huawei_secu
 set(OPENSSL_LIB_PATH            "${CMAKE_CURRENT_SOURCE_DIR}/library/openssl/lib")
 set(CBB_LIB_PATH                "${CMAKE_CURRENT_SOURCE_DIR}/library/cbb/lib")
 set(LIBZ_PATH                   "${CMAKE_CURRENT_SOURCE_DIR}/library/zlib/lib")
+set(LZ4_PATH                   "${CMAKE_CURRENT_SOURCE_DIR}/library/lz4/lib")
 
 ## output path
 set (LIBRARY_OUTPUT_PATH        ${CMAKE_CURRENT_SOURCE_DIR}/output/lib)
@@ -175,7 +177,7 @@ set (EXECUTABLE_OUTPUT_PATH     ${CMAKE_CURRENT_SOURCE_DIR}/output/bin)
 CONFIGURE_FILE(config.h.in ${DSS_COMMON_API_PATH}/config.h)
 CONFIGURE_FILE(config.h.in ${DSS_SER_PATH}/config.h)
 ## add source
-link_directories(${LIBRARY_OUTPUT_PATH} ${SECUREC_LIB_PATH} ${LIBZ_PATH} ${CBB_LIB_PATH})
+link_directories(${LIBRARY_OUTPUT_PATH} ${SECUREC_LIB_PATH} ${LIBZ_PATH} ${LZ4_PATH} ${CBB_LIB_PATH})
 IF (ENABLE_FUZZASAN)
     link_directories(${DSS_FUZZ_LIB_PATH})
     set(fuzz_lib "libSecodefuzz.a")
@@ -184,6 +186,7 @@ ENDIF()
 set(vpp_libsecurec "libsecurec.a")
 set(3rd_libccb "libcbb.a")
 set(libz "libz.a")
+set(lz4 "lz4")
 
 set(vpp_libipsi_crypto "libcrypto.a")
 set(3rd_libssl "libssl.a")

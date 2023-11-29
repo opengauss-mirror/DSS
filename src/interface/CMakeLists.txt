@@ -16,7 +16,7 @@ include_directories(${DSS_SECUREC_INC_PATH})
 include_directories(${DSS_OPENSSL_PATH})
 include_directories(${LIBAIO_INC_PATH})
 include_directories(${DSS_CBB_PATH})
-
+include_directories(${LZ4_INC_PATH})
 ## source
 
 aux_source_directory(${DSS_COMMON_PATH} DSS_COMMON_SRC)
@@ -36,8 +36,8 @@ set(COMMON_ALL_SRC
 add_library(dssapi SHARED ${COMMON_ALL_SRC})
 
 if (ENABLE_FUZZASAN)
-    target_link_libraries(dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${3rd_libssl} ${libz} ${fuzz_lib} -Wl,-Bstatic ${3rd_libccb} -Wl,-Bdynamic ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
+    target_link_libraries(dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${3rd_libssl} ${libz} ${lz4} ${fuzz_lib} -Wl,-Bstatic ${3rd_libccb} -Wl,-Bdynamic ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
 else()
-    target_link_libraries(dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${3rd_libssl} ${libz} -Wl,-Bstatic ${3rd_libccb} -Wl,-Bdynamic ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
+    target_link_libraries(dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${3rd_libssl} ${libz} ${lz4} -Wl,-Bstatic ${3rd_libccb} -Wl,-Bdynamic ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
 endif(ENABLE_FUZZASAN)
 

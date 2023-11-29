@@ -1006,7 +1006,7 @@ void dss_check_unreg_volume(dss_session_t *session)
     }
 
     bool32 is_reg = CM_FALSE;
-    for (uint8 i = 0; i < CM_MAX_INSTANCES; i++) {
+    for (uint8 i = 0; i < DSS_MAX_INSTANCES; i++) {
         is_reg = cm_bitmap64_exist(&vg_item->dss_ctrl->global_ctrl.cluster_node_info, i);
         if (is_reg && !dss_is_register(&reg_info, i)) {
             return;
