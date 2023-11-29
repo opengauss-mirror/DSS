@@ -283,6 +283,9 @@ int main(int argc, char **argv)
         return CM_ERROR;
     }
 #ifndef WIN32
+    if (dss_update_state_file(CM_FALSE) != CM_SUCCESS) {
+        LOG_RUN_WAR("failed to update state file.");
+    }
     if (dss_signal_proc() != CM_SUCCESS) {
         printf("dss instance startup failed.\n");
         fflush(stdout);

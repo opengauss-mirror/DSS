@@ -42,6 +42,8 @@ int32 g_sign_array[] = {SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT, SIGBU
                         SIGXCPU, SIGXFSZ, SIGVTALRM, SIGPROF, SIGIO, SIGPWR, SIGSYS};
 
 box_excp_item_t g_excep_info = {0};
+static const char *g_core_state_file = "dss.core.state";
+char g_dss_state_file[CM_FILE_NAME_BUFFER_SIZE] = {0};
 
 sig_info_t g_known_signal_info[] = {
     {"Signal 0", TERMINATE_SIG},
@@ -366,6 +368,10 @@ void dss_proc_sign_func(int32 sig_num, siginfo_t *sig_info, void *context)
         (void)sigprocmask(SIG_SETMASK, &sign_old_mask, NULL);
         return;
     }
+    status_t ret = dss_update_state_file(CM_TRUE);
+    if (ret != CM_SUCCESS) {
+        LOG_RUN_WAR("failed to update state file.");
+    }
     if (excep_info != NULL) {
         sig_print_excep_info(excep_info, sig_num, sig_info, context);
     }
@@ -383,6 +389,29 @@ static status_t dss_sigcap_reg_proc(int32 sig_num)
         return CM_ERROR;
     }
     LOG_DEBUG_INF("Register the signal cap success:%d", sig_num);
+    return CM_SUCCESS;
+}
+
+status_t dss_update_state_file(bool32 coredump)
+{
+    if (strlen(g_dss_state_file) == 0) {
+        PRTS_RETURN_IFERR(snprintf_s(g_dss_state_file, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/%s",
+            g_inst_cfg->home, g_core_state_file));
+    }
+    if (!g_inst_cfg->params.enable_core_state_collect || !coredump) {
+        (void)cm_remove_file(g_dss_state_file);
+        return CM_SUCCESS;
+    }
+    FILE *fp;
+    CM_RETURN_IFERR(cm_fopen(g_dss_state_file, "w+", S_IRUSR | S_IWUSR, &fp));
+    int32 size = fprintf(fp, "%u", (uint32)coredump);
+    (void)fflush(stdout);
+    if (size < 0) {
+        LOG_DEBUG_ERR("write core state failed, write size is %d.", size);
+        (void)fclose(fp);
+        return CM_ERROR;
+    }
+    (void)fclose(fp);
     return CM_SUCCESS;
 }
 

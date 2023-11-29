@@ -58,6 +58,23 @@ status_t dss_notify_log_level(void *se, void *item, char *value)
     return CM_SUCCESS;
 }
 
+status_t dss_verify_enable_core_state_collect(void *lex, void *def)
+{
+    char *value = (char *)lex;
+    if (!cm_str_equal_ins(value, "TRUE") && !cm_str_equal_ins(value, "FALSE")) {
+        DSS_RETURN_IFERR2(CM_ERROR, CM_THROW_ERROR(ERR_INVALID_PARAM, "_ENABLE_CORE_STATE_COLLECT"));
+    }
+    int32 iret_snprintf =
+        snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, "%s", value);
+    DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
+    return CM_SUCCESS;
+}
+
+status_t dss_notify_enable_core_state_collect(void *se, void *item, char *value)
+{
+    return dss_load_enable_core_state_collect_inner(value, g_inst_cfg);
+}
+
 status_t dss_verify_lock_file_path(char *path)
 {
     char input_path_buffer[DSS_UNIX_PATH_MAX];

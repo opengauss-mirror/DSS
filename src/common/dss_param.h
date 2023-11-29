@@ -88,6 +88,7 @@ typedef struct st_dss_params {
     rbd_config_params_t rbd_config_params;
     char ceph_config[DSS_FILE_NAME_BUFFER_SIZE];
     bool32 blackbox_detail_on;
+    bool32 enable_core_state_collect;
     cluster_run_mode_t cluster_run_mode;
     uint32 mes_wait_timeout;
 } dss_params_t;
@@ -142,6 +143,19 @@ inline status_t dss_get_ssl_param(const char *param_name, char *param_value, uin
     return mes_get_md_param_by_name(param_name, param_value, size);
 }
 void dss_ssl_ca_cert_expire(void);
+
+static inline status_t dss_load_enable_core_state_collect_inner(char *value, dss_config_t *inst_cfg)
+{
+    if (cm_str_equal_ins(value, "TRUE")) {
+        inst_cfg->params.enable_core_state_collect = CM_TRUE;
+    } else if (cm_str_equal_ins(value, "FALSE")) {
+        inst_cfg->params.enable_core_state_collect = CM_FALSE;
+    } else {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_ENABLE_CORE_STATE_COLLECT"));
+    }
+    LOG_RUN_INF("_ENABLE_CORE_STATE_COLLECT = %u.", inst_cfg->params.enable_core_state_collect);
+    return CM_SUCCESS;
+}
 
 status_t dss_set_cfg_param(char *name, char *value, char *scope);
 status_t dss_get_cfg_param(const char *name, char **value);
