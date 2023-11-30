@@ -471,7 +471,7 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
 static status_t dss_handshake_core(dss_session_t *session)
 {
     dss_init_packet(&session->recv_pack, CM_FALSE);
-    dss_init_packet(&session->recv_pack, CM_FALSE);
+    dss_init_packet(&session->send_pack, CM_FALSE);
     session->pipe.socket_timeout = (int32)CM_NETWORK_IO_TIMEOUT;
     status_t status = dss_process_handshake_cmd(session, DSS_CMD_HANDSHAKE);
     return status;
