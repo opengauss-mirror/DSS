@@ -399,7 +399,9 @@ status_t dss_update_state_file(bool32 coredump)
             g_inst_cfg->home, g_core_state_file));
     }
     if (!g_inst_cfg->params.enable_core_state_collect || !coredump) {
-        (void)cm_remove_file(g_dss_state_file);
+        if (cm_file_exist(g_dss_state_file)) {
+            (void)cm_remove_file(g_dss_state_file);
+        }
         return CM_SUCCESS;
     }
     FILE *fp;
