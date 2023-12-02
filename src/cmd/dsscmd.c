@@ -1810,7 +1810,11 @@ static status_t lscli_proc(void)
     dss_cli_info cli_info;
 
     cli_info.cli_pid = cm_sys_pid();
-    cli_info.start_time = cm_sys_process_start_time(cli_info.cli_pid);
+    status_t status = cm_sys_process_start_time(cli_info.cli_pid, &cli_info.start_time);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to get process start time pid %llu.\n", cli_info.cli_pid);
+        return CM_ERROR;
+    }
     errcode = strncpy_s(
         cli_info.process_name, sizeof(cli_info.process_name), cm_sys_program_name(), strlen(cm_sys_program_name()));
     if (errcode != EOK) {
