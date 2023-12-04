@@ -619,7 +619,11 @@ status_t dss_cli_handshake(dss_conn_t *conn, uint32 max_open_file)
 {
     dss_cli_info cli_info;
     cli_info.cli_pid = cm_sys_pid();
-    cli_info.start_time = cm_sys_process_start_time(cli_info.cli_pid);
+    status_t status = cm_sys_process_start_time(cli_info.cli_pid, &cli_info.start_time);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to get process start time pid %llu.\n", cli_info.cli_pid);
+        return CM_ERROR;
+    }
     LOG_DEBUG_INF("The process start time is:%lld.", cli_info.start_time);
 
     errno_t err;
