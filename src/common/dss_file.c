@@ -3677,11 +3677,12 @@ void dss_clean_all_sessions_latch()
 
         cli_pid = session->cli_info.cli_pid;
         start_time = session->cli_info.start_time;
-        cli_pid_alived = cm_sys_process_alived(session->cli_info.cli_pid, session->cli_info.start_time);
+        cli_pid_alived = cm_sys_process_alived(cli_pid, start_time);
         if (cli_pid_alived) {
             continue;
         }
-
+        LOG_RUN_INF("[CLEAN_LATCH]session id %u, pid %llu, start_time %lld, process name:%s.", session->id, cli_pid,
+            start_time, session->cli_info.process_name);
         // clean the session lock and latch
         dss_clean_session_latch(session, CM_TRUE);
     }

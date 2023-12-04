@@ -490,7 +490,9 @@ static status_t dss_process_handshake(dss_session_t *session)
     dss_cli_info *cli_info;
     DSS_RETURN_IF_ERROR(dss_get_data(&session->recv_pack, sizeof(dss_cli_info), (void **)&cli_info));
     errno_t errcode;
+    cm_spin_lock(&session->lock, NULL);
     errcode = memcpy_s(&session->cli_info, sizeof(dss_cli_info), cli_info, sizeof(dss_cli_info));
+    cm_spin_unlock(&session->lock);
     securec_check_ret(errcode);
     LOG_RUN_INF("[DSS_CONNECT]The client has connected, session id:%u, pid:%llu, process name:%s.st_time:%lld",
         session->id, session->cli_info.cli_pid, session->cli_info.process_name, session->cli_info.start_time);
