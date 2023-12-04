@@ -100,8 +100,10 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
         cm_spin_unlock(&g_dss_session_ctrl.lock);
         return ERR_DSS_SESSION_CREATE;
     }
+    cm_spin_lock(&g_dss_session_ctrl.sessions[id].lock, NULL);
     g_dss_session_ctrl.used_count++;
     g_dss_session_ctrl.sessions[id].is_used = CM_TRUE;
+    cm_spin_unlock(&g_dss_session_ctrl.sessions[id].lock);
     cm_spin_unlock(&g_dss_session_ctrl.lock);
     dss_latch_stack_t *latch_stack = &g_dss_session_ctrl.sessions[id].latch_stack;
     (void)memset_s(latch_stack, sizeof(dss_latch_stack_t), 0, sizeof(dss_latch_stack_t));
@@ -131,12 +133,18 @@ void dss_destroy_session(dss_session_t *session)
         g_dss_session_ctrl.sessions[id].connected = CM_FALSE;
     }
     cm_spin_lock(&g_dss_session_ctrl.lock, NULL);
+    cm_spin_lock(&g_dss_session_ctrl.sessions[id].lock, NULL);
     g_dss_session_ctrl.used_count--;
     g_dss_session_ctrl.sessions[id].is_closed = CM_TRUE;
     g_dss_session_ctrl.sessions[id].is_used = CM_FALSE;
+    g_dss_session_ctrl.sessions[id].cli_info.cli_pid = 0;
+    g_dss_session_ctrl.sessions[id].cli_info.start_time = 0;
+    g_dss_session_ctrl.sessions[id].client_version = DSS_PROTO_VERSION;
+    g_dss_session_ctrl.sessions[id].proto_version = DSS_PROTO_VERSION;
     if (g_dss_session_ctrl.sessions[id].log_split != DSS_INVALID_SLOT) {
         dss_free_log_slot(&g_dss_session_ctrl.sessions[id]);
     }
+    cm_spin_unlock(&g_dss_session_ctrl.sessions[id].lock);
     cm_spin_unlock(&g_dss_session_ctrl.lock);
 }
 
@@ -692,6 +700,14 @@ static void dss_wait_cli_exit(dss_session_t *session)
     } while (alived);
 }
 
+static bool32 dss_need_clean_session_latch(dss_session_t *session, uint64 cli_pid, int64 start_time)
+{
+    if (cli_pid == 0 || !session->is_used || !session->connected || cm_sys_process_alived(cli_pid, start_time)) {
+        return CM_FALSE;
+    }
+    return CM_TRUE;
+}
+
 void dss_clean_session_latch(dss_session_t *session, bool32 is_daemon)
 {
     int32 i = 0;
@@ -716,7 +732,17 @@ void dss_clean_session_latch(dss_session_t *session, bool32 is_daemon)
             return;
         }
     }
-    
+
+    uint64 cli_pid = session->cli_info.cli_pid;
+    int64 start_time = session->cli_info.start_time;
+    if (is_daemon && !dss_need_clean_session_latch(session, cli_pid, start_time)) {
+        LOG_RUN_INF("[CLEAN_LATCH]session id %u, pid %llu, start_time %lld, process name:%s need check next time.",
+            session->id, cli_pid, start_time, session->cli_info.process_name);
+            cm_spin_unlock(&session->lock);
+            return;
+    }
+    LOG_RUN_INF("[CLEAN_LATCH]session id %u, pid %llu, start_time %lld, process name:%s in lock.", session->id, cli_pid,
+        start_time, session->cli_info.process_name);
     LOG_DEBUG_INF("Clean sid:%u latch_stack op:%u, stack_top:%hu.", DSS_SESSIONID_IN_LOCK(session->id),
         session->latch_stack.op, session->latch_stack.stack_top);
     for (i = (int32)session->latch_stack.stack_top; i >= DSS_MAX_LATCH_STACK_BOTTON; i--) {
