@@ -417,7 +417,7 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
         return CM_ERROR;
     }
-    if (cm_strcmpi(src, dst) == 0) {
+    if (cm_str_equal(src, dst)) {
         DSS_THROW_ERROR(ERR_DSS_FILE_RENAME, "src name is the same as dst.");
         return CM_ERROR;
     }    
