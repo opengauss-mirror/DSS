@@ -1360,6 +1360,45 @@ void dss_proc_join_cluster_req(dss_session_t *session, mes_msg_t *msg)
         (uint32)dst_inst, req->reg_id, ack.ack_head.size);
 }
 
+static status_t dss_get_node_by_path_inner(dss_session_t *session, dss_check_dir_output_t *output_info,
+    dss_get_ft_block_ack_t *ack, dss_vg_info_item_t *ack_vg_item, dss_ft_block_t **shm_block)
+{
+    if (dss_cmp_blockid(ack->parent_node_id, DSS_INVALID_64)) {
+        return CM_SUCCESS;
+    }
+    if (!dss_read_remote_checksum(ack->parent_block, DSS_BLOCK_SIZE)) {
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft block ack msg block checksum error.");
+        return CM_ERROR;
+    }
+    if (is_ft_root_block(ack->parent_node_id)) {
+        dss_root_ft_block_t *ft_block = (dss_root_ft_block_t *)ack->parent_block;
+        if (ack->parent_node_id.item >= ft_block->ft_block.node_num) {
+            DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft block ack msg parent_node_id item error.");
+            return CM_ERROR;
+        }
+        char *root = ack_vg_item->dss_ctrl->root;
+        errno_t errcode = memcpy_s(root, DSS_BLOCK_SIZE, ack->parent_block, DSS_BLOCK_SIZE);
+        if (errcode != EOK) {
+            CM_THROW_ERROR(ERR_SYSTEM_CALL, (errcode));
+            return CM_ERROR;
+        }
+        if (output_info->parent_node != NULL) {
+            *output_info->parent_node =
+                (gft_node_t *)((root + sizeof(dss_root_ft_block_t)) + ack->parent_node_id.item * sizeof(gft_node_t));
+        }
+        return CM_SUCCESS;
+    }
+    dss_block_id_t block_id = ack->parent_node_id;
+    block_id.item = 0;
+    *shm_block = NULL;
+    status_t ret = dss_refresh_block_in_shm(
+        session, *output_info->item, block_id, DSS_BLOCK_TYPE_FT, ack->parent_block, (char **)shm_block);
+    if (ret == CM_SUCCESS && output_info->parent_node != NULL) {
+        *output_info->parent_node = dss_get_ft_node_by_block(*shm_block, ack->parent_node_id.item);
+    }
+    return ret;
+}
+
 status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_path, gft_item_type_t type,
     dss_check_dir_output_t *output_info, bool32 is_throw_err)
 {
@@ -1400,10 +1439,7 @@ status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_pat
         }
         char *root = ack_vg_item->dss_ctrl->root;
         errcode = memcpy_s(root, DSS_BLOCK_SIZE, ack.block, DSS_BLOCK_SIZE);
-        if (errcode != EOK) {
-            CM_THROW_ERROR(ERR_SYSTEM_CALL, (errcode));
-            return CM_ERROR;
-        }
+        securec_check_ret(errcode);
         if (output_info->out_node != NULL) {
             *output_info->out_node =
                 (gft_node_t *)((root + sizeof(dss_root_ft_block_t)) + ack.node_id.item * sizeof(gft_node_t));
@@ -1417,39 +1453,7 @@ status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_pat
             *output_info->out_node = dss_get_ft_node_by_block(shm_block, ack.node_id.item);
         }
     }
-    if (!dss_cmp_blockid(ack.parent_node_id, DSS_INVALID_64)) {
-        if (!dss_read_remote_checksum(ack.parent_block, DSS_BLOCK_SIZE)) {
-            DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft block ack msg block checksum error.");
-            return CM_ERROR;
-        }
-        if (is_ft_root_block(ack.parent_node_id)) {
-            dss_root_ft_block_t *ft_block = (dss_root_ft_block_t *)ack.parent_block;
-            if (ack.parent_node_id.item >= ft_block->ft_block.node_num) {
-                DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft block ack msg parent_node_id item error.");
-                return CM_ERROR;
-            }
-            char *root = ack_vg_item->dss_ctrl->root;
-            errcode = memcpy_s(root, DSS_BLOCK_SIZE, ack.parent_block, DSS_BLOCK_SIZE);
-            if (errcode != EOK) {
-                CM_THROW_ERROR(ERR_SYSTEM_CALL, (errcode));
-                return CM_ERROR;
-            }
-            if (output_info->parent_node != NULL) {
-                *output_info->parent_node =
-                    (gft_node_t *)((root + sizeof(dss_root_ft_block_t)) + ack.parent_node_id.item * sizeof(gft_node_t));
-            }
-            return CM_SUCCESS;
-        }
-        block_id = ack.parent_node_id;
-        block_id.item = 0;
-        shm_block = NULL;
-        ret = dss_refresh_block_in_shm(
-            session, *output_info->item, block_id, DSS_BLOCK_TYPE_FT, ack.parent_block, (char **)&shm_block);
-        if (ret == CM_SUCCESS && output_info->parent_node != NULL) {
-            *output_info->parent_node = dss_get_ft_node_by_block(shm_block, ack.parent_node_id.item);
-        }
-    }
-    return ret;
+    return dss_get_node_by_path_inner(session, output_info, &ack, ack_vg_item, &shm_block);
 }
 
 status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg_name)
