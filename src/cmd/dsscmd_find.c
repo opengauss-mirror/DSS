@@ -72,7 +72,7 @@ static status_t find_try_match_link(dss_conn_t *conn, char *path, const char *na
 {
     if (dss_is_valid_link_path(path)) {
         gft_node_t *node = NULL;
-        dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE, CM_TRUE};
+        dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE};
         DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE));
         if (node != NULL) {  // check the link name
             if (is_match(node->name, name)) {
@@ -91,7 +91,7 @@ status_t find_traverse_path(dss_conn_t *conn, char *path, size_t path_size, char
     gft_item_type_t type;
     gft_node_t *node = NULL;
     dss_vg_info_item_t *vg_item = NULL;
-    dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE, CM_TRUE};
+    dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE};
     char vg_name[DSS_MAX_NAME_LEN] = {0};
     size_t len = strlen(path);
     status_t status = CM_ERROR;

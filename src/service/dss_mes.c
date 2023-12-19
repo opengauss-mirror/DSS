@@ -1491,7 +1491,7 @@ static status_t dss_proc_get_ft_block_req_core(
     gft_node_t *out_node = NULL;
     gft_node_t *parent_node = NULL;
     dss_vg_info_item_t *vg_item = NULL;
-    dss_check_dir_output_t output_info = {&out_node, &vg_item, &parent_node, CM_FALSE, CM_FALSE};
+    dss_check_dir_output_t output_info = {&out_node, &vg_item, &parent_node, CM_FALSE};
     DSS_RETURN_IF_ERROR(dss_check_dir(session, req->path, req->type, &output_info, CM_TRUE));
     ack->node_id = out_node->id;
     DSS_LOG_DEBUG_OP("Req out node, v:%u,au:%llu,block:%u,item:%u,type:%d,path:%s.", out_node->id.volume,

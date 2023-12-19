@@ -1435,7 +1435,7 @@ static status_t dss_ls_print_node_info(gft_node_t *node, const char*measure)
 static status_t dss_ls_print_file(dss_conn_t *conn, const char *path, const char*measure)
 {
     gft_node_t *node = NULL;
-    dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE, CM_TRUE};
+    dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE};
     DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_FILE, &output_info, CM_FALSE));
     if (node == NULL) {
         LOG_DEBUG_INF("Failed to find path %s with the file type", path);
@@ -1449,7 +1449,7 @@ static status_t dss_ls_try_print_link(dss_conn_t *conn, const char *path, const 
 {
     if (dss_is_valid_link_path(path)) {
         gft_node_t *node = NULL;
-        dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE, CM_TRUE};
+        dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE};
         DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE));
         if (node != NULL) {
             (void)printf("%-5s%-20s%-14s %-14s %-64s\n", "type", "time", "size", "written_size", "name");
