@@ -105,6 +105,12 @@ void dss_set_server_status_flag(int32 dss_status)
     g_is_dss_readwrite = dss_status;
 }
 
+dss_is_open_status_proc_t is_open_status_proc = NULL;
+void regist_is_open_status_proc(dss_is_open_status_proc_t proc)
+{
+    is_open_status_proc = proc;
+}
+
 void dss_checksum_vg_ctrl(dss_vg_info_item_t *vg_item);
 
 void vg_destroy_env(dss_vg_info_item_t *vg_item)

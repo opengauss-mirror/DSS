@@ -71,6 +71,8 @@ static void dss_close_background_task(dss_instance_t *inst)
     if (!inst->is_maintain) {
         uint32 recovery_thread_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
         cm_close_thread(&inst->threads[recovery_thread_id]);
+        uint32 delay_clean_id = dss_get_delay_clean_task_idx();
+        cm_close_thread(&inst->threads[delay_clean_id]);
     }
 }
 
@@ -160,11 +162,24 @@ static status_t dss_recovery_background_task(dss_instance_t *inst)
     return status;
 }
 
+static status_t dss_delay_clean_background_task(dss_instance_t *inst)
+{
+    LOG_RUN_INF("create dss delay clean background task.");
+    uint32 delay_clean_idx = dss_get_delay_clean_task_idx();
+    status_t status =
+        cm_create_thread(dss_delay_clean_proc, 0, &g_dss_instance, &(g_dss_instance.threads[delay_clean_idx]));
+    return status;
+}
+
 static status_t dss_init_background_tasks(void)
 {
     status_t status = dss_recovery_background_task(&g_dss_instance);
     if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("create dss recovery background task failed.");
+        LOG_RUN_ERR("Create dss recovery background task failed.");
+    }
+    status = dss_delay_clean_background_task(&g_dss_instance);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Create dss delay clean background task failed.");
     }
     return status;
 }

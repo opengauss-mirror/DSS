@@ -85,6 +85,9 @@ void dss_free_ft_node_inner(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node, bool32 real_del);
 void dss_free_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node,
     bool32 real_del, bool32 latch_safe);
+gft_node_t *dss_get_next_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node);
+bool32 dss_is_last_tree_node(gft_node_t *node);
+void dss_delay_clean_all_vg(dss_session_t *session);
 gft_node_t *dss_find_ft_node(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, bool8 skip_del);
 gft_node_t *dss_get_ft_node_by_ftid(
@@ -237,6 +240,8 @@ static inline bool32 is_ft_root_block(ftid_t ftid)
 typedef status_t (*dss_invalidate_other_nodes_proc_t)(
     dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
 void regist_invalidate_other_nodes_proc(dss_invalidate_other_nodes_proc_t proc);
+typedef status_t (*dss_broadcast_check_file_open_proc_t)(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
+void regist_broadcast_check_file_open_proc(dss_broadcast_check_file_open_proc_t proc);
 
 typedef status_t (*dss_refresh_ft_by_primary_proc_t)(dss_block_id_t blockid, uint32 vgid, char *vg_name);
 void regist_refresh_ft_by_primary_proc(dss_refresh_ft_by_primary_proc_t proc);

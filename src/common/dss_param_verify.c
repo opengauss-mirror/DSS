@@ -75,6 +75,28 @@ status_t dss_notify_enable_core_state_collect(void *se, void *item, char *value)
     return dss_load_enable_core_state_collect_inner(value, g_inst_cfg);
 }
 
+status_t dss_verify_delay_clean_interval(void *lex, void *def)
+{
+    char *value = (char *)lex;
+    uint32 delay_clean_interval;
+
+    status_t status = cm_str2uint32(value, &delay_clean_interval);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DELAY_CLEAN_INTERVAL"));
+    if (delay_clean_interval < DSS_MIN_DELAY_CLEAN_INTERVAL || delay_clean_interval > DSS_MAX_DELAY_CLEAN_INTERVAL) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DELAY_CLEAN_INTERVAL"));
+    }
+
+    int32 iret_snprintf =
+        snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, PRINT_FMT_UINT32, delay_clean_interval);
+    DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
+    return CM_SUCCESS;
+}
+
+status_t dss_notify_delay_clean_interval(void *se, void *item, char *value)
+{
+    return dss_load_delay_clean_interval_core(value, g_inst_cfg);
+}
+
 status_t dss_verify_lock_file_path(char *path)
 {
     char input_path_buffer[DSS_UNIX_PATH_MAX];

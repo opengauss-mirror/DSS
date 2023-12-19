@@ -792,7 +792,7 @@ gft_node_t *dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 skip_dele
     while (node != NULL) {
         dir->cur_ftid = node->next;
         dir->cur_node = *node;
-        if (!skip_delete || node->flags != DSS_FT_NODE_FLAG_DEL) {
+        if (!skip_delete || ((node->flags & DSS_FT_NODE_FLAG_DEL) == 0)) {
             DSS_UNLOCK_VG_META_S(dir->vg_item, conn->session);
             return &dir->cur_node;
         }

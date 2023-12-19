@@ -42,8 +42,13 @@ extern "C" {
 #define DSS_MAX_LATCH_STACK_BOTTON 0
 #define DSS_MAX_LATCH_STACK_DEPTH 8
 #define DSS_LOCK_CLEAN_SLEEP_TIME 500
-#define DSS_BACKGROUND_TASK_NUM 5
 #define DSS_SESSION_PAUSED_WAIT 50
+
+typedef enum st_dss_background_task_type {
+    DSS_RECPVERY_BACKGROUND_TASK = 0,
+    DSS_DELAY_CLEAN_BACKGROUND_TASK = 1,
+    DSS_BACKGROUND_TASK_NUM = 5,
+} dss_background_task_type_e;
 
 typedef struct tagdss_cli_info {
     uint64 cli_pid;
@@ -178,6 +183,7 @@ void dss_lock_shm_meta_bucket_x(dss_shared_latch_t *shared_latch);
 void dss_unlock_shm_meta_bucket(dss_session_t *session, dss_shared_latch_t *shared_latch);
 void dss_clean_session_latch(dss_session_t *session, bool32 is_daemon);
 uint32 dss_get_udssession_startid(void);
+uint32 dss_get_delay_clean_task_idx(void);
 #ifdef __cplusplus
 }
 #endif

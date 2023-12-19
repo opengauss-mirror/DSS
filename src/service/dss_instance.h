@@ -89,7 +89,8 @@ typedef struct st_dss_instance {
     dss_kernel_instance_t *kernel_instance;
     int32 cluster_proto_vers[DSS_MAX_INSTANCES];
     bool8 is_maintain;
-    uint8 reserve[3];
+    bool8 is_cleaning;
+    uint8 reserve[2];
     bool32 is_join_cluster;
     dss_session_t *handle_session;
 } dss_instance_t;
@@ -115,6 +116,7 @@ void dss_set_inst_work_status(uint64 cur_inst_map);
 uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try_lock);
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id);
 void dss_get_cm_lock_and_recover(thread_t *thread);
+void dss_delay_clean_proc(thread_t *thread);
 bool32 dss_check_join_cluster();
 void dss_check_unreg_volume(dss_session_t *session);
 
