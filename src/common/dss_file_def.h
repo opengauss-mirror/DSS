@@ -374,7 +374,6 @@ typedef struct st_dss_check_dir_output_t {
     dss_vg_info_item_t **item;
     gft_node_t **parent_node;
     bool8 is_lock_x;
-    bool8 is_local_req;
 } dss_check_dir_output_t;
 
 #define DSS_GET_COMMON_BLOCK_HEAD(au) ((dss_common_block_t *)((char *)(au)))

@@ -727,7 +727,7 @@ status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_ty
 {
     CM_ASSERT(dir_path != NULL);
     status_t status = CM_ERROR;
-    while (dss_is_server() && output_info->is_local_req && !dss_need_exec_local()) {
+    while (dss_is_server() && !dss_need_exec_local()) {
         if (dss_get_node_by_path_remote_proc != NULL) {
             status = dss_get_node_by_path_remote_proc(session, dir_path, type, output_info, is_throw_err);
             if (status == ERR_DSS_MES_ILL) {
@@ -824,7 +824,7 @@ status_t dss_open_dir(dss_session_t *session, const char *dir_path, bool32 is_re
     errno_t errno;
     do {
         dss_vg_info_item_t *dir_vg_item = vg_item;
-        dss_check_dir_output_t output_info = {&node, &dir_vg_item, NULL, CM_FALSE, CM_TRUE};
+        dss_check_dir_output_t output_info = {&node, &dir_vg_item, NULL, CM_FALSE};
         status = dss_check_dir(session, dir_path, GFT_PATH, &output_info, CM_TRUE);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to check dir:%s.", dir_path);
@@ -1137,7 +1137,7 @@ status_t dss_get_ftid_by_path(dss_session_t *session, const char *path, ftid_t *
 
         dss_get_dir_path(dir_path, DSS_FILE_PATH_MAX_LENGTH, path);
         *dir_vg_item = vg_item;
-        dss_check_dir_output_t output_info = {&parent_node, dir_vg_item, NULL, CM_FALSE, CM_TRUE};
+        dss_check_dir_output_t output_info = {&parent_node, dir_vg_item, NULL, CM_FALSE};
         status = dss_check_dir(session, dir_path, GFT_PATH, &output_info, CM_TRUE);
         DSS_BREAK_IF_ERROR(status);
 
@@ -1181,7 +1181,7 @@ status_t dss_open_file_check_s(
     status_t status = dss_check_file(*vg_item);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check file, errcode:%d.", cm_get_error_code()));
     dss_vg_info_item_t *file_vg_item = *vg_item;
-    dss_check_dir_output_t output_info = {out_node, &file_vg_item, NULL, CM_FALSE, CM_TRUE};
+    dss_check_dir_output_t output_info = {out_node, &file_vg_item, NULL, CM_FALSE};
     status = dss_check_dir(session, file, type, &output_info, CM_TRUE);
     DSS_RETURN_IFERR2(
         status, LOG_DEBUG_ERR("Failed to check dir when open file read, errcode: %d.", cm_get_error_code()));
@@ -1199,7 +1199,7 @@ status_t dss_open_file_check(
     status_t status = dss_check_file(*vg_item);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check file,errcode:%d.", cm_get_error_code()));
     dss_vg_info_item_t *file_vg_item = *vg_item;
-    dss_check_dir_output_t output_info = {out_node, &file_vg_item, NULL, CM_TRUE, CM_TRUE};
+    dss_check_dir_output_t output_info = {out_node, &file_vg_item, NULL, CM_TRUE};
     status = dss_check_dir(session, file, type, &output_info, CM_TRUE);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to check dir when open file, errcode:%d.", cm_get_error_code());
