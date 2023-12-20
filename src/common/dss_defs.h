@@ -139,7 +139,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_MIN_SESSIONID_CFG 16  // allow config min sessionid in dss_inst.ini
 #define DSS_MIN_INST_ID 0
 #define DSS_MAX_INST_ID DSS_MAX_INSTANCES
-#define DSS_LOCK_VG_TIMEOUT 3000000  // usecs
+#define DSS_LOCK_VG_TIMEOUT 1000000  // usecs
 #define DSS_LOKC_ALIGN_SIZE_512 512
 #define DSS_MIN_LOCK_INTERVAL 1
 #define DSS_MAX_LOCK_INTERVAL 600000

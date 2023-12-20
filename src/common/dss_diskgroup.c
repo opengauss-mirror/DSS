@@ -782,13 +782,16 @@ status_t dss_lock_disk_vg(const char *entry_path, dss_config_t *inst_cfg)
         if (status == CM_TIMEDOUT) {
             LOG_DEBUG_INF("Lock vg timeout, get current lock info, entry_path %s.", entry_path);
             // get old lock info from disk
-            status = cm_get_dlock_info_s(&lock, entry_path);
-            DSS_RETURN_IFERR3(status, cm_destory_dlock(&lock),
+            status_t ret = cm_get_dlock_info_s(&lock, entry_path);
+            DSS_RETURN_IFERR3(ret, cm_destory_dlock(&lock),
                 LOG_DEBUG_ERR("Failed to get old lock info, entry path %s.", entry_path));
 
             // Get the status of the instance that owns the lock
-            LOG_DEBUG_INF("The node that owns the lock is online, contine to get vg lock, entry path %s.", entry_path);
-            continue;
+            LOG_DEBUG_INF("The node that owns the lock is online, inst_id(disk) %lld, inst_id(lock) %lld.",
+                LOCKR_INST_ID(lock), LOCKW_INST_ID(lock));
+            if (dss_is_server()) {
+                continue;
+            }
         }
         LOG_DEBUG_ERR("Failed to lock %s, status %d.", entry_path, status);
         cm_destory_dlock(&lock);
