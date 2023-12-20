@@ -348,6 +348,65 @@ status_t dss_find_block_objid_in_shm(
     return CM_ERROR;
 }
 
+static status_t dss_add_buffer_cache_inner(
+    shm_hashmap_bucket_t *bucket, auid_t add_block_id, dss_block_type_t type, char *refresh_buf, char **shm_buf)
+{ 
+    uint32 size;
+    ga_pool_id_e pool_id;
+    dss_block_ctrl_t *block_ctrl = NULL;
+    uint32 hash = cm_hash_int64(*(int64 *)&add_block_id);
+    if (type == DSS_BLOCK_TYPE_FT) {
+        pool_id = GA_8K_POOL;
+        size = DSS_BLOCK_SIZE;
+    } else {
+        pool_id = GA_16K_POOL;
+        size = DSS_FILE_SPACE_BLOCK_SIZE;
+    }
+    uint32 obj_id = ga_alloc_object(pool_id, CM_INVALID_ID32);
+    if (obj_id == CM_INVALID_ID32) {
+        dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+        return CM_ERROR;
+    }
+    char *addr = ga_object_addr(pool_id, obj_id);
+    if (addr == NULL) {
+        ga_free_object(pool_id, obj_id);
+        DSS_THROW_ERROR(ERR_DSS_GA_GET_ADDR, pool_id, obj_id);
+        return CM_ERROR;
+    }
+    errno_t errcode = memcpy_s(addr, size, refresh_buf, size);
+    if (errcode != EOK) {
+        ga_free_object(pool_id, obj_id);
+        LOG_DEBUG_ERR("Failed to memcpy block, v:%u,au:%llu,block:%u,item:%u,type:%d.", add_block_id.volume,
+            (uint64)add_block_id.au, add_block_id.block, add_block_id.item, type);
+        CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
+        return CM_ERROR;
+    }
+    dss_common_block_t *block = DSS_GET_COMMON_BLOCK_HEAD(addr);
+    DSS_LOG_DEBUG_OP("DSS add buffer cache, v:%u,au:%llu,block:%u,item:%u,type:%d.", block->id.volume,
+        (uint64)block->id.au, block->id.block, block->id.item, block->type);
+    if (block->type == DSS_BLOCK_TYPE_FT) {
+        block_ctrl = (dss_block_ctrl_t *)(addr + DSS_BLOCK_SIZE);
+    } else {
+        block_ctrl = (dss_block_ctrl_t *)(addr + DSS_FILE_SPACE_BLOCK_SIZE);
+    }
+    errcode = memset_s(block_ctrl, sizeof(dss_block_ctrl_t), 0, sizeof(dss_block_ctrl_t));
+    if (errcode != EOK) {
+        ga_free_object(pool_id, obj_id);
+        LOG_DEBUG_ERR("Failed to memset block ctrl, v:%u,au:%llu,block:%u,item:%u,type:%d.", add_block_id.volume,
+            (uint64)add_block_id.au, add_block_id.block, add_block_id.item, type);
+        CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
+        return CM_ERROR;
+    }
+    ga_obj_id_t ga_obj_id;
+    ga_obj_id.pool_id = pool_id;
+    ga_obj_id.obj_id = obj_id;
+    dss_register_buffer_cache_inner(bucket, ga_obj_id, block_ctrl, hash);
+    DSS_LOG_DEBUG_OP("Succeed to load meta block, v:%u,au:%llu,block:%u,item:%u,type:%d.", add_block_id.volume,
+        (uint64)add_block_id.au, add_block_id.block, add_block_id.item, type);
+    *shm_buf = addr;
+    return CM_SUCCESS;
+}
+
 static status_t dss_add_buffer_cache(
     dss_vg_info_item_t *vg_item, auid_t add_block_id, dss_block_type_t type, char *refresh_buf, char **shm_buf)
 {
@@ -394,62 +453,9 @@ static status_t dss_add_buffer_cache(
         next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
     }
 
-    ga_pool_id_e pool_id;
-    uint32 size;
-    if (type == DSS_BLOCK_TYPE_FT) {
-        pool_id = GA_8K_POOL;
-        size = DSS_BLOCK_SIZE;
-    } else {
-        pool_id = GA_16K_POOL;
-        size = DSS_FILE_SPACE_BLOCK_SIZE;
-    }
-    uint32 obj_id = ga_alloc_object(pool_id, CM_INVALID_ID32);
-    if (obj_id == CM_INVALID_ID32) {
-        dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
-        return CM_ERROR;
-    }
-    addr = ga_object_addr(pool_id, obj_id);
-    if (addr == NULL) {
-        dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
-        ga_free_object(pool_id, obj_id);
-        DSS_THROW_ERROR(ERR_DSS_GA_GET_ADDR, pool_id, obj_id);
-        return CM_ERROR;
-    }
-    errno_t errcode = memcpy_s(addr, size, refresh_buf, size);
-    if (errcode != EOK) {
-        dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
-        ga_free_object(pool_id, obj_id);
-        LOG_DEBUG_ERR("Failed to memcpy block, v:%u,au:%llu,block:%u,item:%u,type:%d.", add_block_id.volume,
-            (uint64)add_block_id.au, add_block_id.block, add_block_id.item, type);
-        CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
-        return CM_ERROR;
-    }
-    block = DSS_GET_COMMON_BLOCK_HEAD(addr);
-    DSS_LOG_DEBUG_OP("DSS add buffer cache, v:%u,au:%llu,block:%u,item:%u,type:%d.", block->id.volume,
-        (uint64)block->id.au, block->id.block, block->id.item, block->type);
-    if (block->type == DSS_BLOCK_TYPE_FT) {
-        block_ctrl = (dss_block_ctrl_t *)(addr + DSS_BLOCK_SIZE);
-    } else {
-        block_ctrl = (dss_block_ctrl_t *)(addr + DSS_FILE_SPACE_BLOCK_SIZE);
-    }
-    errcode = memset_s(block_ctrl, sizeof(dss_block_ctrl_t), 0, sizeof(dss_block_ctrl_t));
-    if (errcode != EOK) {
-        dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
-        ga_free_object(pool_id, obj_id);
-        LOG_DEBUG_ERR("Failed to memset block ctrl, v:%u,au:%llu,block:%u,item:%u,type:%d.", add_block_id.volume,
-            (uint64)add_block_id.au, add_block_id.block, add_block_id.item, type);
-        CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
-        return CM_ERROR;
-    }
-    ga_obj_id_t ga_obj_id;
-    ga_obj_id.pool_id = pool_id;
-    ga_obj_id.obj_id = obj_id;
-    dss_register_buffer_cache_inner(bucket, ga_obj_id, block_ctrl, hash);
+    status_t ret = dss_add_buffer_cache_inner(bucket, add_block_id, type, refresh_buf, shm_buf);
     dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
-    DSS_LOG_DEBUG_OP("Succeed to load meta block, v:%u,au:%llu,block:%u,item:%u,type:%d.", add_block_id.volume,
-        (uint64)add_block_id.au, add_block_id.block, add_block_id.item, type);
-    *shm_buf = addr;
-    return CM_SUCCESS;
+    return ret;
 }
 
 status_t dss_refresh_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
