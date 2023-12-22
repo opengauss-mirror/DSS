@@ -403,13 +403,17 @@ int dss_fremove(const char *file)
 
 int dss_fopen(const char *file, int flag, int *handle)
 {
+    *handle = -1;
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fopen get conn error"));
 
     ret = dss_open_file_impl(conn, file, flag, handle);
     dss_get_api_volume_error();
-    *handle += DSS_HANDLE_BASE;
+    // if open fails, -1 is returned. DB determines based on -1
+    if (ret == CM_SUCCESS) {
+        *handle += DSS_HANDLE_BASE;
+    }
     return (int)ret;
 }
 
