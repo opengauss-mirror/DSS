@@ -172,6 +172,15 @@ status_t dss_conn_sync(dss_conn_opt_t *options, dss_conn_t *conn)
     return ret;
 }
 
+void dss_set_default_conn_timeout(int timeout)
+{
+    if (timeout <= 0) {
+        g_dss_uds_conn_timeout = DSS_CONN_NEVER_TIMEOUT;
+        return;
+    }
+    g_dss_uds_conn_timeout = timeout;
+}
+
 status_t dss_conn_create(pointer_t *result)
 {
     dss_conn_t *conn = (dss_conn_t *)cm_malloc(sizeof(dss_conn_t));
