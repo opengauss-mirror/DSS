@@ -628,6 +628,7 @@ static status_t dss_set_mes_profile(mes_profile_t *profile)
 
     dss_set_mes_buffer_pool(inst_cfg->params.mes_pool_size, profile);
     dss_set_group_task_num(inst_cfg, profile);
+    profile->tpool_attr.enable_threadpool = CM_FALSE;
     return CM_SUCCESS;
 }
 
