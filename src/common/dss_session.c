@@ -77,6 +77,11 @@ uint32 dss_get_udssession_startid(void)
     return start_sid;
 }
 
+uint32 dss_get_delay_clean_task_idx(void)
+{
+    return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_DELAY_CLEAN_BACKGROUND_TASK;
+}
+
 status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
 {
     uint32 i, id;

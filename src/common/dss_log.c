@@ -54,6 +54,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_VOLUME_REMOVE_SUPER_BLOCK] = "Remove super block %s failed",
     [ERR_DSS_FILE_SEEK] = "Failed to seek file, vgid:%u, fid:%llu, offset:%lld, file size:%llu",
     [ERR_DSS_FILE_REMOVE_OPENING] = "DSS file is open",
+    [ERR_DSS_FILE_REMOVE_SYSTEM] = "DSS file %s is system file",
     [ERR_DSS_FILE_RENAME] = "Rename failed, reason %s",
     [ERR_DSS_FILE_RENAME_DIFF_VG] = "Failed to rename from vg %s to another vg %s, function not supported",
     [ERR_DSS_FILE_RENAME_EXIST] = "Rename failed, reason %s",

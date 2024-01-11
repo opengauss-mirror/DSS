@@ -126,7 +126,9 @@ static config_item_t g_dss_params[] = {
     { "MES_WAIT_TIMEOUT",  CM_TRUE, CM_FALSE, "2000",  NULL, NULL, "-", "[500,10000]",
         "GS_TYPE_INTEGER", NULL, 43, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "_ENABLE_CORE_STATE_COLLECT",  CM_TRUE, CM_FALSE, "FALSE",    NULL, NULL, "-", "[FALSE,TRUE]",  "GS_TYPE_BOOLEAN", NULL,
-        8, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_enable_core_state_collect, dss_notify_enable_core_state_collect, NULL, NULL},
+        44, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_enable_core_state_collect, dss_notify_enable_core_state_collect, NULL, NULL},
+    { "DELAY_CLEAN_INTERVAL",  CM_TRUE, CM_FALSE, "100",    NULL, NULL, "-", "[5,1000000]",  "GS_TYPE_INTEGER", NULL,
+        45, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_delay_clean_interval, dss_notify_delay_clean_interval, NULL, NULL},
 };
 
 // clang-format on
@@ -603,6 +605,27 @@ static status_t dss_load_enable_core_state_collect(dss_config_t *inst_cfg)
     return dss_load_enable_core_state_collect_inner(value, inst_cfg);
 }
 
+status_t dss_load_delay_clean_interval_core(char *value, dss_config_t *inst_cfg)
+{
+    uint32 delay_clean_interval;
+
+    status_t status = cm_str2uint32(value, &delay_clean_interval);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DELAY_CLEAN_INTERVAL"));
+
+    if (delay_clean_interval < DSS_MIN_DELAY_CLEAN_INTERVAL || delay_clean_interval > DSS_MAX_DELAY_CLEAN_INTERVAL) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DELAY_CLEAN_INTERVAL"));
+    }
+    inst_cfg->params.delay_clean_interval = delay_clean_interval;
+    LOG_RUN_INF("DELAY_CLEAN_INTERVAL = %u.", inst_cfg->params.delay_clean_interval);
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_delay_clean_interval(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "DELAY_CLEAN_INTERVAL");
+    return dss_load_delay_clean_interval_core(value, inst_cfg);
+}
+
 status_t dss_load_config(dss_config_t *inst_cfg)
 {
     char file_name[DSS_FILE_NAME_BUFFER_SIZE];
@@ -638,6 +661,7 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_cluster_run_mode(inst_cfg));
     CM_RETURN_IFERR(dss_load_xlog_vg_id(inst_cfg));
     CM_RETURN_IFERR(dss_load_enable_core_state_collect(inst_cfg));
+    CM_RETURN_IFERR(dss_load_delay_clean_interval(inst_cfg));
     return CM_SUCCESS;
 }
 

@@ -675,6 +675,7 @@ status_t dss_startup_mes(void)
 
     regist_remote_read_proc(dss_read_volume_remote);
     regist_invalidate_other_nodes_proc(dss_invalidate_other_nodes);
+    regist_broadcast_check_file_open_proc(dss_broadcast_check_file_open);
     regist_refresh_ft_by_primary_proc(dss_refresh_ft_by_primary);
     regist_get_node_by_path_remote_proc(dss_get_node_by_path_remote);
     return mes_init(&profile);
@@ -749,10 +750,14 @@ status_t dss_notify_expect_bool_ack(
     return status;
 }
 
-
 status_t dss_invalidate_other_nodes(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack)
 {
     return dss_notify_expect_bool_ack(vg_item, BCAST_REQ_INVALIDATE_FS_META, ftid, cmd_ack);
+}
+
+status_t dss_broadcast_check_file_open(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack)
+{
+    return dss_notify_expect_bool_ack(vg_item, BCAST_REQ_DEL_DIR_FILE, ftid, cmd_ack);
 }
 
 static void dss_check_inst_conn(uint32_t id, uint64 old_inst_stat, uint64 cur_inst_stat)

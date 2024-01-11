@@ -55,6 +55,8 @@ status_t dss_verify_audit_level(void *lex, void *def);
 status_t dss_notify_audit_level(void *se, void *item, char *value);
 status_t dss_verify_enable_core_state_collect(void *lex, void *def);
 status_t dss_notify_enable_core_state_collect(void *se, void *item, char *value);
+status_t dss_verify_delay_clean_interval(void *lex, void *def);
+status_t dss_notify_delay_clean_interval(void *se, void *item, char *value);
 
 #ifdef __cplusplus
 }

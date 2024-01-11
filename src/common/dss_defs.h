@@ -145,6 +145,8 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_MAX_LOCK_INTERVAL 600000
 #define DSS_MIN_DLOCK_RETRY_COUNT 1
 #define DSS_MAX_DLOCK_RETRY_COUNT 500000
+#define DSS_MIN_DELAY_CLEAN_INTERVAL 5
+#define DSS_MAX_DELAY_CLEAN_INTERVAL 1000000
 #define DSS_MIN_SHM_KEY 1
 #define DSS_MAX_SHM_KEY 64
 #define DSS_MAX_SHM_KEY_BITS 8

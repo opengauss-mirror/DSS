@@ -441,6 +441,11 @@ static void dss_init_cluster_proto_ver(dss_instance_t *inst)
     }
 }
 
+bool32 dss_is_open_status(void)
+{
+    return (g_dss_instance.status == DSS_STATUS_OPEN);
+}
+
 status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
 {
     status_t status;
@@ -449,6 +454,7 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
     dss_init_cluster_proto_ver(inst);
     inst->lock_fd = CM_INVALID_INT32;
     dss_set_server_flag();
+    regist_is_open_status_proc(dss_is_open_status);
     g_dss_instance_status = &inst->status;
     status = dss_set_cfg_dir(dss_args.dss_home, &inst->inst_cfg);
     DSS_RETURN_IFERR2(status, (void)printf("Environment variant DSS_HOME not found!\n"));
@@ -773,6 +779,8 @@ void dss_recovery_when_get_lock(dss_instance_t *inst, uint32 curr_id, bool32 gra
         dss_wait_session_pause(inst);
     }
     inst->status = DSS_STATUS_RECOVERY;
+    dss_wait_background_pause(inst);
+
     status_t ret = dss_recover_from_instance(inst);
     if (ret != CM_SUCCESS) {
         LOG_RUN_ERR("[DSS] ABORT INFO: Recover failed when get cm lock.");
@@ -853,13 +861,37 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
 }
 
 #define DSS_RECOVERY_INTERVAL 500
-void dss_get_cm_lock_and_recover(thread_t *thread) 
+void dss_get_cm_lock_and_recover(thread_t *thread)
 {
     cm_set_thread_name("recovery");
     while (!thread->closed) {
         dss_instance_t *inst = (dss_instance_t *)thread->argument;
         dss_get_cm_lock_and_recover_inner(inst);
         cm_sleep(DSS_RECOVERY_INTERVAL);
+    }
+}
+
+void dss_delay_clean_proc(thread_t *thread)
+{
+    cm_set_thread_name("delay_clean");
+    uint32 work_idx = dss_get_delay_clean_task_idx();
+    dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
+    dss_session_t *session = &session_ctrl->sessions[work_idx];
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    uint32 sleep_times = 0;
+    while (!thread->closed) {
+        if (sleep_times < inst_cfg->params.delay_clean_interval) {
+            cm_sleep(CM_SLEEP_1000_FIXED);
+            sleep_times++;
+            continue;
+        }
+        g_dss_instance.is_cleaning = CM_TRUE;
+        // DSS_STATUS_OPEN for control with switchover
+        if (dss_need_exec_local() && dss_is_readwrite() && (g_dss_instance.status == DSS_STATUS_OPEN)) {
+            dss_delay_clean_all_vg(session);
+        }
+        g_dss_instance.is_cleaning = CM_FALSE;
+        sleep_times = 0;
     }
 }
 

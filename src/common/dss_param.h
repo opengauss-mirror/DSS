@@ -89,6 +89,7 @@ typedef struct st_dss_params {
     char ceph_config[DSS_FILE_NAME_BUFFER_SIZE];
     bool32 blackbox_detail_on;
     bool32 enable_core_state_collect;
+    uint32 delay_clean_interval;
     cluster_run_mode_t cluster_run_mode;
     uint32 mes_wait_timeout;
 } dss_params_t;
@@ -159,6 +160,7 @@ static inline status_t dss_load_enable_core_state_collect_inner(char *value, dss
 
 status_t dss_set_cfg_param(char *name, char *value, char *scope);
 status_t dss_get_cfg_param(const char *name, char **value);
+status_t dss_load_delay_clean_interval_core(char *value, dss_config_t *inst_cfg);
 
 #ifdef __cplusplus
 }

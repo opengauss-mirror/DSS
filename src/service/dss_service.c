@@ -342,25 +342,6 @@ static status_t dss_process_close_file(dss_session_t *session)
         "Succeed to close file, ftid:%llu, fid:%llu, vg: %s, session pid:%llu, v:%u, au:%llu, block:%u, item:%u.",
         *(int64 *)&ftid, fid, vg_item->vg_name, session->cli_info.cli_pid, ftid.volume, (uint64)ftid.au, ftid.block,
         ftid.item);
-    bool32 should_rm_file = DSS_FALSE;
-    gft_node_t *node;
-    (void)dss_check_rm_file(session, vg_item, ftid, &should_rm_file, &node);
-    if (should_rm_file) {
-        if (!dss_is_readwrite()) {
-            LOG_DEBUG_INF(
-                "Ignores to remove delay file when close file, because the instance is not in readwrite, fid: %llu",
-                fid);
-            return CM_SUCCESS;
-        }
-        DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
-        status_t status = dss_remove_dir_file_by_node(session, vg_item, node);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_INF("Failed to remove delay file when close file, fid: %llu", fid));
-        DSS_LOG_DEBUG_OP("Succeed to remove file when close file, ftid%llu, fid:%llu, vg: %s, session pid:%llu, v:%u, "
-                         "au:%llu, block:%u, item:%u.",
-            *(int64 *)&ftid, fid, vg_item->vg_name, session->cli_info.cli_pid, ftid.volume, (uint64)ftid.au, ftid.block,
-            ftid.item);
-    }
-
     return CM_SUCCESS;
 }
 
@@ -762,6 +743,15 @@ void dss_wait_session_pause(dss_instance_t *inst)
     LOG_DEBUG_INF("Succeed to pause all session.");
 }
 
+void dss_wait_background_pause(dss_instance_t *inst)
+{
+    LOG_DEBUG_INF("Begin to set background paused.");
+    while (inst->is_cleaning) {
+        cm_sleep(1);
+    }
+    LOG_DEBUG_INF("Succeed to pause background task.");
+}
+
 void dss_set_session_running(dss_instance_t *inst)
 {
     LOG_DEBUG_INF("Begin to set session running.");
@@ -838,6 +828,7 @@ static status_t dss_process_switch_lock(dss_session_t *session)
     }
     dss_wait_session_pause(&g_dss_instance);
     g_dss_instance.status = DSS_STATUS_SWITCH;
+    dss_wait_background_pause(&g_dss_instance);
     status_t ret = CM_SUCCESS;
     // trans lock
     if (g_dss_instance.cm_res.is_valid) {
