@@ -24,7 +24,6 @@
 
 #include "dss_alloc_unit.h"
 #include "dss_file.h"
-#include "dss_syncpoint.h"
 #include "dss_redo.h"
 
 #ifdef __cplusplus

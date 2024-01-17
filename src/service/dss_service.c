@@ -28,7 +28,6 @@
 #include "dss_malloc.h"
 #include "dss_open_file.h"
 #include "dss_srv_proc.h"
-#include "dss_syncpoint.h"
 #include "dss_mes.h"
 #include "dss_api.h"
 #include "dss_service.h"

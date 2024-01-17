@@ -23,7 +23,6 @@
  */
 
 #include "dss_meta_buf.h"
-#include "dss_syncpoint.h"
 
 #ifdef __cplusplus
 extern "C" {
