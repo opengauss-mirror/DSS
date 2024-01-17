@@ -33,7 +33,6 @@
 #include "dss_malloc.h"
 #include "dss_open_file.h"
 #include "dss_redo.h"
-#include "dss_syncpoint.h"
 #include "cm_system.h"
 #include "dss_latch.h"
 #include "dss_session.h"

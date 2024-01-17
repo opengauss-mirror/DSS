@@ -29,7 +29,6 @@
 #include "dss_errno.h"
 #include "dss_file.h"
 #include "dss_malloc.h"
-#include "dss_syncpoint.h"
 #include "dss_redo.h"
 
 bool32 is_first_vg(const char *vg_name)
@@ -1264,7 +1263,6 @@ status_t dss_apply_log(dss_vg_info_item_t *vg_item, char *log_buf)
         status = dss_replay(vg_item, entry);
         DSS_RETURN_IF_ERROR(status);
         offset += entry->size;
-        dss_execute_syncpoint(DSS_SP_ID_PARTIAL_REDO_BREAK, NULL);
     }
 
     return CM_SUCCESS;
@@ -1589,10 +1587,6 @@ status_t dss_process_redo_log(dss_session_t *session, dss_vg_info_item_t *vg_ite
 
     status_t status = dss_flush_log(session->log_split, vg_item, log_buf);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to flush log,errcode:%d.", cm_get_error_code()));
-
-    // #ifndef WIN32
-    dss_execute_syncpoint(DSS_SP_ID_FULL_REDO_BREAK, NULL);
-    // #endif
 
     status = dss_apply_log(vg_item, log_buf);
     if (status != CM_SUCCESS) {
