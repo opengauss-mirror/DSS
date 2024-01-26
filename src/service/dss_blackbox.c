@@ -358,7 +358,7 @@ void dss_proc_sign_func(int32 sig_num, siginfo_t *sig_info, void *context)
     (void)sigprocmask(SIG_SETMASK, &sign_mask, NULL);
 
     if (!need_dump(sig_num)) {
-        loc_id = cm_sys_pid();
+        loc_id = excep_info->loc_id;
         dss_get_signal_info(sig_num, signal_name, sizeof(signal_name) - 1);
         (void)cm_date2str(g_timer()->now, "yyyy-mm-dd hh24:mi:ss.ff3", date, CM_MAX_TIME_STRLEN);
         LOG_BLACKBOX_INF("Location[0x%016llx] has been terminated, signum : %d, signal name : %s, current data : %s\n",
