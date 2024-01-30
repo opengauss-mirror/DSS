@@ -107,7 +107,8 @@ static status_t dss_check_volume_invalid(const char *volume_name)
         DSS_BREAK_IF_ERROR(dss_read_volume(&volume, 0, vol_cmp_head, (int32)DSS_ALIGN_SIZE));
         if (vol_cmp_head->valid_flag == DSS_CTRL_VALID_FLAG) {
             // cannot add a exists volume
-            DSS_THROW_ERROR(ERR_DSS_VOLUME_ADD_EXISTED, volume_name, vol_cmp_head->vg_name);
+            DSS_THROW_ERROR(
+                ERR_DSS_VOLUME_ADD, volume_name, "please check volume is used in cluster, if not need to dd manually");
             break;
         }
         status = CM_SUCCESS;
@@ -308,7 +309,8 @@ static dss_vg_info_item_t* dss_find_vg_item_inner(dss_vg_info_t *vg_info, const 
     return NULL;
 }
 
-static status_t dss_write_volume_head(dss_vg_info_item_t* vg_item, const char *vol_path, uint32 id)
+static status_t dss_write_volume_head(
+    dss_vg_info_item_t* vg_item, const char *vol_path, uint32 id, volume_modify_type_e type)
 {
 #ifndef WIN32
     char buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_ALIGN_SIZE)));
@@ -316,28 +318,57 @@ static status_t dss_write_volume_head(dss_vg_info_item_t* vg_item, const char *v
     char buf[DSS_DISK_UNIT_SIZE];
 #endif
     dss_volume_header_t *vol_head = (dss_volume_header_t *)buf;
-    CM_RETURN_IFERR(
-        dss_open_volume(vg_item->dss_ctrl->volume.defs[id].name, NULL, DSS_CLI_OPEN_FLAG, &vg_item->volume_handle[id]));
-    status_t ret = dss_gen_volume_head(vol_head, vg_item, vol_path, id);
+    CM_RETURN_IFERR(dss_open_volume(vol_path, NULL, DSS_CLI_OPEN_FLAG, &vg_item->volume_handle[id]));
+    status_t ret =  dss_read_volume(&vg_item->volume_handle[id], 0, vol_head, DSS_DISK_UNIT_SIZE);
     if (ret != CM_SUCCESS) {
         dss_close_volume(&vg_item->volume_handle[id]);
         return ret;
     }
-    ret = dss_write_volume(&vg_item->volume_handle[id], 0, vol_head, (int32)sizeof(dss_volume_header_t));
+
+    switch (type) {
+        case VOLUME_MODIFY_ADD:
+            ret = dss_gen_volume_head(vol_head, vg_item, vol_path, id);
+            break;
+        case VOLUME_MODIFY_REMOVE:
+            vol_head->valid_flag = 0;
+            vol_head->software_version = 0;
+            break;
+        case VOLUME_MODIFY_REPLACE:
+        case VOLUME_MODIFY_ROLLBACK:         
+            break;
+        default:
+            LOG_DEBUG_ERR("Invalid volume modify type: %u.", type);
+            ret = CM_ERROR;
+            break;
+    }
+
+    if (ret != CM_SUCCESS) {
+        dss_close_volume(&vg_item->volume_handle[id]);
+        return ret;
+    }
+    ret = dss_write_volume(&vg_item->volume_handle[id], 0, vol_head, DSS_DISK_UNIT_SIZE);
     dss_close_volume(&vg_item->volume_handle[id]);
     return ret;
 }
 
-static status_t dss_add_volume_inner(dss_vg_info_item_t* vg_item, const char *vg_name, const char *vol_path)
+static status_t dss_check_volume_flag(dss_vg_info_item_t *vg_item)
 {
-    status_t ret = dss_recover_ctrlinfo(vg_item);
-    if (ret != CM_SUCCESS) {
-        LOG_DEBUG_ERR("dss ctrl of %s is invalid when add volume.", vg_name);
-        return ret;
+    for (uint32_t i = 0; i < DSS_MAX_VOLUMES; i++) {
+        if (vg_item->dss_ctrl->volume.defs[i].flag == VOLUME_ADD ||
+            vg_item->dss_ctrl->volume.defs[i].flag == VOLUME_REMOVE ||
+            vg_item->dss_ctrl->volume.defs[i].flag == VOLUME_REPLACE) {
+            DSS_THROW_ERROR(ERR_DSS_VG_CHECK, vg_item->vg_name, "invalid volume flag, please execute dsscmd rollback.");
+            return CM_ERROR;
+        }
     }
+    return CM_SUCCESS;
+}
 
+static status_t dss_add_volume_inner(dss_vg_info_item_t *vg_item, const char *vg_name, const char *vol_path)
+{
+    CM_RETURN_IFERR(dss_check_volume_flag(vg_item));
     if (dss_find_volume(vg_item, vol_path) != CM_INVALID_ID32) {
-        DSS_THROW_ERROR(ERR_DSS_VOLUME_ADD_EXISTED, vol_path, vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_EXISTED, vol_path, vg_name);
         return CM_ERROR;
     }
 
@@ -355,7 +386,7 @@ static status_t dss_add_volume_inner(dss_vg_info_item_t* vg_item, const char *vg
         LOG_DEBUG_ERR("Failed to get volume size when add volume:%s.", vol_path);
         return CM_ERROR;
     }
-    CM_RETURN_IFERR(dss_add_volume_vg_ctrl(vg_item->dss_ctrl, id, vol_size, vol_path, VOLUME_FREE));
+    CM_RETURN_IFERR(dss_add_volume_vg_ctrl(vg_item->dss_ctrl, id, vol_size, vol_path, VOLUME_ADD));
 
     /*
      * The client does not record redo log. Therefore, the two-phase method is used.
@@ -365,13 +396,151 @@ static status_t dss_add_volume_inner(dss_vg_info_item_t* vg_item, const char *vg
      */
     CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
     CM_RETURN_IFERR(dss_update_core_ctrl_disk(vg_item));
-    CM_RETURN_IFERR(dss_write_volume_head(vg_item, vol_path, id));
+    CM_RETURN_IFERR(dss_write_volume_head(vg_item, vol_path, id, VOLUME_MODIFY_ADD));
     vg_item->dss_ctrl->volume.defs[id].flag =  VOLUME_OCCUPY;
     CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
     return CM_SUCCESS;
 }
 
-status_t dss_add_volume_offline(const char *home, const char *vg_name, const char *vol_path)
+static status_t dss_remove_volume_inner(dss_vg_info_item_t* vg_item, const char *vg_name, const char *vol_path)
+{
+    uint32 id;
+    CM_RETURN_IFERR(dss_check_volume_flag(vg_item));
+    CM_RETURN_IFERR(dss_check_remove_volume(vg_item, vg_name, vol_path, &id));
+
+    if (vg_item->volume_handle[id].handle != DSS_INVALID_HANDLE) {
+        dss_close_volume(&vg_item->volume_handle[id]);
+    }
+
+    vg_item->dss_ctrl->volume.defs[id].flag = VOLUME_REMOVE;
+    CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
+    dss_remove_volume_vg_ctrl(vg_item->dss_ctrl, id);
+    CM_RETURN_IFERR(dss_update_core_ctrl_disk(vg_item));
+    CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
+    CM_RETURN_IFERR(dss_write_volume_head(vg_item, vol_path, id, VOLUME_MODIFY_REMOVE));
+    return CM_SUCCESS;
+}
+
+static status_t dss_replace_prepare_new_volume(dss_vg_info_item_t* vg_item, dss_volume_t *new_volume, uint32 id, uint64 *new_size)
+{
+#ifndef WIN32
+    char buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_ALIGN_SIZE)));
+#else
+    char buf[DSS_DISK_UNIT_SIZE];
+#endif
+    dss_volume_header_t *vol_head = (dss_volume_header_t *)buf;
+
+    CM_RETURN_IFERR(dss_read_volume(new_volume, 0, vol_head, DSS_DISK_UNIT_SIZE));
+    if (vol_head->vol_type.id != id || strcmp(vol_head->vg_name, vg_item->dss_ctrl->vg_info.vg_name) != 0) {
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_REPLACE, new_volume->name, "new volume copy wrong");
+        return CM_ERROR;
+    }
+
+    *new_size = dss_get_volume_size(new_volume);
+    if (*new_size == DSS_INVALID_64) {
+        LOG_DEBUG_ERR("Failed to get new volume size when check volume:%s.", new_volume->name);
+        return CM_ERROR;
+    }
+    if (*new_size < vg_item->dss_ctrl->core.volume_attrs[id].hwm) {
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_REPLACE, new_volume->name, "new volume size is too small");
+        return CM_ERROR;
+    }
+
+    MEMS_RETURN_IFERR(strcpy_s(vol_head->vol_type.entry_volume_name, DSS_MAX_VOLUME_PATH_LEN, new_volume->name));
+    vol_head->checksum = dss_get_checksum((char *)vol_head, DSS_DISK_UNIT_SIZE);
+    CM_RETURN_IFERR(dss_write_volume(new_volume, 0, vol_head, DSS_DISK_UNIT_SIZE));
+
+    CM_RETURN_IFERR(
+        dss_open_volume(vg_item->dss_ctrl->volume.defs[id].name, NULL, DSS_CLI_OPEN_FLAG, &vg_item->volume_handle[id]));
+    status_t ret = dss_read_volume(&vg_item->volume_handle[id], 0, vol_head, DSS_DISK_UNIT_SIZE);
+    if (ret != CM_SUCCESS) {
+        dss_close_volume(&vg_item->volume_handle[id]);
+        return ret;
+    }
+    if (strcmp(vg_item->dss_ctrl->volume.defs[id].name, vol_head->vol_type.entry_volume_name) != 0) {
+        dss_close_volume(&vg_item->volume_handle[id]);
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_EXISTED, vol_head->vol_type.entry_volume_name, vol_head->vg_name);
+        return CM_ERROR;
+    }
+    dss_close_volume(&vg_item->volume_handle[id]);
+    return CM_SUCCESS;
+}
+
+static status_t dss_replace_volume_to_disk(dss_vg_info_item_t* vg_item, const char *old_vol, const char *new_vol,
+    uint32 id, uint64 new_size, dss_config_t *inst_cfg)
+{
+    /*
+     * The client does not record redo log. Therefore, the two-phase method is used.
+     * Firstly, write the volume_ctrl to disk, where the status is replace.
+     * Secondly, modify the vol_header of old_vol and new_vol.
+     * Thirdly, write the core_ctrl to disk, modify volume size.
+     * Finally, update the flag and new name of volume_ctrl to disk, where the flag is occupy.
+     */
+    dss_ctrl_t *vg_ctrl = vg_item->dss_ctrl;
+    vg_ctrl->volume.defs[id].flag = VOLUME_REPLACE;
+    vg_ctrl->volume.defs[id].version++;
+    CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
+
+    status_t ret;
+    vg_ctrl->core.volume_attrs[id].size = new_size;
+    vg_ctrl->core.volume_attrs[id].free = new_size - vg_ctrl->core.volume_attrs[id].hwm;
+    vg_ctrl->volume.defs[id].flag = VOLUME_OCCUPY;
+    MEMS_RETURN_IFERR(strcpy_s(vg_ctrl->volume.defs[id].name, DSS_MAX_VOLUME_PATH_LEN, new_vol));
+
+    if (id == 0) {
+        dss_close_volume(&vg_item->volume_handle[0]);
+        CM_RETURN_IFERR(dss_open_volume(new_vol, NULL, DSS_CLI_OPEN_FLAG, &vg_item->volume_handle[0]));
+        CM_RETURN_IFERR_EX(
+            dss_lock_vg_storage_core(vg_item, new_vol, inst_cfg), dss_close_volume(&vg_item->volume_handle[0]));
+    }
+
+    do {
+        ret = dss_update_core_ctrl_disk(vg_item);
+        if (ret != CM_SUCCESS) {
+            break;
+        }
+        ret = dss_update_volume_ctrl(vg_item);
+    } while (0);
+  
+    if (id == 0) {
+        dss_unlock_vg_storage_core(vg_item, new_vol, inst_cfg);
+        dss_close_volume(&vg_item->volume_handle[0]);
+    }
+    if (ret != CM_SUCCESS) {
+        return ret;
+    }
+    return dss_write_volume_head(vg_item, old_vol, id, VOLUME_MODIFY_REMOVE);
+}
+
+static status_t dss_replace_volume_inner(
+    dss_vg_info_item_t *vg_item, const char *vg_name, const char *old_vol, const char *new_vol, dss_config_t *inst_cfg)
+{
+    CM_RETURN_IFERR(dss_check_volume_flag(vg_item));
+    uint32 id = dss_find_volume(vg_item, old_vol);
+    if (id == CM_INVALID_ID32) {
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_NOEXIST, old_vol, vg_name);
+        return CM_ERROR;
+    }
+
+    if (vg_item->volume_handle[id].handle != DSS_INVALID_HANDLE) {
+        dss_close_volume(&vg_item->volume_handle[id]);
+    }
+
+    uint64 new_size;
+    dss_volume_t new_volume;
+    status_t ret = dss_open_volume(new_vol, NULL, DSS_CLI_OPEN_FLAG, &new_volume);
+    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("Open volume %s failed.", new_vol));
+    ret =  dss_replace_prepare_new_volume(vg_item, &new_volume, id, &new_size);
+    dss_close_volume(&new_volume);
+    if (ret != CM_SUCCESS) {
+        return ret;
+    }
+
+    return dss_replace_volume_to_disk(vg_item, old_vol, new_vol, id, new_size, inst_cfg);
+}
+
+status_t dss_modify_volume_offline(
+    const char *home, const char *vg_name, const char *old_vol, const char *new_vol, volume_modify_type_e type)
 {
     char buff[LENGTH_EIGHT_BYTE];
     (void)printf("Please ensure that the cluster is stopped, enter yes!\n");
@@ -383,7 +552,7 @@ status_t dss_add_volume_offline(const char *home, const char *vg_name, const cha
     }
 
     if (cm_strcmpi(buff, "yes") != 0) {
-        DSS_PRINT_ERROR("Failed to add volume offline, the cluster must be stopped.\n");
+        DSS_PRINT_ERROR("Failed to modify volume offline, the cluster must be stopped.\n");
         return CM_ERROR;
     }
 
@@ -391,15 +560,6 @@ status_t dss_add_volume_offline(const char *home, const char *vg_name, const cha
     dss_config_t inst_cfg;
     dss_vg_info_t *vg_info = NULL;
     CM_RETURN_IFERR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
-    for (uint32 i = 0; i < vg_info->group_num; i++) {
-        ret = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], CM_TRUE);
-        if (ret != CM_SUCCESS) {
-            dss_inq_free_vg_info(vg_info);
-            DSS_PRINT_ERROR("Failed to get vg non entry info when add volume offline.\n");
-            return ret;
-        }
-    }
-
     dss_vg_info_item_t *vg_item = dss_find_vg_item_inner(vg_info, vg_name);
     if (vg_item == NULL) {
         dss_inq_free_vg_info(vg_info);
@@ -407,13 +567,41 @@ status_t dss_add_volume_offline(const char *home, const char *vg_name, const cha
         return CM_ERROR;
     }
 
+    ret = dss_get_vg_non_entry_info(&inst_cfg, vg_item, CM_TRUE);
+    if (ret != CM_SUCCESS) {
+        dss_inq_free_vg_info(vg_info);
+        DSS_PRINT_ERROR("Failed to get vg non entry info when modify volume offline.\n");
+        return ret;
+    }
+    
     if (dss_lock_vg_storage_w(vg_item, vg_item->entry_path, &inst_cfg) != CM_SUCCESS) {
         dss_inq_free_vg_info(vg_info);
         DSS_PRINT_ERROR("Failed to lock vg:%s.\n", vg_name);
         return CM_ERROR;
     }
 
-    ret = dss_add_volume_inner(vg_item, vg_name, vol_path);
+    switch (type) {
+        case VOLUME_MODIFY_ADD:
+            ret = dss_add_volume_inner(vg_item, vg_name, old_vol);
+            break;
+        case VOLUME_MODIFY_REMOVE:
+            ret = dss_remove_volume_inner(vg_item, vg_name, old_vol);
+            break;
+        case VOLUME_MODIFY_REPLACE:
+            ret = dss_replace_volume_inner(vg_item, vg_name, old_vol, new_vol, &inst_cfg);
+            break;
+        case VOLUME_MODIFY_ROLLBACK:
+            ret = dss_recover_ctrlinfo(vg_item);
+            if (ret != CM_SUCCESS) {
+                LOG_DEBUG_ERR("The dss ctrl of %s is invalid when rollback.", vg_name);
+            }
+            break;
+        default:
+            DSS_PRINT_ERROR("Invalid volume modify type: %u.\n", type);
+            ret = CM_ERROR;
+            break;
+    }
+
     dss_unlock_vg_storage(vg_item, vg_item->entry_path, &inst_cfg);
     dss_inq_free_vg_info(vg_info);
     return ret;

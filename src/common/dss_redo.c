@@ -1304,7 +1304,7 @@ static status_t dss_recover_volume_ctrlinfo(dss_vg_info_item_t *vg_item)
     if (volume == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Can not allocate memory in stack."));
     }
-    status = 
+    status =
         dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_VOLUME_OFFSET, volume, (int32)DSS_VOLUME_CTRL_SIZE, &remote);
     DSS_RETURN_IFERR3(status, DSS_FREE_POINT(volume), LOG_DEBUG_ERR("Load dss ctrl volume failed."));
     checksum = dss_get_checksum(volume, DSS_VOLUME_CTRL_SIZE);
@@ -1312,7 +1312,7 @@ static status_t dss_recover_volume_ctrlinfo(dss_vg_info_item_t *vg_item)
         LOG_RUN_INF("Try recover dss ctrl volume.");
         status = dss_load_vg_ctrl_part(
             vg_item, (int64)DSS_CTRL_BAK_VOLUME_OFFSET, volume, (int32)DSS_VOLUME_CTRL_SIZE, &remote);
-        DSS_RETURN_IFERR3(status, DSS_FREE_POINT(volume), LOG_DEBUG_ERR("Load dss ctrl volume failed."));
+        DSS_RETURN_IFERR3(status, DSS_FREE_POINT(volume), LOG_DEBUG_ERR("Load dss ctrl bak volume failed."));
         checksum = dss_get_checksum(volume, DSS_VOLUME_CTRL_SIZE);
         dss_check_checksum(checksum, volume->checksum);
         status = dss_write_ctrl_to_disk(vg_item, (int64)DSS_CTRL_VOLUME_OFFSET, volume, DSS_VOLUME_CTRL_SIZE);
@@ -1354,11 +1354,8 @@ static status_t dss_recover_root_ft_ctrlinfo(dss_vg_info_item_t *vg_item)
     return status;
 }
 
-static status_t dss_recover_volume_head(dss_vg_info_item_t* vg_item, const char *volume_name, uint32 id)
+static status_t dss_recover_volume_head(dss_vg_info_item_t *vg_item, uint32 id)
 {
-    if (strlen(volume_name) == 0) {
-        return CM_SUCCESS;
-    }
 #ifndef WIN32
     char buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_ALIGN_SIZE)));
 #else
@@ -1367,7 +1364,7 @@ static status_t dss_recover_volume_head(dss_vg_info_item_t* vg_item, const char 
     dss_volume_header_t *vol_head = (dss_volume_header_t *)buf;
     CM_RETURN_IFERR(
         dss_open_volume(vg_item->dss_ctrl->volume.defs[id].name, NULL, DSS_CLI_OPEN_FLAG, &vg_item->volume_handle[id]));
-    status_t ret = dss_read_volume(&vg_item->volume_handle[id], 0, vol_head, (int32)sizeof(dss_volume_header_t));
+    status_t ret = dss_read_volume(&vg_item->volume_handle[id], 0, vol_head, DSS_DISK_UNIT_SIZE);
     if (ret != CM_SUCCESS) {
         dss_close_volume(&vg_item->volume_handle[id]);
         return ret;
@@ -1378,9 +1375,67 @@ static status_t dss_recover_volume_head(dss_vg_info_item_t* vg_item, const char 
     }
     vol_head->valid_flag = 0;
     vol_head->software_version = 0;
-    ret = dss_write_volume(&vg_item->volume_handle[id], 0, vol_head, (int32)sizeof(dss_volume_header_t));
+    ret = dss_write_volume(&vg_item->volume_handle[id], 0, vol_head, DSS_DISK_UNIT_SIZE);
     dss_close_volume(&vg_item->volume_handle[id]);
     return ret;
+}
+
+static status_t dss_recover_volume_size(dss_vg_info_item_t *vg_item, uint64 id)
+{
+    CM_RETURN_IFERR(
+        dss_open_volume(vg_item->dss_ctrl->volume.defs[id].name, NULL, DSS_CLI_OPEN_FLAG, &vg_item->volume_handle[id]));
+    uint64 old_size = dss_get_volume_size(&vg_item->volume_handle[id]);
+    dss_close_volume(&vg_item->volume_handle[id]);
+    if (old_size == DSS_INVALID_64) {
+        return CM_ERROR;
+    }
+    vg_item->dss_ctrl->core.volume_attrs[id].size =  old_size;
+    vg_item->dss_ctrl->core.volume_attrs[id].free = old_size - vg_item->dss_ctrl->core.volume_attrs[id].hwm;
+    return CM_SUCCESS;
+}
+
+static status_t dss_recover_modify_info(dss_vg_info_item_t *vg_item)
+{
+    uint32 volume_count = 0;
+    bool32 is_update_ctrl = CM_FALSE;
+    for (uint32 i = 0; i < DSS_MAX_VOLUMES; i++) {
+        if (vg_item->dss_ctrl->volume.defs[i].flag == VOLUME_FREE) {
+            continue;
+        }
+        if (vg_item->dss_ctrl->volume.defs[i].flag != VOLUME_ADD) {
+            volume_count++;
+        }
+        is_update_ctrl = CM_TRUE;
+        if (vg_item->dss_ctrl->volume.defs[i].flag == VOLUME_ADD) {
+            vg_item->dss_ctrl->volume.defs[i].flag = VOLUME_FREE;
+            // The volume has been flushed to disk, but core_ctrl has not been flushed to disk.
+            if (vg_item->dss_ctrl->volume.defs[i].id != vg_item->dss_ctrl->core.volume_attrs[i].id) {
+                continue;
+            }
+            DSS_RETURN_IF_ERROR(dss_recover_volume_head(vg_item,  vg_item->dss_ctrl->volume.defs[i].id));
+            vg_item->dss_ctrl->core.volume_attrs[i].id = 0;
+            vg_item->dss_ctrl->volume.defs[i].id = 0;
+        } else if (vg_item->dss_ctrl->volume.defs[i].flag == VOLUME_REMOVE) {
+            vg_item->dss_ctrl->volume.defs[i].flag = VOLUME_OCCUPY;
+            // The core_ctrl has been flushed to disk, but volume has not been flushed to disk.
+            if (vg_item->dss_ctrl->volume.defs[i].id != vg_item->dss_ctrl->core.volume_attrs[i].id) {
+                vg_item->dss_ctrl->core.volume_attrs[i].id = vg_item->dss_ctrl->volume.defs[i].id;
+            }
+        } else if (vg_item->dss_ctrl->volume.defs[i].flag == VOLUME_REPLACE) {
+            vg_item->dss_ctrl->volume.defs[i].flag = VOLUME_OCCUPY;
+            if (i == 0) {
+                continue;
+            }
+            DSS_RETURN_IF_ERROR(dss_recover_volume_size(vg_item, vg_item->dss_ctrl->volume.defs[i].id));
+        }
+    }
+
+    if (!is_update_ctrl) {
+        return CM_SUCCESS;
+    }
+    vg_item->dss_ctrl->core.volume_count = volume_count;
+    DSS_RETURN_IF_ERROR(dss_update_core_ctrl_disk(vg_item));
+    return dss_update_volume_ctrl(vg_item);
 }
 
 /*
@@ -1398,35 +1453,7 @@ status_t dss_recover_ctrlinfo(dss_vg_info_item_t *vg_item)
     DSS_RETURN_IF_ERROR(dss_recover_core_ctrlinfo(vg_item));
     DSS_RETURN_IF_ERROR(dss_recover_volume_ctrlinfo(vg_item));
     DSS_RETURN_IF_ERROR(dss_recover_root_ft_ctrlinfo(vg_item));
-
-    if (vg_item->dss_ctrl->core.volume_count == 1) {
-        return CM_SUCCESS;
-    }
-    uint32 volume_count = 1;
-    for (uint32 i = 1; i < DSS_MAX_VOLUMES; i++) {
-        // The adv is executed successfully, not need to be restored.
-        if (vg_item->dss_ctrl->volume.defs[i].flag != VOLUME_FREE) {
-            volume_count++;
-            continue;
-        }
-        // The volume has beeb flushed to disk, but core_ctrl has not been flushed to disk.
-        if (vg_item->dss_ctrl->volume.defs[i].id != vg_item->dss_ctrl->core.volume_attrs[i].id) {
-            continue;
-        }
-        // The volume has been removed.
-        if (vg_item->dss_ctrl->volume.defs[i].id == 0) {
-            continue;
-        }
-        vg_item->dss_ctrl->core.volume_attrs[i].id = 0;
-        DSS_RETURN_IF_ERROR(dss_recover_volume_head(
-            vg_item, vg_item->dss_ctrl->volume.defs[i].name, vg_item->dss_ctrl->volume.defs[i].id));
-    }
-
-    if (volume_count != vg_item->dss_ctrl->core.volume_count) {
-        vg_item->dss_ctrl->core.volume_count = volume_count;
-        DSS_RETURN_IF_ERROR(dss_update_core_ctrl_disk(vg_item));
-    }
-    return CM_SUCCESS;
+    return dss_recover_modify_info(vg_item);
 }
 
 void dss_reset_all_log_slot()

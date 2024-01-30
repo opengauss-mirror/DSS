@@ -589,6 +589,11 @@ status_t dss_file_lock_vg_w(dss_config_t *inst_cfg)
 void dss_file_unlock_vg(void)
 {}
 
+status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
+{
+    return CM_SUCCESS;
+}
+
 status_t dss_lock_vg_storage_r(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {
     return CM_SUCCESS;
@@ -605,6 +610,9 @@ status_t dss_lock_disk_vg(const char *entry_path, dss_config_t *inst_cfg)
 }
 
 void dss_unlock_vg_raid(dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id)
+{}
+
+void dss_unlock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {}
 
 void dss_unlock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
@@ -1108,7 +1116,8 @@ status_t dss_cmp_volume_head(dss_vg_info_item_t *vg_item, const char *volume_nam
         DSS_BREAK_IF_ERROR(dss_read_volume(&vg_item->volume_handle[id], 0, vol_cmp_head, (int32)DSS_ALIGN_SIZE));
         if (vol_cmp_head->valid_flag == DSS_CTRL_VALID_FLAG) {
             // cannot add a exists volume
-            DSS_THROW_ERROR(ERR_DSS_VOLUME_ADD_EXISTED, volume_name, vol_cmp_head->vg_name);
+            DSS_THROW_ERROR(
+                ERR_DSS_VOLUME_ADD, volume_name, "please check volume is used in cluster, if not need to dd manually");
             break;
         }
         status = CM_SUCCESS;
@@ -1224,7 +1233,7 @@ status_t dss_add_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item
         return CM_ERROR;
     }
     if (dss_find_volume(vg_item, volume_name) != CM_INVALID_ID32) {
-        DSS_THROW_ERROR(ERR_DSS_VOLUME_ADD_EXISTED, volume_name, vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_EXISTED, volume_name, vg_name);
         return CM_ERROR;
     }
     if (dss_add_volume_impl(session, vg_item, volume_name, VOLUME_PREPARE) != CM_SUCCESS) {
@@ -1275,10 +1284,24 @@ static status_t dss_remove_volume_impl_core(
     return status;
 }
 
+void dss_remove_volume_vg_ctrl(dss_ctrl_t *vg_ctrl, uint32 id)
+{
+    vg_ctrl->volume.defs[id].flag = VOLUME_FREE;
+    vg_ctrl->volume.defs[id].id = 0;
+    vg_ctrl->core.volume_attrs[id].id = 0;
+    vg_ctrl->core.volume_count--;
+    LOG_RUN_INF("Remove volume refresh core, old core version:%llu, volume version:%llu, volume def version:%llu.",
+        vg_ctrl->core.version, vg_ctrl->volume.version, vg_ctrl->volume.defs[id].version);
+    vg_ctrl->volume.defs[id].version++;
+    vg_ctrl->core.version++;
+    vg_ctrl->volume.version++;
+    LOG_RUN_INF("Refresh core, old version:%llu, disk version:%llu.", vg_ctrl->core.version - 1, vg_ctrl->core.version);
+    return;
+}
+
 static status_t dss_remove_volume_impl(
     dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 id, const char *volume_name)
 {
-    errno_t errcode;
     dss_ctrl_t *vg_ctrl = vg_item->dss_ctrl;
 
     if (vg_item->volume_handle[id].handle != DSS_INVALID_HANDLE) {
@@ -1296,23 +1319,13 @@ static status_t dss_remove_volume_impl(
         return CM_ERROR;
     }
 
-    vg_ctrl->volume.defs[id].flag = VOLUME_FREE;
-    vg_ctrl->volume.defs[id].id = 0;
-    vg_ctrl->core.volume_attrs[id].id = 0;
-    vg_ctrl->core.volume_count--;
-    LOG_RUN_INF("Remove volume refresh core, old core version:%llu, volume version:%llu, volume def version:%llu.",
-        vg_ctrl->core.version, vg_ctrl->volume.version, vg_ctrl->volume.defs[id].version);
-    vg_ctrl->volume.defs[id].version++;
-    vg_ctrl->core.version++;
-    vg_ctrl->volume.version++;
-    LOG_RUN_INF("Refresh core, old version:%llu, disk version:%llu.", vg_ctrl->core.version - 1, vg_ctrl->core.version);
-
+    dss_remove_volume_vg_ctrl(vg_ctrl, id);
     dss_redo_volop_t volop_redo;
     volop_redo.volume_count = vg_ctrl->core.volume_count;
     volop_redo.core_version = vg_ctrl->core.version;
     volop_redo.volume_version = vg_ctrl->volume.version;
     volop_redo.is_add = CM_FALSE;
-    errcode =
+    errno_t errcode =
         memcpy_sp(volop_redo.attr, DSS_DISK_UNIT_SIZE, &vg_ctrl->core.volume_attrs[id], sizeof(dss_volume_attr_t));
     DSS_SECUREC_RETURN_IF_ERROR(errcode, CM_ERROR);
     errcode = memcpy_sp(volop_redo.def, DSS_DISK_UNIT_SIZE, &vg_ctrl->volume.defs[id], sizeof(dss_volume_def_t));
@@ -1321,28 +1334,40 @@ static status_t dss_remove_volume_impl(
     return CM_SUCCESS;
 }
 
-status_t dss_remove_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item, const char *vg_name,
-    const char *volume_name, dss_config_t *inst_cfg)
+status_t dss_check_remove_volume(
+    dss_vg_info_item_t *vg_item, const char *vg_name, const char *volume_name, uint32 *volume_id)
 {
-    if (dss_refresh_vginfo(vg_item) != CM_SUCCESS) {
-        LOG_DEBUG_ERR("%s refresh vginfo failed.", "dss_remove_volume");
-        return CM_ERROR;
-    }
-    uint32 volume_id = dss_find_volume(vg_item, volume_name);
-    if (volume_id == CM_INVALID_ID32) {
-        DSS_THROW_ERROR(ERR_DSS_VOLUME_REMOVE_NOEXIST, volume_name, vg_name);
+    *volume_id = dss_find_volume(vg_item, volume_name);
+    if (*volume_id == CM_INVALID_ID32) {
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_NOEXIST, volume_name, vg_name);
         return CM_ERROR;
     }
 
-    if (volume_id == 0) {
+    if (*volume_id == 0) {
         DSS_THROW_ERROR(ERR_DSS_VOLUME_REMOVE_SUPER_BLOCK, volume_name);
         LOG_DEBUG_ERR("Not allow to delete super-block volume, %s.", volume_name);
         return CM_ERROR;
     }
 
-    if (dss_check_volume_is_used(vg_item, volume_id)) {
+    if (dss_check_volume_is_used(vg_item, *volume_id)) {
         DSS_THROW_ERROR(ERR_DSS_VOLUME_REMOVE_NONEMPTY, volume_name);
         LOG_DEBUG_ERR("Not allow to delete a nonempty volume, %s.", volume_name);
+        return CM_ERROR;
+    }
+
+    return CM_SUCCESS;
+}
+
+status_t dss_remove_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item, const char *vg_name,
+    const char *volume_name, dss_config_t *inst_cfg)
+{
+    uint32 volume_id;
+    if (dss_refresh_vginfo(vg_item) != CM_SUCCESS) {
+        LOG_DEBUG_ERR("%s refresh vginfo failed.", "dss_remove_volume");
+        return CM_ERROR;
+    }
+
+    if (dss_check_remove_volume(vg_item, vg_name, volume_name, &volume_id) != CM_SUCCESS) {
         return CM_ERROR;
     }
 

@@ -1160,6 +1160,7 @@ static status_t dss_load_local_server_config(
 static dss_args_t cmd_adv_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
     {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'f', "force", CM_FALSE, CM_FALSE, NULL, NULL, NULL, 0, NULL, NULL, 0},
     {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
         NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
@@ -1173,13 +1174,15 @@ static dss_args_set_t cmd_adv_args_set = {
 
 static void adv_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s adv <-g vg_name> <-v vol_name> [-D DSS_HOME] [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("\nUsage:%s adv <-g vg_name> <-v vol_name> [-f] [-D DSS_HOME] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]add volume in volume group\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
     (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name need to add volume\n");
     (void)printf("-v/--vol_name <vol_name>, <required>, the volume name need to be added to volume group\n");
+    (void)printf("-f/--force, <required>, add volume offline forcibly\n");
+    help_param_dsshome();
     help_param_uds();
 }
 
@@ -1204,16 +1207,23 @@ static status_t adv_proc(void)
 {
     const char *vg_name = cmd_adv_args[DSS_ARG_IDX_0].input_args;
     const char *vol_path = cmd_adv_args[DSS_ARG_IDX_1].input_args;
-    const char *home = cmd_adv_args[DSS_ARG_IDX_2].input_args;
+    bool32 force = cmd_adv_args[DSS_ARG_IDX_2].inputed ? CM_TRUE : CM_FALSE;
+    const char *home = cmd_adv_args[DSS_ARG_IDX_3].input_args;
     dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_adv_args[DSS_ARG_IDX_3].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        status = dss_add_volume_offline(home, vg_name, vol_path);
+    status_t status;
+
+    if (force) {
+        status = dss_modify_volume_offline(home, vg_name, vol_path, NULL, VOLUME_MODIFY_ADD);
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to add volume offline, vg_name is %s, volume path is %s.\n", vg_name, vol_path);
         } else {
             DSS_PRINT_INF("Succeed to add volume offline, vg_name is %s, volume path is %s.\n", vg_name, vol_path);
         }
+        return status;
+    }
+
+    status = get_connection_by_input_args(cmd_adv_args[DSS_ARG_IDX_4].input_args, &connection);
+    if (status != CM_SUCCESS) {
         return status;
     }
 
@@ -1626,6 +1636,9 @@ static status_t rm_proc(void)
 static dss_args_t cmd_rmv_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
     {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'f', "force", CM_FALSE, CM_FALSE, NULL, NULL, NULL, 0, NULL, NULL, 0},
+    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -1637,13 +1650,15 @@ static dss_args_set_t cmd_rmv_args_set = {
 
 static void rmv_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s rmv <-g vg_name> <-v vol_name> [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("\nUsage:%s rmv <-g vg_name> <-v vol_name> [-f] [-D DSS_HOME] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]remove volume of volume group\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
     (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name need to remove volume\n");
     (void)printf("-v/--vol_name <vol_name>, <required>, the volue name need to be removed from volume group\n");
+    (void)printf("-f/--force, <required>, remove volume offline forcibly\n");
+    help_param_dsshome();
     help_param_uds();
 }
 
@@ -1651,17 +1666,30 @@ static status_t rmv_proc(void)
 {
     const char *vg_name = cmd_rmv_args[DSS_ARG_IDX_0].input_args;
     const char *vol_name = cmd_rmv_args[DSS_ARG_IDX_1].input_args;
+    bool32 force = cmd_rmv_args[DSS_ARG_IDX_2].inputed ? CM_TRUE : CM_FALSE;
+    const char *home = cmd_rmv_args[DSS_ARG_IDX_3].input_args;
     dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_rmv_args[DSS_ARG_IDX_2].input_args, &connection);
+    status_t status;
+
+     if (force) {
+        status = dss_modify_volume_offline(home, vg_name, vol_name, NULL, VOLUME_MODIFY_REMOVE);
+        if (status != CM_SUCCESS) {
+            DSS_PRINT_ERROR("Failed to remove volume offline, vg_name is %s, volume name is %s.\n", vg_name, vol_name);
+        } else {
+            DSS_PRINT_INF("Succeed to remove volume offline, vg_name is %s, volume name is %s.\n", vg_name, vol_name);
+        }
+        return status;
+    }
+    status = get_connection_by_input_args(cmd_rmv_args[DSS_ARG_IDX_4].input_args, &connection);
     if (status != CM_SUCCESS) {
         return status;
     }
 
     status = dsscmd_rmv_impl(&connection, vg_name, vol_name);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to remove volume, vg name is %s, volume name is %s.\n", vg_name, vol_name);
+        DSS_PRINT_ERROR("Failed to remove volume online, vg name is %s, volume name is %s.\n", vg_name, vol_name);
     } else {
-        DSS_PRINT_INF("Succeed to remove volume, vg name is %s, volume name is %s.\n", vg_name, vol_name);
+        DSS_PRINT_INF("Succeed to remove volume online, vg name is %s, volume name is %s.\n", vg_name, vol_name);
     }
     dss_disconnect_ex(&connection);
     return status;
@@ -3193,6 +3221,103 @@ static status_t clean_vglock_proc(void)
     return status;
 }
 
+static dss_args_t cmd_repl_args[] = {
+    {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
+    {'o', "old_vol", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'n', "new_vol", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'f', "force", CM_FALSE, CM_FALSE, NULL, NULL, NULL, 0, NULL, NULL, 0},
+    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
+};
+static dss_args_set_t cmd_repl_args_set = {
+    cmd_repl_args,
+    sizeof(cmd_repl_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+static void repl_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:%s repl <-g vg_name> <-o old_vol> <-n new_vol> [-f] [-D DSS_HOME]\n", prog_name);
+    (void)printf("[client command]replace old volume to new volume in volume group\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name need to replace volume\n");
+    (void)printf("-o/--old_vol <old_vol>, <required>, old volume\n");
+    (void)printf("-n/--new_vol <new_vol>, <required>, new volume\n");
+    (void)printf("-f/--force, <required>, replace volume offline forcibly\n");
+    help_param_dsshome();
+}
+
+static status_t repl_proc(void)
+{
+    const char *vg_name = cmd_repl_args[DSS_ARG_IDX_0].input_args;
+    const char *old_vol = cmd_repl_args[DSS_ARG_IDX_1].input_args;
+    const char *new_vol = cmd_repl_args[DSS_ARG_IDX_2].input_args;
+    bool32 force = cmd_repl_args[DSS_ARG_IDX_3].inputed ? CM_TRUE : CM_FALSE;
+    const char *home = cmd_repl_args[DSS_ARG_IDX_4].input_args;
+
+    if (strcmp(old_vol, new_vol) == 0) {
+        DSS_PRINT_ERROR("The old_vol %s is same as new_vol %s.\n", old_vol, new_vol);
+        return CM_ERROR;
+    }
+
+    if (!force) {
+        DSS_PRINT_ERROR("Not support to replace volume online, old_vol is %s, new_vol is %s.\n", old_vol, new_vol);
+        return CM_ERROR;
+    }
+    status_t status = dss_modify_volume_offline(home, vg_name, old_vol, new_vol, VOLUME_MODIFY_REPLACE);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to replace volume offline, old_vol is %s, new_vol is %s.\n", old_vol, new_vol);
+    } else {
+        DSS_PRINT_INF("Succeed to replace volume offline, old_vol is %s, new_vol is %s.\n", old_vol, new_vol);
+    }
+    return status;
+}
+
+static dss_args_t cmd_rollback_args[] = {
+    {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
+    {'f', "force", CM_FALSE, CM_FALSE, NULL, NULL, NULL, 0, NULL, NULL, 0},
+    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
+};
+static dss_args_set_t cmd_rollback_args_set = {
+    cmd_rollback_args,
+    sizeof(cmd_rollback_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+static void rollback_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:%s rollback <-g vg_name> [-f] [-D DSS_HOME]\n", prog_name);
+    (void)printf("[client command]rollback volume group\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name need to rollback\n");
+    (void)printf("-f/--force, <required>, rollback volume group offline forcibly\n");
+    help_param_dsshome();
+}
+
+static status_t rollback_proc(void)
+{
+    const char *vg_name = cmd_rollback_args[DSS_ARG_IDX_0].input_args;
+    bool32 force = cmd_rollback_args[DSS_ARG_IDX_1].inputed ? CM_TRUE : CM_FALSE;
+    const char *home = cmd_rollback_args[DSS_ARG_IDX_2].input_args;
+
+    if (!force) {
+        DSS_PRINT_ERROR("Not support to rollback volume group online, vg_name is %s.\n", vg_name);
+        return CM_ERROR;
+    }
+    status_t status = dss_modify_volume_offline(home, vg_name, NULL, NULL, VOLUME_MODIFY_ROLLBACK);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to rollback volume group offline, vg_name is %s.\n", vg_name);
+    } else {
+        DSS_PRINT_INF("Succeed to rollback volume group offline, vg_name is %s.\n", vg_name);
+    }
+    return status;
+}
+
 // clang-format off
 dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set},
                                       {"lsvg", lsvg_help, lsvg_proc, &cmd_lsvg_args_set},
@@ -3229,6 +3354,8 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set}
                                       {"scandisk", scandisk_help, scandisk_proc, &cmd_scandisk_args_set},
                                       {"clean_vglock", clean_vglock_help, clean_vglock_proc,
                                           &cmd_clean_vglock_args_set},
+                                      {"repl", repl_help, repl_proc, &cmd_repl_args_set},
+                                      {"rollback", rollback_help, rollback_proc, &cmd_rollback_args_set},
 };
 
 // clang-format on

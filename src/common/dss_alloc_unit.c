@@ -174,7 +174,7 @@ status_t dss_alloc_au_core(
     uint64 au_size = dss_get_vg_au_size(dss_ctrl);
     uint64 disk_version = dss_ctrl->core.version;
     for (uint32 i = 0; used_count < dss_ctrl->core.volume_count && i < DSS_MAX_VOLUMES; i++) {
-        if (dss_ctrl->volume.defs[i].flag == VOLUME_FREE || dss_ctrl->volume.defs[i].flag == VOLUME_PREPARE) {
+        if (dss_ctrl->volume.defs[i].flag != VOLUME_OCCUPY) {
             continue;
         }
         LOG_DEBUG_INF("Allocate au, volume id:%u, free:%llu, au_size:%llu, version:%llu.", i,
