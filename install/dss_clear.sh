@@ -37,7 +37,7 @@ log()
 
 assert_nonempty()
 {
-    if [[ -z ${1} ]]
+    if [[ -z ${2} ]]
     then
         log "[SCRIPT]The ${1} parameter is empty."
         exit 1
