@@ -810,18 +810,19 @@ static status_t dss_process_switch_lock(dss_session_t *session)
     int32 switch_id;
     dss_init_get(&session->recv_pack);
     if (dss_get_int32(&session->recv_pack, &switch_id) != CM_SUCCESS) {
-        cm_spin_unlock(&g_dss_instance.switch_lock);
+        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
         return CM_ERROR;
     }
-    cm_spin_lock(&g_dss_instance.switch_lock, NULL);
+    cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));  // when mes process req, will latch s
+    cm_latch_x(&g_dss_instance.switch_latch, session->id, LATCH_STAT(LATCH_SWITCH));
     uint32 master_id = dss_get_master_id();
     if ((uint32)switch_id == master_id) {
-        cm_spin_unlock(&g_dss_instance.switch_lock);
+        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
         LOG_DEBUG_INF("switchid is equal to current master_id, which is %u.", master_id);
         return CM_SUCCESS;
     }
     if (master_id != curr_id) {
-        cm_spin_unlock(&g_dss_instance.switch_lock);
+        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
         LOG_DEBUG_ERR("current id is %u, just master id %u can do switch lock.", curr_id, master_id);
         return CM_ERROR;
     }
@@ -839,7 +840,7 @@ static status_t dss_process_switch_lock(dss_session_t *session)
             dss_set_server_status_flag(DSS_STATUS_READWRITE);
             LOG_RUN_INF("inst %u set status flag %u when failed to trans lock.", curr_id, DSS_STATUS_READWRITE);
             g_dss_instance.status = DSS_STATUS_OPEN;
-            cm_spin_unlock(&g_dss_instance.switch_lock);
+            cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
             LOG_DEBUG_ERR("cm do switch lock failed from %u to %u.", curr_id, master_id);
             return ret;
         }
@@ -849,12 +850,12 @@ static status_t dss_process_switch_lock(dss_session_t *session)
     } else {
         dss_set_session_running(&g_dss_instance);
         g_dss_instance.status = DSS_STATUS_OPEN;
-        cm_spin_unlock(&g_dss_instance.switch_lock);
+        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
         LOG_DEBUG_ERR("Only with cm can switch lock.");
         return CM_ERROR;
     }
     LOG_RUN_INF("Old main server %u switch lock to new main server %u successfully.", curr_id, (uint32)switch_id);
-    cm_spin_unlock(&g_dss_instance.switch_lock);
+    cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
     return CM_SUCCESS;
 }
 /*
@@ -892,7 +893,7 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
             LOG_RUN_INF("Main server %u is set successfully by %u.", curr_id, master_id);
             return CM_SUCCESS;
         }
-        if (!cm_spin_timed_lock(&g_dss_instance.switch_lock, DSS_PROCESS_REMOTE_INTERVAL)) {
+        if (!dss_latch_timed_x(&g_dss_instance.switch_latch, DSS_PROCESS_REMOTE_INTERVAL)) {
             LOG_DEBUG_INF("Spin switch lock timed out, just continue.");
             continue;
         }
@@ -900,7 +901,7 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
             status = dss_process_remote_switch_lock(session, curr_id, master_id);
             if (status != CM_SUCCESS) {
                 LOG_DEBUG_ERR("Failed to switch lock to %u by %u.", curr_id, master_id);
-                cm_spin_unlock(&g_dss_instance.switch_lock);
+                cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
                 cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
                 continue;
             }
@@ -913,7 +914,7 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
     status = dss_refresh_meta_info(session);
     if (status != CM_SUCCESS) {
         g_dss_instance.status = DSS_STATUS_OPEN;
-        cm_spin_unlock(&g_dss_instance.switch_lock);
+        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
         LOG_RUN_ERR("[DSS] ABORT INFO: dss instance %u refresh meta failed, result(%d).", curr_id, status);
         cm_fync_logfile();
         _exit(1);
@@ -922,7 +923,7 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
     LOG_RUN_INF("inst %u set status flag %u when set main inst.", curr_id, DSS_STATUS_READWRITE);
     g_dss_instance.status = DSS_STATUS_OPEN;
     LOG_RUN_INF("Main server %u is set successfully by %u.", curr_id, master_id);
-    cm_spin_unlock(&g_dss_instance.switch_lock);
+    cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
     return CM_SUCCESS;
 }
 

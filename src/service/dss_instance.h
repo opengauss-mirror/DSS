@@ -75,7 +75,7 @@ typedef struct st_dss_srv_args {
 
 typedef struct st_dss_instance {
     int32 lock_fd;
-    spinlock_t switch_lock;
+    latch_t switch_latch;
     dss_config_t inst_cfg;
     dss_instance_status_e status;
     uds_lsnr_t lsnr;

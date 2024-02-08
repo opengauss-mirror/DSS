@@ -530,7 +530,9 @@ static void dss_process_message(uint32 work_idx, ruid_type ruid, mes_msg_t *msg)
     }
 
     // from here, the proc need to give the ack and release message buf
+    cm_latch_s(&g_dss_instance.switch_latch, DSS_DEFAULT_SESSIONID, CM_FALSE, LATCH_STAT(LATCH_SWITCH));
     processor->proc(session, msg);
+    cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
 
     LOG_DEBUG_INF("Proc msg cmd:%u, src node:%u, dst node:%u end.", 
         (uint32)(dss_head->dss_cmd), (uint32)(dss_head->src_inst), (uint32)(dss_head->dst_inst));
