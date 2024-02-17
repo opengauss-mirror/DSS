@@ -624,7 +624,7 @@ static status_t dss_set_mes_profile(mes_profile_t *profile)
     profile->priority_cnt = DSS_MES_PRIO_CNT;
     profile->frag_size = DSS_MES_FRAG_SIZE;
     profile->connect_timeout = CM_CONNECT_TIMEOUT;
-    profile->socket_timeout = CM_SOCKET_TIMEOUT;
+    profile->socket_timeout = CM_NETWORK_IO_TIMEOUT;
 
     dss_set_mes_buffer_pool(inst_cfg->params.mes_pool_size, profile);
     dss_set_group_task_num(inst_cfg, profile);
