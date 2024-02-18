@@ -1623,10 +1623,6 @@ status_t dss_format_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item,
     redo.old_last_block = old_last;
     redo.old_free_list = bk_list;
     dss_put_log(session, vg_item, DSS_RT_FORMAT_AU_FILE_TABLE, &redo, sizeof(dss_redo_format_ft_t));
-
-#ifdef DB_DEBUG_VERSION
-    DSS_TEST_ROLLBACK2(ERR_DSS_NO_SPACE);
-#endif
     return CM_SUCCESS;
 }
 

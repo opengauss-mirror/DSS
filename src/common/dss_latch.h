@@ -45,6 +45,14 @@ typedef enum en_dss_latch_shared_op {
     LATCH_SHARED_OP_UNLATCH_END = 6,
 } dss_latch_shared_op_e;
 
+typedef enum en_dss_latch_stat_type {
+    LATCH_SWITCH = 0,
+    LATCH_STAT_TYPE_COUNT
+} dss_latch_stat_type_t;
+
+extern latch_statis_t g_latch_stat[LATCH_STAT_TYPE_COUNT];
+#define LATCH_STAT(stat_id) (&g_latch_stat[(stat_id)])
+
 typedef struct st_dss_latch_extent {
     volatile uint16 shared_count_bak;
     volatile uint16 stat_bak;
@@ -71,6 +79,7 @@ void dss_latch_s(latch_t *latch);
 void dss_latch_x(latch_t *latch);
 void dss_unlatch(latch_t *latch);
 void dss_latch_x2(latch_t *latch, uint32 sid);
+bool32 dss_latch_timed_x(latch_t *latch, uint32 wait_ticks);
 static inline void dss_latch(latch_t *latch, dss_latch_mode_e latch_mode, uint32 sid)
 {
     latch_mode == LATCH_MODE_SHARE ? cm_latch_s(latch, sid, CM_FALSE, NULL) : cm_latch_x(latch, sid, NULL);

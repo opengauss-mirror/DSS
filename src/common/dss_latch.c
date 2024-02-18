@@ -26,6 +26,8 @@
 #include "dss_shm.h"
 #include "cm_utils.h"
 
+latch_statis_t g_latch_stat[LATCH_STAT_TYPE_COUNT] = {0};
+
 void dss_latch_s(latch_t *latch)
 {
     cm_latch_s(latch, DSS_DEFAULT_SESSIONID, CM_FALSE, NULL);
@@ -34,6 +36,11 @@ void dss_latch_s(latch_t *latch)
 void dss_latch_x(latch_t *latch)
 {
     cm_latch_x(latch, DSS_DEFAULT_SESSIONID, NULL);
+}
+
+bool32 dss_latch_timed_x(latch_t *latch, uint32 wait_ticks)
+{
+    return cm_latch_timed_x(latch, DSS_DEFAULT_SESSIONID, wait_ticks, NULL);
 }
 
 void dss_unlatch(latch_t *latch)

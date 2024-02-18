@@ -244,9 +244,6 @@ status_t dss_refresh_core_and_volume(dss_vg_info_item_t *vg_item)
 
 status_t dss_alloc_au(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_t *auid, bool8 latch_ft_root)
 {
-#ifdef DB_DEBUG_VERSION
-    DSS_TEST_ROLLBACK2(ERR_DSS_NO_SPACE);
-#endif
     CM_ASSERT(vg_item != NULL && auid != NULL);
     status_t status = dss_refresh_core_and_volume(vg_item);
     if (status != CM_SUCCESS) {

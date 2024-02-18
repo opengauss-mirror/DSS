@@ -817,7 +817,7 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
     if (!inst->cm_res.is_valid) {
         return;
     }
-    cm_spin_lock(&g_dss_instance.switch_lock, NULL);
+    cm_latch_x(&g_dss_instance.switch_latch, DSS_DEFAULT_SESSIONID, LATCH_STAT(LATCH_SWITCH));
     uint32 old_master_id = dss_get_master_id();
     bool32 grab_lock = CM_FALSE;
     uint32 master_id = dss_get_cm_lock_owner(inst, &grab_lock, CM_TRUE);
@@ -827,16 +827,16 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
     if (old_master_id == master_id) {
         // primary, no need check
         if (master_id == curr_id) {
-            cm_spin_unlock(&g_dss_instance.switch_lock);
+            cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
             return;
         }
         if (inst->is_join_cluster) {
-            cm_spin_unlock(&g_dss_instance.switch_lock);
+            cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
             return;
         }
         // before set open, join to cluster
         if (!dss_check_join_cluster()) {
-            cm_spin_unlock(&g_dss_instance.switch_lock);
+            cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
             return;
         }
         inst->status = DSS_STATUS_OPEN;
@@ -848,16 +848,16 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
         LOG_RUN_INF("inst %u set status flag %u when not get cm lock.", curr_id, DSS_STATUS_READONLY);
         // before set open, join to cluster
         if (!dss_check_join_cluster()) {
-            cm_spin_unlock(&g_dss_instance.switch_lock);
+            cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
             return;
         }
         inst->status = DSS_STATUS_OPEN;
-        cm_spin_unlock(&g_dss_instance.switch_lock);
+        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
         return;
     }
     /*1、grab lock success 2、set main,other switch lock 3、restart, lock no transfer*/
     dss_recovery_when_get_lock(inst, curr_id, grab_lock);
-    cm_spin_unlock(&g_dss_instance.switch_lock);
+    cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
 }
 
 #define DSS_RECOVERY_INTERVAL 500
