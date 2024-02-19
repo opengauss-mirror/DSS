@@ -108,7 +108,6 @@ extern dss_instance_status_e *g_dss_instance_status;
 
 status_t dss_load_config(dss_config_t *inst_cfg);
 status_t dss_set_cfg_dir(const char *home, dss_config_t *inst_cfg);
-status_t dss_reload_cluster_run_mode_param(dss_config_t *inst_cfg);
 
 static inline int32 dss_storage_mode(dss_config_t *inst_cfg)
 {

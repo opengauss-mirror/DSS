@@ -880,7 +880,6 @@ static status_t dss_process_remote_switch_lock(dss_session_t *session, uint32 cu
 static status_t dss_process_set_main_inst(dss_session_t *session)
 {
     status_t status = CM_ERROR;
-    DSS_RETURN_IF_ERROR(dss_reload_cluster_run_mode_param(g_inst_cfg));
     dss_config_t *cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)(cfg->params.inst_id);
     uint32 master_id;

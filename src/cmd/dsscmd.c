@@ -108,6 +108,8 @@ config_item_t g_dss_admin_parameters[] = {
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "_AUDIT_LEVEL",              CM_TRUE, CM_FALSE, "1",     NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL, 9,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "CLUSTER_RUN_MODE",          CM_TRUE, CM_FALSE, "cluster_primary", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 10, 
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 // clang-format on
@@ -2874,7 +2876,8 @@ static status_t setcfg_proc(void)
     if (cm_strcmpi(name, "_LOG_LEVEL") != 0 && cm_strcmpi(name, "_LOG_MAX_FILE_SIZE") != 0 &&
         cm_strcmpi(name, "_LOG_BACKUP_FILE_COUNT") != 0 && cm_strcmpi(name, "_AUDIT_MAX_FILE_SIZE") != 0 &&
         cm_strcmpi(name, "_AUDIT_BACKUP_FILE_COUNT") != 0 && cm_strcmpi(name, "_AUDIT_LEVEL") != 0 &&
-        cm_strcmpi(name, "_ENABLE_CORE_STATE_COLLECT") != 0 && cm_strcmpi(name, "DELAY_CLEAN_INTERVAL") != 0) {
+        cm_strcmpi(name, "_ENABLE_CORE_STATE_COLLECT") != 0 && cm_strcmpi(name, "DELAY_CLEAN_INTERVAL") != 0 &&
+        cm_strcmpi(name, "CLUSTER_RUN_MODE") != 0) {
         DSS_PRINT_ERROR("Invalid name when set cfg.\n");
         return DSS_ERROR;
     }

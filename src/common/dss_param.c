@@ -120,7 +120,7 @@ static config_item_t g_dss_params[] = {
     { "_BLACKBOX_DETAIL_ON",   CM_TRUE, CM_FALSE, "FALSE",  NULL, NULL, "-", "FALSE,TRUE",
        "GS_TYPE_BOOLEAN", NULL, 40, EFFECT_REBOOT,  CFG_INS, NULL, NULL, NULL, NULL},
     { "CLUSTER_RUN_MODE", CM_TRUE, CM_FALSE, "cluster_primary", NULL, NULL, "-", "-", 
-        "GS_TYPE_VARCHAR", NULL, 41, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+        "GS_TYPE_VARCHAR", NULL, 41, EFFECT_REBOOT, CFG_INS, dss_verify_cluster_run_mode, dss_notify_cluster_run_mode, NULL, NULL},
     { "XLOG_VG_ID", CM_TRUE, CM_FALSE, "1", NULL, NULL, "-", "[1,64]",
         "GS_TYPE_INTEGER", NULL, 42, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "MES_WAIT_TIMEOUT",  CM_TRUE, CM_FALSE, "2000",  NULL, NULL, "-", "[500,10000]",
@@ -662,25 +662,6 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_xlog_vg_id(inst_cfg));
     CM_RETURN_IFERR(dss_load_enable_core_state_collect(inst_cfg));
     CM_RETURN_IFERR(dss_load_delay_clean_interval(inst_cfg));
-    return CM_SUCCESS;
-}
-
-status_t dss_reload_cluster_run_mode_param(dss_config_t *inst_cfg)
-{
-    char file_name[DSS_FILE_NAME_BUFFER_SIZE];
-
-    // get config info
-    errno_t ret = snprintf_s(file_name, DSS_FILE_NAME_BUFFER_SIZE, DSS_FILE_NAME_BUFFER_SIZE - 1, "%s/cfg/%s", inst_cfg->home,
-        g_dss_config_file);
-    if (ret == -1) {
-        DSS_RETURN_IFERR2(
-            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid config file path"));
-    }
-
-    status_t status = cm_load_config(g_dss_params, DSS_PARAM_COUNT, file_name, &inst_cfg->config, CM_FALSE);
-    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load config"));
-
-    CM_RETURN_IFERR(dss_load_cluster_run_mode(inst_cfg));
     return CM_SUCCESS;
 }
 
