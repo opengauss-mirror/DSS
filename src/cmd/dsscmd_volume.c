@@ -231,36 +231,29 @@ static status_t dss_set_vg_ctrl(
     (void)memset_s(vg_ctrl, sizeof(dss_ctrl_t), 0 , sizeof(dss_ctrl_t));
     vg_item->dss_ctrl = vg_ctrl;
     do {
-        status = dss_lock_vg_storage_w(vg_item, volume_name, inst_cfg);
-        DSS_BREAK_IFERR2(status, LOG_DEBUG_ERR("Failed to lock vg %s.", volume_name));
         dss_volume_t volume;
         status = dss_open_volume(volume_name, NULL, DSS_INSTANCE_OPEN_FLAG, &volume);
-        DSS_BREAK_IFERR3(status, dss_unlock_vg_storage(vg_item, volume_name, inst_cfg),
-            LOG_DEBUG_ERR("open volume %s failed.", volume_name));
+        DSS_BREAK_IFERR2(status, LOG_DEBUG_ERR("open volume %s failed.", volume_name));
 
         status = dss_initial_vg_ctrl(vg_name, volume_name, &volume, vg_ctrl, size);
         if (status != CM_SUCCESS) {
             dss_close_volume(&volume);
-            dss_unlock_vg_storage(vg_item, volume_name, inst_cfg);
             LOG_DEBUG_ERR("initial_vg_ctrl failed.vg %s,vm %s.", vg_name, volume_name);
             break;
         }
         status = dss_set_log_buf(vg_name, vg_item, &volume);
         if (status != CM_SUCCESS) {
             dss_close_volume(&volume);
-            dss_unlock_vg_storage(vg_item, volume_name, inst_cfg);
             LOG_DEBUG_ERR("initial global log buffer failed.vg %s,vm %s.", vg_name, volume_name);
             break;
         }
         status = dss_write_volume_ctrl_info(volume_name, &volume, vg_ctrl, vg_item);
         if (status != CM_SUCCESS) {
             dss_close_volume(&volume);
-            dss_unlock_vg_storage(vg_item, volume_name, inst_cfg);
             LOG_DEBUG_ERR("dss write volume ctrl info failed.vm %s.", volume_name);
             break;
         }
         dss_close_volume(&volume);
-        dss_unlock_vg_storage(vg_item, volume_name, inst_cfg);
     } while (0);
     DSS_FREE_POINT(vg_ctrl);
     dss_free_vg_info();
