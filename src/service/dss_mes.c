@@ -520,17 +520,17 @@ static void dss_process_message(uint32 work_idx, ruid_type ruid, mes_msg_t *msg)
     LOG_DEBUG_INF("dss process message, cmd is %u, proto_version is %u.", dss_head->dss_cmd, dss_head->msg_proto_ver);
     dss_processor_t *processor = &g_dss_processors[dss_head->dss_cmd];
 
+    // from here, the proc need to give the ack and release message buf
+    cm_latch_s(&g_dss_instance.switch_latch, DSS_DEFAULT_SESSIONID, CM_FALSE, LATCH_STAT(LATCH_SWITCH));
     if (processor->is_req) {
         ret = dss_process_remote_req_prepare(session, msg, processor);
     } else {
         ret = dss_process_remote_ack_prepare(session, msg, processor);
     }
     if (ret != CM_SUCCESS) {
+        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
         return;
     }
-
-    // from here, the proc need to give the ack and release message buf
-    cm_latch_s(&g_dss_instance.switch_latch, DSS_DEFAULT_SESSIONID, CM_FALSE, LATCH_STAT(LATCH_SWITCH));
     processor->proc(session, msg);
     cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
 
