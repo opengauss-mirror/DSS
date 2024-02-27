@@ -699,7 +699,7 @@ static inline void help_param_dsshome(void)
 static inline void help_param_uds(void)
 {
     (void)printf("-U/--UDS <UDS:socket_domain>, [optional], the unix socket path of dssserver, "
-                 "default value is UDS:/tmp/.dss_unix_d_socket\n");
+                 "default value is UDS:$DSS_HOME/.dss_unix_d_socket\n");
 }
 
 static dss_args_t cmd_cv_args[] = {
