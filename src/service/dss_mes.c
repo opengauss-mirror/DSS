@@ -1434,7 +1434,7 @@ status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_pat
         DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft block ack msg vg_name is not exist.");
         return CM_ERROR;
     }
-    if (output_info->item != NULL && ack_vg_item->id != (*output_info->item)->id) {
+    if (output_info->item != NULL) {
         *output_info->item = ack_vg_item;
     }
     dss_ft_block_t *shm_block = NULL;
