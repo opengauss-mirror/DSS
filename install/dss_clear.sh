@@ -122,7 +122,7 @@ function parse_vg_info()
     while read line
     do
         if [[ $line == *volume_name:* ]]; then
-            if [[ "$volume_count" == "0"]] || [[ "$vg_flag" != "2" ]]; then
+            if [[ "$volume_count" == "0" ]] || [[ "$vg_flag" != "2" ]]; then
                 log "[CLEARVG]Invalid vg info file!"
                 exit 1
             fi
@@ -135,7 +135,7 @@ function parse_vg_info()
                 vg_flag=0
             fi
         elif [[ $line == *vg_name:* ]]; then
-            if [[ "$volume_count" != "0"]] || [[ "$vg_flag" != "0" ]]; then
+            if [[ "$volume_count" != "0" ]] || [[ "$vg_flag" != "0" ]]; then
                 log "[CLEARVG]Invalid vg info file!"
                 exit 1
             fi
@@ -145,7 +145,7 @@ function parse_vg_info()
             VG_NAME[$VG_COUNT]=$vg_name
             continue
         elif [[ $line == *volume_count:* ]]; then
-            if [[ "$volume_count" != "0"]] || [[ "$vg_flag" != "1" ]]; then
+            if [[ "$volume_count" != "0" ]] || [[ "$vg_flag" != "1" ]]; then
                 log "[CLEARVG]Invalid vg info file!"
                 exit 1
             fi
