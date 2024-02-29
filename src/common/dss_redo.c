@@ -382,14 +382,15 @@ static status_t rp_redo_alloc_ft_node_core(
         if (node == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
         }
-
+        cur_block = dss_get_ft_block_by_node(node);
         if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
             *node = data->node[i];
+            if (i == DSS_REDO_ALLOC_FT_NODE_SELF_INDEX) {
+                cur_block->common.flags = DSS_BLOCK_FLAG_USED;
+            }
         }
 
         LOG_DEBUG_INF("replay alloc file table node, name:%s.", node->name);
-
-        cur_block = dss_get_ft_block_by_node(node);
         if (rp_check_block_addr(&addr_his, cur_block) && vg_item->status != DSS_VG_STATUS_RECOVERY) {
             continue;  // already update the block to disk
         }
@@ -561,6 +562,9 @@ static status_t rp_redo_free_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entr
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
         }
         block->head.next = log_block->head.next;
+        block->head.index = DSS_FS_INDEX_INIT;
+        block->head.common.flags = DSS_BLOCK_FLAG_FREE;
+        dss_set_auid(&block->head.ftid, DSS_BLOCK_ID_INIT);
         status = dss_update_fs_bitmap_block_disk(vg_item, block, DSS_DISK_UNIT_SIZE, CM_FALSE);
         DSS_RETURN_IF_ERROR(status);
         dss_unregister_buffer_cache(vg_item, log_block->head.common.id);
@@ -607,6 +611,9 @@ static status_t rp_redo_alloc_fs_block(dss_vg_info_item_t *vg_item, dss_redo_ent
         }
 
         dss_init_fs_block_head(block);
+        block->head.ftid = data->ftid;
+        block->head.index = data->index;
+        block->head.common.flags = DSS_BLOCK_FLAG_USED;
         *root = data->root;
     }
 
@@ -851,12 +858,14 @@ static status_t rp_redo_free_ft_node_core(
         if (!node) {
             return CM_ERROR;
         }
-
+        cur_block = dss_get_ft_block_by_node(node);
         if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
             *node = data->node[i];
+            if (i == DSS_REDO_FREE_FT_NODE_SELF_INDEX && node->size == 0) {
+                cur_block->common.flags = DSS_BLOCK_FLAG_FREE;
+            }
         }
 
-        cur_block = dss_get_ft_block_by_node(node);
         if (rp_check_block_addr(&addr_his, cur_block) && vg_item->status != DSS_VG_STATUS_RECOVERY) {
             DSS_LOG_DEBUG_OP("Replay free ft node, block has updated, cur_block:%p, node id:%llu.", cur_block,
                 DSS_ID_TO_U64(node->id));
@@ -939,7 +948,7 @@ status_t rp_redo_recycle_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *
             continue;
         }
         node = dss_get_ft_node_by_ftid(NULL, vg_item, data->node[i].id, check_version, CM_FALSE);
-        if (!node) {
+        if (node == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
         }
 

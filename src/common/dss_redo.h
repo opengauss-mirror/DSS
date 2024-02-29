@@ -81,13 +81,12 @@ typedef enum st_dss_redo_free_ft_node_index {
 typedef struct st_dss_redo_free_ft_node_t {
     gft_root_t ft_root;
     gft_node_t node[DSS_REDO_FREE_FT_NODE_NUM];
-    bool real_del;
 } dss_redo_free_ft_node_t;
 
 typedef enum st_dss_redo_recycle_ft_node_index {
     DSS_REDO_RECYCLE_FT_NODE_SELF_INDEX = 0,
     DSS_REDO_RECYCLE_FT_NODE_LAST_INDEX = 1,
-    DSS_REDO_RECYCLE_FT_NODE_ROOT_INDEX = 2,
+    DSS_REDO_RECYCLE_FT_NODE_RECYCLE_INDEX = 2,
     DSS_REDO_RECYCLE_FT_NODE_NUM = 3
 } dss_redo_recycle_ft_node_index_e;
 typedef struct st_dss_redo_recycle_ft_node_t {

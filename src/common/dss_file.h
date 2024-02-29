@@ -75,6 +75,8 @@ status_t dss_get_ftid_by_path(dss_session_t *session, const char *path, ftid_t *
 // for dss internal call
 status_t dss_alloc_ft_au_when_no_free(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_root_t *gft, bool32 *check_version);
+void dss_check_ft_node_free(gft_node_t *node);
+void dss_check_ft_node_parent(gft_node_t *node, ftid_t parent_id);
 gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node,
     const char *name, gft_item_type_t type);
 gft_node_t *dss_alloc_ft_node_when_create_vg(
@@ -83,8 +85,8 @@ gft_node_t *dss_alloc_ft_node_when_create_vg(
 status_t dss_format_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_t auid);
 void dss_free_ft_node_inner(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node, bool32 real_del);
-void dss_free_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node,
-    bool32 real_del, bool32 latch_safe);
+void dss_free_ft_node(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node, bool32 real_del);
 gft_node_t *dss_get_next_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node);
 bool32 dss_is_last_tree_node(gft_node_t *node);
 void dss_delay_clean_all_vg(dss_session_t *session);
@@ -108,14 +110,16 @@ status_t dss_refresh_ft(dss_vg_info_item_t *vg_item);
 status_t dss_check_refresh_ft(dss_vg_info_item_t *vg_item);
 status_t dss_alloc_ft_au(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t *id);
 
-typedef struct st_dss_alloc_fs_block_judge {
+typedef struct st_dss_alloc_fs_block_info {
     bool8 is_extend;
     bool8 is_new_au;
-    bool8 latch_ft_root;
-} dss_alloc_fs_block_judge;
-
-status_t dss_alloc_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, char **block, ga_obj_id_t *out_obj_id,
-    dss_alloc_fs_block_judge *judge, gft_node_t *node);
+    uint16_t index;
+    gft_node_t *node;
+} dss_alloc_fs_block_info_t;
+void dss_check_fs_block_flags(dss_fs_block_header *block, dss_block_flag_e flags);
+void dss_check_fs_block_affiliation(dss_fs_block_header *block, ftid_t id, uint16_t index);
+status_t dss_alloc_fs_block(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, char **block, dss_alloc_fs_block_info_t *info);
 status_t dss_init_file_fs_block(
     dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t *block_id, gft_node_t *node);
 void dss_free_fs_block_addr(dss_session_t *session, dss_vg_info_item_t *vg_item, char *block, ga_obj_id_t obj_id);
@@ -158,7 +162,6 @@ status_t dss_check_file(dss_vg_info_item_t *vg_item);
 status_t dss_open_file_check(dss_session_t *session, const char *file, dss_vg_info_item_t **vg_item,
     gft_item_type_t type, gft_node_t **out_node);
 
-gft_node_t *dss_find_parent_node_by_node(dss_vg_info_item_t *vg_item, gft_node_t *node);
 status_t dss_check_rm_file(
     dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t ftid, bool32 *should_rm_file, gft_node_t **file_node);
 
@@ -187,6 +190,15 @@ static inline bool32 dss_is_fs_block_valid(gft_node_t *node, dss_fs_block_t *fs_
 {
     dss_block_ctrl_t *block_ctrl = dss_get_fs_block_ctrl(fs_block);
     return ((node->fid == block_ctrl->fid) && (node->file_ver == block_ctrl->file_ver));
+}
+
+static inline bool32 dss_is_fs_block_valid_all(gft_node_t *node, dss_fs_block_t *fs_block, uint16_t index)
+{
+    bool32 is_valid_shm = dss_is_fs_block_valid(node, fs_block);
+    if (is_valid_shm) {
+        dss_check_fs_block_affiliation(&fs_block->head, node->id, index);
+    }
+    return is_valid_shm;
 }
 
 static inline void dss_set_fs_block_file_ver(gft_node_t *node, dss_fs_block_t *fs_block)
