@@ -710,10 +710,12 @@ uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try
     status_t ret = CM_SUCCESS;
     date_t time_start = g_timer()->now;
     date_t time_now = 0;
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    uint32 max_time = inst_cfg->params.master_lock_timeout;
     while (CM_TRUE) {
         time_now = g_timer()->now;
-        if (time_now - time_start > DSS_MAX_FAIL_TIME_WITH_CM * MICROSECS_PER_SECOND) {
-            LOG_RUN_ERR("[DSS] ABORT INFO: Fail to get lock owner for %d seconds, exit.", DSS_MAX_FAIL_TIME_WITH_CM);
+        if (time_now - time_start > max_time * MICROSECS_PER_SECOND) {
+            LOG_RUN_ERR("[DSS] ABORT INFO: Fail to get lock owner for %d seconds, exit.", max_time);
             cm_fync_logfile();
             _exit(1);
         }

@@ -246,6 +246,8 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_MAX_IOTHREADS_CFG 8
 #define DSS_MIN_WORKTHREADS_CFG 16
 #define DSS_MAX_WORKTHREADS_CFG 128
+#define DSS_MIN_MASTER_LOCK_TIMEOUT 1
+#define DSS_MAX_MASTER_LOCK_TIMEOUT 30
 
 #define DSS_RETURN_IF_ERROR(ret)      \
     do {                              \

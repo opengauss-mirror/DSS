@@ -129,6 +129,8 @@ static config_item_t g_dss_params[] = {
         44, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_enable_core_state_collect, dss_notify_enable_core_state_collect, NULL, NULL},
     { "DELAY_CLEAN_INTERVAL",  CM_TRUE, CM_FALSE, "100",    NULL, NULL, "-", "[5,1000000]",  "GS_TYPE_INTEGER", NULL,
         45, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_delay_clean_interval, dss_notify_delay_clean_interval, NULL, NULL},
+    { "MASTER_LOCK_TIMEOUT", CM_TRUE, CM_FALSE, "6",     NULL, NULL, "-", "[1,30]",    "GS_TYPE_INTEGER", NULL, 46,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 // clang-format on
@@ -626,6 +628,20 @@ static status_t dss_load_delay_clean_interval(dss_config_t *inst_cfg)
     return dss_load_delay_clean_interval_core(value, inst_cfg);
 }
 
+static status_t dss_load_master_lock_timeout(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "MASTER_LOCK_TIMEOUT");
+    status_t status = cm_str2uint32(value, &inst_cfg->params.master_lock_timeout);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("invalid parameter value of 'MASTER_LOCK_TIMEOUT', value:%s.", value));
+    if (inst_cfg->params.master_lock_timeout < DSS_MIN_MASTER_LOCK_TIMEOUT ||
+        inst_cfg->params.master_lock_timeout > DSS_MAX_MASTER_LOCK_TIMEOUT) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "the value of 'MASTER_LOCK_TIMEOUT' is invalid"));
+    }
+    LOG_RUN_INF("MASTER_LOCK_TIMEOUT is %u.", inst_cfg->params.master_lock_timeout);
+    return CM_SUCCESS;
+}
+
 status_t dss_load_config(dss_config_t *inst_cfg)
 {
     char file_name[DSS_FILE_NAME_BUFFER_SIZE];
@@ -662,6 +678,7 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_xlog_vg_id(inst_cfg));
     CM_RETURN_IFERR(dss_load_enable_core_state_collect(inst_cfg));
     CM_RETURN_IFERR(dss_load_delay_clean_interval(inst_cfg));
+    CM_RETURN_IFERR(dss_load_master_lock_timeout(inst_cfg));
     return CM_SUCCESS;
 }
 

@@ -58,7 +58,6 @@ typedef enum {
 } cm_err_code;
 
 #define DSS_CM_LOCK "dss cm lock"
-#define DSS_MAX_FAIL_TIME_WITH_CM 30
 #define DSS_GET_CM_LOCK_LONG_SLEEP cm_sleep(500)
 
 typedef struct st_dss_cm_res {
