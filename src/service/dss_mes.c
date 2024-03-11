@@ -395,14 +395,16 @@ static bool32 dss_check_srv_status(mes_msg_t *msg)
     date_t time_start = g_timer()->now;
     date_t time_now = 0;
     dss_message_head_t *dss_head = (dss_message_head_t *)(msg->buffer);
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    uint32 max_time = inst_cfg->params.master_lock_timeout;
     while (g_dss_instance.status != DSS_STATUS_OPEN &&
             (dss_head->dss_cmd != DSS_CMD_REQ_JOIN_CLUSTER && dss_head->dss_cmd != DSS_CMD_ACK_JOIN_CLUSTER)) {
         LOG_DEBUG_INF("Could not exec remote req for the dssserver is not open or msg not join cluster, src node:%u.",
             (uint32)(dss_head->src_inst));
         DSS_GET_CM_LOCK_LONG_SLEEP;
         time_now = g_timer()->now;
-        if (time_now - time_start > DSS_MAX_FAIL_TIME_WITH_CM * MICROSECS_PER_SECOND) {
-            LOG_RUN_ERR("Fail to change status open for %d seconds when exec remote req.", DSS_MAX_FAIL_TIME_WITH_CM);
+        if (time_now - time_start > max_time * MICROSECS_PER_SECOND) {
+            LOG_RUN_ERR("Fail to change status open for %d seconds when exec remote req.", max_time);
             return CM_FALSE;
         }
     }
