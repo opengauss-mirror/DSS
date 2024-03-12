@@ -60,19 +60,36 @@ typedef enum en_dss_redo_type {
 } dss_redo_type_t;
 
 // redo struct allocate file table node
-#define DSS_REDO_ALLOC_FT_NODE_NUM 3
+typedef enum st_dss_redo_alloc_ft_node_index {
+    DSS_REDO_ALLOC_FT_NODE_SELF_INDEX = 0,
+    DSS_REDO_ALLOC_FT_NODE_PREV_INDEX = 1,
+    DSS_REDO_ALLOC_FT_NODE_PARENT_INDEX = 2,
+    DSS_REDO_ALLOC_FT_NODE_NUM = 3
+} dss_redo_alloc_ft_node_index_e;
 typedef struct st_dss_redo_alloc_ft_node_t {
     gft_root_t ft_root;
     gft_node_t node[DSS_REDO_ALLOC_FT_NODE_NUM];
 } dss_redo_alloc_ft_node_t;
 
-#define DSS_REDO_FREE_FT_NODE_NUM 4
+typedef enum st_dss_redo_free_ft_node_index {
+    DSS_REDO_FREE_FT_NODE_PARENT_INDEX = 0,
+    DSS_REDO_FREE_FT_NODE_PREV_INDEX = 1,
+    DSS_REDO_FREE_FT_NODE_NEXT_INDEX = 2,
+    DSS_REDO_FREE_FT_NODE_SELF_INDEX = 3,
+    DSS_REDO_FREE_FT_NODE_NUM = 4
+} dss_redo_free_ft_node_index_e;
 typedef struct st_dss_redo_free_ft_node_t {
     gft_root_t ft_root;
     gft_node_t node[DSS_REDO_FREE_FT_NODE_NUM];
+    bool real_del;
 } dss_redo_free_ft_node_t;
 
-#define DSS_REDO_RECYCLE_FT_NODE_NUM 3
+typedef enum st_dss_redo_recycle_ft_node_index {
+    DSS_REDO_RECYCLE_FT_NODE_SELF_INDEX = 0,
+    DSS_REDO_RECYCLE_FT_NODE_LAST_INDEX = 1,
+    DSS_REDO_RECYCLE_FT_NODE_ROOT_INDEX = 2,
+    DSS_REDO_RECYCLE_FT_NODE_NUM = 3
+} dss_redo_recycle_ft_node_index_e;
 typedef struct st_dss_redo_recycle_ft_node_t {
     gft_node_t node[DSS_REDO_RECYCLE_FT_NODE_NUM];
 } dss_redo_recycle_ft_node_t;
@@ -91,7 +108,10 @@ typedef struct st_dss_redo_free_fs_block_t {
 
 typedef struct st_dss_redo_alloc_fs_block_t {
     dss_block_id_t id;
+    dss_block_id_t ftid;
     dss_fs_block_root_t root;
+    uint16_t index;
+    uint16_t reserve;
 } dss_redo_alloc_fs_block_t;
 
 typedef struct st_dss_redo_rename_t {
