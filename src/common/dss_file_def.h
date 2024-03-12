@@ -388,11 +388,19 @@ typedef enum en_dss_block_type {
     DSS_BLOCK_TYPE_FS,
 } dss_block_type_t;
 
+typedef enum en_dss_block_flag {
+    DSS_BLOCK_FLAG_RESERVE,
+    DSS_BLOCK_FLAG_FREE,
+    DSS_BLOCK_FLAG_USED,
+} dss_block_flag_e;
+
 typedef struct st_dss_common_block_t {
     uint32_t checksum;
     uint32_t type;
     uint64 version;
     dss_block_id_t id;
+    uint8_t flags;
+    uint8_t reserve[7];
 } dss_common_block_t;
 
 typedef struct st_dss_block_ctrl {
@@ -428,12 +436,15 @@ typedef struct st_dss_fs_root_t {
     dss_fs_block_list_t free;
 } dss_fs_block_root_t;
 
+#define DSS_ENTRY_FS_INDEX 0xFFFE
 typedef struct st_dss_block_header {
     dss_common_block_t common;
     dss_block_id_t next;
+    dss_block_id_t ftid;
     uint16_t used_num;
     uint16_t total_num;
-    uint32_t reserve;
+    uint16_t index;
+    uint16_t reserve;
 } dss_fs_block_header;
 
 // file space block

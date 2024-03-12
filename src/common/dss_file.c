@@ -929,6 +929,9 @@ status_t dss_alloc_fs_block_inter(
 
     dss_redo_alloc_fs_block_t redo;
     redo.id = block_id;
+    dss_set_blockid(&redo.ftid, DSS_INVALID_64);
+    redo.index = DSS_INVALID_ID16;
+    redo.reserve = 0;
     redo.root = *root;
     dss_put_log(session, vg_item, DSS_RT_ALLOC_FS_BLOCK, &redo, sizeof(redo));
     DSS_LOG_DEBUG_OP("Alloc file space meta block,v:%u,au:%llu,block:%u,item:%u,free count:%llu, free first:%llu. ",
@@ -1428,6 +1431,7 @@ static void dss_init_ft_node(
         node->id = auid;
         node->id.block = block_id;
         node->id.item = i;
+        dss_set_auid(&node->parent, DSS_INVALID_64);
 
         if (i == ft_block->node_num - 1) {
             gft->free_list.last = auid;
@@ -1452,6 +1456,7 @@ status_t dss_init_ft_block(dss_vg_info_item_t *vg_item, char *block, uint32_t bl
     ft_block->common.id = auid;
     ft_block->common.id.block = block_id;
     ft_block->common.type = DSS_BLOCK_TYPE_FT;
+    ft_block->common.flags = DSS_BLOCK_FLAG_RESERVE;
 
     gft_node_t *first_node = (gft_node_t *)(block + sizeof(dss_ft_block_t));
     gft_node_t *node;
@@ -1491,13 +1496,16 @@ void dss_init_bitmap_block(dss_ctrl_t *dss_ctrl, char *block, uint32_t block_id,
         cm_panic(0);
     }
     fs_block->common.type = DSS_BLOCK_TYPE_FS;
+    fs_block->common.flags = DSS_BLOCK_FLAG_RESERVE;
     fs_block->common.version = 0;
     fs_block->used_num = 0;
     fs_block->total_num = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(uint64);
+    fs_block->index = DSS_INVALID_ID16;
     fs_block->common.id.au = auid.au;
     fs_block->common.id.volume = auid.volume;
     fs_block->common.id.block = block_id;
     fs_block->common.id.item = 0;
+    dss_set_auid(&fs_block->ftid, DSS_INVALID_64);
 
     block_root->free.count++;
     dss_block_id_t first = block_root->free.first;
@@ -1674,6 +1682,7 @@ static void format_ft_block_when_create_vg(
     gft_node_t *node = NULL;
 
     block->common.type = DSS_BLOCK_TYPE_FT;
+    block->common.flags = DSS_BLOCK_FLAG_RESERVE;
     block->node_num = item_count;
 
     for (uint32 j = 0; j < item_count; j++) {
@@ -1681,6 +1690,7 @@ static void format_ft_block_when_create_vg(
         node->id = auid;
         node->id.block = index;
         node->id.item = j;
+        dss_set_auid(&node->parent, DSS_INVALID_64);
 
         // set the prev ftid_t
         if (j == 0) {
@@ -2121,6 +2131,7 @@ void dss_free_ft_node_inner(
     i++;
     redo_node.node[i] = *node;
     redo_node.ft_root = *gft;
+    redo_node.real_del = real_del;
     dss_put_log(session, vg_item, DSS_RT_FREE_FILE_TABLE_NODE, &redo_node, sizeof(dss_redo_free_ft_node_t));
     DSS_LOG_DEBUG_OP(
         "Free ft node, name:%s, volume:%u, au:%llu, block:%u, item:%u, id:%llu, free count:%u, real delete:%u",
