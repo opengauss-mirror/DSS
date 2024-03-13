@@ -24,7 +24,7 @@ function print_help()
     echo "Usage: $0 [OPTION]
     -h|--help              show help information.
     -3rd|--binarylib_dir   the directory of third party binarylibs.
-    -m|--version_mode      this values of paramenter is Debug, Release, DebugDsstest, ReleaseDsstest, the default value is Release.
+    -m|--version_mode      this values of paramenter is Debug, Release, Memcheck, DebugDsstest, ReleaseDsstest, MemcheckDsstest the default value is Release.
     -t|--build_tool          this values of parameter is cmake, make, the default value is cmake.
     -s|--storage_mode      storage device type. values is disk, ceph. default is disk. 
 "
@@ -83,7 +83,7 @@ fi
 if [ -z "${build_tool}" ] || [ "$build_tool"x == ""x ]; then
     build_tool=cmake
 fi
-if [ ! "$version_mode"x == "Debug"x ] && [ ! "$version_mode"x == "Release"x ] && [ ! "$version_mode"x == "DebugDsstest"x ] && [ ! "$version_mode"x == "ReleaseDsstest"x ]; then
+if [ ! "$version_mode"x == "Debug"x ] && [ ! "$version_mode"x == "Release"x ] && [ ! "$version_mode"x == "DebugDsstest"x ] && [ ! "$version_mode"x == "ReleaseDsstest"x ] && [ ! "$version_mode"x == "Memcheck"x ] && [ ! "$version_mode"x == "MemcheckDsstest"x ]; then
     echo "ERROR: version_mode param is error"
     exit 1
 fi
@@ -93,6 +93,10 @@ if [ "$version_mode"x == "DebugDsstest"x ]; then
 fi
 if [ "$version_mode"x == "ReleaseDsstest"x ]; then
     version_mode=Release
+    enable_dsstest=ON
+fi
+if [ "$version_mode"x == "MemcheckDsstest"x ]; then
+    version_mode=Memcheck
     enable_dsstest=ON
 fi
 if [ ! "$build_tool"x == "make"x ] && [ ! "$build_tool"x == "cmake"x ]; then
