@@ -96,13 +96,15 @@ typedef struct st_dss_mes_actlist {
 // clang-format off
 typedef enum st_dss_bcast_req_cmd {
     BCAST_REQ_DEL_DIR_FILE = 0,
-    BCAST_REQ_INVALIDATE_FS_META,
+    BCAST_REQ_INVALIDATE_META,
+    BCAST_REQ_META_SYN,
     BCAST_REQ_END
 } dss_bcast_req_cmd_t;
 
 typedef enum st_dss_bcast_ack_cmd {
     BCAST_ACK_DEL_FILE = 0,
-    BCAST_ACK_INVALIDATE_FS_META,
+    BCAST_ACK_INVALIDATE_META,
+    BCAST_ACK_META_SYN,
     BCAST_ACK_END
 } dss_bcast_ack_cmd_t;
 
@@ -118,6 +120,7 @@ typedef struct st_dss_recv_msg {
     uint32 broadcast_proto_ver;
     uint64 version_not_match_inst;
     uint64 succ_inst;
+    bool32 ignore_ack;
 } dss_recv_msg_t;
 
 typedef struct st_dss_message_head {
@@ -140,6 +143,12 @@ typedef struct st_dss_notify_req_msg {
     char vg_name[DSS_MAX_NAME_LEN];
 } dss_notify_req_msg_t;
 
+typedef struct st_dss_notify_req_msg_ex {
+    dss_message_head_t dss_head;
+    dss_bcast_req_cmd_t type;
+    uint32 data_size;
+    char data[DSS_LOADDISK_BUFFER_SIZE + DSS_BLOCK_SIZE];
+} dss_notify_req_msg_ex_t;
 typedef struct st_dss_notify_ack_msg {
     dss_message_head_t dss_head;
     dss_bcast_ack_cmd_t type;
@@ -217,10 +226,16 @@ typedef struct st_get_ft_block_ack {
 uint32 dss_get_broadcast_proto_ver(uint64 succ_inst);
 status_t dss_notify_sync(char *buffer, uint32 size, dss_recv_msg_t *recv_msg);
 status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result);
-status_t dss_notify_expect_bool_ack(
-    dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *cmd_ack);
-status_t dss_invalidate_other_nodes(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
+status_t dss_notify_sync_ex(char *buffer, uint32 size, dss_recv_msg_t *recv_msg);
+
+status_t dss_notify_expect_bool_ack(dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *cmd_ack);
+status_t dss_notify_data_expect_bool_ack(
+    dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, char *data, uint32 size, bool32 *cmd_ack);
+
+status_t dss_invalidate_other_nodes(
+    dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack);
 status_t dss_broadcast_check_file_open(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
+status_t dss_syn_data2other_nodes(dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack);
 
 void dss_check_mes_conn(uint64 cur_inst_map);
 status_t dss_startup_mes(void);

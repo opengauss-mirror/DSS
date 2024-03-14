@@ -29,6 +29,7 @@
 #include "dss_malloc.h"
 #include "dss_meta_buf.h"
 #include "dss_file.h"
+#include "dss_fs_aux.h"
 
 #define DSS_DEFAULT_NODE_ID 0
 #define DSS_SECOND_PRINT_LEVEL 2
@@ -689,6 +690,32 @@ static status_t dss_print_ftn_by_id(char *block, uint64 node_id)
     return CM_SUCCESS;
 }
 
+static void printf_fs_aux_block_detail(dss_fs_aux_t *fs_aux)
+{
+    (void)printf("  block_common = {\n");
+
+    dss_common_block_t *common = &fs_aux->head.common;
+    printf_common_block_t(common);
+    (void)printf("  }\n");
+
+    (void)printf("  owner ftid = {\n");
+    printf_auid(&fs_aux->head.ftid);
+    (void)printf("  }\n");
+
+    (void)printf("  data ftid = {\n");
+    printf_auid(&fs_aux->head.data_id);
+    (void)printf("  }\n");
+}
+
+static status_t dss_printf_fs_aux(char *block)
+{
+    dss_fs_aux_t *fs_aux = (dss_fs_aux_t *)block;
+    (void)printf("fs aux = {\n");
+    printf_fs_aux_block_detail(fs_aux);
+    (void)printf("}\n\n");
+    return CM_SUCCESS;
+}
+
 status_t dss_printf_dss_file_table_block(
     dss_volume_ctrl_t *volume_ctrl, dss_core_ctrl_t *core_ctrl, dss_block_id_t *id, uint64 node_id)
 {
@@ -936,6 +963,8 @@ status_t dss_printf_block_with_blockid_from_memory(dss_session_t *session, dss_v
         status = dss_print_ftn_by_id(block, node_id);
     } else if (block_head->type == DSS_BLOCK_TYPE_FS) {
         status = dss_print_fsb_by_id(block, node_id);
+    } else if (block_head->type == DSS_BLOCK_TYPE_FS_AUX) {
+        status = dss_printf_fs_aux(block);
     } else {
         DSS_PRINT_ERROR("Invalid block type %u, block id is %llu.\n", block_head->type, block_id);
         return CM_ERROR;

@@ -80,7 +80,7 @@ static status_t dss_process_remote(dss_session_t *session)
     uint32 currid = DSS_INVALID_ID32;
     status_t ret = CM_ERROR;
     dss_get_exec_nodeid(session, &currid, &remoteid);
-   
+
     LOG_DEBUG_INF("Start processing remote requests(%d), remote node(%u),current node(%u).",
         session->recv_pack.head->cmd, remoteid, currid);
     status_t remote_result = CM_ERROR;
@@ -234,8 +234,7 @@ static status_t dss_process_mkdir(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s/%s", parent, dir));
     DSS_LOG_DEBUG_OP("Begin to mkdir:%s, in path:%s", dir, parent);
     status_t status = dss_make_dir(session, (const char *)parent, (const char *)dir);
-    if (status == CM_SUCCESS)
-    {
+    if (status == CM_SUCCESS) {
         LOG_DEBUG_INF("Succeed to mkdir:%s in path:%s", dir, parent);
         return status;
     }
@@ -253,8 +252,7 @@ static status_t dss_process_rmdir(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", dir));
     DSS_LOG_DEBUG_OP("Begin to rmdir:%s.", dir);
     status_t status = dss_remove_dir(session, (const char *)dir, (bool32)recursive);
-    if (status == CM_SUCCESS)
-    {
+    if (status == CM_SUCCESS) {
         LOG_DEBUG_INF("Succeed to rmdir:%s", dir);
         return status;
     }
@@ -289,11 +287,10 @@ static status_t dss_process_create_file(dss_session_t *session)
     char name_str[DSS_MAX_NAME_LEN];
     DSS_RETURN_IF_ERROR(cm_text2str(&sub, parent_str, sizeof(parent_str)));
     DSS_RETURN_IF_ERROR(cm_text2str(&text, name_str, sizeof(name_str)));
-    
+
     DSS_LOG_DEBUG_OP("Begin to create file:%s in path:%s", name_str, parent_str);
     status_t status = dss_create_file(session, (const char *)parent_str, (const char *)name_str, flag);
-    if (status == CM_SUCCESS)
-    {
+    if (status == CM_SUCCESS) {
         LOG_DEBUG_INF("Succeed to create file:%s in path:%s", name_str, parent_str);
         return status;
     }
@@ -310,8 +307,7 @@ static status_t dss_process_delete_file(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", name));
     DSS_LOG_DEBUG_OP("Begin to rm file:%s", name);
     status = dss_remove_file(session, (const char *)name);
-    if (status == CM_SUCCESS)
-    {
+    if (status == CM_SUCCESS) {
         LOG_DEBUG_INF("Succeed to rm file:%s", name);
         return status;
     }
@@ -370,8 +366,7 @@ static status_t dss_process_close_file(dss_session_t *session)
 
     DSS_LOG_DEBUG_OP("Begin to close file, fid:%llu, %s", fid, dss_display_metaid(ftid));
     DSS_RETURN_IF_ERROR(dss_close_file(session, vg_item, *(uint64 *)&ftid));
-    LOG_DEBUG_INF(
-        "Succeed to close file, ftid:%s, fid:%llu, vg: %s, session pid:%llu.", dss_display_metaid(ftid), fid,
+    LOG_DEBUG_INF("Succeed to close file, ftid:%s, fid:%llu, vg: %s, session pid:%llu.", dss_display_metaid(ftid), fid,
         vg_item->vg_name, session->cli_info.cli_pid);
     return CM_SUCCESS;
 }
@@ -421,35 +416,55 @@ static status_t dss_process_extending_file(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&node_data.fid));
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&node_data.ftid));
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, &node_data.offset));
-    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &node_data.size));
+    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, &node_data.size));
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &node_data.vg_name));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&node_data.vgid));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
-        "vg_name:%s, fid:%llu, ftid:%llu", node_data.vg_name, node_data.fid, *(uint64 *)&node_data.ftid));
+        "extend vg_name:%s, fid:%llu, ftid:%llu, offset:%lld, size:%lld", node_data.vg_name, node_data.fid,
+        *(uint64 *)&node_data.ftid, node_data.offset, node_data.size));
 
     return dss_extend(session, &node_data);
+}
+
+static status_t dss_process_fallocate_file(dss_session_t *session)
+{
+    dss_node_data_t node_data;
+
+    dss_init_get(&session->recv_pack);
+    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&node_data.fid));
+    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&node_data.ftid));
+    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, &node_data.offset));
+    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, &node_data.size));
+    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&node_data.vgid));
+    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&node_data.mode));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
+        "fallocate vg_id:%u, fid:%llu, ftid:%llu, offset:%lld, size:%lld, mode:%d", node_data.vgid, node_data.fid,
+        *(uint64 *)&node_data.ftid, node_data.offset, node_data.size, node_data.mode));
+
+    LOG_DEBUG_INF("fallocate vg_id:%u, fid:%llu, ftid:%llu, offset:%lld, size:%lld, mode:%d", node_data.vgid,
+        node_data.fid, *(uint64 *)&node_data.ftid, node_data.offset, node_data.size, node_data.mode);
+
+    return dss_do_fallocate(session, &node_data);
 }
 
 static status_t dss_process_truncate_file(dss_session_t *session)
 {
     uint64 fid;
     ftid_t ftid;
-    int64 offset;
-    uint64 length;
+    int64 length;
     uint32 vgid;
     char *vg_name = NULL;
 
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&fid));
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&ftid));
-    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, &offset));
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&length));
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &vg_name));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&vgid));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
-        "vg_name:%s, fid:%llu, ftid:%llu", vg_name, fid, *(uint64 *)&ftid));
-    LOG_DEBUG_INF("Truncate file ft id:%llu, offset:%lld, length:%llu", *(uint64 *)&ftid, offset, length);
-    return dss_truncate(session, fid, ftid, offset, length, vg_name);
+        "vg_name:%s, fid:%llu, ftid:%llu, length:%lld", vg_name, fid, *(uint64 *)&ftid, length));
+    LOG_DEBUG_INF("Truncate file ft id:%llu, length:%lld", *(uint64 *)&ftid, length);
+    return dss_truncate(session, fid, ftid, length, vg_name);
 }
 
 static status_t dss_process_add_volume(dss_session_t *session)
@@ -483,7 +498,7 @@ static status_t dss_process_refresh_file(dss_session_t *session)
     uint64 fid;
     ftid_t ftid;
     uint32 vgid;
-    dss_block_id_t blockid;
+    int64 offset;
 
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&fid));
@@ -491,11 +506,11 @@ static status_t dss_process_refresh_file(dss_session_t *session)
     char *name_str = NULL;
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &name_str));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&vgid));
-    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&blockid));
+    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&offset));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
-        "vg_name:%s, block_id:%lld, fid:%llu, ftid:%llu", name_str, *(uint64 *)&blockid, fid, *(uint64 *)&ftid));
+        "vg_name:%s, offset:%lld, fid:%llu, ftid:%llu", name_str, offset, fid, *(uint64 *)&ftid));
 
-    return dss_refresh_file(session, fid, ftid, name_str, blockid);
+    return dss_refresh_file(session, fid, ftid, name_str, offset);
 }
 
 static status_t dss_process_handshake(dss_session_t *session)
@@ -518,7 +533,7 @@ static status_t dss_process_handshake(dss_session_t *session)
     LOG_RUN_INF("[DSS_CONNECT]Server home is %s, when get home.", server_home);
     text_t data;
     cm_str2text(server_home, &data);
-    data.len++; // for keeping the '\0'
+    data.len++;  // for keeping the '\0'
     DSS_RETURN_IF_ERROR(dss_put_text(&session->send_pack, &data));
     return dss_put_int32(&session->send_pack, session->id);
 }
@@ -629,7 +644,7 @@ static status_t dss_process_readlink(dss_session_t *session)
     DSS_LOG_DEBUG_OP("Link is %s, when read link.", name);
     text_t data;
     cm_str2text(name, &data);
-    data.len++; // for keeping the '\0'
+    data.len++;  // for keeping the '\0'
     return dss_put_text(&session->send_pack, &data);
 }
 
@@ -645,17 +660,21 @@ static status_t dss_process_unlink(dss_session_t *session)
 
 status_t dss_process_update_file_written_size(dss_session_t *session)
 {
-    uint64 written_size;
-    dss_block_id_t blockid;
-    char *vg_name = NULL;
+    uint64 fid;
+    int64 offset;
+    int64 size;
+    dss_block_id_t ftid;
+    uint32 vg_id;
 
     dss_init_get(&session->recv_pack);
-    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&blockid));
-    DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &vg_name));
-    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&written_size));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
-        session->audit_info.resource, DSS_AUDIT_MODIFY, "vg_name:%s, block_id:%lld", vg_name, *(uint64 *)&blockid));
-    return dss_update_file_written_size(session, vg_name, written_size, blockid);
+    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&fid));
+    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&ftid));
+    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&vg_id));
+    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&offset));
+    DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&size));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
+        "vg_id:%u, fid:%llu, ftid:%llu, offset:%lld, size:%lld", vg_id, fid, *(uint64 *)&ftid, offset, size));
+    return dss_update_file_written_size(session, vg_id, offset, size, ftid, fid);
 }
 
 static status_t dss_process_get_ftid_by_path(dss_session_t *session)
@@ -723,11 +742,11 @@ static status_t dss_process_get_inst_status(dss_session_t *session)
     char *dss_instance_status = dss_get_dss_instance_status(dss_status->instance_status_id);
     uint32 errcode = strcpy_s(dss_status->instance_status, DSS_MAX_STATUS_LEN, dss_instance_status);
     MEMS_RETURN_IFERR(errcode);
- 
+
     char *dss_server_status = dss_get_dss_server_status(dss_status->server_status_id);
     errcode = strcpy_s(dss_status->server_status, DSS_MAX_STATUS_LEN, dss_server_status);
     MEMS_RETURN_IFERR(errcode);
- 
+
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(
         session->audit_info.resource, DSS_AUDIT_MODIFY, "status:%s", dss_status->instance_status));
     DSS_LOG_DEBUG_OP("Server status is %s.", dss_status->instance_status);
@@ -740,7 +759,7 @@ static status_t dss_process_get_time_stat(dss_session_t *session)
     dss_session_stat_t *time_stat = NULL;
     DSS_RETURN_IF_ERROR(dss_reserv_text_buf(&session->send_pack, size, (char **)&time_stat));
 
-    errno_t errcode = memset_s(time_stat, (size_t)size, 0,(size_t)size);
+    errno_t errcode = memset_s(time_stat, (size_t)size, 0, (size_t)size);
     securec_check_ret(errcode);
     uint32 max_cfg_sess = g_dss_instance.inst_cfg.params.cfg_session_num;
     dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
@@ -825,7 +844,7 @@ static status_t dss_process_getcfg(dss_session_t *session)
     cm_str2text(value, &data);
     // SSL default value is NULL
     if (value != NULL) {
-        data.len++; // for keeping the '\0'
+        data.len++;  // for keeping the '\0'
     }
     return dss_put_text(&session->send_pack, &data);
 }
@@ -920,8 +939,8 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
     dss_config_t *cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)(cfg->params.inst_id);
     uint32 master_id;
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
-        session->audit_info.resource, DSS_AUDIT_MODIFY, "set %u as master", curr_id));
+    DSS_RETURN_IF_ERROR(
+        dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "set %u as master", curr_id));
     while (CM_TRUE) {
         master_id = dss_get_master_id();
         if (master_id == curr_id) {
@@ -1001,6 +1020,7 @@ static dss_cmd_hdl_t g_dss_cmd_handle[] = {
     { DSS_CMD_GETCFG, dss_process_getcfg, NULL, CM_FALSE },
     { DSS_CMD_GET_INST_STATUS, dss_process_get_inst_status, NULL, CM_FALSE },
     { DSS_CMD_GET_TIME_STAT, dss_process_get_time_stat, NULL, CM_FALSE },
+    { DSS_CMD_FALLOCATE_FILE, dss_process_fallocate_file, NULL, CM_TRUE },
 };
 
 dss_cmd_hdl_t g_dss_remote_handle = { DSS_CMD_EXEC_REMOTE, dss_process_remote, NULL, CM_FALSE };
@@ -1040,8 +1060,8 @@ static status_t dss_check_proto_version(dss_session_t *session)
     current_proto_ver = MIN(current_proto_ver, session->client_version);
     session->proto_version = current_proto_ver;
     if (session->proto_version != dss_get_version(&session->recv_pack)) {
-        LOG_RUN_INF(
-            "[CHECK_PROTO]The client protocol version need be changed, old protocol version is %u, new protocol version is %u.",
+        LOG_RUN_INF("[CHECK_PROTO]The client protocol version need be changed, old protocol version is %u, new "
+                    "protocol version is %u.",
             dss_get_version(&session->recv_pack), session->proto_version);
         DSS_THROW_ERROR(ERR_DSS_VERSION_NOT_MATCH, dss_get_version(&session->recv_pack), session->proto_version);
         return CM_ERROR;
@@ -1152,8 +1172,7 @@ status_t dss_process_handshake_cmd(dss_session_t *session, dss_cmd_type_e cmd)
 {
     status_t status = CM_ERROR;
     bool32 ready = CM_FALSE;
-    do
-    {
+    do {
         cm_reset_error();
         if (cs_wait(&session->pipe, CS_WAIT_FOR_READ, session->pipe.socket_timeout, &ready) != CM_SUCCESS) {
             LOG_RUN_ERR("[DSS_CONNECT]session %u wait handshake cmd %u failed.", session->id, cmd);

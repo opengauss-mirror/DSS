@@ -37,12 +37,16 @@
 #include "dss_stack.h"
 #include "dss_shm.h"
 #include "ceph_interface.h"
+#include "dss_block_ctrl.h"
 
 // gft_node_t flag
 #define DSS_FT_NODE_FLAG_SYSTEM 0x00000001
 #define DSS_FT_NODE_FLAG_DEL 0x00000002
 #define DSS_FT_NODE_FLAG_NORMAL 0x00000004
 #define DSS_FT_NODE_FLAG_INVALID_FS_META 0x00000008
+#define DSS_FT_NODE_FLAG_INNER_INITED 0x80000000
+
+#define DSS_IS_FILE_INNER_INITED(flag) ((uint64)(flag)&DSS_FT_NODE_FLAG_INNER_INITED)
 
 #define DSS_GET_ROOT_BLOCK(dss_ctrl_p) ((dss_root_ft_block_t *)((dss_ctrl_p)->root))
 #define DSS_MAX_FT_AU_NUM 10
@@ -54,7 +58,7 @@
 #define DSS_RECYLE_DIR_NAME ".recycle"
 
 #define DSS_CTRL_RESERVE_SIZE1 (SIZE_K(727) + 512)
-#define DSS_CTRL_RESERVE_SIZE2 (SIZE_K(15) -  512)
+#define DSS_CTRL_RESERVE_SIZE2 (SIZE_K(15) - 512)
 
 #define DSS_CTRL_CORE_OFFSET OFFSET_OF(dss_ctrl_t, core_data)
 #define DSS_CTRL_VOLUME_OFFSET OFFSET_OF(dss_ctrl_t, volume_data)
@@ -78,7 +82,7 @@
 #define DSS_STANDBY_CLUSTER_XLOG_VG(VG_ID) (DSS_STANDBY_CLUSTER && DSS_IS_XLOG_VG(VG_ID))
 
 #define DSS_FS_BLOCK_ROOT_SIZE 64
-#define DSS_AU_ROOT_SIZE (((DSS_DISK_UNIT_SIZE) - (24)) - (DSS_FS_BLOCK_ROOT_SIZE))
+#define DSS_AU_ROOT_SIZE 64
 
 #define DSS_VG_INFO_CORE_CTRL 1
 #define DSS_VG_INFO_VG_HEADER 2
@@ -107,6 +111,12 @@ typedef int32 volume_handle_t;
 
 #define DSS_VOLUME_DEF_RESVS 112
 
+#define DSS_FS_AUX_ROOT_SIZE 32
+#define DSS_GET_FS_AUX_ROOT(dss_ctrl_p) ((dss_fs_aux_root_t *)((dss_ctrl_p)->core.fs_aux_root))
+#define DSS_GET_FS_AUX_NUM_IN_AU(dss_ctrl) ((dss_get_vg_au_size(dss_ctrl)) / DSS_FS_AUX_SIZE)
+#define DSS_CTRL_RESV_SIZE \
+    ((((((DSS_DISK_UNIT_SIZE) - (24)) - (DSS_FS_BLOCK_ROOT_SIZE)) - (DSS_AU_ROOT_SIZE)) - (DSS_FS_AUX_ROOT_SIZE)))
+
 typedef struct st_dss_volume_def {
     uint64 id : 16;
     uint64 flag : 3;
@@ -120,10 +130,10 @@ typedef struct st_dss_volume_def {
 typedef enum en_volume_slot {
     VOLUME_FREE = 0,  // free
     VOLUME_OCCUPY = 1,
-    VOLUME_PREPARE = 2, // not registered
-    VOLUME_ADD = 3,     // add
-    VOLUME_REMOVE = 3,  // remove
-    VOLUME_REPLACE = 3, // replace
+    VOLUME_PREPARE = 2,  // not registered
+    VOLUME_ADD = 3,      // add
+    VOLUME_REMOVE = 3,   // remove
+    VOLUME_REPLACE = 3,  // replace
 } volume_slot_e;
 
 typedef struct st_dss_volume_attr {
@@ -170,16 +180,17 @@ typedef struct st_dss_volume_type_t {
 } dss_volume_type_t;
 
 typedef enum st_dss_bak_level_e {
-    DSS_BAK_LEVEL_0 = 0, // super block only backed up on first volume, fs and ft do not backup
-    DSS_BAK_LEVEL_1,     // super block backed up on some specific volumes, fs and ft backed up at the end of each volume
-    DSS_BAK_LEVEL_2,     // super block backed up on all volumes, fs and ft backed up at the end of each volume
+    DSS_BAK_LEVEL_0 = 0,  // super block only backed up on first volume, fs and ft do not backup
+    DSS_BAK_LEVEL_1,  // super block backed up on some specific volumes, fs and ft backed up at the end of each volume
+    DSS_BAK_LEVEL_2,  // super block backed up on all volumes, fs and ft backed up at the end of each volume
 } dss_bak_level_e;
 
 typedef enum en_dss_software_version {
     DSS_SOFTWARE_VERSION_0 = 0, /* version 0 */
+    DSS_SOFTWARE_VERSION_1 = 1, /* version 1 */
 } dss_software_version_e;
 
-#define DSS_SOFTWARE_VERSION DSS_SOFTWARE_VERSION_0
+#define DSS_SOFTWARE_VERSION DSS_SOFTWARE_VERSION_1
 
 #define DSS_CTRL_VALID_FLAG 0x5f3759df
 typedef struct st_dss_disk_group_header_t {
@@ -212,6 +223,8 @@ typedef struct st_dss_core_ctrl {
     uint32 volume_count;
     char fs_block_root[DSS_FS_BLOCK_ROOT_SIZE];  // dss_fs_block_root_t
     char au_root[DSS_AU_ROOT_SIZE];              // 512-24-64,dss_au_root_t, recycle space entry
+    char fs_aux_root[DSS_FS_AUX_ROOT_SIZE];      // dss_fs_aux_root_t
+    char resv[DSS_CTRL_RESV_SIZE];
     dss_volume_attr_t volume_attrs[DSS_MAX_VOLUMES];
 } dss_core_ctrl_t;
 
@@ -245,16 +258,16 @@ typedef struct st_dss_ctrl {
 
     union {
         dss_volume_ctrl_t volume;
-        char volume_data[DSS_VOLUME_CTRL_SIZE];     // 256K
+        char volume_data[DSS_VOLUME_CTRL_SIZE];  // 256K
     };
 
-    char root[DSS_ROOT_FT_DISK_SIZE];  // dss_root_ft_block_t, 8KB
-    char reserve1[DSS_CTRL_RESERVE_SIZE1];   // 727K + 512
-    char lock[DSS_DISK_LOCK_LEN];     // align with 16K
+    char root[DSS_ROOT_FT_DISK_SIZE];       // dss_root_ft_block_t, 8KB
+    char reserve1[DSS_CTRL_RESERVE_SIZE1];  // 727K + 512
+    char lock[DSS_DISK_LOCK_LEN];           // align with 16K
     char reserve2[DSS_CTRL_RESERVE_SIZE2];
     union {
         dss_group_global_ctrl_t global_ctrl;
-        char global_data[DSS_DISK_UNIT_SIZE]; // client disk info, size is 512
+        char global_data[DSS_DISK_UNIT_SIZE];  // client disk info, size is 512
     };
 } dss_ctrl_t;
 
@@ -286,12 +299,20 @@ typedef enum en_latch_type {
     LATCH_COUNT,  // must be last
 } latch_type_t;
 
+typedef struct st_dss_vg_cache_node_t {
+    latch_t latch;
+    uint64 fid;
+    uint64 ftid;
+    char *node;
+} dss_vg_cache_node_t;
+
 typedef enum en_dss_from_type {
     FROM_SHM = 0,
     FROM_BBOX,
     FROM_DISK,
 } dss_from_type_e;
 
+#define DSS_VG_ITEM_CACHE_NODE_MAX 16
 typedef struct st_dss_vg_info_item_t {
     uint32 id;
     char vg_name[DSS_MAX_NAME_LEN];
@@ -309,6 +330,8 @@ typedef struct st_dss_vg_info_item_t {
     latch_t disk_latch;       // just for lock vg to lock the local instance.
     latch_t latch[LATCH_COUNT];
     dss_from_type_e from_type;
+    dss_block_ctrl_task_desc_t syn_meta_desc;
+    dss_vg_cache_node_t vg_cache_node[DSS_VG_ITEM_CACHE_NODE_MAX];
 } dss_vg_info_item_t;
 
 typedef struct st_dss_vg_info_t {
@@ -366,7 +389,7 @@ typedef union st_gft_node {
         time_t update_time;
         uint32 software_version;
         uint32 flags;
-        atomic_t size;    //Actually uint64, use atomic_get for client read and atomic_set for server modify.
+        atomic_t size;  // Actually uint64, use atomic_get for client read and atomic_set for server modify.
         union {
             dss_block_id_t entry;  // for file and link
             gft_list_t items;      // for dir
@@ -378,8 +401,9 @@ typedef union st_gft_node {
         uint64 fid;
         uint64 written_size;
         ftid_t parent;
-        uint64 file_ver; // the current ver of the file, when create, it's zero, when truncate the content of the file
-                         // to small size, update it by in old file_ver with step 1
+        uint64 file_ver;  // the current ver of the file, when create, it's zero, when truncate the content of the file
+                          // to small size, update it by in old file_ver with step 1
+        uint64 min_inited_size;  // before this ,must has written data
     };
     char ft_node[256];  // to ensure that the structure size is 256
 } gft_node_t;
@@ -413,11 +437,6 @@ typedef struct st_dss_check_dir_output_t {
 #define DSS_GET_FT_BLOCK_NUM_IN_AU(dss_ctrl) ((dss_get_vg_au_size(dss_ctrl)) / DSS_BLOCK_SIZE)
 #define DSS_GET_FS_BLOCK_NUM_IN_AU(dss_ctrl) ((dss_get_vg_au_size(dss_ctrl)) / DSS_FILE_SPACE_BLOCK_SIZE)
 
-typedef enum en_dss_block_type {
-    DSS_BLOCK_TYPE_FT,
-    DSS_BLOCK_TYPE_FS,
-} dss_block_type_t;
-
 typedef enum en_dss_block_flag {
     DSS_BLOCK_FLAG_RESERVE,
     DSS_BLOCK_FLAG_FREE,
@@ -432,18 +451,6 @@ typedef struct st_dss_common_block_t {
     uint8_t flags;
     uint8_t reserve[7];
 } dss_common_block_t;
-
-typedef struct st_dss_block_ctrl {
-    uint64 fid;             // it's the owner's gft_node_t.fid
-    uint64 file_ver;        // it's the owner's fgt_node_t.file_ver
-    bool32 is_refresh_ftid; // just for dss_ft_block_t
-    latch_t latch;
-    sh_mem_p hash_next;
-    sh_mem_p hash_prev;
-    uint32_t hash;
-    bool32 has_next;
-    bool32 has_prev;
-} dss_block_ctrl_t;
 
 typedef union st_dss_ft_block {
     struct {
@@ -494,7 +501,6 @@ typedef struct st_gft_root_t {
 
 typedef struct st_dss_root_ft_header {
     dss_common_block_t common;
-    dss_block_id_t id;
     uint32_t node_num;
     uint32_t reserve;
     dss_block_id_t next;

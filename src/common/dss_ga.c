@@ -41,6 +41,7 @@ ga_pool_t g_app_pools[GA_APP_POOL_COUNT] = {
     {"sesseion",   NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                 /* inst pool */
     {"meta 8k",      NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                  /* 8k pool */
     {"meta 16k",     NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                 /* 16k pool */
+    {"fs aux",     NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                 /* fs aux */
 };
 
 // clang-format on

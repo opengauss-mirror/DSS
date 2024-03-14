@@ -129,6 +129,9 @@ typedef enum en_dss_conn_opt_key {
 #define DSS_LOCAL_MINOR_VERSION 0
 #define DSS_LOCAL_VERSION 5
 
+// menas no need caller to write zero to init file content before read from the file
+#define DSS_FILE_FLAG_INNER_INITED 0x80000000
+
 typedef struct st_dss_dirent *dss_dir_item_t;
 typedef struct st_dss_stat *dss_stat_info_t;
 
@@ -159,6 +162,8 @@ DSS_DECLARE int dss_pread(int handle, void *buf, int size, long long offset, int
 DSS_DECLARE int dss_get_addr(int handle, long long offset, char *pool_name, char *image_name, char *obj_addr,
     unsigned int *obj_id, unsigned long int *obj_offset);
 DSS_DECLARE int dss_get_fname(int handle, char *fname, int fname_size);
+DSS_DECLARE int dss_fallocate(int handle, int mode, long long offset, long long length);
+
 // aio
 DSS_DECLARE int dss_aio_prep_pread(void *iocb, int handle, void *buf, size_t count, long long offset);
 DSS_DECLARE int dss_aio_prep_pwrite(void *iocb, int handle, void *buf, size_t count, long long offset);
@@ -177,7 +182,8 @@ DSS_DECLARE int dss_compare_size_equal(const char *vg_name, long long *au_size);
 DSS_DECLARE void dss_get_error(int *errcode, const char **errmsg);
 DSS_DECLARE void dss_register_log_callback(dss_log_output cb_log_output, unsigned int log_level);
 DSS_DECLARE void dss_set_log_level(unsigned int log_level);
-DSS_DECLARE int dss_init_logger(char *log_home, unsigned int log_level, unsigned int log_backup_file_count, unsigned long long log_max_file_size);
+DSS_DECLARE int dss_init_logger(
+    char *log_home, unsigned int log_level, unsigned int log_backup_file_count, unsigned long long log_max_file_size);
 DSS_DECLARE void dss_refresh_logger(char *log_field, unsigned long long *value);
 // connection
 DSS_DECLARE int dss_set_svr_path(const char *conn_path);

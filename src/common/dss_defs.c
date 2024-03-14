@@ -24,12 +24,14 @@
 
 #include "dss_defs.h"
 #include "cm_num.h"
-#include "cm_text.h"
 #include "dss_errno.h"
+#include "cm_text.h"
 
 dss_kernel_instance_t g_dss_kernel_instance;
 
 auid_t dss_invalid_auid = {.volume = 0x3ff, .au = 0x3ffffffff, .block = 0x1ffff, .item = 0x7};
+auid_t dss_set_inited_mask = {.volume = 0, .au = 0, .block = 0, .item = 0x1};
+auid_t dss_unset_inited_mask = {.volume = 0x3ff, .au = 0x3ffffffff, .block = 0x1ffff, .item = 0};
 
 #define DSS_CMD_TYPE_OFFSET(i) ((uint32)(i) - (uint32)DSS_CMD_BEGIN)
 static char *g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
@@ -69,6 +71,7 @@ static char *g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_INST_STATUS)] = "get inst status",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_TIME_STAT)] = "get time stat",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXEC_REMOTE)] = "exec remote",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_FALLOCATE_FILE)] = "fallocate file",
 };
 
 char *dss_get_cmd_desc(dss_cmd_type_e cmd_type)
@@ -161,9 +164,9 @@ status_t cm_time2str(time_t time, const char *fmt, char *str, uint32 str_max_siz
 #define DSS_DISPLAY_SIZE 75
 
 #ifdef WIN32
-    __declspec(thread) char g_display_buf[DSS_DISPLAY_SIZE];
+__declspec(thread) char g_display_buf[DSS_DISPLAY_SIZE];
 #else
-    __thread char g_display_buf[DSS_DISPLAY_SIZE];
+__thread char g_display_buf[DSS_DISPLAY_SIZE];
 #endif
 
 char *dss_display_metaid(auid_t id)
@@ -185,4 +188,3 @@ void cm_destroy_thread_lock(thread_lock_t *lock)
     (void)pthread_mutex_destroy(lock);
 #endif
 }
-

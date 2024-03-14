@@ -40,6 +40,8 @@
 #include "dss_simulation_cm.h"
 #include "dss_reactor.h"
 #include "dss_service.h"
+#include "dss_zero.h"
+#include "cm_utils.h"
 
 #define DSS_MAINTAIN_ENV "DSS_MAINTAIN"
 dss_instance_t g_dss_instance;
@@ -102,6 +104,8 @@ static status_t instance_init_ga(dss_instance_t *inst)
         DSS_BLOCK_SIZE + DSS_BLOCK_CTRL_SIZE, GA_MAX_8K_EXTENDED_POOLS);
     instance_set_pool_def(GA_16K_POOL, DSS_MAX_MEM_BLOCK_SIZE / (DSS_FILE_SPACE_BLOCK_SIZE + DSS_BLOCK_CTRL_SIZE),
         DSS_FILE_SPACE_BLOCK_SIZE + DSS_BLOCK_CTRL_SIZE, GA_MAX_EXTENDED_POOLS);
+    instance_set_pool_def(GA_FS_AUX_POOL, DSS_MAX_MEM_BLOCK_SIZE / (DSS_FS_AUX_SIZE + DSS_BLOCK_CTRL_SIZE),
+        DSS_FS_AUX_SIZE + DSS_BLOCK_CTRL_SIZE, GA_MAX_EXTENDED_POOLS);
 
     ret = ga_create_global_area();
     DSS_RETURN_IF_ERROR(ret);
@@ -116,7 +120,7 @@ static status_t dss_init_thread(dss_instance_t *inst)
     if (inst->threads == NULL) {
         return CM_ERROR;
     }
-    errno_t errcode = 
+    errno_t errcode =
         memset_s(inst->threads, (size * (uint32)sizeof(thread_t)), 0x00, (size * (uint32)sizeof(thread_t)));
     securec_check_ret(errcode);
     return CM_SUCCESS;
@@ -398,9 +402,9 @@ static void dss_init_maintain(dss_instance_t *inst, dss_srv_args_t dss_args)
         inst->is_maintain = true;
     } else {
         char *maintain_env = getenv(DSS_MAINTAIN_ENV);
-        inst->is_maintain = (maintain_env != NULL && cm_strcmpi(maintain_env, "TRUE") ==0);
+        inst->is_maintain = (maintain_env != NULL && cm_strcmpi(maintain_env, "TRUE") == 0);
     }
-    
+
     if (inst->is_maintain) {
         LOG_RUN_INF("DSS_MAINTAIN is TRUE");
     } else {
@@ -417,7 +421,8 @@ static status_t instance_init(dss_instance_t *inst)
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to initialize shared memory!"));
 
     status = instance_init_ga(inst);
-    DSS_RETURN_IFERR4(status, (void)del_shm_by_key(CM_SHM_CTRL_KEY), cm_destroy_shm(), LOG_RUN_ERR("DSS instance failed to initialize ga!"));
+    DSS_RETURN_IFERR4(status, (void)del_shm_by_key(CM_SHM_CTRL_KEY), cm_destroy_shm(),
+        LOG_RUN_ERR("DSS instance failed to initialize ga!"));
 
     uint32 objectid = ga_alloc_object(GA_INSTANCE_POOL, CM_INVALID_ID32);
     if (objectid == CM_INVALID_ID32) {
@@ -451,6 +456,10 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
     status_t status;
     errno_t errcode = memset_s(inst, sizeof(dss_instance_t), 0, sizeof(dss_instance_t));
     securec_check_ret(errcode);
+
+    status = dss_init_zero_buf();
+    DSS_RETURN_IFERR2(status, (void)printf("Dss init zero buf fail.\n"));
+
     dss_init_cluster_proto_ver(inst);
     inst->lock_fd = CM_INVALID_INT32;
     dss_set_server_flag();
@@ -460,6 +469,11 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
     DSS_RETURN_IFERR2(status, (void)printf("Environment variant DSS_HOME not found!\n"));
     status = dss_load_config(&inst->inst_cfg);
     DSS_RETURN_IFERR2(status, (void)printf("%s\nFailed to load parameters!\n", cm_get_errormsg(cm_get_error_code())));
+
+#ifdef DISABLE_SYN_META
+    dss_set_syn_meta_enable(CM_FALSE);
+#endif
+
     status = cm_start_timer(g_timer());
     DSS_RETURN_IFERR2(status, (void)printf("Aborted due to starting timer thread.\n"));
     status = dss_init_loggers(
@@ -505,12 +519,12 @@ static status_t dss_lsnr_proc(bool32 is_emerg, uds_lsnr_t *lsnr, cs_pipe_t *pipe
     dss_session_t *session = NULL;
     status_t status;
     status = dss_create_session(pipe, &session);
-    DSS_RETURN_IFERR2(
-        status, LOG_RUN_ERR("[DSS_CONNECT]dss_lsnr_proc create session failed.\n"));
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[DSS_CONNECT]dss_lsnr_proc create session failed.\n"));
     // process_handshake
     status = dss_handshake(session);
     DSS_RETURN_IFERR3(status,
-        LOG_RUN_ERR("[DSS_CONNECT]Session:%u socket:%u handshake with client failed.", session->id, pipe->link.uds.sock),
+        LOG_RUN_ERR(
+            "[DSS_CONNECT]Session:%u socket:%u handshake with client failed.", session->id, pipe->link.uds.sock),
         dss_destroy_session(session));
     status = dss_reactors_add_session(session);
     DSS_RETURN_IFERR3(status,
@@ -523,7 +537,8 @@ static status_t dss_lsnr_proc(bool32 is_emerg, uds_lsnr_t *lsnr, cs_pipe_t *pipe
 status_t dss_start_lsnr(dss_instance_t *inst)
 {
     errno_t ret;
-    ret = snprintf_s(inst->lsnr.names[0], DSS_MAX_PATH_BUFFER_SIZE, DSS_MAX_PATH_BUFFER_SIZE - 1, inst->inst_cfg.params.lsnr_path);
+    ret = snprintf_s(
+        inst->lsnr.names[0], DSS_MAX_PATH_BUFFER_SIZE, DSS_MAX_PATH_BUFFER_SIZE - 1, inst->inst_cfg.params.lsnr_path);
     if (ret == -1) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid DSS lsnr host");
         return CM_ERROR;
@@ -814,7 +829,7 @@ void dss_recovery_when_get_lock(dss_instance_t *inst, uint32 curr_id, bool32 gra
     1、old_master_id == master_id, just return;
     2、old_master_id ！= master_id, just indicates that the master has been reselected.so to juge whether recover.
 */
-void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst) 
+void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
 {
     if (!inst->cm_res.is_valid) {
         return;
@@ -1015,7 +1030,7 @@ void dss_check_unreg_volume(dss_session_t *session)
 {
     uint8 vg_idx, volume_id;
     iof_reg_in_t reg_info;
-    (void)memset_s(&reg_info, sizeof(reg_info), 0 ,sizeof(reg_info));
+    (void)memset_s(&reg_info, sizeof(reg_info), 0, sizeof(reg_info));
 
     bool32 is_unreg = dss_find_unreg_volume(session, &reg_info.dev, &vg_idx, &volume_id);
     if (!is_unreg) {
@@ -1058,5 +1073,21 @@ void dss_check_unreg_volume(dss_session_t *session)
     dss_unlock_vg_mem_and_shm(session, vg_item);
     if (ret != CM_SUCCESS) {
         return;
+    }
+}
+
+void dss_meta_syn_proc(thread_t *thread)
+{
+    cm_set_thread_name("meta_syn");
+    dss_bg_task_info_t *bg_task_info = (dss_bg_task_info_t *)(thread->argument);
+    uint32 work_idx = dss_get_meta_syn_task_idx(bg_task_info->my_task_id);
+    dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
+    dss_session_t *session = &session_ctrl->sessions[work_idx];
+    while (!thread->closed) {
+        // DSS_STATUS_OPEN for control with switchover
+        if (g_dss_instance.status == DSS_STATUS_OPEN) {
+            (void)dss_meta_syn(session, bg_task_info);
+        }
+        cm_sleep(CM_SLEEP_10_FIXED);
     }
 }

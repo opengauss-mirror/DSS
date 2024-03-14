@@ -70,6 +70,7 @@ typedef struct st_dss_au_root_t {
 bool32 dss_can_alloc_from_recycle(const gft_node_t *root_node, bool32 is_before);
 void dss_init_au_root(dss_ctrl_t *dss_ctrl);
 status_t dss_alloc_au(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_t *auid);
+bool32 dss_alloc_au_batch(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_t *auid, uint32 count);
 
 status_t dss_get_core_version(dss_vg_info_item_t *item, uint64 *version);
 status_t dss_load_core_ctrl(dss_vg_info_item_t *item, dss_core_ctrl_t *core);

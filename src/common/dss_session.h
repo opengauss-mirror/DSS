@@ -44,11 +44,21 @@ extern "C" {
 #define DSS_LOCK_CLEAN_SLEEP_TIME 500
 #define DSS_SESSION_PAUSED_WAIT 50
 
+#define DSS_META_SYN_BG_TASK_NUM_MAX 4
+
 typedef enum st_dss_background_task_type {
     DSS_RECPVERY_BACKGROUND_TASK = 0,
     DSS_DELAY_CLEAN_BACKGROUND_TASK = 1,
-    DSS_BACKGROUND_TASK_NUM = 5,
+    DSS_META_SYN_BG_TASK_BASE = 2,
+    DSS_BACKGROUND_TASK_NUM = DSS_META_SYN_BG_TASK_BASE + DSS_META_SYN_BG_TASK_NUM_MAX,
 } dss_background_task_type_e;
+
+typedef struct st_dss_bg_task_info {
+    uint32 task_num_max;
+    uint32 my_task_id;
+    uint32 vg_id_beg;
+    uint32 vg_id_end;
+} dss_bg_task_info_t;
 
 typedef struct tagdss_cli_info {
     uint64 cli_pid;
@@ -103,7 +113,7 @@ typedef struct st_dss_session_stat {
 } dss_session_stat_t;
 
 typedef struct st_dss_session {
-    spinlock_t lock;    // for control current rw of the same session
+    spinlock_t lock;  // for control current rw of the same session
     uint32 id;
     bool32 is_closed;
     bool32 is_used;
@@ -184,6 +194,10 @@ void dss_unlock_shm_meta_bucket(dss_session_t *session, dss_shared_latch_t *shar
 void dss_clean_session_latch(dss_session_t *session, bool32 is_daemon);
 uint32 dss_get_udssession_startid(void);
 uint32 dss_get_delay_clean_task_idx(void);
+
+typedef uint32 (*dss_get_bg_task_idx_func_t)(uint32 idx);
+uint32 dss_get_meta_syn_task_idx(uint32 idx);
+
 #ifdef __cplusplus
 }
 #endif

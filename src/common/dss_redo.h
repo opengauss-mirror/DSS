@@ -57,6 +57,13 @@ typedef enum en_dss_redo_type {
 
     // gft_node
     DSS_RT_SET_NODE_FLAG,
+
+    // fs aux
+    DSS_RT_FORMAT_FS_AUX,
+    DSS_RT_ALLOC_FS_AUX,
+    DSS_RT_FREE_FS_AUX,
+    DSS_RT_INIT_FS_AUX,
+    DSS_RT_SET_FS_BLOCK_BATCH,
 } dss_redo_type_t;
 
 // redo struct allocate file table node
@@ -158,6 +165,14 @@ typedef struct st_dss_redo_set_fs_block_t {
     uint16 reserve;
 } dss_redo_set_fs_block_t;
 
+typedef struct st_dss_redo_set_fs_block_batch_t {
+    dss_block_id_t id;
+    uint16 index;
+    uint16 used_num;
+    uint16 old_used_num;
+    uint16 reserve;
+    dss_block_id_t id_set[(DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(auid_t)];
+} dss_redo_set_fs_block_batch_t;
 typedef struct st_dss_redo_set_file_size_t {
     ftid_t ftid;
     uint64 size;
@@ -242,6 +257,7 @@ char *dss_get_total_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item,
 status_t dss_set_log_buf_for_first_vg(const char *vg_name, dss_vg_info_item_t *vg_item, dss_volume_t *volume);
 status_t dss_set_log_buf(const char *vg_name, dss_vg_info_item_t *vg_item, dss_volume_t *volume);
 char *dss_get_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item);
+void rb_redo_clean_resource(dss_vg_info_item_t *item, auid_t auid, ga_pool_id_e pool_id, uint32 first, uint32 count);
 status_t dss_check_recover_redo_log(dss_vg_info_item_t *vg_item, bool32 *recover_redo);
 #ifdef __cplusplus
 }

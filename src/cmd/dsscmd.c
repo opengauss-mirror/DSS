@@ -188,6 +188,22 @@ static void cmd_parse_clean(dss_args_t *cmd_args_set, int set_size)
 
 // add uni-check function after here
 // ------------------------
+
+static status_t cmd_check_zero_or_one(const char *zero_or_one_str)
+{
+    uint32 zero_or_one;
+    status_t ret = cm_str2uint32(zero_or_one_str, &zero_or_one);
+    if (ret != CM_SUCCESS) {
+        DSS_PRINT_ERROR("The value of zero_or_one is invalid.\n");
+        return CM_ERROR;
+    }
+    if (zero_or_one != 0 && zero_or_one != 1) {
+        DSS_PRINT_ERROR("The value of zero_of one should be in 0 or 1.\n");
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
 static status_t cmd_check_dss_home(const char *dss_home)
 {
     return dss_check_path(dss_home);
@@ -225,7 +241,7 @@ static status_t cmd_check_au_size(const char *au_size_str)
 static status_t cmd_realpath_home(const char *input_args, char **convert_result, int *convert_size)
 {
     uint32 len = (uint32)strlen(input_args);
-    if (len == 0 ||len >= CM_FILE_NAME_BUFFER_SIZE) {
+    if (len == 0 || len >= CM_FILE_NAME_BUFFER_SIZE) {
         DSS_PRINT_ERROR("the len of path is invalid.\n");
         return CM_ERROR;
     }
@@ -846,7 +862,8 @@ static status_t dss_load_volumes(vg_vlm_space_info_t *volume_space, dss_volume_d
             continue;
         }
 
-        if (strcpy_s(volume_space->volume_space_info[vol_id].volume_name, DSS_MAX_VOLUME_PATH_LEN, defs[vol_id].name) != EOK) {
+        if (strcpy_s(volume_space->volume_space_info[vol_id].volume_name, DSS_MAX_VOLUME_PATH_LEN, defs[vol_id].name) !=
+            EOK) {
             return CM_ERROR;
         }
 
@@ -1297,11 +1314,14 @@ static status_t mkdir_proc(void)
     return status;
 }
 
+#define DSS_CMD_TOUCH_ARGS_PATH 0
+#define DSS_CMD_TOUCH_ARGS_UDS 1
+#define DSS_CMD_TOUCH_ARGS_FLAG 2
 static dss_args_t cmd_touch_args[] = {
     {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
-};
+    {'f', "flag", CM_FALSE, CM_TRUE, NULL, NULL, NULL, 0, NULL, NULL, 0}};
 static dss_args_set_t cmd_touch_args_set = {
     cmd_touch_args,
     sizeof(cmd_touch_args) / sizeof(dss_args_t),
@@ -1316,19 +1336,28 @@ static void touch_help(const char *prog_name, int print_flag)
         return;
     }
     (void)printf("-p/--path <path>, <required>, file need to touch, path must begin with '+'\n");
+    (void)printf("-f/--flag <flag>, [optional], file flag need to set");
     help_param_uds();
 }
 
 static status_t touch_proc(void)
 {
-    const char *path = cmd_touch_args[DSS_ARG_IDX_0].input_args;
+    const char *path = cmd_touch_args[DSS_CMD_TOUCH_ARGS_PATH].input_args;
     dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_touch_args[DSS_ARG_IDX_1].input_args, &connection);
+    status_t status = get_connection_by_input_args(cmd_touch_args[DSS_CMD_TOUCH_ARGS_UDS].input_args, &connection);
     if (status != CM_SUCCESS) {
         return status;
     }
 
-    status = (status_t)dss_create_file_impl(&connection, path, 0);
+    int64 flag = 0;
+    if (cmd_touch_args[DSS_CMD_TOUCH_ARGS_FLAG].inputed) {
+        status = cm_str2bigint(cmd_touch_args[DSS_CMD_TOUCH_ARGS_FLAG].input_args, &flag);
+        if (status != CM_SUCCESS) {
+            return status;
+        }
+    }
+
+    status = (status_t)dss_create_file_impl(&connection, path, (int32)flag);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to create file, name is %s.\n", path);
     } else {
@@ -1391,12 +1420,19 @@ static status_t ts_proc(void)
     return CM_SUCCESS;
 }
 
+#define DSS_CMD_LS_PATH_IDX 0
+#define DSS_CMD_LS_MEASURE_IDX 1
+#define DSS_CMD_LS_UDS_IDX 2
+#define DSS_CMD_LS_MIN_INITED_SIZE 3
+
 static dss_args_t cmd_ls_args[] = {
     {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
     {'m', "measure_type", CM_FALSE, CM_TRUE, cmd_check_measure_type, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
+    {'w', "min_inited_size", CM_FALSE, CM_TRUE, cmd_check_zero_or_one, NULL, NULL, 0, NULL, NULL, 0},
 };
+
 static dss_args_set_t cmd_ls_args_set = {
     cmd_ls_args,
     sizeof(cmd_ls_args) / sizeof(dss_args_t),
@@ -1416,25 +1452,46 @@ static void ls_help(const char *prog_name, int print_flag)
     help_param_uds();
 }
 
-static status_t ls_get_parameter(const char **path, const char **measure, char *server_locator)
+static status_t ls_get_parameter(
+    const char **path, const char **measure, char *server_locator, uint32 *show_min_inited_size)
 {
-    *path = cmd_ls_args[DSS_ARG_IDX_0].input_args;
+    *path = cmd_ls_args[DSS_CMD_LS_PATH_IDX].input_args;
     if (strlen(*path) > DSS_MAX_PATH_SIZE) {
         DSS_PRINT_ERROR("The path length exceeds the maximum %d\n", DSS_MAX_PATH_SIZE);
         return CM_ERROR;
     }
 
-    *measure =
-        cmd_ls_args[DSS_ARG_IDX_1].input_args != NULL ? cmd_ls_args[DSS_ARG_IDX_1].input_args : DSS_DEFAULT_MEASURE;
-    status_t status = get_server_locator(cmd_ls_args[DSS_ARG_IDX_2].input_args, server_locator);
+    *measure = cmd_ls_args[DSS_CMD_LS_MEASURE_IDX].input_args != NULL ? cmd_ls_args[DSS_CMD_LS_MEASURE_IDX].input_args :
+                                                                        DSS_DEFAULT_MEASURE;
+    status_t status = get_server_locator(cmd_ls_args[DSS_CMD_LS_UDS_IDX].input_args, server_locator);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to get server_locator.\n");
         return CM_ERROR;
     }
+    if (cmd_ls_args[DSS_CMD_LS_MIN_INITED_SIZE].input_args == NULL) {
+        *show_min_inited_size = 0;
+    } else {
+        status = cm_str2uint32(cmd_ls_args[DSS_CMD_LS_MIN_INITED_SIZE].input_args, show_min_inited_size);
+        if (status != CM_SUCCESS) {
+            DSS_PRINT_ERROR("The value of zero_or_one is invalid.\n");
+            return CM_ERROR;
+        }
+    }
     return CM_SUCCESS;
 }
 
-static status_t dss_ls_print_node_info(gft_node_t *node, const char*measure)
+static void dss_ls_show_base(uint32 show_min_inited_size)
+{
+    if (show_min_inited_size == 0) {
+        (void)printf(
+            "%-5s%-20s%-14s %-14s %-64s%-5s%-5s\n", "type", "time", "size", "written_size", "name", "fid", "node_id");
+    } else {
+        (void)printf("%-5s%-20s%-14s %-14s %-14s %-64s%-5s%-5s\n", "type", "time", "size", "written_size",
+            "min_inited_size", "name", "fid", "node_id");
+    }
+}
+
+static status_t dss_ls_print_node_info(gft_node_t *node, const char *measure, uint32 show_min_inited_size)
 {
     char time[512] = {0};
     if (cm_time2str(node->create_time, "YYYY-MM-DD HH24:mi:ss", time, sizeof(time)) != CM_SUCCESS) {
@@ -1445,7 +1502,7 @@ static status_t dss_ls_print_node_info(gft_node_t *node, const char*measure)
     if (node->size != 0) {
         size = dss_convert_size(size, measure);
     }
-    if (node->type >GFT_LINK) {
+    if (node->type > GFT_LINK) {
         DSS_PRINT_ERROR("Invalid node type %u.\n", node->type);
         return CM_ERROR;
     }
@@ -1454,12 +1511,22 @@ static status_t dss_ls_print_node_info(gft_node_t *node, const char*measure)
     if (node->written_size != 0) {
         written_size = dss_convert_size(written_size, measure);
     }
-    (void)printf("%-5c%-20s%-14.05f %-14.05f %-64s%-5llu%-5llu\n", type, time, size, written_size, node->name,
-        node->fid, DSS_ID_TO_U64(node->id));
+    if (show_min_inited_size == 0) {
+        (void)printf("%-5c%-20s%-14.05f %-14.05f %-64s%-5llu%-5llu\n", type, time, size, written_size, node->name,
+            node->fid, DSS_ID_TO_U64(node->id));
+    } else {
+        double min_inited_size = node->min_inited_size;
+        if (node->min_inited_size != 0) {
+            min_inited_size = dss_convert_size((double)node->min_inited_size, measure);
+        }
+        (void)printf("%-5c%-20s%-14.05f %-14.05f %-14.05f %-64s%-5llu%-5llu\n", type, time, size, written_size,
+            min_inited_size, node->name, node->fid, DSS_ID_TO_U64(node->id));
+    }
+
     return CM_SUCCESS;
 }
 
-static status_t dss_ls_print_file(dss_conn_t *conn, const char *path, const char*measure)
+static status_t dss_ls_print_file(dss_conn_t *conn, const char *path, const char *measure, uint32 show_min_inited_size)
 {
     gft_node_t *node = NULL;
     dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE};
@@ -1468,26 +1535,27 @@ static status_t dss_ls_print_file(dss_conn_t *conn, const char *path, const char
         LOG_DEBUG_INF("Failed to find path %s with the file type", path);
         return CM_ERROR;
     }
-    (void)printf("%-5s%-20s%-14s%-14s%-64s%-5s%-5s\n", "type", "time", "size", "written_size", "name", "fid", "node_id");
-    return dss_ls_print_node_info(node, measure);
+    dss_ls_show_base(show_min_inited_size);
+    return dss_ls_print_node_info(node, measure, show_min_inited_size);
 }
 
-static status_t dss_ls_try_print_link(dss_conn_t *conn, const char *path, const char*measure)
+static status_t dss_ls_try_print_link(
+    dss_conn_t *conn, const char *path, const char *measure, uint32 show_min_inited_size)
 {
     if (dss_is_valid_link_path(path)) {
         gft_node_t *node = NULL;
         dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE};
         DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE));
-        if (node != NULL) {
-            (void)printf("%-5s%-20s%-14s%-14s%-64s%-5s%-5s\n", "type", "time", "size", "written_size", "name", "fid", "node_id");
-            return dss_ls_print_node_info(node, measure);
+        if (node != NULL) {  // ls print the link
+            dss_ls_show_base(show_min_inited_size);
+            return dss_ls_print_node_info(node, measure, show_min_inited_size);
         }
     }
     LOG_DEBUG_INF("Failed to try print path %s with the link type", path);
     return CM_ERROR;
 }
 
-static status_t ls_proc_core(dss_conn_t *conn, const char *path, const char*measure)
+static status_t ls_proc_core(dss_conn_t *conn, const char *path, const char *measure, uint32 show_min_inited_size)
 {
     gft_node_t *node = NULL;
     dss_vg_info_item_t *vg_item = NULL;
@@ -1505,7 +1573,7 @@ static status_t ls_proc_core(dss_conn_t *conn, const char *path, const char*meas
     }
     if (type == GFT_FILE) {
         DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
-        status = dss_ls_print_file(conn, path, measure);
+        status = dss_ls_print_file(conn, path, measure, show_min_inited_size);
         DSS_UNLOCK_VG_META_S(vg_item, conn->session);
         if (status == CM_SUCCESS) {
             DSS_PRINT_INF("Succeed to ls file info.\n");
@@ -1513,7 +1581,7 @@ static status_t ls_proc_core(dss_conn_t *conn, const char *path, const char*meas
         }
     } else if (type == GFT_LINK || type == GFT_LINK_TO_FILE || type == GFT_LINK_TO_PATH) {
         DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
-        status = dss_ls_try_print_link(conn, path, measure);
+        status = dss_ls_try_print_link(conn, path, measure, show_min_inited_size);
         DSS_UNLOCK_VG_META_S(vg_item, conn->session);
         if (status == CM_SUCCESS) {
             DSS_PRINT_INF("Succeed to ls link info.\n");
@@ -1525,9 +1593,9 @@ static status_t ls_proc_core(dss_conn_t *conn, const char *path, const char*meas
         DSS_PRINT_ERROR("Failed to open dir %s.\n", path);
         return CM_ERROR;
     }
-    (void)printf("%-5s%-20s%-14s%-14s%-64s%-5s%-5s\n", "type", "time", "size", "written_size", "name", "fid", "node_id");
+    dss_ls_show_base(show_min_inited_size);
     while ((node = dss_read_dir_impl(conn, dir, CM_TRUE)) != NULL) {
-        status = dss_ls_print_node_info(node, measure);
+        status = dss_ls_print_node_info(node, measure, show_min_inited_size);
         if (status != CM_SUCCESS) {
             (void)dss_close_dir_impl(conn, dir);
             return CM_ERROR;
@@ -1543,7 +1611,8 @@ static status_t ls_proc(void)
     const char *path = NULL;
     char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
     const char *measure = NULL;
-    status_t status = ls_get_parameter(&path, &measure, server_locator);
+    uint32 show_min_inited_size = 0;
+    status_t status = ls_get_parameter(&path, &measure, server_locator, &show_min_inited_size);
     if (status != CM_SUCCESS) {
         return status;
     }
@@ -1555,7 +1624,7 @@ static status_t ls_proc(void)
         return status;
     }
 
-    status = ls_proc_core(&connection, path, measure);
+    status = ls_proc_core(&connection, path, measure, show_min_inited_size);
     dss_disconnect_ex(&connection);
     return status;
 }
@@ -1686,7 +1755,7 @@ static status_t rmv_proc(void)
     dss_conn_t connection;
     status_t status;
 
-     if (force) {
+    if (force) {
         status = dss_modify_volume_offline(home, vg_name, vol_name, NULL, VOLUME_MODIFY_REMOVE);
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to remove volume offline, vg_name is %s, volume name is %s.\n", vg_name, vol_name);
@@ -2445,8 +2514,8 @@ static status_t dss_print_struct_name(dss_vg_info_item_t *vg_item, const char *s
     status_t status = CM_SUCCESS;
     if (vg_item->from_type == FROM_DISK) {
         status = dss_open_volume(vg_item->entry_path, NULL, DSS_CLI_OPEN_FLAG, &volume);
-        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR(
-            "Failed to open file %s.\nFailed to printf dss metadata.\n", vg_item->entry_path));
+        DSS_RETURN_IFERR2(
+            status, DSS_PRINT_ERROR("Failed to open file %s.\nFailed to printf dss metadata.\n", vg_item->entry_path));
     }
     status = dss_print_struct_name_inner(vg_item, &volume, struct_name);
     if (vg_item->from_type == FROM_DISK) {
@@ -2500,13 +2569,13 @@ static status_t showdisk_proc(void)
         if (status == CM_ERROR) {
             DSS_PRINT_ERROR("block_id:%s is not a valid uint64\n", cmd_showdisk_args[DSS_ARG_IDX_2].input_args);
             return CM_ERROR;
-        } 
+        }
         uint64 node_id = 0;
         status = cm_str2uint64(cmd_showdisk_args[DSS_ARG_IDX_3].input_args, &node_id);
         if (status == CM_ERROR) {
             DSS_PRINT_ERROR("node_id:%s is not a valid uint64\n", cmd_showdisk_args[DSS_ARG_IDX_3].input_args);
             return CM_ERROR;
-        } 
+        }
         status = dss_print_block_id(NULL, vg_item, block_id, node_id);
     } else if (cmd_showdisk_args[DSS_ARG_IDX_1].inputed) {
         // for struct_name
@@ -2549,8 +2618,8 @@ static status_t showmem_check_args_with_offset(dss_args_t *cmd_args_set, int set
             return CM_ERROR;
         }
         if (!(cmd_args_set[DSS_ARG_IDX_4].inputed || cmd_args_set[DSS_ARG_IDX_6].inputed)) {
-        DSS_PRINT_ERROR("param offset should be set with one way [fid | path] to show.\n");
-        return CM_ERROR;
+            DSS_PRINT_ERROR("param offset should be set with one way [fid | path] to show.\n");
+            return CM_ERROR;
         }
     }
     return CM_SUCCESS;
@@ -2558,11 +2627,13 @@ static status_t showmem_check_args_with_offset(dss_args_t *cmd_args_set, int set
 
 static status_t showmem_check_args_with_vg_name(dss_args_t *cmd_args_set, int set_size)
 {
-    if (!cmd_args_set[DSS_ARG_IDX_1].inputed && !cmd_args_set[DSS_ARG_IDX_2].inputed && !cmd_args_set[DSS_ARG_IDX_4].inputed) {
+    if (!cmd_args_set[DSS_ARG_IDX_1].inputed && !cmd_args_set[DSS_ARG_IDX_2].inputed &&
+        !cmd_args_set[DSS_ARG_IDX_4].inputed) {
         DSS_PRINT_ERROR("should at least set one way [struct_name | block_id | fid] to show with vg_name.\n");
         return CM_ERROR;
     }
-    if ((cmd_args_set[DSS_ARG_IDX_1].inputed && (cmd_args_set[DSS_ARG_IDX_2].inputed || cmd_args_set[DSS_ARG_IDX_4].inputed)) ||
+    if ((cmd_args_set[DSS_ARG_IDX_1].inputed &&
+            (cmd_args_set[DSS_ARG_IDX_2].inputed || cmd_args_set[DSS_ARG_IDX_4].inputed)) ||
         (cmd_args_set[DSS_ARG_IDX_2].inputed && cmd_args_set[DSS_ARG_IDX_4].inputed)) {
         DSS_PRINT_ERROR("should only set one way [struct_name | block_id | fid] to show with vg_name.\n");
         return CM_ERROR;
@@ -2588,10 +2659,11 @@ static status_t showmem_check_args_with_vg_name(dss_args_t *cmd_args_set, int se
 
 static status_t showmem_check_args_with_path(dss_args_t *cmd_args_set, int set_size)
 {
-    if (cmd_args_set[DSS_ARG_IDX_1].inputed || cmd_args_set[DSS_ARG_IDX_2].inputed || cmd_args_set[DSS_ARG_IDX_3].inputed
-        || cmd_args_set[DSS_ARG_IDX_4].inputed || cmd_args_set[DSS_ARG_IDX_5].inputed) {
+    if (cmd_args_set[DSS_ARG_IDX_1].inputed || cmd_args_set[DSS_ARG_IDX_2].inputed ||
+        cmd_args_set[DSS_ARG_IDX_3].inputed || cmd_args_set[DSS_ARG_IDX_4].inputed ||
+        cmd_args_set[DSS_ARG_IDX_5].inputed) {
         DSS_PRINT_ERROR("could not set other way if set the path.\n");
-        return CM_ERROR;  
+        return CM_ERROR;
     }
     return showmem_check_args_with_offset(cmd_args_set, set_size);
 }
@@ -2629,7 +2701,8 @@ static void showmem_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s showmem <-g vg_name> <-s struct_name> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("      %s showmem <-g vg_name> <-b block_id> <-i index_id> [-U UDS:socket_domain]\n", prog_name);
-    (void)printf("      %s showmem <-g vg_name> <-f fid> <-n node_id> [-o offset] [-z size] [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("      %s showmem <-g vg_name> <-f fid> <-n node_id> [-o offset] [-z size] [-U UDS:socket_domain]\n",
+        prog_name);
     (void)printf("      %s showmem <-p path> [-o offset] [-z size] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command] showmem information\n");
     if (print_flag == DSS_HELP_SIMPLE) {
@@ -2653,13 +2726,15 @@ static status_t showmem_proc_by_block_id_and_index_id(dss_session_t *session, ds
 {
     uint64 block_id = 0;
     status_t status = cm_str2uint64(cmd_showmem_args[DSS_ARG_IDX_2].input_args, &block_id);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("block_id:%s is not a valid uint64\n", cmd_showmem_args[DSS_ARG_IDX_2].input_args));
+    DSS_RETURN_IFERR2(
+        status, DSS_PRINT_ERROR("block_id:%s is not a valid uint64\n", cmd_showmem_args[DSS_ARG_IDX_2].input_args));
     uint64 node_id = 0;
     status = cm_str2uint64(cmd_showmem_args[DSS_ARG_IDX_3].input_args, &node_id);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("node_id:%s is not a valid uint64\n", cmd_showmem_args[DSS_ARG_IDX_3].input_args));
+    DSS_RETURN_IFERR2(
+        status, DSS_PRINT_ERROR("node_id:%s is not a valid uint64\n", cmd_showmem_args[DSS_ARG_IDX_3].input_args));
     DSS_RETURN_IFERR2(dss_lock_vg_s(vg_item, session), DSS_PRINT_ERROR("Failed to lock vg %s.\n", vg_item->vg_name));
     status = dss_print_block_id(session, vg_item, block_id, node_id);
-    DSS_UNLOCK_VG_META_S(vg_item, session);  
+    DSS_UNLOCK_VG_META_S(vg_item, session);
     return status;
 }
 
@@ -2674,9 +2749,11 @@ static status_t showmem_proc_by_path(dss_session_t *session, dss_vg_info_item_t 
     }
     if (cmd_showmem_args[DSS_ARG_IDX_8].inputed) {
         status = cm_str2bigint(cmd_showmem_args[DSS_ARG_IDX_7].input_args, &show_param->offset);
-        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("offset:%s is not a valid int64\n", cmd_showmem_args[DSS_ARG_IDX_7].input_args));
+        DSS_RETURN_IFERR2(
+            status, DSS_PRINT_ERROR("offset:%s is not a valid int64\n", cmd_showmem_args[DSS_ARG_IDX_7].input_args));
         status = cm_str2int(cmd_showmem_args[DSS_ARG_IDX_8].input_args, &show_param->size);
-        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("size:%s is not a valid int32\n", cmd_showmem_args[DSS_ARG_IDX_8].input_args));
+        DSS_RETURN_IFERR2(
+            status, DSS_PRINT_ERROR("size:%s is not a valid int32\n", cmd_showmem_args[DSS_ARG_IDX_8].input_args));
     }
     DSS_RETURN_IFERR2(dss_lock_vg_s(vg_item, session), DSS_PRINT_ERROR("Failed to lock vg %s.\n", vg_item->vg_name));
     status = dss_print_gft_node_by_path(session, vg_item, show_param);
@@ -2684,21 +2761,26 @@ static status_t showmem_proc_by_path(dss_session_t *session, dss_vg_info_item_t 
     return status;
 }
 
-static status_t showmem_proc_by_fid_and_node_id(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_show_param_t *show_param)
+static status_t showmem_proc_by_fid_and_node_id(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_show_param_t *show_param)
 {
     status_t status = cm_str2uint64(cmd_showmem_args[DSS_ARG_IDX_4].input_args, &show_param->fid);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("fid:%s is not a valid uint64\n", cmd_showmem_args[DSS_ARG_IDX_4].input_args));
+    DSS_RETURN_IFERR2(
+        status, DSS_PRINT_ERROR("fid:%s is not a valid uint64\n", cmd_showmem_args[DSS_ARG_IDX_4].input_args));
     status = cm_str2uint64(cmd_showmem_args[DSS_ARG_IDX_5].input_args, &show_param->ftid);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("node_id:%s is not a valid uint64\n", cmd_showmem_args[DSS_ARG_IDX_5].input_args));
+    DSS_RETURN_IFERR2(
+        status, DSS_PRINT_ERROR("node_id:%s is not a valid uint64\n", cmd_showmem_args[DSS_ARG_IDX_5].input_args));
     if (cmd_showmem_args[DSS_ARG_IDX_8].inputed) {
         status = cm_str2bigint(cmd_showmem_args[DSS_ARG_IDX_7].input_args, &show_param->offset);
-        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("offset:%s is not a valid int64\n", cmd_showmem_args[DSS_ARG_IDX_7].input_args));
+        DSS_RETURN_IFERR2(
+            status, DSS_PRINT_ERROR("offset:%s is not a valid int64\n", cmd_showmem_args[DSS_ARG_IDX_7].input_args));
         status = cm_str2int(cmd_showmem_args[DSS_ARG_IDX_8].input_args, &show_param->size);
-        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("size:%s is not a valid int32\n", cmd_showmem_args[DSS_ARG_IDX_8].input_args));
+        DSS_RETURN_IFERR2(
+            status, DSS_PRINT_ERROR("size:%s is not a valid int32\n", cmd_showmem_args[DSS_ARG_IDX_8].input_args));
     }
     DSS_RETURN_IFERR2(dss_lock_vg_s(vg_item, session), DSS_PRINT_ERROR("Failed to lock vg %s.\n", vg_item->vg_name));
     status = dss_print_gft_node_by_ftid_and_fid(session, vg_item, show_param);
-    DSS_UNLOCK_VG_META_S(vg_item, session);  
+    DSS_UNLOCK_VG_META_S(vg_item, session);
     return status;
 }
 
@@ -2717,14 +2799,16 @@ static status_t showmem_proc(void)
     do {
         if (!cmd_showmem_args[DSS_ARG_IDX_0].inputed) {
             char name[DSS_MAX_NAME_LEN];
-            DSS_BREAK_IFERR2(dss_find_vg_by_dir(path, name, &vg_item), DSS_PRINT_ERROR("Failed to get vg %s.\n", vg_name));
+            DSS_BREAK_IFERR2(
+                dss_find_vg_by_dir(path, name, &vg_item), DSS_PRINT_ERROR("Failed to get vg %s.\n", vg_name));
         } else {
             status = dss_get_vg_item(&vg_item, vg_name);
             DSS_BREAK_IFERR2(status, DSS_PRINT_ERROR("Failed to get vg %s.\n", vg_name));
         }
         vg_item->from_type = FROM_SHM;
         if (cmd_showmem_args[DSS_ARG_IDX_1].inputed) {
-            DSS_BREAK_IFERR3(dss_lock_vg_s(vg_item, conn.session), status = CM_ERROR, DSS_PRINT_ERROR("Failed to lock vg %s.\n", vg_name)); 
+            DSS_BREAK_IFERR3(dss_lock_vg_s(vg_item, conn.session), status = CM_ERROR,
+                DSS_PRINT_ERROR("Failed to lock vg %s.\n", vg_name));
             status = dss_print_struct_name(vg_item, cmd_showmem_args[DSS_ARG_IDX_1].input_args);
             DSS_UNLOCK_VG_META_S(vg_item, conn.session);
         } else if (cmd_showmem_args[DSS_ARG_IDX_2].inputed) {
@@ -2773,8 +2857,8 @@ static status_t fshowmem_check_args_with_offset(dss_args_t *cmd_args_set, int se
             return CM_ERROR;
         }
         if (!(cmd_args_set[DSS_ARG_IDX_5].inputed || cmd_args_set[DSS_ARG_IDX_7].inputed)) {
-        DSS_PRINT_ERROR("param offset should be set with one way [fid | path] to show.\n");
-        return CM_ERROR;
+            DSS_PRINT_ERROR("param offset should be set with one way [fid | path] to show.\n");
+            return CM_ERROR;
         }
     }
     return CM_SUCCESS;
@@ -2782,11 +2866,13 @@ static status_t fshowmem_check_args_with_offset(dss_args_t *cmd_args_set, int se
 
 static status_t fshowmem_check_args_with_vg_name(dss_args_t *cmd_args_set, int set_size)
 {
-    if (!cmd_args_set[DSS_ARG_IDX_2].inputed && !cmd_args_set[DSS_ARG_IDX_3].inputed && !cmd_args_set[DSS_ARG_IDX_5].inputed) {
+    if (!cmd_args_set[DSS_ARG_IDX_2].inputed && !cmd_args_set[DSS_ARG_IDX_3].inputed &&
+        !cmd_args_set[DSS_ARG_IDX_5].inputed) {
         DSS_PRINT_ERROR("should at least set one way [struct_name | block_id | fid] to show with vg_name.\n");
         return CM_ERROR;
     }
-    if ((cmd_args_set[DSS_ARG_IDX_2].inputed && (cmd_args_set[DSS_ARG_IDX_3].inputed || cmd_args_set[DSS_ARG_IDX_5].inputed)) ||
+    if ((cmd_args_set[DSS_ARG_IDX_2].inputed &&
+            (cmd_args_set[DSS_ARG_IDX_3].inputed || cmd_args_set[DSS_ARG_IDX_5].inputed)) ||
         (cmd_args_set[DSS_ARG_IDX_3].inputed && cmd_args_set[DSS_ARG_IDX_5].inputed)) {
         DSS_PRINT_ERROR("should only set one way [struct_name | block_id | fid] to show with vg_name.\n");
         return CM_ERROR;
@@ -2816,7 +2902,7 @@ static status_t fshowmem_check_args_with_path(dss_args_t *cmd_args_set, int set_
         cmd_args_set[DSS_ARG_IDX_4].inputed || cmd_args_set[DSS_ARG_IDX_5].inputed ||
         cmd_args_set[DSS_ARG_IDX_6].inputed) {
         DSS_PRINT_ERROR("could not set other way if set path.\n");
-        return CM_ERROR;  
+        return CM_ERROR;
     }
     return fshowmem_check_args_with_offset(cmd_args_set, set_size);
 }
@@ -2857,9 +2943,13 @@ static dss_args_set_t cmd_fshowmem_args_set = {
 static void fshowmem_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s fshowmem <-m memory_file_path> <-g vg_name> <-s struct_name> [-D DSS_HOME]\n", prog_name);
-    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-b block_id> <-i index_id> [-D DSS_HOME]\n", prog_name);
-    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-f fid> <-n node_id> [-o offset] [-z size] [-D DSS_HOME]\n", prog_name);
-    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-p path> [-o offset] [-z size] [-D DSS_HOME]\n", prog_name);
+    (void)printf(
+        "      %s fshowmem <-m memory_file_path> <-g vg_name> <-b block_id> <-i index_id> [-D DSS_HOME]\n", prog_name);
+    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-f fid> <-n node_id> [-o offset] [-z size] [-D "
+                 "DSS_HOME]\n",
+        prog_name);
+    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-p path> [-o offset] [-z size] [-D DSS_HOME]\n",
+        prog_name);
     (void)printf("[client command] fshowmem information\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
@@ -3015,15 +3105,18 @@ bool32 dss_check_software_version(int32 file_fd, int64 *offset)
         return CM_FALSE;
     }
     if (software_version > (uint32)DSS_SOFTWARE_VERSION) {
-        LOG_DEBUG_ERR("The file software_version which is %u is bigger than the actural software_version which is %u.", software_version, (uint32)DSS_SOFTWARE_VERSION);
+        LOG_DEBUG_ERR("The file software_version which is %u is bigger than the actural software_version which is %u.",
+            software_version, (uint32)DSS_SOFTWARE_VERSION);
         return CM_FALSE;
     }
     *offset += (int64)sizeof(uint32);
     return CM_TRUE;
 }
 
-// length| vg_num| vg_name|size|buckets|map->num| vg_name|size|buckets|map->num|...|pool_size|pool->addr|pool->ex_pool_addr[0]|...|pool->ex_pool_addr[excount-1]|...
-status_t dss_load_buffer_cache_group_from_file(int32 file_fd, int64 *length, const char *vg_name, dss_vg_info_item_t *vg_item)
+// length| vg_num| vg_name|size|buckets|map->num|
+// vg_name|size|buckets|map->num|...|pool_size|pool->addr|pool->ex_pool_addr[0]|...|pool->ex_pool_addr[excount-1]|...
+status_t dss_load_buffer_cache_group_from_file(
+    int32 file_fd, int64 *length, const char *vg_name, dss_vg_info_item_t *vg_item)
 {
     uint32 group_num = 0;
     int64 offset = *length;
@@ -3046,7 +3139,7 @@ status_t dss_load_buffer_cache_group_from_file(int32 file_fd, int64 *length, con
             DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
             offset = offset + sizeof(uint64) + bucket_size + sizeof(uint32);
             result = (bool32)(cm_seek_file(file_fd, offset, SEEK_SET) != -1);
-            DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Failed to seek file %d", file_fd)); 
+            DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Failed to seek file %d", file_fd));
             continue;
         }
         DSS_RETURN_IF_ERROR(dss_load_buffer_cache_from_file(file_fd, vg_item, &offset));
@@ -3058,10 +3151,12 @@ status_t dss_load_buffer_cache_group_from_file(int32 file_fd, int64 *length, con
     }
     DSS_RETURN_IF_ERROR(dss_load_buffer_pool_from_file(file_fd, GA_8K_POOL));
     DSS_RETURN_IF_ERROR(dss_load_buffer_pool_from_file(file_fd, GA_16K_POOL));
+    DSS_RETURN_IF_ERROR(dss_load_buffer_pool_from_file(file_fd, GA_FS_AUX_POOL));
     return CM_SUCCESS;
 }
 
-status_t dss_load_dss_ctrl_group_from_file(int32 file_fd, int64 *length, const char *vg_name, dss_vg_info_item_t *vg_item)
+status_t dss_load_dss_ctrl_group_from_file(
+    int32 file_fd, int64 *length, const char *vg_name, dss_vg_info_item_t *vg_item)
 {
     uint32 group_num = 0;
     int64 offset = 0;
@@ -3123,7 +3218,7 @@ status_t dss_load_vg_item_and_pool_from_file(const char *file_name, const char *
             result = (bool32)(cm_seek_file(file_fd, length, SEEK_SET) != -1);
             DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Failed to seek file %s", file_name));
         }
-        
+
         status = dss_load_buffer_cache_group_from_file(file_fd, &length, vg_name, vg_item);
         DSS_BREAK_IF_ERROR(status);
     } while (CM_FALSE);
@@ -3138,10 +3233,12 @@ static status_t fshowmem_proc_by_block_id_and_index_id(dss_vg_info_item_t *vg_it
 {
     uint64 block_id = 0;
     status_t status = cm_str2uint64(cmd_fshowmem_args[DSS_ARG_IDX_3].input_args, &block_id);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("block_id:%s is not a valid uint64\n", cmd_fshowmem_args[DSS_ARG_IDX_3].input_args));
+    DSS_RETURN_IFERR2(
+        status, DSS_PRINT_ERROR("block_id:%s is not a valid uint64\n", cmd_fshowmem_args[DSS_ARG_IDX_3].input_args));
     uint64 node_id = 0;
     status = cm_str2uint64(cmd_fshowmem_args[DSS_ARG_IDX_4].input_args, &node_id);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("node_id:%s is not a valid uint64\n", cmd_fshowmem_args[DSS_ARG_IDX_4].input_args));
+    DSS_RETURN_IFERR2(
+        status, DSS_PRINT_ERROR("node_id:%s is not a valid uint64\n", cmd_fshowmem_args[DSS_ARG_IDX_4].input_args));
     status = dss_print_block_id(NULL, vg_item, block_id, node_id);
     return status;
 }
@@ -3157,9 +3254,11 @@ static status_t fshowmem_proc_by_path(dss_vg_info_item_t *vg_item, dss_show_para
     }
     if (cmd_fshowmem_args[DSS_ARG_IDX_8].inputed) {
         status = cm_str2bigint(cmd_fshowmem_args[DSS_ARG_IDX_8].input_args, &show_param->offset);
-        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("offset:%s is not a valid int64\n", cmd_fshowmem_args[DSS_ARG_IDX_8].input_args));
+        DSS_RETURN_IFERR2(
+            status, DSS_PRINT_ERROR("offset:%s is not a valid int64\n", cmd_fshowmem_args[DSS_ARG_IDX_8].input_args));
         status = cm_str2int(cmd_fshowmem_args[DSS_ARG_IDX_9].input_args, &show_param->size);
-        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("size:%s is not a valid int32\n", cmd_fshowmem_args[DSS_ARG_IDX_9].input_args));
+        DSS_RETURN_IFERR2(
+            status, DSS_PRINT_ERROR("size:%s is not a valid int32\n", cmd_fshowmem_args[DSS_ARG_IDX_9].input_args));
     }
     status = dss_print_gft_node_by_path(NULL, vg_item, show_param);
     return status;
@@ -3168,14 +3267,18 @@ static status_t fshowmem_proc_by_path(dss_vg_info_item_t *vg_item, dss_show_para
 static status_t fshowmem_proc_by_fid_and_node_id(dss_vg_info_item_t *vg_item, dss_show_param_t *show_param)
 {
     status_t status = cm_str2uint64(cmd_fshowmem_args[DSS_ARG_IDX_5].input_args, &show_param->fid);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("fid:%s is not a valid uint64\n", cmd_fshowmem_args[DSS_ARG_IDX_5].input_args));
+    DSS_RETURN_IFERR2(
+        status, DSS_PRINT_ERROR("fid:%s is not a valid uint64\n", cmd_fshowmem_args[DSS_ARG_IDX_5].input_args));
     status = cm_str2uint64(cmd_fshowmem_args[DSS_ARG_IDX_6].input_args, &show_param->ftid);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("node_id:%s is not a valid uint64\n", cmd_fshowmem_args[DSS_ARG_IDX_6].input_args));
+    DSS_RETURN_IFERR2(
+        status, DSS_PRINT_ERROR("node_id:%s is not a valid uint64\n", cmd_fshowmem_args[DSS_ARG_IDX_6].input_args));
     if (cmd_fshowmem_args[DSS_ARG_IDX_8].inputed) {
         status = cm_str2bigint(cmd_fshowmem_args[DSS_ARG_IDX_8].input_args, &show_param->offset);
-        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("offset:%s is not a valid int64\n", cmd_fshowmem_args[DSS_ARG_IDX_8].input_args));
+        DSS_RETURN_IFERR2(
+            status, DSS_PRINT_ERROR("offset:%s is not a valid int64\n", cmd_fshowmem_args[DSS_ARG_IDX_8].input_args));
         status = cm_str2int(cmd_fshowmem_args[DSS_ARG_IDX_9].input_args, &show_param->size);
-        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("size:%s is not a valid int32\n", cmd_fshowmem_args[DSS_ARG_IDX_9].input_args));
+        DSS_RETURN_IFERR2(
+            status, DSS_PRINT_ERROR("size:%s is not a valid int32\n", cmd_fshowmem_args[DSS_ARG_IDX_9].input_args));
     }
     status = dss_print_gft_node_by_ftid_and_fid(NULL, vg_item, show_param);
     return status;
@@ -3805,7 +3908,7 @@ static status_t dss_check_command_injection(const char *param)
     }
     uint64 len = strlen(param);
     for (uint64 i = 0; i < len; i++) {
-        for (uint32 j = 0; j < CMD_COMMAND_INJECTION_COUNT; j++) {   
+        for (uint32 j = 0; j < CMD_COMMAND_INJECTION_COUNT; j++) {
             if (param[i] == command_injection_check_list[j]) {
                 DSS_PRINT_ERROR(
                     "Failed to check command injection, %s has %c.\n", param, command_injection_check_list[j]);
@@ -4062,6 +4165,68 @@ static status_t rollback_proc(void)
     return status;
 }
 
+#define DSS_CMD_TRUNCATE_ARGS_PATH 0
+#define DSS_CMD_TRUNCATE_ARGS_LENGTH 1
+#define DSS_CMD_TRUNCATE_ARGS_UDS 2
+
+static dss_args_t cmd_truncate_args[] = {
+    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'l', "length", CM_TRUE, CM_TRUE, NULL, NULL, NULL, 0, NULL, NULL, 0},
+    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
+        0},
+};
+
+static dss_args_set_t cmd_truncate_args_set = {
+    cmd_truncate_args,
+    sizeof(cmd_truncate_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+static void truncate_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:%s truncate <-p path> <-l length> [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("[client command]truncate file to length\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    (void)printf("-p/--path <path>, <required>, file need to truncate, path must begin with '+'\n");
+    (void)printf("-l/--length <length>, <required>, length need to truncate\n");
+    help_param_uds();
+}
+
+static status_t truncate_proc(void)
+{
+    const char *path = cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_PATH].input_args;
+    int64 length = atoll(cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_LENGTH].input_args);
+
+    dss_conn_t conn;
+    status_t status = get_connection_by_input_args(cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_UDS].input_args, &conn);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+
+    int handle;
+    status = (status_t)dss_open_file_impl(&conn, path, O_RDWR, &handle);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to truncate file, name is %s.\n", path);
+        dss_disconnect_ex(&conn);
+        return status;
+    }
+
+    status = (status_t)dss_truncate_impl(&conn, handle, length);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to truncate file, name is %s.\n", path);
+        (void)dss_close_file_impl(&conn, handle);
+        dss_disconnect_ex(&conn);
+        return status;
+    }
+    DSS_PRINT_INF("Success to truncate file, name is %s.\n", path);
+
+    (void)dss_close_file_impl(&conn, handle);
+    dss_disconnect_ex(&conn);
+    return status;
+}
+
 // clang-format off
 dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set},
                                       {"lsvg", lsvg_help, lsvg_proc, &cmd_lsvg_args_set},
@@ -4102,6 +4267,7 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set}
                                       {"rollback", rollback_help, rollback_proc, &cmd_rollback_args_set},
                                       {"showmem", showmem_help, showmem_proc, &cmd_showmem_args_set},
                                       {"fshowmem", fshowmem_help, fshowmem_proc, &cmd_fshowmem_args_set},
+                                      {"truncate", truncate_help, truncate_proc, &cmd_truncate_args_set},
 };
 
 // clang-format on

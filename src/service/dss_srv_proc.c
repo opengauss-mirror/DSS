@@ -248,6 +248,7 @@ static status_t dss_rm_dir_file(dss_session_t *session, const char *dir_name, gf
     CM_RETURN_IFERR(dss_find_vg_by_dir(dir_name, name, &vg_item));
 
     dss_lock_vg_mem_and_shm_x(session, vg_item);
+    dss_init_vg_cache_node_info(vg_item);
     status_t status = dss_rm_dir_file_inner(session, &vg_item, &node, dir_name, type, recursive);
     if (status != CM_SUCCESS) {
         dss_rollback_mem_update(session->log_split, vg_item);
@@ -309,7 +310,7 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
     if (cm_str_equal(src, dst)) {
         DSS_THROW_ERROR(ERR_DSS_FILE_RENAME, "src name is the same as dst.");
         return CM_ERROR;
-    }    
+    }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     dss_lock_vg_mem_and_shm_x(session, vg_item);
     status_t ret = dss_rename_file_inner(session, &vg_item, inst_cfg, src, dst, dst_name);
@@ -318,6 +319,7 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
         return ret;
     }
 
+    dss_init_vg_cache_node_info(vg_item);
     // error_handle: rollback memory
     dss_rollback_mem_update(session->log_split, vg_item);
     int32 err_code = cm_get_error_code();
@@ -333,11 +335,14 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
         dss_unlock_vg_mem_and_shm(session, vg_item);
         return ret;
     }
+    dss_init_vg_cache_node_info(vg_item);
 
     ret = dss_rename_file_inner(session, &vg_item, inst_cfg, src, dst, dst_name);
     if (ret != CM_SUCCESS) {
         dss_rollback_mem_update(session->log_split, vg_item);
     }
+    dss_init_vg_cache_node_info(vg_item);
+
     dss_unlock_vg_mem_and_shm(session, vg_item);
     return ret;
 }
@@ -358,7 +363,7 @@ status_t dss_remove_link(dss_session_t *session, const char *file)
 }
 
 static status_t dss_make_dir_file_core(dss_session_t *session, const char *parent, dss_vg_info_item_t **vg_item,
-    const char *dir_name, gft_item_type_t type)
+    const char *dir_name, gft_item_type_t type, int32_t flag)
 {
     gft_node_t *out_node = NULL;
     status_t status = dss_open_file_check(session, parent, vg_item, GFT_PATH, &out_node);
@@ -382,7 +387,7 @@ static status_t dss_make_dir_file_core(dss_session_t *session, const char *paren
             return CM_ERROR;
         }
     }
-    out_node = dss_alloc_ft_node(session, *vg_item, out_node, dir_name, type);  // actual FTN creation
+    out_node = dss_alloc_ft_node(session, *vg_item, out_node, dir_name, type, flag);  // actual FTN creation
     bool32 result = (bool32)(out_node != NULL);
     DSS_RETURN_IF_FALSE3(result, dss_rollback_mem_update(session->log_split, *vg_item),
         LOG_DEBUG_ERR("Failed to alloc ft node %s.", dir_name));
@@ -401,7 +406,7 @@ static status_t dss_make_dir_file_core(dss_session_t *session, const char *paren
 }
 
 static status_t dss_make_dir_file(
-    dss_session_t *session, const char *parent, const char *dir_name, gft_item_type_t type)
+    dss_session_t *session, const char *parent, const char *dir_name, gft_item_type_t type, int32 flag)
 {
     CM_ASSERT(parent != NULL);
     CM_ASSERT(dir_name != NULL);
@@ -425,7 +430,7 @@ static status_t dss_make_dir_file(
         return CM_ERROR;
     }
     dss_lock_vg_mem_and_shm_x(session, vg_item);
-    status = dss_make_dir_file_core(session, parent, &vg_item, dir_name, type);
+    status = dss_make_dir_file_core(session, parent, &vg_item, dir_name, type, flag);
 
     dss_unlock_vg_mem_and_shm(session, vg_item);
     if (status == CM_SUCCESS) {
@@ -436,18 +441,18 @@ static status_t dss_make_dir_file(
 
 status_t dss_make_dir(dss_session_t *session, const char *parent, const char *dir_name)
 {
-    return dss_make_dir_file(session, parent, dir_name, GFT_PATH);
+    return dss_make_dir_file(session, parent, dir_name, GFT_PATH, 0);
 }
 
 status_t dss_create_file(dss_session_t *session, const char *parent, const char *name, int32_t flag)
 {
-    return dss_make_dir_file(session, parent, name, GFT_FILE);
+    return dss_make_dir_file(session, parent, name, GFT_FILE, flag);
 }
 
 status_t dss_create_link(dss_session_t *session, const char *parent, const char *name)
 {
     DSS_LOG_DEBUG_OP("Begin to set link:%s.", name);
-    CM_RETURN_IFERR_EX(dss_make_dir_file(session, parent, name, GFT_LINK), LOG_DEBUG_ERR("Failed to make link."));
+    CM_RETURN_IFERR_EX(dss_make_dir_file(session, parent, name, GFT_LINK, 0), LOG_DEBUG_ERR("Failed to make link."));
     LOG_RUN_INF("Succeed to set link:%s in path:%s.", name, parent);
     return CM_SUCCESS;
 }

@@ -115,6 +115,7 @@ typedef enum {
     DSS_CMD_GET_TIME_STAT,
     DSS_CMD_QUERY_END,
     DSS_CMD_EXEC_REMOTE = DSS_CMD_QUERY_END,
+    DSS_CMD_FALLOCATE_FILE,
     DSS_CMD_END  // must be the last item
 } dss_cmd_type_e;
 
@@ -165,6 +166,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_FILE_SPACE_BLOCK_SIZE SIZE_K(16)  // unit:K
 #define DSS_BLOCK_CTRL_SIZE 512
 #define DSS_META_BITMAP_SIZE (DSS_FILE_SPACE_BLOCK_SIZE / 8)  // UNUSED
+#define DSS_LOADDISK_BUFFER_SIZE SIZE_K(32)
 
 #define DSS_INVALID_64 DSS_INVALID_ID64
 
@@ -239,7 +241,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_DEFAULT_NULL_VALUE (uint32)0xFFFFFFFF
 #define DSS_UDS_CONNECT_TIMEOUT (int32)(30000) /* 30 seconds */
 #define DSS_UDS_SOCKET_TIMEOUT (int32)0x4FFFFFFF
-#define DSS_SEEK_MAXWR 3                       /* Used for seek actual file size for openGauss */
+#define DSS_SEEK_MAXWR 3 /* Used for seek actual file size for openGauss */
 
 #define DSS_BASE_YEAR 1900
 #define DSS_MIN_IOTHREADS_CFG 1
@@ -397,14 +399,14 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
     } while (0)
 #endif
 
-#define DSS_ASSERT_LOG(condition, format, ...)                                              \
-    do {                                                                                    \
-        if (SECUREC_UNLIKELY(!(condition))) {                                               \
-            LOG_RUN_ERR(format, ##__VA_ARGS__);                                             \
-            LOG_RUN_ERR("Assertion throws an exception at line %u", (uint32)__LINE__);      \
-            cm_fync_logfile();                                                              \
-            CM_ASSERT(0);                                                                   \
-        }                                                                                   \
+#define DSS_ASSERT_LOG(condition, format, ...)                                         \
+    do {                                                                               \
+        if (SECUREC_UNLIKELY(!(condition))) {                                          \
+            LOG_RUN_ERR(format, ##__VA_ARGS__);                                        \
+            LOG_RUN_ERR("Assertion throws an exception at line %u", (uint32)__LINE__); \
+            cm_fync_logfile();                                                         \
+            CM_ASSERT(0);                                                              \
+        }                                                                              \
     } while (0)
 
 typedef struct st_auid_t {  // id of allocation unit, 8 Bytes
@@ -421,6 +423,51 @@ extern auid_t dss_invalid_auid;
 #define DSS_INVALID_AUID (dss_invalid_auid)
 #define DSS_INVALID_BLOCK_ID (dss_invalid_auid)
 #define DSS_INVALID_FTID (dss_invalid_auid)
+
+#define DSS_BYTE_BITS_SIZE 8
+
+// if want change the default, compile the dss with set DSS_PAGE_SIZE=page_size_you_want
+#ifndef DSS_PAGE_SIZE
+#define DSS_PAGE_SIZE 8192
+#endif
+
+#if DSS_PAGE_SIZE != 4096 && DSS_PAGE_SIZE != 8192 && DSS_PAGE_SIZE != 16384 && DSS_PAGE_SIZE != 32768
+#error "DSS_PAGE_SIZE only can be one of [4096, 8192, 16384, 32768]"
+#endif
+
+#define DSS_FS_AUX_HEAD_SIZE_MAX DSS_DISK_UNIT_SIZE
+
+#define DSS_FS_AUX_BITMAP_SIZE(au_size) (((au_size) / DSS_PAGE_SIZE) / DSS_BYTE_BITS_SIZE)
+// default is 1.5k
+#define DSS_FS_AUX_SIZE (DSS_FS_AUX_BITMAP_SIZE(DSS_MAX_AU_SIZE) + DSS_FS_AUX_HEAD_SIZE_MAX)
+
+extern auid_t dss_set_inited_mask;
+extern auid_t dss_unset_inited_mask;
+
+#define DSS_AU_UNINITED_MARK 0x1
+static inline void dss_auid_set_uninit(auid_t *auid)
+{
+    auid->item |= DSS_AU_UNINITED_MARK;
+}
+
+static inline void dss_auid_unset_uninit(auid_t *auid)
+{
+    auid->item &= ~DSS_AU_UNINITED_MARK;
+}
+
+static inline bool32 dss_auid_is_uninit(auid_t *auid)
+{
+    return (auid->item & DSS_AU_UNINITED_MARK);
+}
+
+#define DSS_BLOCK_ID_SET_INITED(block_id) ((*(uint64 *)&block_id) & (*(uint64 *)&dss_unset_inited_mask))
+#define DSS_BLOCK_ID_SET_UNINITED(block_id) ((*(uint64 *)&block_id) | (*(uint64 *)&dss_set_inited_mask))
+#define DSS_BLOCK_ID_IGNORE_UNINITED(block_id) ((*(uint64 *)&block_id) & (*(uint64 *)&dss_unset_inited_mask))
+#define DSS_BLOCK_ID_IS_INITED(block_id) (((block_id).item & DSS_AU_UNINITED_MARK) == 0)
+
+#define DSS_BLOCK_ID_SET_AUX(block_id) ((*(uint64 *)&block_id) | (*(uint64 *)&dss_set_inited_mask))
+#define DSS_BLOCK_ID_SET_NOT_AUX(block_id) ((*(uint64 *)&block_id) & (*(uint64 *)&dss_unset_inited_mask))
+#define DSS_BLOCK_ID_IS_AUX(block_id) (((block_id).item & DSS_AU_UNINITED_MARK) == 1)
 
 typedef struct st_dss_addr_t {
     uint64 volumeid : 10;

@@ -26,6 +26,7 @@
 #include "dss_alloc_unit.h"
 #include "dss_file.h"
 #include "dss_redo.h"
+#include "dss_fs_aux.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,6 +53,27 @@ bool32 dss_can_alloc_from_recycle(const gft_node_t *root_node, bool32 is_before)
     return CM_FALSE;
 }
 
+static status_t dss_alloc_au_recycle_fs_aux(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, dss_block_id_t *auid, uint16 sec_index)
+{
+    // if *auid is aux, need to get the real auid from the aux
+    if (DSS_IS_FILE_INNER_INITED(node->flags) && DSS_BLOCK_ID_IS_AUX(*auid)) {
+        dss_fs_aux_t *fs_aux = dss_find_fs_aux(session, vg_item, node, *auid, CM_TRUE, NULL, sec_index);
+        if (fs_aux == NULL) {
+            LOG_DEBUG_ERR("Failed to get fs aux block :%llu,%llu,%llu, maybe no memory.", (uint64)auid->au,
+                (uint64)auid->volume, (uint64)auid->block);
+            return CM_ERROR;
+        }
+
+        // may exist aux uninited flag, clean it
+        dss_set_auid(auid, DSS_BLOCK_ID_SET_INITED(fs_aux->head.data_id));
+        // after get the real auid, recycle the aux
+        dss_fs_aux_root_t *fs_aux_root = DSS_GET_FS_AUX_ROOT(vg_item->dss_ctrl);
+        dss_free_fs_aux(session, vg_item, fs_aux, fs_aux_root);
+    }
+    return CM_SUCCESS;
+}
+
 static status_t dss_alloc_au_from_recycle(
     dss_session_t *session, dss_vg_info_item_t *vg_item, bool32 is_before, auid_t *auid)
 {
@@ -76,8 +98,7 @@ static status_t dss_alloc_au_from_recycle(
         dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
             session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, &entry_objid, CM_FALSE);
         if (entry_block == NULL) {
-            LOG_DEBUG_ERR(
-                "[AU][ALLOC] Failed to get fs block: %s, maybe no memory.", dss_display_metaid(node->entry));
+            LOG_DEBUG_ERR("[AU][ALLOC] Failed to get fs block: %s, maybe no memory.", dss_display_metaid(node->entry));
             return CM_ERROR;
         }
         dss_check_fs_block_affiliation(entry_block, node->id, DSS_ENTRY_FS_INDEX);
@@ -93,16 +114,23 @@ static status_t dss_alloc_au_from_recycle(
             LOG_DEBUG_ERR("[AU][ALLOC] Failed to get fs block: %s, maybe no memory.", dss_display_metaid(node->entry));
             return CM_ERROR;
         }
+        // when truncate file, the file size just one au, and target size size smaller than current size, then size of
+        // file created by truncate is zero, means no au, and block->head.used_num is zero, so delete
+        // CM_ASSERT(block->head.used_num > 0);
         dss_check_fs_block_flags(&block->head, DSS_BLOCK_FLAG_USED);
-        CM_ASSERT(block->head.used_num > 0);
         uint16 old_used_num = entry_fs_block->head.used_num;
         dss_block_id_t old_id = entry_fs_block->bitmap[index];
         uint16 old_sec_used_num = block->head.used_num;
         dss_block_id_t old_sec_id;
         if (block->head.used_num > 0) {
             uint16 sec_index = (uint16)(block->head.used_num - 1);
+            // weather *auid is aux or not, record it for redo here
             *auid = block->bitmap[sec_index];
             old_sec_id = *auid;
+
+            status_t status = dss_alloc_au_recycle_fs_aux(session, vg_item, node, auid, sec_index);
+            DSS_RETURN_IF_ERROR(status);
+
             CM_ASSERT(auid->volume < DSS_MAX_VOLUMES);
             block->head.used_num--;
             dss_set_blockid(&block->bitmap[sec_index], DSS_INVALID_64);
@@ -203,8 +231,7 @@ status_t dss_alloc_au_core(dss_session_t *session, dss_ctrl_t *dss_ctrl, dss_vg_
     if (found == 0) {
         status_t status = dss_alloc_au_from_recycle(session, vg_item, CM_FALSE, auid);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR(
-                "[AU][ALLOC] Failed to allocate au from recycle dir after trying to allocate vg disk, vg %s.",
+            LOG_DEBUG_ERR("[AU][ALLOC] Failed to allocate au from recycle dir after trying to allocate vg disk, vg %s.",
                 entry_path);
             return status;
         }
@@ -244,6 +271,40 @@ status_t dss_refresh_core_and_volume(dss_vg_info_item_t *vg_item)
             "[AU][ALLOC] Allocate au check version, old:%llu, new:%llu.", dss_ctrl->core.version, disk_version);
     }
     return CM_SUCCESS;
+}
+bool32 dss_alloc_au_batch(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_t *auid, uint32 count)
+{
+    dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
+    dss_au_root_t *dss_au_root = DSS_GET_AU_ROOT(dss_ctrl);
+    uint32 found = 0;
+    uint32 used_count = 0;
+    uint64 au_size = dss_get_vg_au_size(dss_ctrl);
+
+    for (uint32 i = 0; used_count < dss_ctrl->core.volume_count && i < DSS_MAX_VOLUMES; i++) {
+        if (dss_ctrl->volume.defs[i].flag == VOLUME_FREE || dss_ctrl->volume.defs[i].flag == VOLUME_PREPARE) {
+            continue;
+        }
+        LOG_DEBUG_INF("Allocate batch au, volume id:%u, free:%llu, size:%llu, version:%llu.", i,
+            dss_ctrl->core.volume_attrs[i].free, (au_size * count), dss_ctrl->core.version);
+        used_count++;
+        if (dss_ctrl->core.volume_attrs[i].free >= (au_size * count)) {
+            auid->au = dss_get_au_id(vg_item, dss_ctrl->core.volume_attrs[i].hwm);
+            auid->volume = dss_ctrl->core.volume_attrs[i].id;
+            auid->block = 0;
+            auid->item = 0;
+            dss_ctrl->core.volume_attrs[i].hwm = dss_ctrl->core.volume_attrs[i].hwm + (au_size * count);
+            dss_ctrl->core.volume_attrs[i].free = dss_ctrl->core.volume_attrs[i].free - (au_size * count);
+
+            dss_au_root->count += count;
+            found = 1;
+
+            dss_update_core_ctrl(session, vg_item, &dss_ctrl->core, 0, CM_FALSE);
+            DSS_LOG_DEBUG_OP("Allocate batch count:%u, first au, v:%u,au:%llu,block:%u,item:%u,hwm:%llu,i:%u.", count,
+                auid->volume, (uint64)auid->au, auid->block, auid->item, dss_ctrl->core.volume_attrs[i].hwm, i);
+            break;
+        }
+    }
+    return (found > 0) ? CM_TRUE : CM_FALSE;
 }
 
 status_t dss_alloc_au(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_t *auid)
@@ -306,7 +367,7 @@ status_t dss_load_core_ctrl(dss_vg_info_item_t *item, dss_core_ctrl_t *core)
 {
     bool32 remote_chksum = CM_TRUE;
     status_t status =
-    dss_load_vg_ctrl_part(item, (int64)DSS_CTRL_CORE_OFFSET, core, (int32)DSS_CORE_CTRL_SIZE, &remote_chksum);
+        dss_load_vg_ctrl_part(item, (int64)DSS_CTRL_CORE_OFFSET, core, (int32)DSS_CORE_CTRL_SIZE, &remote_chksum);
     if (status != CM_SUCCESS) {
         return status;
     }
@@ -315,7 +376,7 @@ status_t dss_load_core_ctrl(dss_vg_info_item_t *item, dss_core_ctrl_t *core)
         uint32 checksum = dss_get_checksum(core, DSS_CORE_CTRL_SIZE);
         dss_check_checksum(checksum, core->checksum);
     }
-    
+
     return CM_SUCCESS;
 }
 
