@@ -121,6 +121,9 @@ typedef enum en_volume_slot {
     VOLUME_FREE = 0,  // free
     VOLUME_OCCUPY = 1,
     VOLUME_PREPARE = 2, // not registered
+    VOLUME_ADD = 3,     // add
+    VOLUME_REMOVE = 3,  // remove
+    VOLUME_REPLACE = 3, // replace
 } volume_slot_e;
 
 typedef struct st_dss_volume_attr {
