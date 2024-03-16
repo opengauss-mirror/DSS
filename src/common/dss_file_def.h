@@ -329,6 +329,8 @@ typedef struct st_zft_list {
     ftid_t last;
 } gft_list_t;
 
+#define DSS_BLOCK_ID_INIT (uint64)0xFFFFFFFFFFFFFFFE
+// used for ft node parent and fs block ftid init,
 typedef union st_gft_node {
     struct {
         gft_item_type_t type;
@@ -436,7 +438,8 @@ typedef struct st_dss_fs_root_t {
     dss_fs_block_list_t free;
 } dss_fs_block_root_t;
 
-#define DSS_ENTRY_FS_INDEX 0xFFFE
+#define DSS_ENTRY_FS_INDEX 0xFFFD
+#define DSS_FS_INDEX_INIT 0xFFFE
 typedef struct st_dss_block_header {
     dss_common_block_t common;
     dss_block_id_t next;

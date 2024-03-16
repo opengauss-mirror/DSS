@@ -304,35 +304,34 @@ void dss_mv_to_recycle_dir(dss_session_t *session, dss_vg_info_item_t *vg_item, 
     CM_ASSERT(node != NULL);
     gft_node_t *last_node = NULL;
     dss_au_root_t *dss_au_root = DSS_GET_AU_ROOT(vg_item->dss_ctrl);
-    ftid_t free_root = *(ftid_t *)(&dss_au_root->free_root);
-    gft_node_t *root_node = dss_get_ft_node_by_ftid(session, vg_item, free_root, CM_TRUE, CM_FALSE);
-    CM_ASSERT(root_node != NULL);
+    ftid_t recycle_ftid = *(ftid_t *)(&dss_au_root->free_root);
+    gft_node_t *recycle_node = dss_get_ft_node_by_ftid(session, vg_item, recycle_ftid, CM_TRUE, CM_FALSE);
+    CM_ASSERT(recycle_node != NULL);
 
-    root_node->items.count++;
-    node->prev = root_node->items.last;
+    recycle_node->items.count++;
+    node->prev = recycle_node->items.last;
+    node->parent = recycle_ftid;
     dss_set_blockid(&node->next, DSS_INVALID_64);
 
-    bool32 cmp = dss_cmp_blockid(root_node->items.last, DSS_INVALID_64);
+    bool32 cmp = dss_cmp_blockid(recycle_node->items.last, DSS_INVALID_64);
     if (cmp) {
-        root_node->items.first = node->id;
+        recycle_node->items.first = node->id;
     } else {
-        last_node = (gft_node_t *)dss_get_ft_node_by_ftid(session, vg_item, root_node->items.last, CM_TRUE, CM_FALSE);
+        last_node =
+            (gft_node_t *)dss_get_ft_node_by_ftid(session, vg_item, recycle_node->items.last, CM_TRUE, CM_FALSE);
         CM_ASSERT(last_node != NULL);
         last_node->next = node->id;
     }
-    root_node->items.last = node->id;
+    recycle_node->items.last = node->id;
 
     dss_redo_recycle_ft_node_t redo;
-    uint16 i = 0;
-    redo.node[i] = *node;
-    i++;
-    if (last_node) {
-        redo.node[i] = *last_node;
+    redo.node[DSS_REDO_RECYCLE_FT_NODE_SELF_INDEX] = *node;
+    if (last_node != NULL) {
+        redo.node[DSS_REDO_RECYCLE_FT_NODE_LAST_INDEX] = *last_node;
     } else {
-        dss_set_auid(&redo.node[i].id, CM_INVALID_ID64);
+        dss_set_auid(&redo.node[DSS_REDO_RECYCLE_FT_NODE_LAST_INDEX].id, CM_INVALID_ID64);
     }
-    i++;
-    redo.node[i] = *root_node;
+    redo.node[DSS_REDO_RECYCLE_FT_NODE_RECYCLE_INDEX] = *recycle_node;
 
     dss_put_log(session, vg_item, DSS_RT_RECYCLE_FILE_TABLE_NODE, &redo, sizeof(dss_redo_recycle_ft_node_t));
     DSS_LOG_DEBUG_OP("Mv to recycle dir, name:%s, node id:%llu.", node->name, DSS_ID_TO_U64(node->id));
@@ -344,17 +343,18 @@ status_t dss_recycle_empty_file(
     ga_obj_id_t entry_objid;
     bool32 cmp = dss_cmp_blockid(node->entry, CM_INVALID_ID64);
     if (cmp) {
-        dss_free_ft_node(session, vg_item, parent_node, node, CM_TRUE, CM_FALSE);
+        dss_free_ft_node(session, vg_item, parent_node, node, CM_TRUE);
         DSS_LOG_DEBUG_OP("Succeed to free empty file(fid:%llu), just free node.", node->fid);
         return CM_SUCCESS;
     }
     dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
         session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, &entry_objid, CM_FALSE);
-    if (!entry_block) {
+    if (entry_block == NULL) {
         LOG_DEBUG_ERR("Failed to get fs block %llu,%llu,%llu, maybe no memory.", (uint64)node->entry.au,
             (uint64)node->entry.volume, (uint64)node->entry.block);
         return CM_ERROR;
     }
+    dss_check_fs_block_affiliation(entry_block, node->id, DSS_ENTRY_FS_INDEX);
 
     uint16 index;
     ga_obj_id_t sec_objid;
@@ -364,18 +364,18 @@ status_t dss_recycle_empty_file(
     index = (uint16)(entry_block->used_num - 1);
     dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
         session, vg_item, entry_fs_block->bitmap[index], DSS_BLOCK_TYPE_FS, CM_TRUE, &sec_objid, CM_FALSE);
-    if (!block) {
+    if (block == NULL) {
         LOG_DEBUG_ERR("Failed to get fs block %llu,%llu,%llu, maybe no memory.", (uint64)node->entry.au,
             (uint64)node->entry.volume, (uint64)node->entry.block);
         return CM_ERROR;
     }
     CM_ASSERT(block->head.used_num == 0);
-
+    dss_check_fs_block_affiliation(&block->head, node->id, index);
     dss_free_fs_block_addr(session, vg_item, (char *)block, sec_objid);
     // do not set the entry block ,let allocate block to do it;
 
     dss_free_fs_block_addr(session, vg_item, (char *)entry_block, entry_objid);
-    dss_free_ft_node(session, vg_item, parent_node, node, CM_TRUE, CM_FALSE);
+    dss_free_ft_node(session, vg_item, parent_node, node, CM_TRUE);
 
     DSS_LOG_DEBUG_OP("Succeed to free empty file(fid:%llu).", node->fid);
     return CM_SUCCESS;
@@ -613,6 +613,42 @@ static status_t dss_check_link(
     return dss_check_dir_core(session, link_path, name, beg_pos, output_param);
 }
 
+void dss_check_ft_block_flags(dss_ft_block_t *block, dss_block_flag_e flags)
+{
+    bool8 is_invalid = ((block->common.flags != flags) && (block->common.flags != DSS_BLOCK_FLAG_RESERVE));
+    DSS_ASSERT_LOG(!is_invalid,
+        "[FT][CHECK] block id: %llu, volume:%u, au:%llu, block:%u, item:%u, flags:%u, expect flags:%u",
+        DSS_ID_TO_U64(block->common.id), block->common.id.volume, (uint64)block->common.id.au, block->common.id.block,
+        block->common.id.item, block->common.flags, flags);
+
+}
+
+void dss_check_ft_node_free(gft_node_t *node)
+{
+    bool8 is_invalid = (!dss_cmp_auid(node->parent, DSS_BLOCK_ID_INIT) && !dss_cmp_auid(node->parent, DSS_INVALID_64));
+    DSS_ASSERT_LOG(!is_invalid,
+        "[FT][CHECK] Free ft node which has parent node: %llu, volume:%u, au:%llu, block:%u, item:%u; node id: %llu, "
+        "volume:%u, au:%llu, block:%u, item:%u;",
+        DSS_ID_TO_U64(node->parent), node->parent.volume, (uint64)node->parent.au, node->parent.block,
+        node->parent.item, DSS_ID_TO_U64(node->id), node->id.volume, (uint64)node->id.au, node->id.block,
+        node->id.item);
+    dss_ft_block_t *block = dss_get_ft_block_by_node(node);
+    dss_check_ft_block_flags(block, DSS_BLOCK_FLAG_FREE);
+}
+
+void dss_check_ft_node_parent(gft_node_t *node, ftid_t parent_id)
+{
+    bool8 is_invalid = (!compare_auid(node->parent, parent_id) && !dss_cmp_auid(node->parent, DSS_INVALID_64));
+    DSS_ASSERT_LOG(!is_invalid,
+        "[FT][CHECK] parent node: %llu, volume:%u, au:%llu, block:%u, item:%u; expect parent node: %llu, volume:%u, "
+        "au:%llu, block:%u, item:%u; node id: %llu, volume:%u, au:%llu, block:%u, item:%u;",
+        DSS_ID_TO_U64(node->parent), node->parent.volume, (uint64)node->parent.au, node->parent.block,
+        node->parent.item, DSS_ID_TO_U64(parent_id), parent_id.volume, (uint64)parent_id.au, parent_id.block,
+        parent_id.item, DSS_ID_TO_U64(node->id), node->id.volume, (uint64)node->id.au, node->id.block, node->id.item);
+    dss_ft_block_t *block = dss_get_ft_block_by_node(node);
+    dss_check_ft_block_flags(block, DSS_BLOCK_FLAG_USED);
+}
+
 static status_t dss_check_dir_core(
     dss_session_t *session, const char *dir_path, char *name, uint32_t *beg_pos, dss_check_dir_param_t *output_param)
 {
@@ -640,7 +676,7 @@ static status_t dss_check_dir_core(
         if (output_param->last_node == NULL) {
             return ERR_DSS_FILE_NOT_EXIST;
         }
-
+        dss_check_ft_node_parent(output_param->last_node, node->id);
         output_param->p_node = node;
         next_pos = *beg_pos;
         status = dss_get_name_from_path(dir_path, &next_pos, name);
@@ -901,8 +937,34 @@ void dss_init_fs_block_head(dss_fs_block_t *fs_block)
     dss_set_blockid(&fs_block->bitmap[0], CM_INVALID_ID64);
 }
 
-status_t dss_alloc_fs_block_inter(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, bool32 check_version, char **block, ga_obj_id_t *out_obj_id)
+void dss_check_fs_block_flags(dss_fs_block_header *block, dss_block_flag_e flags)
+{
+    bool8 is_invalid = (block->common.flags != flags && block->common.flags != DSS_BLOCK_FLAG_RESERVE);
+    DSS_ASSERT_LOG(!is_invalid,
+        "[FS][CHECK] Error flags fs block id: %llu, volume:%u, au:%llu, block:%u, item:%u, flags:%u, expect flags:%u",
+        DSS_ID_TO_U64(block->common.id), block->common.id.volume, (uint64)block->common.id.au, block->common.id.block,
+        block->common.id.item, block->common.flags, flags);
+}
+
+void dss_check_fs_block_free(dss_fs_block_header *block)
+{
+    bool8 is_invalid = (!dss_cmp_auid(block->ftid, DSS_BLOCK_ID_INIT) && !dss_cmp_auid(block->ftid, DSS_INVALID_64));
+    DSS_ASSERT_LOG(!is_invalid,
+        "[FS][CHECK] Free Fs block which has ftid node: %llu, volume:%u, au:%llu, block:%u, item:%u; node id: %llu, "
+        "volume:%u, au:%llu, block:%u, item:%u;",
+        DSS_ID_TO_U64(block->ftid), block->ftid.volume, (uint64)block->ftid.au, block->ftid.block, block->ftid.item,
+        DSS_ID_TO_U64(block->common.id), block->common.id.volume, (uint64)block->common.id.au, block->common.id.block,
+        block->common.id.item);
+    is_invalid = (block->index != DSS_FS_INDEX_INIT && block->index != DSS_INVALID_ID16);
+    DSS_ASSERT_LOG(!is_invalid,
+        "[FS][CHECK] Error index fs block id: %llu, volume:%u, au:%llu, block:%u, item:%u, index:%u",
+        DSS_ID_TO_U64(block->common.id), block->common.id.volume, (uint64)block->common.id.au, block->common.id.block,
+        block->common.id.item, block->index);
+    dss_check_fs_block_flags(block, DSS_BLOCK_FLAG_FREE);
+}
+
+status_t dss_alloc_fs_block_inter(dss_session_t *session, dss_vg_info_item_t *vg_item, bool32 check_version,
+    char **block, dss_alloc_fs_block_info_t *info)
 {
     dss_fs_block_t *fs_block;
 
@@ -911,11 +973,12 @@ status_t dss_alloc_fs_block_inter(
     dss_block_id_t block_id;
     block_id = root->free.first;
     fs_block = (dss_fs_block_t *)dss_find_block_in_shm(
-        session, vg_item, block_id, DSS_BLOCK_TYPE_FS, check_version, out_obj_id, CM_FALSE);
+        session, vg_item, block_id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
     if (fs_block == NULL) {
         return CM_ERROR;
     }
 
+    dss_check_fs_block_free(&fs_block->head);
     root->free.count--;
     root->free.first = fs_block->head.next;
     if (dss_cmp_blockid(root->free.first, CM_INVALID_ID64)) {
@@ -924,13 +987,15 @@ status_t dss_alloc_fs_block_inter(
     }
 
     dss_init_fs_block_head(fs_block);
-
+    fs_block->head.ftid = info->node->id;
+    fs_block->head.index = info->index;
+    fs_block->head.common.flags = DSS_BLOCK_FLAG_USED;
     *block = (char *)fs_block;
 
     dss_redo_alloc_fs_block_t redo;
     redo.id = block_id;
-    dss_set_blockid(&redo.ftid, DSS_INVALID_64);
-    redo.index = DSS_INVALID_ID16;
+    redo.ftid = info->node->id;
+    redo.index = info->index;
     redo.reserve = 0;
     redo.root = *root;
     dss_put_log(session, vg_item, DSS_RT_ALLOC_FS_BLOCK, &redo, sizeof(redo));
@@ -940,8 +1005,8 @@ status_t dss_alloc_fs_block_inter(
     return CM_SUCCESS;
 }
 
-status_t dss_alloc_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, char **block, ga_obj_id_t *out_obj_id,
-    dss_alloc_fs_block_judge *judge, gft_node_t *node)
+status_t dss_alloc_fs_block(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, char **block, dss_alloc_fs_block_info_t *info)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(block != NULL);
@@ -952,15 +1017,15 @@ status_t dss_alloc_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item,
 
     if (root->free.count > 0) {
         bool32 check_version = CM_TRUE;
-        if (!judge->is_extend) {
-            if (judge->is_new_au) {  // new au do not check version.
+        if (!info->is_extend) {
+            if (info->is_new_au) {  // new au do not check version.
                 check_version = CM_FALSE;
             }
-            judge->is_new_au = CM_FALSE;
+            info->is_new_au = CM_FALSE;
         }
-        status = dss_alloc_fs_block_inter(session, vg_item, check_version, block, out_obj_id);
+        status = dss_alloc_fs_block_inter(session, vg_item, check_version, block, info);
     } else {
-        status = dss_alloc_au(session, vg_item, &auid, judge->latch_ft_root);
+        status = dss_alloc_au(session, vg_item, &auid);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to allocate au from vg %s,%d.", vg_item->vg_name, status));
 
         status = dss_format_bitmap_node(session, vg_item, auid);
@@ -970,13 +1035,13 @@ status_t dss_alloc_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item,
 
         DSS_LOG_DEBUG_OP("Allocate au:%llu for file space.", DSS_ID_TO_U64(auid));
         // check version must be CM_FALSE, because the au is new.
-        if (!judge->is_extend) {
-            judge->is_new_au = CM_TRUE;
+        if (!info->is_extend) {
+            info->is_new_au = CM_TRUE;
         }
-        status = dss_alloc_fs_block_inter(session, vg_item, CM_FALSE, block, out_obj_id);
+        status = dss_alloc_fs_block_inter(session, vg_item, CM_FALSE, block, info);
     }
     if (status == CM_SUCCESS) {
-        dss_set_fs_block_file_ver(node, (dss_fs_block_t *)(*block));
+        dss_set_fs_block_file_ver(info->node, (dss_fs_block_t *)(*block));
     }
     return status;
 }
@@ -994,6 +1059,9 @@ void dss_free_fs_block_addr(dss_session_t *session, dss_vg_info_item_t *vg_item,
     block_id = root->free.first;
     fs_block = (dss_fs_block_t *)block;
     fs_block->head.next = block_id;
+    fs_block->head.index = DSS_FS_INDEX_INIT;
+    fs_block->head.common.flags = DSS_BLOCK_FLAG_FREE;
+    dss_set_auid(&fs_block->head.ftid, DSS_BLOCK_ID_INIT);
     fs_block->head.common.version++;
     fs_block->head.common.checksum = dss_get_checksum(block, DSS_FILE_SPACE_BLOCK_SIZE);
     root->free.first = fs_block->head.common.id;
@@ -1012,8 +1080,8 @@ void dss_free_fs_block_addr(dss_session_t *session, dss_vg_info_item_t *vg_item,
 
     dss_update_core_ctrl(session, vg_item, &vg_item->dss_ctrl->core, 0, CM_TRUE);
     DSS_LOG_DEBUG_OP("Free file space meta block,v:%u,au:%llu,block:%u,item:%u, next:%llu,count:%llu. ",
-        fs_block->head.common.id.volume, (uint64)fs_block->head.common.id.au, fs_block->head.common.id.block, fs_block->head.common.id.item,
-        *(uint64 *)&fs_block->head.next, root->free.count);
+        fs_block->head.common.id.volume, (uint64)fs_block->head.common.id.au, fs_block->head.common.id.block,
+        fs_block->head.common.id.item, *(uint64 *)&fs_block->head.next, root->free.count);
 }
 
 status_t dss_init_file_fs_block(
@@ -1022,19 +1090,19 @@ status_t dss_init_file_fs_block(
     char *block;
     dss_fs_block_t *fs_entry_block;
     dss_fs_block_header *block_header;
-    ga_obj_id_t objid;
 
     status_t status = dss_check_refresh_core(vg_item);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check and refresh core, vg %s.", vg_item->vg_name));
-    dss_alloc_fs_block_judge judge = {CM_FALSE, CM_FALSE, CM_FALSE};
+    dss_alloc_fs_block_info_t info = {CM_FALSE, CM_FALSE, DSS_ENTRY_FS_INDEX, node};
     // allocate the first level bitmap block
-    status = dss_alloc_fs_block(session, vg_item, &block, &objid, &judge, node);
+    status = dss_alloc_fs_block(session, vg_item, &block, &info);
     if (status != CM_SUCCESS) {
         return status;
     }
     fs_entry_block = (dss_fs_block_t *)block;
 
-    status = dss_alloc_fs_block(session, vg_item, &block, NULL, &judge, node);
+    info.index = 0;
+    status = dss_alloc_fs_block(session, vg_item, &block, &info);
     if (status != CM_SUCCESS) {
         // NOTE:can not free fs block, let rollback do it.
         return status;
@@ -1262,8 +1330,8 @@ static status_t dss_open_file_core(
     }
 
     status = dss_open_file_find_block_and_insert_index(session, vg_item, *out_node);
-    DSS_RETURN_IFERR3(status, dss_rollback_mem_update(session->log_split, vg_item),
-        dss_unlock_vg_mem_and_shm(session, vg_item));
+    DSS_RETURN_IFERR3(
+        status, dss_rollback_mem_update(session->log_split, vg_item), dss_unlock_vg_mem_and_shm(session, vg_item));
 
     find_info->ftid = (*out_node)->id;
     errno = strncpy_sp(find_info->vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name, DSS_MAX_NAME_LEN - 1);
@@ -1317,63 +1385,6 @@ static status_t dss_open_link(
     DSS_LOG_DEBUG_OP("Succeed to open link: %s, fid: %llu, session id: %u, entry: %llu.", link_path, (*out_node)->fid,
         session->id, DSS_ID_TO_U64((*out_node)->entry));
     return CM_SUCCESS;
-}
-
-gft_node_t *dss_find_parent_node_r(dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *find_node)
-{
-    ftid_t id = parent_node->items.first;
-    if (dss_cmp_auid(id, DSS_INVALID_ID64)) {
-        LOG_DEBUG_INF("dir: %s is empty", parent_node->name);
-        return NULL;
-    }
-    LOG_DEBUG_INF("dir: %s has %u items", parent_node->name, parent_node->items.count);
-    for (uint32 i = 0; i < parent_node->items.count; i++) {
-        if (dss_cmp_blockid(id, CM_INVALID_ID64)) {
-            // may be find uncommitted node when standby
-            LOG_DEBUG_INF("Get invalid id in parent name:%s, id:%llu, count:%u, when find parent node, children "
-                          "name:%s, index:%u.",
-                parent_node->name, *(uint64 *)&parent_node->id, parent_node->items.count, find_node->name, i);
-            return NULL;
-        }
-        gft_node_t *cur_node = dss_get_ft_node_by_ftid(NULL, vg_item, id, CM_FALSE, CM_FALSE);
-        if (cur_node == NULL) {
-            LOG_DEBUG_ERR("Can not get node:%llu.", *(uint64 *)&id);
-            return NULL;
-        }
-        if (cur_node->type == GFT_PATH) {
-            if (cur_node->flags & DSS_FT_NODE_FLAG_SYSTEM) {
-                id = cur_node->next;
-                continue;
-            }
-            gft_node_t *tmp = dss_find_parent_node_r(vg_item, cur_node, find_node);
-            if (tmp != NULL) {
-                return tmp;
-            }
-        }
-        if (compare_auid(id, find_node->id)) {
-            DSS_LOG_DEBUG_OP("node[%s]: %llu find parent node[%s]: %llu", find_node->name, DSS_ID_TO_U64(find_node->id),
-                parent_node->name, DSS_ID_TO_U64(parent_node->id));
-            return parent_node;
-        }
-        id = cur_node->next;
-        if (dss_cmp_auid(id, DSS_INVALID_ID64)) {
-            return NULL;
-        }
-    }
-    return NULL;
-}
-
-gft_node_t *dss_find_parent_node_by_node(dss_vg_info_item_t *vg_item, gft_node_t *node)
-{
-    CM_ASSERT(node != NULL);
-
-    gft_node_t *root_node = dss_find_ft_node(NULL, vg_item, NULL, vg_item->vg_name, CM_TRUE);
-    if (root_node == NULL) {
-        LOG_DEBUG_ERR("Failed to get the root node %s.", vg_item->vg_name);
-        cm_panic(0);
-    }
-    gft_node_t *parent_node = dss_find_parent_node_r(vg_item, root_node, node);
-    return parent_node;
 }
 
 status_t dss_close_file(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid)
@@ -1431,7 +1442,7 @@ static void dss_init_ft_node(
         node->id = auid;
         node->id.block = block_id;
         node->id.item = i;
-        dss_set_auid(&node->parent, DSS_INVALID_64);
+        dss_set_auid(&node->parent, DSS_BLOCK_ID_INIT);
 
         if (i == ft_block->node_num - 1) {
             gft->free_list.last = auid;
@@ -1456,7 +1467,7 @@ status_t dss_init_ft_block(dss_vg_info_item_t *vg_item, char *block, uint32_t bl
     ft_block->common.id = auid;
     ft_block->common.id.block = block_id;
     ft_block->common.type = DSS_BLOCK_TYPE_FT;
-    ft_block->common.flags = DSS_BLOCK_FLAG_RESERVE;
+    ft_block->common.flags = DSS_BLOCK_FLAG_FREE;
 
     gft_node_t *first_node = (gft_node_t *)(block + sizeof(dss_ft_block_t));
     gft_node_t *node;
@@ -1496,16 +1507,16 @@ void dss_init_bitmap_block(dss_ctrl_t *dss_ctrl, char *block, uint32_t block_id,
         cm_panic(0);
     }
     fs_block->common.type = DSS_BLOCK_TYPE_FS;
-    fs_block->common.flags = DSS_BLOCK_FLAG_RESERVE;
+    fs_block->common.flags = DSS_BLOCK_FLAG_FREE;
     fs_block->common.version = 0;
     fs_block->used_num = 0;
     fs_block->total_num = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(uint64);
-    fs_block->index = DSS_INVALID_ID16;
+    fs_block->index = DSS_FS_INDEX_INIT;
     fs_block->common.id.au = auid.au;
     fs_block->common.id.volume = auid.volume;
     fs_block->common.id.block = block_id;
     fs_block->common.id.item = 0;
-    dss_set_auid(&fs_block->ftid, DSS_INVALID_64);
+    dss_set_auid(&fs_block->ftid, DSS_BLOCK_ID_INIT);
 
     block_root->free.count++;
     dss_block_id_t first = block_root->free.first;
@@ -1682,7 +1693,7 @@ static void format_ft_block_when_create_vg(
     gft_node_t *node = NULL;
 
     block->common.type = DSS_BLOCK_TYPE_FT;
-    block->common.flags = DSS_BLOCK_FLAG_RESERVE;
+    block->common.flags = DSS_BLOCK_FLAG_FREE;
     block->node_num = item_count;
 
     for (uint32 j = 0; j < item_count; j++) {
@@ -1690,7 +1701,7 @@ static void format_ft_block_when_create_vg(
         node->id = auid;
         node->id.block = index;
         node->id.item = j;
-        dss_set_auid(&node->parent, DSS_INVALID_64);
+        dss_set_auid(&node->parent, DSS_BLOCK_ID_INIT);
 
         // set the prev ftid_t
         if (j == 0) {
@@ -1807,7 +1818,7 @@ status_t dss_alloc_ft_au(dss_session_t *session, dss_vg_info_item_t *vg_item, ft
     CM_ASSERT(id != NULL);
     status_t status;
 
-    status = dss_alloc_au(session, vg_item, id, CM_TRUE);
+    status = dss_alloc_au(session, vg_item, id);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed allocate au for file table from vg:%s.", vg_item->vg_name));
 
     dss_au_root_t *au_root = DSS_GET_AU_ROOT(vg_item->dss_ctrl);
@@ -1833,6 +1844,7 @@ static void dss_init_alloc_ft_node(gft_root_t *gft, gft_node_t *node, uint32 fla
     node->prev = parent_node->items.last;
     node->fid = gft->fid++;
     node->flags = flags;
+    node->parent = parent_node->id;
     dss_set_auid(&node->next, CM_INVALID_ID64);
 }
 
@@ -1840,15 +1852,13 @@ void dss_set_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_no
     gft_root_t *gft, gft_node_t *prev_node)
 {
     dss_redo_alloc_ft_node_t redo_node;
-    uint16 i = 0;
-    redo_node.node[i++] = *node;
+    redo_node.node[DSS_REDO_ALLOC_FT_NODE_SELF_INDEX] = *node;
     if (prev_node != NULL) {
-        redo_node.node[i] = *prev_node;
+        redo_node.node[DSS_REDO_ALLOC_FT_NODE_PREV_INDEX] = *prev_node;
     } else {
-        dss_set_auid(&redo_node.node[i].id, CM_INVALID_ID64);
+        dss_set_auid(&redo_node.node[DSS_REDO_ALLOC_FT_NODE_PREV_INDEX].id, DSS_INVALID_64);
     }
-    i++;
-    redo_node.node[i] = *parent_node;
+    redo_node.node[DSS_REDO_ALLOC_FT_NODE_PARENT_INDEX] = *parent_node;
 
     redo_node.ft_root = *gft;
     dss_put_log(session, vg_item, DSS_RT_ALLOC_FILE_TABLE_NODE, &redo_node, sizeof(dss_redo_alloc_ft_node_t));
@@ -1946,6 +1956,7 @@ gft_node_t *dss_alloc_ft_node_when_create_vg(
     gft->free_list.count--;
 
     node->type = type;
+    node->parent = parent_node->id;
     if (type == GFT_PATH) {
         node->items.count = 0;
         dss_set_auid(&node->items.first, CM_INVALID_ID64);
@@ -1962,6 +1973,7 @@ gft_node_t *dss_alloc_ft_node_when_create_vg(
     parent_node->items.first = node->id;
     parent_node->items.last = node->id;
     parent_node->items.count = 1;
+    ((dss_ft_block_t *)buf)->common.flags = DSS_BLOCK_FLAG_USED;
 
     do {
         /* flush ft block to disk manually */
@@ -2010,6 +2022,7 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     gft_root_t *gft = &ft_block->ft_root;
     bool32 check_version = CM_TRUE;
 
+    LOG_DEBUG_INF("[ALLOC_FT]parent_node id:%llu name:%s.", DSS_ID_TO_U64(parent_node->id), parent_node->name);
     status = dss_alloc_ft_au_when_no_free(session, vg_item, gft, &check_version);
     if (status != CM_SUCCESS) {
         return NULL;
@@ -2020,14 +2033,20 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
         LOG_DEBUG_ERR("Failed to get file table node when allocating file table node.");
         return NULL;
     }
+    dss_check_ft_node_free(node);
     node->type = type;
-    if (strcpy_s(node->name, sizeof(node->name), name) != EOK) {
-        cm_panic(0);
+    node->parent = parent_node->id;
+    dss_ft_block_t *block = dss_get_ft_block_by_node(node);
+    block->common.flags = DSS_BLOCK_FLAG_USED;
+    errno_t errcode = strcpy_s(node->name, sizeof(node->name), name);
+    if (errcode != EOK) {
+        DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
+        return NULL;
     }
     if (type == GFT_PATH) {
         node->items.count = 0;
-        dss_set_auid(&node->items.first, CM_INVALID_ID64);
-        dss_set_auid(&node->items.last, CM_INVALID_ID64);
+        dss_set_auid(&node->items.first, DSS_INVALID_64);
+        dss_set_auid(&node->items.last, DSS_INVALID_64);
     } else {  // FILE or LINK
         if (dss_init_ft_node_entry(session, vg_item, node) != CM_SUCCESS) {
             dss_rollback_mem_update(session->log_split, vg_item);
@@ -2037,7 +2056,7 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     }
     gft->free_list.first = node->next;
     gft->free_list.count--;
-    bool32 cmp = dss_cmp_auid(gft->free_list.first, CM_INVALID_ID64);
+    bool32 cmp = dss_cmp_auid(gft->free_list.first, DSS_INVALID_64);
     if (cmp) {
         LOG_DEBUG_INF("File table node free list will be empty, count: %u.", gft->free_list.count);
         cm_panic(gft->free_list.count == 0);
@@ -2102,7 +2121,10 @@ void dss_free_ft_node_inner(
     dss_root_ft_block_t *ft_block = (dss_root_ft_block_t *)(root);
     gft_root_t *gft = &ft_block->ft_root;
     if (real_del) {
+        dss_ft_block_t *block = dss_get_ft_block_by_node(node);
+        block->common.flags = DSS_BLOCK_FLAG_FREE;
         node->next = gft->free_list.first;
+        dss_set_blockid(&node->parent, DSS_BLOCK_ID_INIT);
         dss_set_blockid(&node->prev, DSS_INVALID_64);
         dss_set_blockid(&node->entry, DSS_INVALID_64);
         gft->free_list.first = node->id;
@@ -2110,28 +2132,23 @@ void dss_free_ft_node_inner(
     }
 
     dss_redo_free_ft_node_t redo_node;
-    uint16 i = 0;
-    redo_node.node[i] = *parent_node;
-    i++;
+    redo_node.node[DSS_REDO_FREE_FT_NODE_PARENT_INDEX] = *parent_node;
     if (prev_info.ft_node != NULL) {
-        redo_node.node[i] = *prev_info.ft_node;
+        redo_node.node[DSS_REDO_FREE_FT_NODE_PREV_INDEX] = *prev_info.ft_node;
         DSS_LOG_DEBUG_OP("Free ft node, prev_node name:%s, prev_node id:%llu.", prev_info.ft_node->name,
             DSS_ID_TO_U64(prev_info.ft_node->id));
     } else {
-        dss_set_auid(&redo_node.node[i].id, CM_INVALID_ID64);
+        dss_set_auid(&redo_node.node[DSS_REDO_FREE_FT_NODE_PREV_INDEX].id, CM_INVALID_ID64);
     }
-    i++;
     if (next_info.ft_node != NULL) {
-        redo_node.node[i] = *next_info.ft_node;
+        redo_node.node[DSS_REDO_FREE_FT_NODE_NEXT_INDEX] = *next_info.ft_node;
         DSS_LOG_DEBUG_OP("Free ft node, next_node name:%s, next_node id:%llu.", next_info.ft_node->name,
             DSS_ID_TO_U64(next_info.ft_node->id));
     } else {
-        dss_set_auid(&redo_node.node[i].id, CM_INVALID_ID64);
+        dss_set_auid(&redo_node.node[DSS_REDO_FREE_FT_NODE_NEXT_INDEX].id, CM_INVALID_ID64);
     }
-    i++;
-    redo_node.node[i] = *node;
+    redo_node.node[DSS_REDO_FREE_FT_NODE_SELF_INDEX] = *node;
     redo_node.ft_root = *gft;
-    redo_node.real_del = real_del;
     dss_put_log(session, vg_item, DSS_RT_FREE_FILE_TABLE_NODE, &redo_node, sizeof(dss_redo_free_ft_node_t));
     DSS_LOG_DEBUG_OP(
         "Free ft node, name:%s, volume:%u, au:%llu, block:%u, item:%u, id:%llu, free count:%u, real delete:%u",
@@ -2140,8 +2157,8 @@ void dss_free_ft_node_inner(
 }
 
 // remove ftn from parent
-void dss_free_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node,
-    bool32 real_del, bool32 latch_safe)
+void dss_free_ft_node(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node, bool32 real_del)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(parent_node != NULL);
@@ -2624,7 +2641,7 @@ status_t dss_update_fs_bitmap_block_disk(
     return CM_SUCCESS;
 }
 
-status_t dss_get_second_block(
+static status_t dss_get_second_block(
     dss_vg_info_item_t *vg_item, dss_block_id_t second_block_id, dss_fs_block_t **second_block)
 {
     *second_block = (dss_fs_block_t *)dss_find_block_in_shm(
@@ -2637,6 +2654,28 @@ status_t dss_get_second_block(
     status_t status = dss_check_refresh_fs_block(vg_item, second_block_id, (char *)(*second_block), &is_changed);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to alloc au,vg name %s.", vg_item->dss_ctrl->vg_info.vg_name));
     return CM_SUCCESS;
+}
+
+void dss_check_fs_block_parent(dss_fs_block_header *block, ftid_t id)
+{
+    bool8 is_invalid = (!compare_auid(block->ftid, id) && !dss_cmp_auid(block->ftid, DSS_INVALID_64));
+    DSS_ASSERT_LOG(!is_invalid,
+        "[FS][CHECK] FS block which has ftid node: %llu, volume:%u, au:%llu, block:%u, item:%u; expect ftid node: "
+        "%llu, volume:%u, au:%llu, block:%u, item:%u; node id: %llu, volume:%u, au:%llu, block:%u, item:%u;",
+        DSS_ID_TO_U64(block->ftid), block->ftid.volume, (uint64)block->ftid.au, block->ftid.block, block->ftid.item,
+        DSS_ID_TO_U64(id), id.volume, (uint64)id.au, id.block, id.item, DSS_ID_TO_U64(block->common.id),
+        block->common.id.volume, (uint64)block->common.id.au, block->common.id.block, block->common.id.item);
+    dss_check_fs_block_flags(block, DSS_BLOCK_FLAG_USED);
+}
+
+void dss_check_fs_block_affiliation(dss_fs_block_header *block, ftid_t id, uint16_t index)
+{
+    dss_check_fs_block_parent(block, id);
+    bool8 is_invalid = (block->index != index && block->index != DSS_INVALID_ID16);
+    DSS_ASSERT_LOG(!is_invalid,
+        "[FS][CHECK] Error index fs block id: %llu, volume:%u, au:%llu, block:%u, item:%u, index:%u, expect index:%u.",
+        DSS_ID_TO_U64(block->common.id), block->common.id.volume, (uint64)block->common.id.au, block->common.id.block,
+        block->common.id.item, block->index, index);
 }
 
 static status_t dss_get_block_entry(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_config_t *inst_cfg,
@@ -2655,10 +2694,11 @@ static status_t dss_get_block_entry(dss_session_t *session, dss_vg_info_item_t *
     // next will check disk version, so here not check
     dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
         session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
-    if (!entry_block) {
+    if (entry_block == NULL) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find entry block:%llu.", *(uint64 *)&node->entry));
     }
+    dss_check_fs_block_affiliation(entry_block, node->id, DSS_ENTRY_FS_INDEX);
     *node_out = node;
     *entry_out = entry_block;
     return CM_SUCCESS;
@@ -2714,7 +2754,6 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
     DSS_RETURN_IFERR2(
         status, LOG_DEBUG_ERR("The offset(%lld) is not correct,real block count:%u.", node_data->offset, block_count));
     bool32 need_get_second = CM_FALSE;
-    ga_obj_id_t sec_obj_id;
     dss_fs_block_t *second_block = NULL;
     dss_block_id_t second_block_id = entry_fs_block->bitmap[block_count];
     if (dss_cmp_blockid(second_block_id, CM_INVALID_ID64)) {
@@ -2723,9 +2762,9 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to alloc au,vg name %s.", vg_item->dss_ctrl->vg_info.vg_name));
         second_block_id = entry_fs_block->bitmap[block_count];
         if (dss_cmp_blockid(second_block_id, CM_INVALID_ID64)) {
-            dss_alloc_fs_block_judge judge = {CM_TRUE, CM_FALSE, CM_TRUE};
+            dss_alloc_fs_block_info_t info = {CM_TRUE, CM_FALSE, (uint16_t)block_count, node};
             // allocate block
-            status = dss_alloc_fs_block(session, vg_item, (char **)&second_block, &sec_obj_id, &judge, node);
+            status = dss_alloc_fs_block(session, vg_item, (char **)&second_block, &info);
             if (!second_block) {
                 dss_rollback_mem_update(session->log_split, vg_item);
                 char *err_msg = "Failed to alloc file space meta block,vg name";
@@ -2761,7 +2800,7 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
     auid_t auid = second_block->bitmap[block_au_count];
     if (dss_cmp_auid(auid, CM_INVALID_ID64)) {
         // allocate au
-        status = dss_alloc_au(session, vg_item, &auid, CM_TRUE);
+        status = dss_alloc_au(session, vg_item, &auid);
         if (status != CM_SUCCESS) {
             dss_rollback_mem_update(session->log_split, vg_item);
             DSS_RETURN_IFERR3(status,
@@ -3101,24 +3140,29 @@ static status_t dss_init_trunc_ftn(dss_session_t *session, dss_vg_info_item_t *v
     dss_au_root_t *dss_au_root = DSS_GET_AU_ROOT(vg_item->dss_ctrl);
     ftid_t free_root = *(ftid_t *)(&dss_au_root->free_root);
     gft_node_t *recycle_dir = dss_get_ft_node_by_ftid(session, vg_item, free_root, CM_TRUE, CM_FALSE);
-
+    if (recycle_dir == NULL) {
+        LOG_RUN_ERR("[FT] Get recycle dir failed id:%llu.", DSS_ID_TO_U64(free_root));
+        DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "recycle dir id", *(uint64 *)&free_root);
+        return CM_ERROR;
+    }
     char trunc_name[DSS_MAX_NAME_LEN];
     date_detail_t detail = g_timer()->detail;
     int iret_snprintf = snprintf_s(trunc_name, sizeof(trunc_name), sizeof(trunc_name) - 1, "%s_sz%llu_%02u%02u%02u%03u",
         node->name, (uint64)node->size - length, detail.hour, detail.min, detail.sec, detail.millisec);
     DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
     *truncated_ftn = dss_alloc_ft_node(session, vg_item, recycle_dir, trunc_name, GFT_FILE);
+    if (*truncated_ftn == NULL) {
+        dss_rollback_mem_update(session->log_split, vg_item);
+        LOG_RUN_ERR("Failed to alloc ft node, errcode:%d, OS errno:%d, OS errmsg:%s.", cm_get_error_code(), errno,
+            strerror(errno));
+        return CM_ERROR;
+    }
     status_t status = dss_process_redo_log(session, vg_item);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
         _exit(1);
-    }
-    if (*truncated_ftn == NULL) {
-        LOG_RUN_ERR("Failed to alloc_ft_node, errcode:%d, OS errno:%d, OS errmsg:%s.", cm_get_error_code(), errno,
-            strerror(errno));
-        return CM_ERROR;
     }
     return CM_SUCCESS;
 }
@@ -3324,6 +3368,13 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
 
     dss_fs_block_t *dst_entry_fsb = (dss_fs_block_t *)dss_find_block_in_shm(
         session, vg_item, trunc_ftn->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
+    if (dst_entry_fsb == NULL) {
+        dss_validate_fs_meta(session, vg_item, node);
+        dss_unlock_vg_mem_and_shm(session, vg_item);
+        DSS_RETURN_IFERR2(
+            CM_ERROR, LOG_DEBUG_ERR("Failed to find dst entry block:%llu.", *(uint64 *)&trunc_ftn->entry));
+    }
+    dss_check_fs_block_affiliation(&dst_entry_fsb->head, trunc_ftn->id, DSS_ENTRY_FS_INDEX);
     uint32 au_trunc_idx = au_offset == 0 ? block_au_count : block_au_count + 1;
     dss_build_truncated_ftn(session, vg_item, entry_fs_block, dst_entry_fsb, block_count, au_trunc_idx);
     dss_truncate_set_sizes(session, vg_item, node, trunc_ftn, length);
@@ -3422,9 +3473,10 @@ static status_t dss_refresh_file_core(
     // check the entry and load
     dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
         NULL, vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
-    if (!block) {
+    if (block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find block:%llu.", *(uint64 *)&node->entry));
     }
+    dss_check_fs_block_affiliation(&block->head, node->id, DSS_ENTRY_FS_INDEX);
     if (!dss_is_fs_block_valid(node, block)) {
         LOG_DEBUG_INF(
             "block:%llu fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu by session id:%u",
@@ -3441,9 +3493,10 @@ static status_t dss_refresh_file_core(
     if (cmp == 0) {
         block = (dss_fs_block_t *)dss_find_block_in_shm(
             NULL, vg_item, blockid, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
-        if (!block) {
+        if (block == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find block:%llu.", DSS_ID_TO_U64(blockid)));
         }
+        dss_check_fs_block_parent(&block->head, node->id);
         if (!dss_is_fs_block_valid(node, block)) {
             LOG_DEBUG_INF(
                 "block:%llu fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu by session id:%u",
@@ -3707,7 +3760,7 @@ static status_t dss_clean_delay_file_node(
 {
     if (node->size > 0) {
         // first remove node from old dir but not real delete, just mv to recycle
-        dss_free_ft_node(session, vg_item, parent_node, node, CM_FALSE, CM_FALSE);
+        dss_free_ft_node(session, vg_item, parent_node, node, CM_FALSE);
         dss_mv_to_recycle_dir(session, vg_item, node);
     } else {
         status_t status = dss_recycle_empty_file(session, vg_item, parent_node, node);
@@ -3728,7 +3781,7 @@ static status_t dss_clean_delay_node(
         // clean delay path only when they have no children node
         LOG_DEBUG_INF("[DELAY_CLEAN]Delay File %s ftid:%llu is path, children node count %u .", node->name,
             *(uint64 *)&node->id, node->items.count);
-        dss_free_ft_node(session, vg_item, parent_node, node, CM_TRUE, CM_FALSE);
+        dss_free_ft_node(session, vg_item, parent_node, node, CM_TRUE);
     } else {
         status_t status = dss_clean_delay_file_node(session, vg_item, parent_node, node);
         DSS_RETURN_IF_ERROR(status);
@@ -3811,6 +3864,7 @@ static status_t dss_clean_node_tree(dss_session_t *session, dss_vg_info_item_t *
         return CM_ERROR;
     }
     do {
+        dss_check_ft_node_parent(node, parent_node->id);
         if (dss_is_last_tree_node(node)) {
             if ((node->flags & DSS_FT_NODE_FLAG_DEL) != 0) {
                 next_node = dss_get_next_node(session, vg_item, node);

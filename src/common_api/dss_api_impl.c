@@ -158,7 +158,7 @@ static status_t dss_check_apply_refresh_file(dss_conn_t *conn, dss_file_context_
 }
 
 static status_t dss_check_find_fs_block(
-    dss_conn_t *conn, dss_file_context_t *context, dss_block_id_t block_id, dss_fs_block_t **fs_block)
+    dss_conn_t *conn, dss_file_context_t *context, dss_block_id_t block_id, dss_fs_block_t **fs_block, uint16_t index)
 {
     if ((*fs_block) == NULL) {
         *fs_block = (dss_fs_block_t *)dss_find_block_in_shm(
@@ -166,7 +166,7 @@ static status_t dss_check_find_fs_block(
     }
 
     if (*fs_block) {
-        if (dss_is_fs_block_valid(context->node, *fs_block)) {
+        if (dss_is_fs_block_valid_all(context->node, *fs_block, index)) {
             return CM_SUCCESS;
         }
         LOG_DEBUG_INF("The block_id:%llu for node:%llu file name:%s is invalid, need refresh from server.",
@@ -1383,9 +1383,9 @@ static status_t dss_alloc_block_core(
             DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to refresh file entry fs block."));
         }
         second_block_id = entry_fs_block->bitmap[block_count];
-        status = dss_check_find_fs_block(rw_ctx.conn, context, second_block_id, second_block);
+        status = dss_check_find_fs_block(rw_ctx.conn, context, second_block_id, second_block, (uint16_t)block_count);
     } else {
-        status = dss_check_find_fs_block(rw_ctx.conn, context, second_block_id, second_block);
+        status = dss_check_find_fs_block(rw_ctx.conn, context, second_block_id, second_block, (uint16_t)block_count);
     }
     return status;
 }
@@ -1502,7 +1502,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
             return CM_SUCCESS;
         }
 
-        status = dss_check_find_fs_block(conn, context, node->entry, &entry_fs_block);
+        status = dss_check_find_fs_block(conn, context, node->entry, &entry_fs_block, DSS_ENTRY_FS_INDEX);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Can not find entry block in memory, entry blockid:%llu, nodeid:%llu.",
                 DSS_ID_TO_U64(node->entry), DSS_ID_TO_U64(node->id));
@@ -2380,7 +2380,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
             return CM_ERROR;
         }
 
-        status = dss_check_find_fs_block(conn, context, node->entry, &entry_fs_block);
+        status = dss_check_find_fs_block(conn, context, node->entry, &entry_fs_block, DSS_ENTRY_FS_INDEX);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Can not find entry block in memory, entry blockid:%llu, nodeid:%llu.",
                 DSS_ID_TO_U64(node->entry), DSS_ID_TO_U64(node->id));
