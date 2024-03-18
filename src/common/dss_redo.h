@@ -242,7 +242,7 @@ char *dss_get_total_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item,
 status_t dss_set_log_buf_for_first_vg(const char *vg_name, dss_vg_info_item_t *vg_item, dss_volume_t *volume);
 status_t dss_set_log_buf(const char *vg_name, dss_vg_info_item_t *vg_item, dss_volume_t *volume);
 char *dss_get_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item);
-
+status_t dss_check_recover_redo_log(dss_vg_info_item_t *vg_item, bool32 *recover_redo);
 #ifdef __cplusplus
 }
 #endif

@@ -299,17 +299,21 @@ status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_
     return CM_SUCCESS;
 }
 
-static dss_vg_info_item_t* dss_find_vg_item_inner(dss_vg_info_t *vg_info, const char *vg_name)
+static dss_vg_info_item_t* dss_find_vg_item_inner(dss_vg_info_t *vg_info, const char *vg_name, bool32 *is_first_vg)
 {
+    *is_first_vg = CM_FALSE;
     for (uint32_t i = 0; i < vg_info->group_num; i++) {
         if (strcmp(vg_info->volume_group[i].vg_name, vg_name) == 0) {
+            if (i == 0) {
+                *is_first_vg = CM_TRUE;
+            }
             return &vg_info->volume_group[i];
         }
     }
     return NULL;
 }
 
-static status_t dss_write_volume_head(
+static status_t dss_modify_volume_head(
     dss_vg_info_item_t* vg_item, const char *vol_path, uint32 id, volume_modify_type_e type)
 {
 #ifndef WIN32
@@ -364,11 +368,11 @@ static status_t dss_check_volume_flag(dss_vg_info_item_t *vg_item)
     return CM_SUCCESS;
 }
 
-static status_t dss_add_volume_inner(dss_vg_info_item_t *vg_item, const char *vg_name, const char *vol_path)
+static status_t dss_add_volume_inner(dss_vg_info_item_t *vg_item, const char *vol_path)
 {
     CM_RETURN_IFERR(dss_check_volume_flag(vg_item));
     if (dss_find_volume(vg_item, vol_path) != CM_INVALID_ID32) {
-        DSS_THROW_ERROR(ERR_DSS_VOLUME_EXISTED, vol_path, vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_EXISTED, vol_path, vg_item->vg_name);
         return CM_ERROR;
     }
 
@@ -396,17 +400,17 @@ static status_t dss_add_volume_inner(dss_vg_info_item_t *vg_item, const char *vg
      */
     CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
     CM_RETURN_IFERR(dss_update_core_ctrl_disk(vg_item));
-    CM_RETURN_IFERR(dss_write_volume_head(vg_item, vol_path, id, VOLUME_MODIFY_ADD));
+    CM_RETURN_IFERR(dss_modify_volume_head(vg_item, vol_path, id, VOLUME_MODIFY_ADD));
     vg_item->dss_ctrl->volume.defs[id].flag =  VOLUME_OCCUPY;
     CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
     return CM_SUCCESS;
 }
 
-static status_t dss_remove_volume_inner(dss_vg_info_item_t* vg_item, const char *vg_name, const char *vol_path)
+static status_t dss_remove_volume_inner(dss_vg_info_item_t* vg_item, const char *vol_path)
 {
     uint32 id;
     CM_RETURN_IFERR(dss_check_volume_flag(vg_item));
-    CM_RETURN_IFERR(dss_check_remove_volume(vg_item, vg_name, vol_path, &id));
+    CM_RETURN_IFERR(dss_check_remove_volume(vg_item, vol_path, &id));
 
     if (vg_item->volume_handle[id].handle != DSS_INVALID_HANDLE) {
         dss_close_volume(&vg_item->volume_handle[id]);
@@ -417,11 +421,12 @@ static status_t dss_remove_volume_inner(dss_vg_info_item_t* vg_item, const char 
     dss_remove_volume_vg_ctrl(vg_item->dss_ctrl, id);
     CM_RETURN_IFERR(dss_update_core_ctrl_disk(vg_item));
     CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
-    CM_RETURN_IFERR(dss_write_volume_head(vg_item, vol_path, id, VOLUME_MODIFY_REMOVE));
+    CM_RETURN_IFERR(dss_modify_volume_head(vg_item, vol_path, id, VOLUME_MODIFY_REMOVE));
     return CM_SUCCESS;
 }
 
-static status_t dss_replace_prepare_new_volume(dss_vg_info_item_t* vg_item, dss_volume_t *new_volume, uint32 id, uint64 *new_size)
+static status_t dss_replace_prepare_new_volume(
+    dss_vg_info_item_t *vg_item, dss_volume_t *new_volume, uint32 id, uint64 *new_size)
 {
 #ifndef WIN32
     char buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_ALIGN_SIZE)));
@@ -488,6 +493,7 @@ static status_t dss_replace_volume_to_disk(dss_vg_info_item_t* vg_item, const ch
     MEMS_RETURN_IFERR(strcpy_s(vg_ctrl->volume.defs[id].name, DSS_MAX_VOLUME_PATH_LEN, new_vol));
 
     if (id == 0) {
+        LOG_RUN_INF("Replace entry volume, close old volume %s, open new volume %s.", old_vol, new_vol);
         dss_close_volume(&vg_item->volume_handle[0]);
         CM_RETURN_IFERR(dss_open_volume(new_vol, NULL, DSS_CLI_OPEN_FLAG, &vg_item->volume_handle[0]));
         CM_RETURN_IFERR_EX(
@@ -509,16 +515,16 @@ static status_t dss_replace_volume_to_disk(dss_vg_info_item_t* vg_item, const ch
     if (ret != CM_SUCCESS) {
         return ret;
     }
-    return dss_write_volume_head(vg_item, old_vol, id, VOLUME_MODIFY_REMOVE);
+    return dss_modify_volume_head(vg_item, old_vol, id, VOLUME_MODIFY_REMOVE);
 }
 
 static status_t dss_replace_volume_inner(
-    dss_vg_info_item_t *vg_item, const char *vg_name, const char *old_vol, const char *new_vol, dss_config_t *inst_cfg)
+    dss_vg_info_item_t *vg_item, const char *old_vol, const char *new_vol, dss_config_t *inst_cfg)
 {
     CM_RETURN_IFERR(dss_check_volume_flag(vg_item));
     uint32 id = dss_find_volume(vg_item, old_vol);
     if (id == CM_INVALID_ID32) {
-        DSS_THROW_ERROR(ERR_DSS_VOLUME_NOEXIST, old_vol, vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_NOEXIST, old_vol, vg_item->vg_name);
         return CM_ERROR;
     }
 
@@ -539,6 +545,36 @@ static status_t dss_replace_volume_inner(
     return dss_replace_volume_to_disk(vg_item, old_vol, new_vol, id, new_size, inst_cfg);
 }
 
+static status_t dss_modify_volume_offline_inner(dss_vg_info_item_t *vg_item, const char *old_vol, const char *new_vol,
+    volume_modify_type_e type, dss_config_t *inst_cfg, bool32 is_first_vg)
+{
+    status_t ret;
+
+    switch (type) {
+        case VOLUME_MODIFY_ADD:
+            ret = dss_add_volume_inner(vg_item, old_vol);
+            break;
+        case VOLUME_MODIFY_REMOVE:
+            ret = dss_remove_volume_inner(vg_item, old_vol);
+            break;
+        case VOLUME_MODIFY_REPLACE:
+            ret = dss_replace_volume_inner(vg_item, old_vol, new_vol, inst_cfg);
+            break;
+        case VOLUME_MODIFY_ROLLBACK:
+            ret = dss_recover_ctrlinfo(vg_item);
+            if (ret != CM_SUCCESS) {
+                LOG_DEBUG_ERR("The dss ctrl of %s is invalid when rollback.", vg_item->vg_name);
+            }
+            break;
+        default:
+            DSS_PRINT_ERROR("Invalid volume modify type: %u.\n", type);
+            ret = CM_ERROR;
+            break;
+    }
+
+    return ret;
+}
+
 status_t dss_modify_volume_offline(
     const char *home, const char *vg_name, const char *old_vol, const char *new_vol, volume_modify_type_e type)
 {
@@ -556,22 +592,31 @@ status_t dss_modify_volume_offline(
         return CM_ERROR;
     }
 
-    status_t ret;
     dss_config_t inst_cfg;
     dss_vg_info_t *vg_info = NULL;
+    bool32 is_first_vg = CM_FALSE;
     CM_RETURN_IFERR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
-    dss_vg_info_item_t *vg_item = dss_find_vg_item_inner(vg_info, vg_name);
+    dss_vg_info_item_t *vg_item = dss_find_vg_item_inner(vg_info, vg_name, &is_first_vg);
     if (vg_item == NULL) {
         dss_inq_free_vg_info(vg_info);
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
         return CM_ERROR;
     }
 
-    ret = dss_get_vg_non_entry_info(&inst_cfg, vg_item, CM_TRUE);
+    status_t ret = dss_get_vg_non_entry_info(&inst_cfg, vg_item, CM_TRUE, is_first_vg);
     if (ret != CM_SUCCESS) {
         dss_inq_free_vg_info(vg_info);
         DSS_PRINT_ERROR("Failed to get vg non entry info when modify volume offline.\n");
         return ret;
+    }
+
+    if (!is_first_vg) {
+        ret = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[0], CM_TRUE, CM_TRUE);
+        if (ret != CM_SUCCESS) {
+            dss_inq_free_vg_info(vg_info);
+            DSS_PRINT_ERROR("Failed to get first vg non entry info when modify volume offline.\n");
+            return ret;
+        }
     }
     
     if (dss_lock_vg_storage_w(vg_item, vg_item->entry_path, &inst_cfg) != CM_SUCCESS) {
@@ -580,29 +625,11 @@ status_t dss_modify_volume_offline(
         return CM_ERROR;
     }
 
-    switch (type) {
-        case VOLUME_MODIFY_ADD:
-            ret = dss_add_volume_inner(vg_item, vg_name, old_vol);
-            break;
-        case VOLUME_MODIFY_REMOVE:
-            ret = dss_remove_volume_inner(vg_item, vg_name, old_vol);
-            break;
-        case VOLUME_MODIFY_REPLACE:
-            ret = dss_replace_volume_inner(vg_item, vg_name, old_vol, new_vol, &inst_cfg);
-            break;
-        case VOLUME_MODIFY_ROLLBACK:
-            ret = dss_recover_ctrlinfo(vg_item);
-            if (ret != CM_SUCCESS) {
-                LOG_DEBUG_ERR("The dss ctrl of %s is invalid when rollback.", vg_name);
-            }
-            break;
-        default:
-            DSS_PRINT_ERROR("Invalid volume modify type: %u.\n", type);
-            ret = CM_ERROR;
-            break;
-    }
-
+    ret = dss_modify_volume_offline_inner(vg_item, old_vol, new_vol, type, &inst_cfg, is_first_vg);
     dss_unlock_vg_storage(vg_item, vg_item->entry_path, &inst_cfg);
     dss_inq_free_vg_info(vg_info);
+    if (ret != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to execute modify volume inner.\n");
+    }
     return ret;
 }

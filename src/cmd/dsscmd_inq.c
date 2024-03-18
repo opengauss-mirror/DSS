@@ -23,8 +23,9 @@
  */
 
 #include "dss_malloc.h"
-#include "dsscmd_inq.h"
 #include "dss_latch.h"
+#include "dss_redo.h"
+#include "dsscmd_inq.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -144,13 +145,15 @@ static status_t dss_modify_cluster_node_info(
 }
 
 // get the non-entry disk information of vg.
-status_t dss_get_vg_non_entry_info(dss_config_t *inst_cfg, dss_vg_info_item_t *vg_item, bool32 is_lock)
+status_t dss_get_vg_non_entry_info(
+    dss_config_t *inst_cfg, dss_vg_info_item_t *vg_item, bool32 is_lock, bool32 check_redo)
 {
     if (vg_item->vg_name[0] == '0' || vg_item->entry_path[0] == '0') {
         LOG_DEBUG_ERR("Failed to load vg ctrl, input parameter is invalid.");
         return CM_ERROR;
     }
 
+    LOG_DEBUG_INF("Begin to load vg ctrl when get non entry info, is_lock is %d.", is_lock);
     if (is_lock) {
         if (dss_lock_vg_storage_r(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
           LOG_DEBUG_ERR("Failed to lock vg:%s.", vg_item->entry_path);
@@ -159,21 +162,37 @@ status_t dss_get_vg_non_entry_info(dss_config_t *inst_cfg, dss_vg_info_item_t *v
     }
 
     bool32 remote = CM_FALSE;
-    status_t status = dss_load_vg_ctrl_part(vg_item, 0, vg_item->dss_ctrl, (int32)sizeof(dss_ctrl_t), &remote);
-    if (status != CM_SUCCESS) {
-        if (is_lock) {
-            dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
+    status_t status = CM_ERROR;
+    bool32 recover_redo = CM_FALSE;
+    do {
+        status = dss_load_vg_ctrl_part(vg_item, 0, vg_item->dss_ctrl, (int32)sizeof(dss_ctrl_t), &remote);
+        if (status != CM_SUCCESS) {
+            LOG_DEBUG_ERR("Failed to load vg ctrl part %s.", vg_item->entry_path);
+            break;
         }
-        LOG_DEBUG_ERR("Failed to load vg ctrl part %s.", vg_item->entry_path);
-        return status;
-    }
+
+        if (!DSS_VG_IS_VALID(vg_item->dss_ctrl)) {
+            DSS_THROW_ERROR(ERR_DSS_VG_CHECK_NOT_INIT);
+            break;
+        }
+        
+        if (check_redo) {
+            status = dss_check_recover_redo_log(vg_item, &recover_redo);
+            if (status != CM_SUCCESS) {
+                LOG_DEBUG_ERR("Failed to check recover redo log.");
+            }
+        }        
+    } while (CM_FALSE);
 
     if (is_lock) {
         dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
     }
-
-    if (!DSS_VG_IS_VALID(vg_item->dss_ctrl)) {
-        DSS_THROW_ERROR(ERR_DSS_VG_CHECK_NOT_INIT);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    if (check_redo && recover_redo) {
+        DSS_THROW_ERROR(ERR_DSS_REDO_ILL, "residual redo log exists on the server.");
+        LOG_RUN_ERR("Please start dssserver to recover redo log, then execute this command again.");
         return CM_ERROR;
     }
 
@@ -266,7 +285,7 @@ status_t dss_inq_lun(const char *home)
     DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
 
     for (uint32 i = 0; i < vg_info->group_num; i++) {
-        status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], CM_TRUE);
+        status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], CM_TRUE, CM_FALSE);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to get vg non entry info when inq lun.\n");
@@ -297,7 +316,7 @@ status_t dss_inq_reg(const char *home)
     DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
 
     for (uint32 i = 0; i < vg_info->group_num; i++) {
-        status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], CM_TRUE);
+        status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], CM_TRUE, CM_FALSE);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to get vg non entry info when inq reg.\n");
@@ -412,7 +431,7 @@ status_t dss_reghl_core(const char *home)
             DSS_PRINT_ERROR("Failed to register vg entry disk when reghl, errcode is %d.\n", status);
             return status;
         }
-        status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], CM_TRUE);
+        status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], CM_TRUE, CM_FALSE);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to get vg non entry info when reghl, errcode is %d.\n", status);
@@ -478,7 +497,7 @@ status_t dss_unreghl_core(const char *home, bool32 is_lock)
         if (!is_reg) {
             continue;
         }
-        status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], is_lock);
+        status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], is_lock, CM_FALSE);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to get vg entry info when unreghl, errcode is %d.\n", status);
@@ -510,7 +529,7 @@ static status_t dss_inq_reg_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg
     bool32 is_reg;
     dss_vg_info_item_t *item = NULL;
     for (uint32 i = 0; i < vg_info->group_num; i++) {
-        CM_RETURN_IFERR(dss_get_vg_non_entry_info(inst_cfg, &vg_info->volume_group[i], CM_TRUE));
+        CM_RETURN_IFERR(dss_get_vg_non_entry_info(inst_cfg, &vg_info->volume_group[i], CM_TRUE, CM_FALSE));
         item = &vg_info->volume_group[i];
         for (uint32 j = 1; j < DSS_MAX_VOLUMES; j++) {
             if (item->dss_ctrl->volume.defs[j].flag == VOLUME_FREE) {
@@ -633,7 +652,7 @@ static status_t dss_kickh_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, 
 {
     status_t status;
     for (uint32 i = 0; i < vg_info->group_num; i++) {
-        status = dss_get_vg_non_entry_info(inst_cfg, &vg_info->volume_group[i], is_lock);
+        status = dss_get_vg_non_entry_info(inst_cfg, &vg_info->volume_group[i], is_lock, CM_FALSE);
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to get vg non entry info when kickh.\n");
             return CM_ERROR;

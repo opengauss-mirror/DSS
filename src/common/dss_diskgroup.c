@@ -1225,15 +1225,15 @@ uint32_t dss_find_volume(dss_vg_info_item_t *vg_item, const char *volume_name)
     return CM_INVALID_ID32;
 }
 
-status_t dss_add_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item, const char *vg_name,
-    const char *volume_name, dss_config_t *inst_cfg)
+status_t dss_add_volume_core(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, const char *volume_name, dss_config_t *inst_cfg)
 {
     if (dss_refresh_vginfo(vg_item) != CM_SUCCESS) {
         LOG_DEBUG_ERR("%s refresh vginfo failed.", "dss_add_volume");
         return CM_ERROR;
     }
     if (dss_find_volume(vg_item, volume_name) != CM_INVALID_ID32) {
-        DSS_THROW_ERROR(ERR_DSS_VOLUME_EXISTED, volume_name, vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_EXISTED, volume_name, vg_item->vg_name);
         return CM_ERROR;
     }
     if (dss_add_volume_impl(session, vg_item, volume_name, VOLUME_PREPARE) != CM_SUCCESS) {
@@ -1334,12 +1334,11 @@ static status_t dss_remove_volume_impl(
     return CM_SUCCESS;
 }
 
-status_t dss_check_remove_volume(
-    dss_vg_info_item_t *vg_item, const char *vg_name, const char *volume_name, uint32 *volume_id)
+status_t dss_check_remove_volume(dss_vg_info_item_t *vg_item, const char *volume_name, uint32 *volume_id)
 {
     *volume_id = dss_find_volume(vg_item, volume_name);
     if (*volume_id == CM_INVALID_ID32) {
-        DSS_THROW_ERROR(ERR_DSS_VOLUME_NOEXIST, volume_name, vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VOLUME_NOEXIST, volume_name, vg_item->vg_name);
         return CM_ERROR;
     }
 
@@ -1358,8 +1357,8 @@ status_t dss_check_remove_volume(
     return CM_SUCCESS;
 }
 
-status_t dss_remove_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item, const char *vg_name,
-    const char *volume_name, dss_config_t *inst_cfg)
+status_t dss_remove_volume_core(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, const char *volume_name, dss_config_t *inst_cfg)
 {
     uint32 volume_id;
     if (dss_refresh_vginfo(vg_item) != CM_SUCCESS) {
@@ -1367,7 +1366,7 @@ status_t dss_remove_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_i
         return CM_ERROR;
     }
 
-    if (dss_check_remove_volume(vg_item, vg_name, volume_name, &volume_id) != CM_SUCCESS) {
+    if (dss_check_remove_volume(vg_item, volume_name, &volume_id) != CM_SUCCESS) {
         return CM_ERROR;
     }
 
@@ -1406,9 +1405,9 @@ static status_t dss_modify_volume(dss_session_t *session, const char *vg_name, c
 
     dss_lock_vg_mem_and_shm_x(session, vg_item);
     if (cmd == (uint8)DSS_CMD_ADD_VOLUME) {
-        status = dss_add_volume_core(session, vg_item, vg_name, volume_name, inst_cfg);
+        status = dss_add_volume_core(session, vg_item, volume_name, inst_cfg);
     } else {
-        status = dss_remove_volume_core(session, vg_item, vg_name, volume_name, inst_cfg);
+        status = dss_remove_volume_core(session, vg_item, volume_name, inst_cfg);
     }
     dss_unlock_vg_mem_and_shm(session, vg_item);
     dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
