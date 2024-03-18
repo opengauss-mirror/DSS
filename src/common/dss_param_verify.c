@@ -75,6 +75,23 @@ status_t dss_notify_enable_core_state_collect(void *se, void *item, char *value)
     return dss_load_enable_core_state_collect_inner(value, g_inst_cfg);
 }
 
+status_t dss_verify_blackbox_detail_on(void *lex, void *def)
+{
+    char *value = (char *)lex;
+    if (!cm_str_equal_ins(value, "TRUE") && !cm_str_equal_ins(value, "FALSE")) {
+        DSS_RETURN_IFERR2(CM_ERROR, CM_THROW_ERROR(ERR_INVALID_PARAM, "_BLACKBOX_DETAIL_ON"));
+    }
+    int32 iret_snprintf =
+        snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, "%s", value);
+    DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
+    return CM_SUCCESS;
+}
+
+status_t dss_notify_blackbox_detail_on(void *se, void *item, char *value)
+{
+    return dss_load_blackbox_detail_on_inner(value, g_inst_cfg);
+}
+
 status_t dss_verify_delay_clean_interval(void *lex, void *def)
 {
     char *value = (char *)lex;

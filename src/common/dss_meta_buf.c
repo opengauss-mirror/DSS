@@ -308,7 +308,9 @@ void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_it
     auid_t block_id_tmp = {0};
     shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
     shm_hashmap_bucket_t *bucket = &buckets[hash % map->num];
-    dss_lock_shm_meta_bucket_s(session, vg_item->id, &bucket->enque_lock);
+    if (vg_item->from_type == FROM_SHM) {
+        dss_lock_shm_meta_bucket_s(session, vg_item->id, &bucket->enque_lock);
+    }
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     while (has_next) {
@@ -322,7 +324,9 @@ void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_it
         }
         block_id_tmp = ((dss_common_block_t *)addr)->id;
         if ((block_ctrl->hash == hash) && (cm_oamap_uint64_compare(&block_id_tmp, key) == CM_TRUE)) {
-            dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
+            if (vg_item->from_type == FROM_SHM) {
+                dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
+            }
             if (out_obj_id != NULL) {
                 *out_obj_id = next_id;
             }
@@ -331,7 +335,9 @@ void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_it
         has_next = block_ctrl->has_next;
         next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
     }
-    dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
+    if (vg_item->from_type == FROM_SHM) {
+        dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
+    }
     return NULL;
 }
 
@@ -493,7 +499,7 @@ char *dss_find_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item,
                 return NULL;
             }
         }
-        if (dss_is_readwrite()) {
+        if (dss_is_server() && dss_is_readwrite()) {
             DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         }
         return addr;
@@ -511,7 +517,7 @@ char *dss_find_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item,
 }
 
 char *dss_find_block_in_shm_no_refresh(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
-    dss_block_type_t type, ga_obj_id_t *out_obj_id)
+    ga_obj_id_t *out_obj_id)
 {
     uint32 hash = cm_hash_int64(*(int64 *)&block_id);
     return dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);

@@ -582,3 +582,15 @@ sh_mem_p cm_trans_shm_offset(uint32_t key, void *ptr)
 
     return ptr_uint64;
 }
+
+sh_mem_p cm_trans_shm_offset_from_malloc(uint32_t key, void *ptr)
+{
+    sh_mem_p ptr_uint64 = 0;
+    sh_mem_t *shm_ptr = (sh_mem_t *)(void *)&ptr_uint64;
+    cm_shm_map_entry_t *entry = CM_SHM_MAP_ENTRY_OF(key);
+    entry->handle = CM_INVALID_SHM_HANDLE;
+    entry->addr = ptr;
+    shm_ptr->offset = (uint32)((char *)ptr - (char *)entry->addr);
+    shm_ptr->seg = CM_SHM_KEY2IDX(key);
+    return ptr_uint64;
+}

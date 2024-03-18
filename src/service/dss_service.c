@@ -625,7 +625,7 @@ static status_t dss_process_get_ftid_by_path(dss_session_t *session)
 {
     char *path = NULL;
     ftid_t ftid;
-    dss_vg_info_item_t *vg_item;
+    dss_vg_info_item_t *vg_item = NULL;
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &path));
     DSS_RETURN_IF_ERROR(dss_get_ftid_by_path(session, path, &ftid, &vg_item));

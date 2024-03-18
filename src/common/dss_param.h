@@ -145,6 +145,20 @@ inline status_t dss_get_ssl_param(const char *param_name, char *param_value, uin
 }
 void dss_ssl_ca_cert_expire(void);
 
+static inline status_t dss_load_blackbox_detail_on_inner(char *value, dss_config_t *inst_cfg)
+{
+    if (cm_str_equal_ins(value, "TRUE")) {
+        inst_cfg->params.blackbox_detail_on = CM_TRUE;
+    } else if (cm_str_equal_ins(value, "FALSE")) {
+        inst_cfg->params.blackbox_detail_on = CM_FALSE;
+    } else {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_BLACKBOX_DETAIL_ON");
+        return CM_ERROR;
+    }
+    LOG_RUN_INF("_BLACKBOX_DETAIL_ON = %u.", inst_cfg->params.blackbox_detail_on);
+    return CM_SUCCESS;
+}
+
 static inline status_t dss_load_enable_core_state_collect_inner(char *value, dss_config_t *inst_cfg)
 {
     if (cm_str_equal_ins(value, "TRUE")) {

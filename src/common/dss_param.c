@@ -117,8 +117,8 @@ static config_item_t g_dss_params[] = {
         "GS_TYPE_INTEGER", NULL, 38, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "WORK_THREADS",       CM_TRUE, CM_FALSE, "16",   NULL, NULL, "-", "[16,128]",
         "GS_TYPE_INTEGER", NULL, 39, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_BLACKBOX_DETAIL_ON",   CM_TRUE, CM_FALSE, "FALSE",  NULL, NULL, "-", "FALSE,TRUE",
-       "GS_TYPE_BOOLEAN", NULL, 40, EFFECT_REBOOT,  CFG_INS, NULL, NULL, NULL, NULL},
+    { "_BLACKBOX_DETAIL_ON",   CM_TRUE, CM_FALSE, "FALSE",  NULL, NULL, "-", "FALSE,TRUE", "GS_TYPE_BOOLEAN", NULL,
+        40, EFFECT_IMMEDIATELY,  CFG_INS, dss_verify_blackbox_detail_on, dss_notify_blackbox_detail_on, NULL, NULL},
     { "CLUSTER_RUN_MODE", CM_TRUE, CM_FALSE, "cluster_primary", NULL, NULL, "-", "-", 
         "GS_TYPE_VARCHAR", NULL, 41, EFFECT_REBOOT, CFG_INS, dss_verify_cluster_run_mode, dss_notify_cluster_run_mode, NULL, NULL},
     { "XLOG_VG_ID", CM_TRUE, CM_FALSE, "1", NULL, NULL, "-", "[1,64]",
@@ -589,16 +589,7 @@ static status_t dss_load_shm_key(dss_config_t *inst_cfg)
 static status_t dss_load_blackbox_detail_on(dss_config_t *inst_cfg)
 {
     char *value = cm_get_config_value(&inst_cfg->config, "_BLACKBOX_DETAIL_ON");
-    if (cm_str_equal_ins(value, "TRUE")) {
-        inst_cfg->params.blackbox_detail_on = CM_TRUE;
-    } else if (cm_str_equal_ins(value, "FALSE")) {
-        inst_cfg->params.blackbox_detail_on = CM_FALSE;
-    } else {
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_BLACKBOX_DETAIL_ON"));
-    }
-
-    LOG_RUN_INF("_BLACKBOX_DETAIL_ON = %u.", inst_cfg->params.blackbox_detail_on);
-    return CM_SUCCESS;
+    return dss_load_blackbox_detail_on_inner(value, inst_cfg);
 }
 
 static status_t dss_load_enable_core_state_collect(dss_config_t *inst_cfg)
