@@ -1053,22 +1053,16 @@ static void dss_loaddisk_unlock(char *vg_name)
     }
 }
 
-static void dss_load_shm_lock_s_force(char *vg_name)
+static void dss_load_shm_lock_s_force(dss_session_t *session, dss_vg_info_item_t*vg_item)
 {
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
-    if (vg_item != NULL) {
-        dss_lock_vg_mem_s_force(vg_item);
-        (void)dss_lock_shm_meta_s_without_stack(NULL, vg_item->vg_latch, CM_TRUE, SPIN_WAIT_FOREVER);
-    }
+    dss_lock_vg_mem_s_force(vg_item);
+    (void)dss_lock_shm_meta_s_without_stack(session, vg_item->vg_latch, CM_TRUE, SPIN_WAIT_FOREVER);
 }
 
-static void dss_load_shm_unlock(char *vg_name)
+static void dss_load_shm_unlock(dss_session_t *session, dss_vg_info_item_t*vg_item)
 {
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
-    if (vg_item != NULL) {
-        dss_unlock_vg_mem(vg_item);
-        dss_unlock_shm_meta_without_stack(NULL, vg_item->vg_latch);
-    }
+    dss_unlock_vg_mem(vg_item);
+    dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);
 }
 
 static int32 dss_batch_load_core(dss_session_t *session, dss_loaddisk_req_t *req, char *read_buff, uint32 version)
@@ -1501,13 +1495,20 @@ status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg
 }
 
 static status_t dss_proc_get_ft_block_req_core(
-    dss_session_t *session, dss_get_ft_block_req_t *req, dss_get_ft_block_ack_t *ack)
+    dss_session_t *session, dss_get_ft_block_req_t *req, dss_get_ft_block_ack_t *ack, dss_vg_info_item_t **vg_item)
 {
     gft_node_t *out_node = NULL;
     gft_node_t *parent_node = NULL;
-    dss_vg_info_item_t *vg_item = NULL;
-    dss_check_dir_output_t output_info = {&out_node, &vg_item, &parent_node, CM_FALSE};
+    dss_vg_info_item_t *file_vg_item = *vg_item;
+    dss_check_dir_output_t output_info = {&out_node, &file_vg_item, &parent_node, CM_FALSE};
     DSS_RETURN_IF_ERROR(dss_check_dir(session, req->path, req->type, &output_info, CM_TRUE));
+    if (file_vg_item->id != (*vg_item)->id) {
+        LOG_DEBUG_INF("Change shm lock when get link path :%s, src vg id:%u, dst vg id:%u.", req->path, (*vg_item)->id,
+            file_vg_item->id);
+        dss_load_shm_unlock(session, *vg_item);
+        *vg_item = file_vg_item;
+        dss_load_shm_lock_s_force(session, *vg_item);
+    }
     ack->node_id = out_node->id;
     DSS_LOG_DEBUG_OP("Req out node, v:%u,au:%llu,block:%u,item:%u,type:%d,path:%s.", out_node->id.volume,
         (uint64)out_node->id.au, out_node->id.block, out_node->id.item, req->type, req->path);
@@ -1517,7 +1518,7 @@ static status_t dss_proc_get_ft_block_req_core(
         CM_THROW_ERROR(ERR_SYSTEM_CALL, (errcode));
         return CM_ERROR;
     }
-    errcode = strncpy_sp(ack->vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name, strlen(vg_item->vg_name));
+    errcode = strncpy_sp(ack->vg_name, DSS_MAX_NAME_LEN, file_vg_item->vg_name, strlen(file_vg_item->vg_name));
     if (errcode != EOK) {
         CM_THROW_ERROR(ERR_SYSTEM_CALL, (errcode));
         return CM_ERROR;
@@ -1570,9 +1571,14 @@ void dss_proc_get_ft_block_req(dss_session_t *session, mes_msg_t *msg)
     }
     dss_get_ft_block_ack_t ack;
     dss_init_mes_head(&ack.ack_head, DSS_CMD_ACK_GET_FT_BLOCK, 0, src_inst, dst_inst, sizeof(dss_get_ft_block_ack_t), proto_ver, ruid);
-    dss_load_shm_lock_s_force(vg_name);
-    status = dss_proc_get_ft_block_req_core(session, req, &ack);
-    dss_load_shm_unlock(vg_name);
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
+    if (vg_item == NULL) {
+        LOG_RUN_ERR("invalid vg name: %s ,Get vg item fail.", vg_name);
+        return;
+    }
+    dss_load_shm_lock_s_force(session, vg_item);
+    status = dss_proc_get_ft_block_req_core(session, req, &ack, &vg_item);
+    dss_load_shm_unlock(session, vg_item);
     if (status != CM_SUCCESS) {
         dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_GET_FT_BLOCK, status);
         return;
