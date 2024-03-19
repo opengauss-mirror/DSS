@@ -68,37 +68,6 @@
 #define DSS_DEFAULT_VG_TYPE 't' /* show vg information in table format by default */
 static const char dss_ls_print_flag[] = {'d', '-', 'l'};
 
-// clang-format off
-config_item_t g_dss_admin_parameters[] = {
-    // name (30B)                     isdefault readonly  defaultvalue value runtime_value description range  datatype
-    // comment
-    // -------------                  --------- --------  ------------ ----- ------------- ----------- -----  --------
-    // -----
-    /* log */
-    { "LOG_HOME",                  CM_TRUE, CM_TRUE,  "",      NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL, 0,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_BACKUP_FILE_COUNT",    CM_TRUE, CM_FALSE, "20",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL, 1,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_MAX_FILE_SIZE",        CM_TRUE, CM_FALSE, "256M",  NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL, 2,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_FILE_PERMISSIONS",     CM_TRUE, CM_FALSE, "600",   NULL, NULL, "-", "[600-777]", "GS_TYPE_INTEGER", NULL, 3,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_PATH_PERMISSIONS",     CM_TRUE, CM_FALSE, "700",   NULL, NULL, "-", "[700-777]", "GS_TYPE_INTEGER", NULL, 4,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_LEVEL",                CM_TRUE, CM_FALSE, "519",     NULL, NULL, "-", "[0,4087]",  "GS_TYPE_INTEGER", NULL, 5,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_AUDIT_BACKUP_FILE_COUNT",  CM_TRUE, CM_FALSE, "20",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL, 6,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_AUDIT_MAX_FILE_SIZE",      CM_TRUE, CM_FALSE, "256M",  NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL, 7,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "LSNR_PATH",                 CM_TRUE, CM_FALSE, "/tmp/", NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL, 8,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_AUDIT_LEVEL",              CM_TRUE, CM_FALSE, "1",     NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL, 9,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "CLUSTER_RUN_MODE",          CM_TRUE, CM_FALSE, "cluster_primary", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 10, 
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-};
-
 // clang-format on
 dss_log_def_t g_dss_admin_log[] = {
     {LOG_DEBUG, "debug/dsscmd.dlog"},
@@ -107,67 +76,10 @@ dss_log_def_t g_dss_admin_log[] = {
     {LOG_ALARM, "alarm/dsscmd.alog"},
 };
 
-typedef status_t (*cmd_parser_check_args_t)(const char *input_args);
-typedef status_t (*cmd_parser_convert_args_t)(const char *input_args, void **convert_result, int *convert_size);
-typedef void (*cmd_parser_clean_convert_args_t)(char *convert_result, int convert_size);
-typedef struct st_dss_args_t {
-    char short_name;                     // args short name
-    const char *long_name;               // args long name ,can be null
-    int32 required;                      // CM_TRUE required,  CM_FALSE optional
-    int32 required_args;                 // CM_TRUE required,  CM_FALSE not need
-    cmd_parser_check_args_t check_args;  // if want to check input_args, set it, can be NULL
-    cmd_parser_convert_args_t convert_args;
-    cmd_parser_clean_convert_args_t clean_convert_args;
-    int32 inputed;     // CM_TRUE input-ed by user, CM_FALSE not input
-    char *input_args;  // if required_args is CM_TRUE,  should get value from user
-    void *convert_result;
-    int32 convert_result_size;
-} dss_args_t;
-
-typedef status_t (*cmd_parse_check_t)(dss_args_t *cmd_args_set, int set_size);
-typedef struct st_dss_args_set_t {
-    dss_args_t *cmd_args;
-    int32 args_size;
-    cmd_parse_check_t args_check;
-} dss_args_set_t;
-
-typedef status_t (*dss_admin_cmd_proc)(void);
-typedef struct st_dss_admin_cmd_t {
-    char cmd[CM_MAX_NAME_LEN];
-    dss_admin_help help;
-    dss_admin_cmd_proc proc;
-    dss_args_set_t *args_set;
-    bool log_necessary;
-} dss_admin_cmd_t;
-
 typedef struct st_dss_print_help_t {
     char fmt;
     uint32 bytes;
 } dss_print_help_t;
-
-// just for cmd exist for much cmd at once
-static void cmd_parse_init(dss_args_t *cmd_args_set, int set_size)
-{
-    for (int i = 0; i < set_size; i++) {
-        cmd_args_set[i].inputed = CM_FALSE;
-        cmd_args_set[i].input_args = NULL;
-        cmd_args_set[i].convert_result = NULL;
-        cmd_args_set[i].convert_result_size = 0;
-    }
-}
-
-static void cmd_parse_clean(dss_args_t *cmd_args_set, int set_size)
-{
-    for (int i = 0; i < set_size; i++) {
-        cmd_args_set[i].inputed = CM_FALSE;
-        cmd_args_set[i].input_args = NULL;
-        if (cmd_args_set[i].clean_convert_args != NULL) {
-            cmd_args_set[i].clean_convert_args(cmd_args_set[i].convert_result, cmd_args_set[i].convert_result_size);
-        }
-        cmd_args_set[i].convert_result = NULL;
-        cmd_args_set[i].convert_result_size = 0;
-    }
-}
 
 // add uni-check function after here
 // ------------------------
@@ -229,25 +141,6 @@ static status_t cmd_check_uds(const char *uds)
         return CM_ERROR;
     }
     return dss_check_path(uds + strlen(uds_prefix));
-}
-
-static status_t cmd_check_au_size(const char *au_size_str)
-{
-    uint32 min_multiple = DSS_MIN_AU_SIZE / SIZE_K(1);
-    uint32 max_multiple = DSS_MAX_AU_SIZE / SIZE_K(1);
-    uint32 au_size;
-    status_t ret = cm_str2uint32(au_size_str, &au_size);
-    if (ret != CM_SUCCESS) {
-        DSS_PRINT_ERROR("au_size %s is error!\n", au_size_str);
-        return CM_ERROR;
-    }
-
-    if (au_size == 0 || au_size < min_multiple || au_size > max_multiple) {
-        DSS_PRINT_ERROR(
-            "au_size %u is error, au_size cannot be 0, must greater than 2MB, smaller than 64MB!\n", au_size);
-        return CM_ERROR;
-    }
-    return CM_SUCCESS;
 }
 
 static status_t cmd_realpath_home(const char *input_args, char **convert_result, int *convert_size)
@@ -592,163 +485,6 @@ static status_t cmd_check_cfg_scope(const char *scope)
 
 // ------------------------
 // add uni-check function before here
-static status_t cmd_parse_check(dss_args_t *cmd_args_set, int set_size)
-{
-    for (int i = 0; i < set_size; i++) {
-        if (cmd_args_set[i].required && !cmd_args_set[i].inputed) {
-            DSS_PRINT_ERROR(
-                "args [-%c|--%s] needs input value.\n", cmd_args_set[i].short_name, cmd_args_set[i].long_name);
-            return CM_ERROR;
-        }
-    }
-    return CM_SUCCESS;
-}
-
-static status_t cmd_parse_short_name_args(int argc, char **argv, int *argc_idx, dss_args_t *cmd_args_set, int set_size)
-{
-    int i = *argc_idx;
-    int j;
-    for (j = 0; j < set_size; j++) {
-        // not hit short name
-        if (cmd_args_set[j].short_name != argv[i][DSS_ARG_IDX_1]) {
-            continue;
-        }
-
-        // repeat args
-        if (cmd_args_set[j].inputed) {
-            DSS_PRINT_ERROR("%s repeat args.\n", argv[i]);
-            return CM_ERROR;
-        }
-
-        // input -f and -f needs no args
-        if (!cmd_args_set[j].required_args) {
-            // input -fx
-            if (argv[i][DSS_ARG_IDX_2] != 0x0) {
-                DSS_PRINT_ERROR("%s should not with args.\n", argv[i]);
-                return CM_ERROR;
-            }
-        } else {
-            // input -f, and -f needs args
-            if (argv[i][DSS_ARG_IDX_2] == 0x0 && (i + 1 >= argc)) {
-                DSS_PRINT_ERROR("%s should with args.\n", argv[i]);
-                return CM_ERROR;
-            }
-
-            if (argv[i][DSS_ARG_IDX_2] != 0x0) {
-                // input -fx
-                cmd_args_set[j].input_args = &argv[i][DSS_ARG_IDX_2];
-            } else {
-                // input -f x
-                i++;
-                cmd_args_set[j].input_args = argv[i];
-            }
-
-            // need to check args input
-            if (cmd_args_set[j].check_args != NULL &&
-                cmd_args_set[j].check_args(cmd_args_set[j].input_args) != CM_SUCCESS) {
-                return CM_ERROR;
-            }
-            if (cmd_args_set[j].convert_args != NULL &&
-                cmd_args_set[j].convert_args(cmd_args_set[j].input_args, &cmd_args_set[j].convert_result,
-                    &cmd_args_set[j].convert_result_size) != CM_SUCCESS) {
-                return CM_ERROR;
-            }
-        }
-        cmd_args_set[j].inputed = CM_TRUE;
-        break;
-    }
-
-    // no args hit
-    if (j == set_size) {
-        DSS_PRINT_ERROR("input %s hit no args.\n", argv[i]);
-        return CM_ERROR;
-    }
-    *argc_idx = i;
-    return CM_SUCCESS;
-}
-
-static status_t cmd_parse_long_name_args(int argc, char **argv, int *argc_idx, dss_args_t *cmd_args_set, int set_size)
-{
-    int i = *argc_idx;
-    int j;
-    for (j = 0; j < set_size; j++) {
-        // hit long name
-        if (cmd_args_set[j].long_name == NULL || strcmp(cmd_args_set[j].long_name, &argv[i][DSS_ARG_IDX_2]) != 0) {
-            continue;
-        }
-
-        // repeat args
-        if (cmd_args_set[j].inputed) {
-            DSS_PRINT_ERROR("%s repeat args.\n", argv[i]);
-            return CM_ERROR;
-        }
-
-        // input --format args
-        if (cmd_args_set[j].required_args) {
-            // input --format , and no more args
-            if (i + 1 >= argc) {
-                DSS_PRINT_ERROR("%s should with args.\n", argv[i]);
-                return CM_ERROR;
-            }
-            i++;
-            cmd_args_set[j].input_args = argv[i];
-
-            // need to check args input
-            if (cmd_args_set[j].check_args != NULL &&
-                cmd_args_set[j].check_args(cmd_args_set[j].input_args) != CM_SUCCESS) {
-                return CM_ERROR;
-            }
-            //
-            if (cmd_args_set[j].convert_args != NULL &&
-                cmd_args_set[j].convert_args(cmd_args_set[j].input_args, &cmd_args_set[j].convert_result,
-                    &cmd_args_set[j].convert_result_size) != CM_SUCCESS) {
-                return CM_ERROR;
-            }
-        }
-        cmd_args_set[j].inputed = CM_TRUE;
-        break;
-    }
-
-    // no args hit
-    if (j == set_size) {
-        DSS_PRINT_ERROR("input %s hit no args.\n", argv[i]);
-        return CM_ERROR;
-    }
-    *argc_idx = i;
-    return CM_SUCCESS;
-}
-
-static status_t cmd_parse_args(int argc, char **argv, dss_args_set_t *args_set)
-{
-    if (argc < CMD_ARGS_AT_LEAST || (args_set->args_size == 0 && argc > CMD_ARGS_AT_LEAST)) {
-        DSS_PRINT_ERROR("args num %d error.\n", g_run_interatively ? argc - 1 : argc);
-        return CM_ERROR;
-    }
-    // allow the cmd needs no args
-    if (args_set->args_size == 0) {
-        return CM_SUCCESS;
-    }
-    for (int i = CMD_ARGS_AT_LEAST; i < argc; i++) {
-        if (argv[i][DSS_ARG_IDX_0] != '-') {
-            DSS_PRINT_ERROR("%s should begin with -.\n", argv[i]);
-            return CM_ERROR;
-        }
-        status_t status;
-        if (argv[i][DSS_ARG_IDX_1] != '-') {
-            status = cmd_parse_short_name_args(argc, argv, &i, args_set->cmd_args, args_set->args_size);
-        } else {
-            status = cmd_parse_long_name_args(argc, argv, &i, args_set->cmd_args, args_set->args_size);
-        }
-        if (status != CM_SUCCESS) {
-            return status;
-        }
-    }
-    if (args_set->args_check != NULL) {
-        return args_set->args_check(args_set->cmd_args, args_set->args_size);
-    }
-    return cmd_parse_check(args_set->cmd_args, args_set->args_size);
-}
-
 static inline void help_param_dsshome(void)
 {
     (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dssserver, default value is $DSS_HOME\n");
@@ -1204,28 +940,6 @@ static status_t lsvg_proc(void)
     dss_disconnect_ex(&connection);
     DSS_PRINT_INF("Succeed to display lsvg info.\n");
     return CM_SUCCESS;
-}
-
-static status_t dss_load_local_server_config(
-    dss_config_t *inst_cfg, config_item_t *client_parameters, uint32 item_count)
-{
-    char file_name[CM_MAX_PATH_LEN];
-    char *home = dss_get_cfg_dir(inst_cfg);
-    status_t res;
-
-    if (snprintf_s(file_name, CM_MAX_PATH_LEN, CM_MAX_PATH_LEN - 1, "%s/cfg/%s", home, DSS_CFG_NAME) == -1) {
-        cm_panic(0);
-    }
-    cm_init_config(client_parameters, item_count, &inst_cfg->config);
-    inst_cfg->config.ignore = CM_TRUE; /* ignore unknown parameters */
-    if (!cm_file_exist(file_name)) {
-        return CM_SUCCESS;
-    }
-    res = cm_read_config(file_name, &inst_cfg->config);
-    if (res != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Read config from %s failed.\n", file_name);
-    }
-    return res;
 }
 
 static dss_args_t cmd_adv_args[] = {
@@ -4789,9 +4503,7 @@ int main(int argc, char **argv)
         (void)printf("Environment variant DSS_HOME not found!\n");
         return CM_ERROR;
     }
-
-    uint32 param_num = sizeof(g_dss_admin_parameters) / sizeof(config_item_t);
-    status_t ret = dss_load_local_server_config(inst_cfg, g_dss_admin_parameters, param_num);
+    status_t ret = dss_load_local_server_config(inst_cfg);
     if (ret != CM_SUCCESS) {
         (void)printf("load local server config failed during init loggers.\n");
         return CM_ERROR;

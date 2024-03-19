@@ -763,11 +763,6 @@ status_t dss_printf_dss_file_table_block(
     return status;
 }
 
-static int64 dss_get_fsb_offset(const dss_core_ctrl_t *core_ctrl, const dss_block_id_t *id)
-{
-    return (int64)id->au * core_ctrl->au_size + (int64)DSS_FILE_SPACE_BLOCK_SIZE * id->block;
-}
-
 static status_t dss_print_fsb_by_id(char *block, uint64 node_id)
 {
     dss_fs_block_t *file_space_block = (dss_fs_block_t *)block;
@@ -810,7 +805,7 @@ static status_t printf_dss_file_space_block(
     status = dss_open_volume(volume_ctrl->defs[id->volume].name, NULL, DSS_CLI_OPEN_FLAG, &volume);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to open file with volume handle:%d.\n", volume.handle));
 
-    offset = dss_get_fsb_offset(core_ctrl, id);
+    offset = dss_get_fsb_offset(core_ctrl->au_size, id);
     bool32 result = (bool32)(offset % DSS_DISK_UNIT_SIZE == 0);
     DSS_RETURN_IF_FALSE3(
         result, DSS_PRINT_ERROR("offset must be align %d.\n", DSS_DISK_UNIT_SIZE), dss_close_volume(&volume));

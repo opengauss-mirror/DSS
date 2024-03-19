@@ -1503,7 +1503,8 @@ status_t dss_update_au_disk(
         dss_common_block_t *block = (dss_common_block_t *)buf;
         block->version++;
         block->checksum = dss_get_checksum(buf, size);
-        LOG_DEBUG_INF("dss_update_au_disk checksum:%u, %s, count:%u.", block->checksum, dss_display_metaid(auid), i);
+        LOG_DEBUG_INF(
+            "dss_update_au_disk checksum:%u, %s, count:%u.", block->checksum, dss_display_metaid(block->id), i);
 
         block_offset = offset + i * size;
         status = dss_write_volume_inst(vg_item, &vg_item->volume_handle[auid.volume], block_offset, buf, size);
