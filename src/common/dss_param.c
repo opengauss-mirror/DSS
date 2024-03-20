@@ -129,7 +129,7 @@ static config_item_t g_dss_params[] = {
         44, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_enable_core_state_collect, dss_notify_enable_core_state_collect, NULL, NULL},
     { "DELAY_CLEAN_INTERVAL",  CM_TRUE, CM_FALSE, "100",    NULL, NULL, "-", "[5,1000000]",  "GS_TYPE_INTEGER", NULL,
         45, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_delay_clean_interval, dss_notify_delay_clean_interval, NULL, NULL},
-    { "MASTER_LOCK_TIMEOUT", CM_TRUE, CM_FALSE, "6",     NULL, NULL, "-", "[1,30]",    "GS_TYPE_INTEGER", NULL, 46,
+    { "MASTER_LOCK_TIMEOUT", CM_TRUE, CM_FALSE, "10",     NULL, NULL, "-", "[1,30]",    "GS_TYPE_INTEGER", NULL, 46,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
