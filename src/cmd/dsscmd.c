@@ -2856,10 +2856,10 @@ static dss_args_set_t cmd_fshowmem_args_set = {
 
 static void fshowmem_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s fshowmem <-m memory_file_path> <-g vg_name> <-s struct_name>\n", prog_name);
-    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-b block_id> <-i index_id>\n", prog_name);
-    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-f fid> <-n node_id> [-o offset] [-z size]\n", prog_name);
-    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-p path> [-o offset] [-z size]\n", prog_name);
+    (void)printf("\nUsage:%s fshowmem <-m memory_file_path> <-g vg_name> <-s struct_name> [-D DSS_HOME]\n", prog_name);
+    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-b block_id> <-i index_id> [-D DSS_HOME]\n", prog_name);
+    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-f fid> <-n node_id> [-o offset] [-z size] [-D DSS_HOME]\n", prog_name);
+    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-p path> [-o offset] [-z size] [-D DSS_HOME]\n", prog_name);
     (void)printf("[client command] fshowmem information\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;

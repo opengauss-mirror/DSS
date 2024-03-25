@@ -564,7 +564,7 @@ status_t dss_print_fsb_by_id_detail(dss_session_t *session, dss_vg_info_item_t *
             (void)printf("%s}\n", tab);
         }
     } else {
-
+        return dss_print_fsb_by_id_detail_part(session, vg_item, block, show_param);
     }
     return CM_SUCCESS;
 }
