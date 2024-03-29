@@ -1574,6 +1574,7 @@ void dss_proc_get_ft_block_req(dss_session_t *session, mes_msg_t *msg)
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item == NULL) {
         LOG_RUN_ERR("invalid vg name: %s ,Get vg item fail.", vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
         return;
     }
     dss_load_shm_lock_s_force(session, vg_item);
