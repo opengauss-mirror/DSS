@@ -2051,15 +2051,6 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
         return NULL;
     }
     dss_check_ft_node_free(node);
-    node->type = type;
-    node->parent = parent_node->id;
-    dss_ft_block_t *block = dss_get_ft_block_by_node(node);
-    block->common.flags = DSS_BLOCK_FLAG_USED;
-    errno_t errcode = strcpy_s(node->name, sizeof(node->name), name);
-    if (errcode != EOK) {
-        DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
-        return NULL;
-    }
     if (type == GFT_PATH) {
         node->items.count = 0;
         dss_set_auid(&node->items.first, DSS_INVALID_64);
@@ -2070,6 +2061,15 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
             LOG_DEBUG_ERR("Failed to get alloc fs block when allocating file table node %s.", node->name);
             return NULL;
         }
+    }
+    node->type = type;
+    node->parent = parent_node->id;
+    dss_ft_block_t *block = dss_get_ft_block_by_node(node);
+    block->common.flags = DSS_BLOCK_FLAG_USED;
+    errno_t errcode = strcpy_s(node->name, sizeof(node->name), name);
+    if (errcode != EOK) {
+        DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
+        return NULL;
     }
     gft->free_list.first = node->next;
     gft->free_list.count--;
