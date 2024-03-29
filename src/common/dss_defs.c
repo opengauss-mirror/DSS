@@ -158,6 +158,24 @@ status_t cm_time2str(time_t time, const char *fmt, char *str, uint32 str_max_siz
     return cm_time2text(time, &fmt_text, &time_text, str_max_size);
 }
 
+#define DSS_DISPLAY_SIZE 75
+
+#ifdef WIN32
+    __declspec(thread) char g_display_buf[DSS_DISPLAY_SIZE];
+#else
+    __thread char g_display_buf[DSS_DISPLAY_SIZE];
+#endif
+
+char *dss_display_metaid(auid_t id)
+{
+    int ret = sprintf_s(g_display_buf, DSS_DISPLAY_SIZE, "metaid:%llu (v:%u, au:%llu, block:%u, item:%u)",
+        DSS_ID_TO_U64(id), (id).volume, (uint64)(id).au, (id).block, (id).item);
+    if (ret < 0) {
+        g_display_buf[0] = '\0';
+    }
+    return g_display_buf;
+}
+
 void cm_destroy_thread_lock(thread_lock_t *lock)
 {
     CM_ASSERT(lock != NULL);

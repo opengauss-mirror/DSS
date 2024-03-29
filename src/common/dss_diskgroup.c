@@ -847,9 +847,11 @@ status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry
 status_t dss_lock_vg_storage_r(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {
     if (dss_file_lock_vg_r(inst_cfg) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to file read lock vg.");
         return CM_ERROR;
     }
     if (dss_lock_vg_storage_core(vg_item, entry_path, inst_cfg) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to lock vg, entry path %s.", entry_path);
         dss_file_unlock_vg();
         return CM_ERROR;
     }
@@ -1190,7 +1192,8 @@ static status_t dss_add_volume_impl(
 {
     uint32 id = dss_find_free_volume_id(vg_item);
     bool32 result = (bool32)(id < DSS_MAX_VOLUMES);
-    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Failed to add volume, exceed max volumes %d.", DSS_MAX_VOLUMES));
+    DSS_RETURN_IF_FALSE2(
+        result, LOG_DEBUG_ERR("[VOL][ADV] Failed to add volume, exceed max volumes %d.", DSS_MAX_VOLUMES));
 
     CM_RETURN_IFERR(dss_open_volume(volume_name, NULL, DSS_INSTANCE_OPEN_FLAG, &vg_item->volume_handle[id]));
     status_t status = dss_add_volume_impl_generate_redo(session, vg_item, volume_name, id);
@@ -1201,7 +1204,8 @@ static status_t dss_add_volume_impl(
     }
 
     result = (bool32)(vol_size != DSS_INVALID_64);
-    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Failed to get volume size when add volume:%s.", volume_name));
+    DSS_RETURN_IF_FALSE2(
+        result, LOG_DEBUG_ERR("[VOL][ADV] Failed to get volume size when add volume:%s.", volume_name));
     status = dss_add_volume_vg_ctrl(vg_item->dss_ctrl, id, vol_size, volume_name, volume_flag);
     if (status != CM_SUCCESS) {
         return status;
@@ -1229,7 +1233,7 @@ status_t dss_add_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item
     const char *volume_name, dss_config_t *inst_cfg)
 {
     if (dss_refresh_vginfo(vg_item) != CM_SUCCESS) {
-        LOG_DEBUG_ERR("%s refresh vginfo failed.", "dss_add_volume");
+        LOG_DEBUG_ERR("[VOL][ADV] %s refresh vginfo failed.", "dss_add_volume");
         return CM_ERROR;
     }
     if (dss_find_volume(vg_item, volume_name) != CM_INVALID_ID32) {
@@ -1344,13 +1348,13 @@ status_t dss_check_remove_volume(
 
     if (*volume_id == 0) {
         DSS_THROW_ERROR(ERR_DSS_VOLUME_REMOVE_SUPER_BLOCK, volume_name);
-        LOG_DEBUG_ERR("Not allow to delete super-block volume, %s.", volume_name);
+        LOG_DEBUG_ERR("[VOL][RMV] Not allow to delete super-block volume, %s.", volume_name);
         return CM_ERROR;
     }
 
     if (dss_check_volume_is_used(vg_item, *volume_id)) {
         DSS_THROW_ERROR(ERR_DSS_VOLUME_REMOVE_NONEMPTY, volume_name);
-        LOG_DEBUG_ERR("Not allow to delete a nonempty volume, %s.", volume_name);
+        LOG_DEBUG_ERR("[VOL][RMV] Not allow to delete a nonempty volume, %s.", volume_name);
         return CM_ERROR;
     }
 
@@ -1418,7 +1422,7 @@ status_t dss_add_volume(dss_session_t *session, const char *vg_name, const char 
 {
     status_t status = dss_modify_volume(session, vg_name, volume_name, (uint8)DSS_CMD_ADD_VOLUME);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to add volume:%s in vg:%s.", volume_name, vg_name);
+        LOG_DEBUG_ERR("[VOL][ADV] Failed to add volume:%s in vg:%s.", volume_name, vg_name);
         return status;
     }
     LOG_RUN_INF("Succeed to add volume:%s in vg:%s.", volume_name, vg_name);
@@ -1429,7 +1433,7 @@ status_t dss_remove_volume(dss_session_t *session, const char *vg_name, const ch
 {
     status_t status = dss_modify_volume(session, vg_name, volume_name, (uint8)DSS_CMD_REMOVE_VOLUME);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to delete volume:%s in vg:%s.", volume_name, vg_name);
+        LOG_DEBUG_ERR("[VOL][RMV] Failed to delete volume:%s in vg:%s.", volume_name, vg_name);
         return status;
     }
     LOG_RUN_INF("Succeed to delete volume:%s in vg:%s.", volume_name, vg_name);

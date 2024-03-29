@@ -308,6 +308,10 @@ void dss_mv_to_recycle_dir(dss_session_t *session, dss_vg_info_item_t *vg_item, 
     gft_node_t *recycle_node = dss_get_ft_node_by_ftid(session, vg_item, recycle_ftid, CM_TRUE, CM_FALSE);
     CM_ASSERT(recycle_node != NULL);
 
+    LOG_DEBUG_INF("[FT][RECYCLE] Begin to mv node to recycle dir, name:%s, node: %s, recycle dir count:%u.",
+        node->name, dss_display_metaid(node->id), recycle_node->items.count);
+    LOG_DEBUG_INF("[FT][RECYCLE] Now recycle dir first node: %s.", dss_display_metaid(recycle_node->items.first));
+    LOG_DEBUG_INF("[FT][RECYCLE] Now recycle dir last node: %s.", dss_display_metaid(recycle_node->items.last));
     recycle_node->items.count++;
     node->prev = recycle_node->items.last;
     node->parent = recycle_ftid;
@@ -334,7 +338,10 @@ void dss_mv_to_recycle_dir(dss_session_t *session, dss_vg_info_item_t *vg_item, 
     redo.node[DSS_REDO_RECYCLE_FT_NODE_RECYCLE_INDEX] = *recycle_node;
 
     dss_put_log(session, vg_item, DSS_RT_RECYCLE_FILE_TABLE_NODE, &redo, sizeof(dss_redo_recycle_ft_node_t));
-    DSS_LOG_DEBUG_OP("Mv to recycle dir, name:%s, node id:%llu.", node->name, DSS_ID_TO_U64(node->id));
+    DSS_LOG_DEBUG_OP("[FT][RECYCLE] Succeed to mv to recycle dir, name:%s, node: %s, now recycle dir count:%u.",
+        node->name, dss_display_metaid(node->id), recycle_node->items.count);
+    LOG_DEBUG_INF("[FT][RECYCLE] Now recycle dir first node: %s.", dss_display_metaid(recycle_node->items.first));
+    LOG_DEBUG_INF("[FT][RECYCLE] Now recycle dir last node: %s.", dss_display_metaid(recycle_node->items.last));
 }
 
 status_t dss_recycle_empty_file(
@@ -344,14 +351,15 @@ status_t dss_recycle_empty_file(
     bool32 cmp = dss_cmp_blockid(node->entry, CM_INVALID_ID64);
     if (cmp) {
         dss_free_ft_node(session, vg_item, parent_node, node, CM_TRUE);
-        DSS_LOG_DEBUG_OP("Succeed to free empty file(fid:%llu), just free node.", node->fid);
+        DSS_LOG_DEBUG_OP("[FT][RECYCLE] Succeed to free empty file(fid:%llu), just free node.", node->fid);
         return CM_SUCCESS;
     }
     dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
         session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, &entry_objid, CM_FALSE);
     if (entry_block == NULL) {
-        LOG_DEBUG_ERR("Failed to get fs block %llu,%llu,%llu, maybe no memory.", (uint64)node->entry.au,
-            (uint64)node->entry.volume, (uint64)node->entry.block);
+        LOG_DEBUG_ERR("[FT][RECYCLE] Failed to get fs block: %s, node name:%s, maybe no memory.",
+            dss_display_metaid(node->entry), node->name);
+        LOG_DEBUG_INF("[FT][RECYCLE] Parent node: %s.", dss_display_metaid(node->parent));
         return CM_ERROR;
     }
     dss_check_fs_block_affiliation(entry_block, node->id, DSS_ENTRY_FS_INDEX);
@@ -365,8 +373,9 @@ status_t dss_recycle_empty_file(
     dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
         session, vg_item, entry_fs_block->bitmap[index], DSS_BLOCK_TYPE_FS, CM_TRUE, &sec_objid, CM_FALSE);
     if (block == NULL) {
-        LOG_DEBUG_ERR("Failed to get fs block %llu,%llu,%llu, maybe no memory.", (uint64)node->entry.au,
-            (uint64)node->entry.volume, (uint64)node->entry.block);
+        LOG_DEBUG_ERR("[FT][RECYCLE] Failed to get fs block: %s, node name:%s, maybe no memory.",
+            dss_display_metaid(node->entry), node->name);
+        LOG_DEBUG_INF("[FT][RECYCLE] Parent node: %s.", dss_display_metaid(node->parent));
         return CM_ERROR;
     }
     CM_ASSERT(block->head.used_num == 0);
@@ -377,7 +386,7 @@ status_t dss_recycle_empty_file(
     dss_free_fs_block_addr(session, vg_item, (char *)entry_block, entry_objid);
     dss_free_ft_node(session, vg_item, parent_node, node, CM_TRUE);
 
-    DSS_LOG_DEBUG_OP("Succeed to free empty file(fid:%llu).", node->fid);
+    DSS_LOG_DEBUG_OP("[FT][RECYCLE] Succeed to free empty file(fid:%llu).", node->fid);
     return CM_SUCCESS;
 }
 
@@ -388,8 +397,9 @@ static status_t dss_get_link_auid(
         session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
     if (!entry_block) {
         char *err_msg = "Can not find entry block in memory, entry blockid";
-        DSS_RETURN_IFERR2(CM_ERROR,
-            LOG_DEBUG_ERR("%s:%llu, nodeid:%llu.", err_msg, DSS_ID_TO_U64(node->entry), DSS_ID_TO_U64(node->id)));
+        LOG_DEBUG_ERR("%s:%s.", err_msg, dss_display_metaid(node->entry));
+        LOG_DEBUG_INF("Node: %s.", dss_display_metaid(node->id));
+        return CM_ERROR;
     }
 
     uint16 index = (uint16)(entry_block->used_num - 1);
@@ -400,7 +410,7 @@ static status_t dss_get_link_auid(
         session, vg_item, second_block_id, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
     if (!second_block) {
         DSS_RETURN_IFERR2(
-            CM_ERROR, LOG_DEBUG_ERR("Failed to find the second block:%llu.", DSS_ID_TO_U64(second_block_id)));
+            CM_ERROR, LOG_DEBUG_ERR("Failed to find the second block:%s.", dss_display_metaid(second_block_id)));
     }
     index = (uint16)(second_block->used_num - 1);
     dss_fs_block_t *second_fs_block = (dss_fs_block_t *)second_block;
@@ -439,8 +449,8 @@ static status_t dss_read_link_file(
             vol_offset, node->name, node->type);
         return CM_ERROR;
     }
-    DSS_LOG_DEBUG_OP("Read link, volume: %s, vol_offset: %lld, auid: %llu, buff: %s, buf_size: %lu", volume.name,
-        vol_offset, DSS_ID_TO_U64(auid), out_filename, strlen(out_filename));
+    DSS_LOG_DEBUG_OP("Succeed to read link, volume: %s, vol_offset: %lld, %s, buff: %s, buf_size: %lu", volume.name,
+        vol_offset, dss_display_metaid(auid), out_filename, strlen(out_filename));
     return CM_SUCCESS;
 }
 
@@ -470,9 +480,9 @@ status_t dss_read_link(dss_session_t *session, char *link_path, char *out_filepa
     dss_unlock_vg_mem_and_shm(session, vg_item);
     if (status != CM_SUCCESS) {
         status = dss_delete_open_file_index(
-            session, vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
+            session, vg_item, DSS_ID_TO_U64(node->id), session->cli_info.cli_pid, session->cli_info.start_time);
         if (status == CM_SUCCESS) {
-            LOG_RUN_INF("Success to delete open file index, ftid:%llu.", *(uint64 *)&node->id);
+            LOG_RUN_INF("Success to delete open file index, ftid:%llu.", DSS_ID_TO_U64(node->id));
         }
         return CM_ERROR;
     }
@@ -481,9 +491,9 @@ status_t dss_read_link(dss_session_t *session, char *link_path, char *out_filepa
     securec_check_ret(errcode);
 
     status = dss_delete_open_file_index(
-        session, vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
+        session, vg_item, DSS_ID_TO_U64(node->id), session->cli_info.cli_pid, session->cli_info.start_time);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to delete open file index."));
-    DSS_LOG_DEBUG_OP("Succeed to close link, ftid:%llu, session id:%u.", *(uint64 *)&node->id, session->id);
+    DSS_LOG_DEBUG_OP("Succeed to close link, %s, session id:%u.", dss_display_metaid(node->id), session->id);
     return CM_SUCCESS;
 }
 
@@ -516,8 +526,8 @@ static status_t dss_write_link_file_content(
             vol_offset, dst_path_buf, sizeof(dst_path_buf) - 1);
         return CM_ERROR;
     }
-    DSS_LOG_DEBUG_OP("Write link, volume: %s, vol_offset: %lld, auid: %llu, buff: %s, buf_size: %lu", volume.name,
-        vol_offset, DSS_ID_TO_U64(auid), dst_path_buf, sizeof(dst_path_buf) - 1);
+    DSS_LOG_DEBUG_OP("Succeed to write link, volume: %s, vol_offset: %lld, %s, buff: %s, buf_size: %lu", volume.name,
+        vol_offset, dss_display_metaid(auid), dst_path_buf, sizeof(dst_path_buf) - 1);
     return CM_SUCCESS;
 }
 
@@ -544,9 +554,9 @@ status_t dss_write_link_file(dss_session_t *session, char *link_path, char *dst_
     status = dss_extend(session, &node_data);
     if (status != CM_SUCCESS) {
         status = dss_delete_open_file_index(
-            session, vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
+            session, vg_item, DSS_ID_TO_U64(node->id), session->cli_info.cli_pid, session->cli_info.start_time);
         if (status == CM_SUCCESS) {
-            LOG_RUN_INF("Success to delete open file index, ftid:%llu.", *(uint64 *)&node->id);
+            LOG_RUN_INF("Success to delete open file index, ftid:%llu.", DSS_ID_TO_U64(node->id));
         }
         return CM_ERROR;
     }
@@ -554,23 +564,23 @@ status_t dss_write_link_file(dss_session_t *session, char *link_path, char *dst_
     status = dss_get_link_auid(session, vg_item, node, &auid, DSS_FALSE);
     if (status != CM_SUCCESS) {
         CM_RETURN_IFERR(dss_delete_open_file_index(
-            session, vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time));
+            session, vg_item, DSS_ID_TO_U64(node->id), session->cli_info.cli_pid, session->cli_info.start_time));
         return CM_ERROR;
     }
     status = dss_write_link_file_content(session, vg_item, auid, dst_path);
     if (status != CM_SUCCESS) {
         CM_RETURN_IFERR(dss_delete_open_file_index(
-            session, vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time));
+            session, vg_item, DSS_ID_TO_U64(node->id), session->cli_info.cli_pid, session->cli_info.start_time));
         if (status == CM_SUCCESS) {
-            LOG_RUN_INF("Success to delete open file index, ftid:%llu.", *(uint64 *)&node->id);
+            LOG_RUN_INF("Success to delete open file index, ftid:%llu.", DSS_ID_TO_U64(node->id));
         }
         return CM_ERROR;
     }
 
     status = dss_delete_open_file_index(
-        session, vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
+        session, vg_item, DSS_ID_TO_U64(node->id), session->cli_info.cli_pid, session->cli_info.start_time);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to delete open file index."));
-    DSS_LOG_DEBUG_OP("Succeed to close link, ftid:%llu, session id:%u.", *(uint64 *)&node->id, session->id);
+    DSS_LOG_DEBUG_OP("Succeed to close link, %s, session id:%u.", dss_display_metaid(node->id), session->id);
     return CM_SUCCESS;
 }
 
@@ -591,7 +601,7 @@ static status_t dss_check_link(
     char link_path[DSS_FILE_PATH_MAX_LENGTH] = {0};
 #endif
 
-    LOG_DEBUG_INF("Read link file: %s", output_param->last_node->name);
+    LOG_DEBUG_INF("Begin to read link file: %s", output_param->last_node->name);
     status_t status =
         dss_read_link_file(session, output_param->vg_item, output_param->last_node, link_path, sizeof(link_path) - 1);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Read link file: %s failed.\n", output_param->last_node->name));
@@ -829,23 +839,25 @@ static status_t dss_refresh_dir_r(dss_vg_info_item_t *vg_item, gft_node_t *paren
 {
     status_t status = CM_SUCCESS;
     ftid_t id = parent_node->items.first;
+    LOG_DEBUG_INF("Begin to refresh, parent name:%s, node:%s", parent_node->name, dss_display_metaid(parent_node->id));
     for (uint32 i = 0; i < parent_node->items.count; i++) {
+        LOG_DEBUG_INF("Refresh dir, now node: %s.", dss_display_metaid(id));
         if (dss_cmp_blockid(id, CM_INVALID_ID64)) {
             // may be find uncommitted node when standby
-            LOG_DEBUG_INF("Get invalid id in parent name:%s, id:%llu, count:%u, when refresh dir, index:%u.",
-                parent_node->name, *(uint64 *)&parent_node->id, parent_node->items.count, i);
+            LOG_DEBUG_INF("Get invalid id in parent name:%s, %s, count:%u, when refresh dir, index:%u.",
+                parent_node->name, dss_display_metaid(parent_node->id), parent_node->items.count, i);
             break;
         }
         gft_node_t *node = dss_get_ft_node_by_ftid(NULL, vg_item, id, CM_TRUE, CM_TRUE);
         if (node == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR,
-                LOG_DEBUG_ERR("Can not get node:%llu, parent node name:%s.", *(uint64 *)&id, parent_node->name));
+                LOG_DEBUG_ERR("Can not get node: %s, parent node name:%s.", dss_display_metaid(id), parent_node->name));
         }
         if (node->type == GFT_PATH && is_refresh_all_node) {
             status = dss_refresh_dir_r(vg_item, node, is_refresh_all_node);
             if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("Failed to refesh dir vg:%s, ftid:%llu, dir name:%s.", vg_item->vg_name,
-                    *(uint64 *)&node->id, node->name);
+                LOG_DEBUG_ERR("Failed to refesh dir vg:%s, %s, dir name:%s.", vg_item->vg_name,
+                    dss_display_metaid(node->id), node->name);
                 break;
             }
         }
@@ -877,6 +889,7 @@ status_t dss_open_dir(dss_session_t *session, const char *dir_path, bool32 is_re
         }
         if (dir_vg_item->id != vg_item->id) {
             dss_unlock_vg_mem_and_shm(session, vg_item);
+            LOG_DEBUG_INF("Unlock vg:%s and then lock vg:%s.", vg_item->vg_name, dir_vg_item->vg_name);
             vg_item = dir_vg_item;
             dss_lock_vg_mem_and_shm_s(session, vg_item);
         }
@@ -890,16 +903,16 @@ status_t dss_open_dir(dss_session_t *session, const char *dir_path, bool32 is_re
             cm_panic(node != NULL);
             status = dss_refresh_dir_r(vg_item, node, CM_TRUE);
             if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("Failed to refesh dir vg:%s, dir name:%s, ftid:%llu, pid:%llu.", vg_item->vg_name,
-                    node->name, *(uint64 *)&node->id, session->cli_info.cli_pid);
+                LOG_DEBUG_ERR("Failed to refesh dir vg:%s, dir name:%s, %s, pid:%llu.", vg_item->vg_name, node->name,
+                    dss_display_metaid(node->id), session->cli_info.cli_pid);
                 break;
             }
         }
         status = dss_insert_open_file_index(
-            session, vg_item, *(uint64 *)&node->id, session->cli_info.cli_pid, session->cli_info.start_time);
+            session, vg_item, DSS_ID_TO_U64(node->id), session->cli_info.cli_pid, session->cli_info.start_time);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to insert open file index vg:%s, ftid:%llu, pid:%llu.", vg_item->vg_name,
-                *(uint64 *)&node->id, session->cli_info.cli_pid);
+            LOG_DEBUG_ERR("Failed to insert open file index vg:%s, %s, pid:%llu.", vg_item->vg_name,
+                dss_display_metaid(node->id), session->cli_info.cli_pid);
             break;
         }
         DSS_LOG_DEBUG_OP("Succeed to open dir:%s, fid:%llu.", dir_path, node->fid);
@@ -920,14 +933,14 @@ void dss_close_dir(dss_session_t *session, char *vg_name, uint64 ftid)
 {
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item == NULL) {
-        LOG_DEBUG_ERR("Failed to find vg, %s.", vg_name);
+        LOG_DEBUG_ERR("Failed to find vg, %s when close dir, ftid:%llu, session:%u.", vg_name, ftid, session->id);
         return;
     }
 
     status_t status =
         dss_delete_open_file_index(session, vg_item, ftid, session->cli_info.cli_pid, session->cli_info.start_time);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to delete open file index.");
+        LOG_DEBUG_ERR("Failed to delete open file index when close dir, ftid:%llu, session:%u.", ftid, session->id);
         return;
     }
     DSS_LOG_DEBUG_OP("Succeed to close dir, ftid:%llu, session id:%u.", ftid, session->id);
@@ -1008,9 +1021,9 @@ status_t dss_alloc_fs_block_inter(dss_session_t *session, dss_vg_info_item_t *vg
     redo.reserve = 0;
     redo.root = *root;
     dss_put_log(session, vg_item, DSS_RT_ALLOC_FS_BLOCK, &redo, sizeof(redo));
-    DSS_LOG_DEBUG_OP("Alloc file space meta block,v:%u,au:%llu,block:%u,item:%u,free count:%llu, free first:%llu. ",
-        block_id.volume, (uint64)block_id.au, block_id.block, block_id.item, root->free.count,
-        DSS_ID_TO_U64(root->free.first));
+    DSS_LOG_DEBUG_OP("[FS][ALLOC] Alloc file space meta block: %s, free count:%llu.", dss_display_metaid(block_id),
+        root->free.count);
+    LOG_DEBUG_INF("Free first node: %s", dss_display_metaid(root->free.first));
     return CM_SUCCESS;
 }
 
@@ -1035,14 +1048,15 @@ status_t dss_alloc_fs_block(
         status = dss_alloc_fs_block_inter(session, vg_item, check_version, block, info);
     } else {
         status = dss_alloc_au(session, vg_item, &auid);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to allocate au from vg %s,%d.", vg_item->vg_name, status));
+        DSS_RETURN_IFERR2(
+            status, LOG_DEBUG_ERR("[FS][ALLOC] Failed to allocate au from vg %s,%d.", vg_item->vg_name, status));
 
         status = dss_format_bitmap_node(session, vg_item, auid);
-        char *err_msg = "Failed to format bitmap meta from vg";
+        char *err_msg = "[FS][ALLOC] Failed to format bitmap meta from vg";
         DSS_RETURN_IFERR2(
-            status, LOG_DEBUG_ERR("%s %s,%u, %llu.", err_msg, vg_item->vg_name, auid.volume, (uint64)auid.au));
+            status, LOG_DEBUG_ERR("%s %s,%s.", err_msg, vg_item->vg_name, dss_display_metaid(auid)));
 
-        DSS_LOG_DEBUG_OP("Allocate au:%llu for file space.", DSS_ID_TO_U64(auid));
+        DSS_LOG_DEBUG_OP("[FS][ALLOC] Allocate au: %s for file space.", dss_display_metaid(auid));
         // check version must be CM_FALSE, because the au is new.
         if (!info->is_extend) {
             info->is_new_au = CM_TRUE;
@@ -1088,9 +1102,9 @@ void dss_free_fs_block_addr(dss_session_t *session, dss_vg_info_item_t *vg_item,
     dss_put_log(session, vg_item, DSS_RT_FREE_FS_BLOCK, &redo, sizeof(redo));
 
     dss_update_core_ctrl(session, vg_item, &vg_item->dss_ctrl->core, 0, CM_TRUE);
-    DSS_LOG_DEBUG_OP("Free file space meta block,v:%u,au:%llu,block:%u,item:%u, next:%llu,count:%llu. ",
-        fs_block->head.common.id.volume, (uint64)fs_block->head.common.id.au, fs_block->head.common.id.block,
-        fs_block->head.common.id.item, *(uint64 *)&fs_block->head.next, root->free.count);
+    DSS_LOG_DEBUG_OP("[FS][FREE] Succeed to free file space meta block: %s, count:%llu. ",
+        dss_display_metaid(fs_block->head.common.id), root->free.count);
+    LOG_DEBUG_INF("[FS][FREE] Next node: %s", dss_display_metaid(fs_block->head.next));
 }
 
 status_t dss_init_file_fs_block(
@@ -1101,7 +1115,7 @@ status_t dss_init_file_fs_block(
     dss_fs_block_header *block_header;
 
     status_t status = dss_check_refresh_core(vg_item);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check and refresh core, vg %s.", vg_item->vg_name));
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[FS][FORMAT] Failed to check and refresh core, vg %s.", vg_item->vg_name));
     dss_alloc_fs_block_info_t info = {CM_FALSE, CM_FALSE, DSS_ENTRY_FS_INDEX, node};
     // allocate the first level bitmap block
     status = dss_alloc_fs_block(session, vg_item, &block, &info);
@@ -1129,8 +1143,8 @@ status_t dss_init_file_fs_block(
     redo.used_num = 1;
     dss_put_log(session, vg_item, DSS_RT_INIT_FILE_FS_BLOCK, &redo, sizeof(redo));
 
-    DSS_LOG_DEBUG_OP(
-        "dss_init_file_fs_block, id:%llu, id2:%llu.", DSS_ID_TO_U64(redo.id), DSS_ID_TO_U64(redo.second_id));
+    DSS_LOG_DEBUG_OP("[FS][FORMAT] Succeed to init file fs block id: %s.", dss_display_metaid(redo.id));
+    LOG_DEBUG_INF("[FS][FORMAT] ID2: %s", dss_display_metaid(redo.second_id));
     return CM_SUCCESS;
 }
 
@@ -1228,7 +1242,7 @@ gft_node_t* dss_get_gft_node_by_path(dss_session_t *session, dss_vg_info_item_t 
                 LOG_DEBUG_ERR("path: %s not exist", path));
         }
         DSS_BREAK_IF_ERROR(dss_check_node_delete(node));
-        LOG_DEBUG_INF("Success to get ft_node[%llu] by path: %s", DSS_ID_TO_U64(node->id), path);
+        LOG_DEBUG_INF("Success to get ft_node: %s by path: %s", dss_display_metaid(node->id), path);
         status = CM_SUCCESS;
     } while (0);
     if (status == CM_SUCCESS) {
@@ -1248,7 +1262,7 @@ status_t dss_get_ftid_by_path(dss_session_t *session, const char *path, ftid_t *
     gft_node_t *node = dss_get_gft_node_by_path(session, vg_item, path, dir_vg_item);
     if (node != NULL) {
         *ftid = node->id;
-        LOG_DEBUG_INF("Success to get ftid[%llu] by path: %s", DSS_ID_TO_U64(*ftid), path);
+        LOG_DEBUG_INF("Success to get ftid: %s by path: %s", dss_display_metaid(*ftid), path);
         status = CM_SUCCESS;
     }
     dss_unlock_vg_mem_and_shm(session, vg_item);
@@ -1275,6 +1289,8 @@ status_t dss_open_file_check_s(
         status, LOG_DEBUG_ERR("Failed to check dir when open file read, errcode: %d.", cm_get_error_code()));
     if (file_vg_item->id != (*vg_item)->id) {
         dss_unlock_vg_mem_and_shm(session, *vg_item);
+        LOG_DEBUG_INF(
+            "Unlock vg:%s and then lock vg:%s, session id:%u", (*vg_item)->vg_name, file_vg_item->vg_name, session->id);
         *vg_item = file_vg_item;
         dss_lock_vg_mem_and_shm_s(session, *vg_item);
     }
@@ -1295,6 +1311,8 @@ status_t dss_open_file_check(
     }
     if (file_vg_item->id != (*vg_item)->id) {
         dss_unlock_vg_mem_and_shm(session, *vg_item);
+        LOG_DEBUG_INF(
+            "Unlock vg:%s and then lock vg:%s, session id:%u", (*vg_item)->vg_name, file_vg_item->vg_name, session->id);
         *vg_item = file_vg_item;
         dss_lock_vg_mem_and_shm_x(session, *vg_item);
     }
@@ -1307,7 +1325,7 @@ static status_t dss_open_file_find_block_and_insert_index(
     status_t status;
     if (dss_cmp_blockid(out_node->entry, CM_INVALID_ID64)) {
         LOG_RUN_ERR("Failed to open fs block,errcode:%d.", cm_get_error_code());
-        DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "node entry", *(uint64 *)&out_node->entry);
+        DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "node entry", DSS_ID_TO_U64(out_node->entry));
         return ERR_DSS_INVALID_ID;
     }
     // check the entry and load
@@ -1315,11 +1333,11 @@ static status_t dss_open_file_find_block_and_insert_index(
         dss_find_block_in_shm(session, vg_item, out_node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
     if (entry_block == NULL) {
         DSS_RETURN_IFERR2(
-            CM_ERROR, LOG_DEBUG_ERR("Failed to find block:%llu in cache.", DSS_ID_TO_U64(out_node->entry)));
+            CM_ERROR, LOG_DEBUG_ERR("Failed to find block: %s in cache", dss_display_metaid(out_node->entry)));
     }
 
     status = dss_insert_open_file_index(
-        session, vg_item, *(uint64 *)&out_node->id, session->cli_info.cli_pid, session->cli_info.start_time);
+        session, vg_item, DSS_ID_TO_U64(out_node->id), session->cli_info.cli_pid, session->cli_info.start_time);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to insert open file index."));
     return CM_SUCCESS;
 }
@@ -1374,7 +1392,8 @@ status_t dss_open_file(dss_session_t *session, const char *file, int32_t flag, d
     gft_node_t *out_node = NULL;
     CM_RETURN_IFERR(dss_open_file_core(session, file, GFT_FILE, &out_node, find_info));
     uint64 fid = out_node->fid;
-    DSS_LOG_DEBUG_OP("Succeed to open file:%s, fid:%llu, session id:%u.", file, fid, session->id);
+    DSS_LOG_DEBUG_OP("Succeed to open file:%s, fid:%llu, ftid:%s, session:%u.", file, fid,
+        dss_display_metaid(out_node->id), session->id);
     return CM_SUCCESS;
 }
 
@@ -1395,12 +1414,13 @@ static status_t dss_open_link_core(
 static status_t dss_open_link(
     dss_session_t *session, const char *link_path, dss_vg_info_item_t **vg_item, gft_node_t **out_node)
 {
+    LOG_DEBUG_INF("Begin to open link:%s session id:%u", link_path, session->id);
     char name[DSS_MAX_NAME_LEN];
 
     DSS_RETURN_IF_ERROR(dss_find_vg_by_dir(link_path, name, vg_item));
     DSS_RETURN_IF_ERROR(dss_open_link_core(session, vg_item, link_path, GFT_LINK, out_node));
-    DSS_LOG_DEBUG_OP("Succeed to open link: %s, fid: %llu, session id: %u, entry: %llu.", link_path, (*out_node)->fid,
-        session->id, DSS_ID_TO_U64((*out_node)->entry));
+    DSS_LOG_DEBUG_OP("Succeed to open link: %s, fid: %llu, session id: %u, entry: %s.", link_path, (*out_node)->fid,
+        session->id, dss_display_metaid((*out_node)->entry));
     return CM_SUCCESS;
 }
 
@@ -1408,7 +1428,7 @@ status_t dss_close_file(dss_session_t *session, dss_vg_info_item_t *vg_item, uin
 {
     status_t status =
         dss_delete_open_file_index(session, vg_item, ftid, session->cli_info.cli_pid, session->cli_info.start_time);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to delete open file index."));
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to delete open file index, ftid:%llu.", ftid));
     return CM_SUCCESS;
 }
 
@@ -1420,8 +1440,8 @@ status_t dss_check_rm_file(
     *file_node = dss_get_ft_node_by_ftid(session, vg_item, ftid, CM_TRUE, CM_FALSE);
     if (*file_node == NULL) {
         *should_rm_file = DSS_FALSE;
-        DSS_LOG_DEBUG_OP("Nothing need to remove when close file ftid%llu, vg: %s, v:%u, au:%llu, block:%u, item:%u.",
-            *(uint64 *)&ftid, vg_item->vg_name, ftid.volume, (uint64)ftid.au, ftid.block, ftid.item);
+        DSS_LOG_DEBUG_OP(
+            "Nothing need to remove when close file ftid: %s, vg: %s.", dss_display_metaid(ftid), vg_item->vg_name);
         return CM_SUCCESS;
     }
     if (((*file_node)->flags & DSS_FT_NODE_FLAG_DEL) == 0) {
@@ -1431,13 +1451,13 @@ status_t dss_check_rm_file(
     }
 
     bool32 is_open;
-    status_t status = dss_check_open_file(session, vg_item, *(uint64 *)&(*file_node)->id, &is_open);
+    status_t status = dss_check_open_file(session, vg_item, DSS_ID_TO_U64((*file_node)->id), &is_open);
     char *err_msg = "Failed to check open file, file";
-    DSS_RETURN_IFERR2(
-        status, LOG_DEBUG_ERR("%s: %s ftid:%llu.", err_msg, (*file_node)->name, *(uint64 *)&(*file_node)->id));
+    DSS_RETURN_IFERR2(status,
+        LOG_DEBUG_ERR("%s: %s ftid: %s.", err_msg, (*file_node)->name, dss_display_metaid((*file_node)->id)));
     if (is_open) {
         *should_rm_file = DSS_FALSE;
-        LOG_DEBUG_INF("file %s is open, ftid:%llu.", (*file_node)->name, *(uint64 *)&(*file_node)->id);
+        LOG_DEBUG_INF("file %s is open, ftid: %s.", (*file_node)->name, dss_display_metaid((*file_node)->id));
         return CM_SUCCESS;
     }
     DSS_LOG_DEBUG_OP("The file: %s has been deleted and is not opened locally.", (*file_node)->name);
@@ -1496,8 +1516,8 @@ status_t dss_init_ft_block(dss_vg_info_item_t *vg_item, char *block, uint32_t bl
         if (!cmp) {
             last_node = dss_get_ft_node_by_ftid(NULL, vg_item, gft->free_list.last, CM_FALSE, CM_FALSE);
             if (last_node == NULL) {
-                DSS_RETURN_IFERR2(
-                    CM_ERROR, LOG_DEBUG_ERR("Failed to get file table node:%llu.", DSS_ID_TO_U64(gft->free_list.last)));
+                DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("[FT][FORMAT] Failed to get file table node: %s.",
+                                                dss_display_metaid(gft->free_list.last)));
             }
 
             last_node->next = auid;
@@ -1512,7 +1532,7 @@ status_t dss_init_ft_block(dss_vg_info_item_t *vg_item, char *block, uint32_t bl
         gft->free_list.first.block = block_id;
         gft->free_list.first.item = 0;
     }
-    DSS_LOG_DEBUG_OP("dss_init_ft_block blockid:%llu.", DSS_ID_TO_U64(ft_block->common.id));
+    DSS_LOG_DEBUG_OP("[FT][FORMAT] dss_init_ft_block blockid: %s.", dss_display_metaid(ft_block->common.id));
     return CM_SUCCESS;
 }
 
@@ -1544,8 +1564,9 @@ void dss_init_bitmap_block(dss_ctrl_t *dss_ctrl, char *block, uint32_t block_id,
     if (cmp) {
         block_root->free.last = fs_block->common.id;
     }
-    LOG_DEBUG_INF("Init bitmap block, free count:%llu, first:%llu, id:%llu.", block_root->free.count,
-        DSS_ID_TO_U64(first), DSS_ID_TO_U64(fs_block->common.id));
+    LOG_DEBUG_INF("[FS][FORMAT] Init bitmap block, free count:%llu, first: %s.", block_root->free.count,
+        dss_display_metaid(first));
+    LOG_DEBUG_INF("[FS][FORMAT] Fs block id: %s", dss_display_metaid(fs_block->common.id));
 }
 
 status_t dss_update_au_disk(
@@ -1563,7 +1584,7 @@ status_t dss_update_au_disk(
 
         dss_common_block_t *block = (dss_common_block_t *)buf;
         block->checksum = dss_get_checksum(buf, size);
-        LOG_DEBUG_INF("dss_update_au_disk checksum:%u,%llu,%u.", block->checksum, DSS_ID_TO_U64(auid), i);
+        LOG_DEBUG_INF("dss_update_au_disk checksum:%u, %s, count:%u.", block->checksum, dss_display_metaid(auid), i);
 
         block_offset = offset + i * size;
         status = dss_write_volume_inst(vg_item, &vg_item->volume_handle[auid.volume], block_offset, buf, size);
@@ -1605,13 +1626,15 @@ status_t dss_format_ft_node_core(dss_vg_info_item_t *vg_item, ga_queue_t queue, 
                 vg_item, &block->common.id, ga_obj_id, (dss_block_ctrl_t *)((char *)block + DSS_BLOCK_SIZE));
             if (status != CM_SUCCESS) {
                 rollback_count = i;
-                DSS_BREAK_IFERR2(status, LOG_DEBUG_ERR("Failed to register block:%llu.", DSS_ID_TO_U64(block->common.id)));
+                DSS_BREAK_IFERR2(status,
+                    LOG_DEBUG_ERR("[FT][FORMAT] Failed to register block: %s.", dss_display_metaid(block->common.id)));
             }
 
             status = dss_init_ft_block(vg_item, (char *)block, i, auid);
             if (status != CM_SUCCESS) {
                 rollback_count = i + 1;
-                DSS_BREAK_IFERR2(status, LOG_DEBUG_ERR("Failed to initialize block:%llu.", DSS_ID_TO_U64(block->common.id)));
+                DSS_BREAK_IFERR2(status, LOG_DEBUG_ERR("[FT][FORMAT] Failed to initialize block: %s.",
+                                            dss_display_metaid(block->common.id)));
             }
         } while (0);
         if (status != CM_SUCCESS) {
@@ -1622,7 +1645,7 @@ status_t dss_format_ft_node_core(dss_vg_info_item_t *vg_item, ga_queue_t queue, 
             }
             ga_free_object_list(GA_8K_POOL, &queue);
             gft->free_list = bk_list;  // rollback free_list
-            LOG_DEBUG_ERR("Rollback the format ft node when fail, i:%u.", i);
+            LOG_DEBUG_ERR("[FT][FORMAT] Rollback the format ft node when fail, i:%u.", i);
             return status;
         }
 
@@ -1644,7 +1667,7 @@ status_t dss_format_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item,
     uint32 block_num = (uint32)DSS_GET_FT_BLOCK_NUM_IN_AU(dss_ctrl);
     ga_queue_t queue;
     status = ga_alloc_object_list(GA_8K_POOL, block_num, &queue);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to alloc object list, block_num:%u.", block_num));
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[FT][FORMAT] Failed to alloc object list, block_num:%u.", block_num));
 
     dss_block_id_t old_last = gft->last;
     status = dss_format_ft_node_core(vg_item, queue, auid, gft);
@@ -1673,7 +1696,7 @@ status_t dss_format_bitmap_node(dss_session_t *session, dss_vg_info_item_t *vg_i
     uint32 block_num = (uint32)DSS_GET_FS_BLOCK_NUM_IN_AU(dss_ctrl);
     ga_queue_t queue;
     status = ga_alloc_object_list(GA_16K_POOL, block_num, &queue);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to alloc object list, block num is %u.", block_num));
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[FS][FORMAT] Failed to alloc object list, block num is %u.", block_num));
     uint32 obj_id = queue.first;
     ga_obj_id_t ga_obj_id;
     ga_obj_id.pool_id = GA_16K_POOL;
@@ -1686,8 +1709,8 @@ status_t dss_format_bitmap_node(dss_session_t *session, dss_vg_info_item_t *vg_i
 
         status = dss_register_buffer_cache(
             vg_item, &block->common.id, ga_obj_id, (dss_block_ctrl_t *)((char *)block + DSS_FILE_SPACE_BLOCK_SIZE));
-        DSS_RETURN_IFERR2(status,
-            LOG_DEBUG_ERR("Failed to register block, block id is %llu, obj is is %u.", *(uint64 *)&block->common.id, obj_id));
+        DSS_RETURN_IFERR2(status,LOG_DEBUG_ERR("[FS][FORMAT] Failed to register block:%s, obj is %u.",
+                                    dss_display_metaid(block->common.id), obj_id));
 
         dss_init_bitmap_block(dss_ctrl, (char *)block, i, auid);
         obj_id = ga_next_object(GA_16K_POOL, obj_id);
@@ -1769,19 +1792,20 @@ static void format_ft_block_when_create_vg(
  */
 static status_t format_ft_au_when_create_vg(dss_vg_info_item_t *vg_item, auid_t auid)
 {
+    LOG_DEBUG_INF("[FT][FORMAT] Begin to format ft au when create vg.");
     status_t status;
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
     uint64 au_size = dss_get_vg_au_size(dss_ctrl);
     char *au_buf = (char *)cm_malloc_align(DSS_DISK_UNIT_SIZE, (uint32)au_size);
     if (au_buf == NULL) {
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to alloc %d memory", (int32)au_size));
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("[FT][FORMAT] Failed to alloc %d memory", (int32)au_size));
     }
     int64 offset;
     dss_ft_block_t *block = NULL;
     errno_t err = memset_sp(au_buf, au_size, 0, au_size);
     if (err != EOK) {
         free(au_buf);
-        LOG_DEBUG_ERR("Failed to memset: %d", err);
+        LOG_DEBUG_ERR("[FT][FORMAT] Failed to memset: %d", err);
         return CM_ERROR;
     }
 
@@ -1821,6 +1845,7 @@ static status_t format_ft_au_when_create_vg(dss_vg_info_item_t *vg_item, auid_t 
     offset = dss_get_ft_block_offset(vg_item, block->common.id);
     status = dss_check_write_volume(vg_item, block->common.id.volume, offset, au_buf, (uint32)au_size);
     if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("[FT][FORMAT] Failed to check write volume.");
         free(au_buf);
         return status;
     }
@@ -1836,7 +1861,8 @@ status_t dss_alloc_ft_au(dss_session_t *session, dss_vg_info_item_t *vg_item, ft
     status_t status;
 
     status = dss_alloc_au(session, vg_item, id);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed allocate au for file table from vg:%s.", vg_item->vg_name));
+    DSS_RETURN_IFERR2(
+        status, LOG_DEBUG_ERR("[FT][ALLOC] Failed allocate au for file table from vg:%s.", vg_item->vg_name));
 
     dss_au_root_t *au_root = DSS_GET_AU_ROOT(vg_item->dss_ctrl);
     if (au_root->free_root == DSS_INVALID_64) {
@@ -1847,8 +1873,9 @@ status_t dss_alloc_ft_au(dss_session_t *session, dss_vg_info_item_t *vg_item, ft
         status = dss_format_ft_node(session, vg_item, *id);
     }
 
-    DSS_RETURN_IFERR2(
-        status, LOG_DEBUG_ERR("Failed format au:%llu file table from vg:%s.", DSS_ID_TO_U64(*id), vg_item->vg_name));
+    DSS_RETURN_IFERR2(status,
+        LOG_DEBUG_ERR("[FT][ALLOC] Failed format ft au: %s from vg:%s.", dss_display_metaid(*id), vg_item->vg_name));
+    LOG_DEBUG_INF("[FT][ALLOC] Succeed to format ft au: %s from vg:%s.", dss_display_metaid(*id), vg_item->vg_name);
     return status;
 }
 
@@ -1885,10 +1912,8 @@ void dss_set_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_no
     } else {
         prev_name = "NULL";
     }
-    DSS_LOG_DEBUG_OP(
-        "Alloc ft node, type:%u, name:%s, prev name:%s, volume:%u, au:%llu, block:%u, item:%u, free count:%u.",
-        node->type, node->name, prev_name, node->id.volume, (uint64)node->id.au, node->id.block, node->id.item,
-        gft->free_list.count);
+    DSS_LOG_DEBUG_OP("[FT] Alloc ft node, type:%u, name:%s, prev name:%s, %s, free count:%u.",
+        node->type, node->name, prev_name, dss_display_metaid(node->id), gft->free_list.count);
 }
 
 void dss_ft_node_link_list(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, ftid_t id,
@@ -1941,10 +1966,11 @@ gft_node_t *dss_alloc_ft_node_when_create_vg(
     if (gft->free_list.count == 0) {
         status = dss_alloc_ft_au(NULL, vg_item, &id);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to allocate au when allocating file table node.");
+            LOG_DEBUG_ERR("[FT][ALLOC] Failed to allocate au when allocating file table node.");
             return NULL;
         }
-        DSS_LOG_DEBUG_OP("Succeed to allocate au:%llu when allocating file table node.", DSS_ID_TO_U64(id));
+        DSS_LOG_DEBUG_OP(
+            "[FT][ALLOC] Succeed to allocate au: %s when allocating file table node.", dss_display_metaid(id));
     }
 
     id = gft->free_list.first;
@@ -1959,8 +1985,7 @@ gft_node_t *dss_alloc_ft_node_when_create_vg(
     int64 offset = dss_get_block_offset(vg_item, DSS_BLOCK_SIZE, block_id.block, block_id.au);
     if (dss_get_block_from_disk(vg_item, block_id, buf, offset, DSS_BLOCK_SIZE, CM_TRUE) != CM_SUCCESS) {
         free(buf);
-        LOG_DEBUG_ERR("Failed to load ft block volume:%llu, au:%llu, block:%llu.", (uint64)block_id.volume,
-            (uint64)block_id.au, (uint64)block_id.block);
+        LOG_DEBUG_ERR("[FT][ALLOC] Failed to load ft block %s.", dss_display_metaid(block_id));
         return NULL;
     }
     gft_node_t *node = (gft_node_t *)(buf + sizeof(dss_ft_block_t) + sizeof(gft_node_t) * id.item);
@@ -2007,7 +2032,7 @@ status_t dss_init_ft_node_entry(dss_session_t *session, dss_vg_info_item_t *vg_i
 {
     dss_block_id_t block_id = {0};
     status_t status = dss_init_file_fs_block(session, vg_item, &block_id, node);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to initialize the file space bitmap."));
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[FS][ALLOC] Failed to initialize the file space bitmap."));
     node->entry = block_id;
     return CM_SUCCESS;
 }
@@ -2016,11 +2041,13 @@ status_t dss_alloc_ft_au_when_no_free(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_root_t *gft, bool32 *check_version)
 {
     if (gft->free_list.count == 0) {
+        LOG_DEBUG_INF("[FT][ALLOC] There is no free au, begin to allocate au in vg:%s", vg_item->vg_name);
         ftid_t id;
         status_t status = dss_alloc_ft_au(session, vg_item, &id);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to allocate au when allocating file table node."));
+        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[FT][ALLOC] Failed to allocate au when allocating file table node."));
         *check_version = CM_FALSE;
-        DSS_LOG_DEBUG_OP("Succeed to allocate au:%llu when allocating file table node.", DSS_ID_TO_U64(id));
+        DSS_LOG_DEBUG_OP(
+            "[FT][ALLOC] Succeed to allocate au: %s when allocating file table node, ", dss_display_metaid(id));
     }
     return CM_SUCCESS;
 }
@@ -2031,6 +2058,8 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(parent_node != NULL);
     CM_ASSERT(name != NULL);
+    LOG_DEBUG_INF("[FT][ALLOC] Begin to allocate ftnode for file:%s, parent name: %s, %s", name, parent_node->name,
+        dss_display_metaid(parent_node->id));
     status_t status;
     ftid_t id;
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
@@ -2039,7 +2068,7 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     gft_root_t *gft = &ft_block->ft_root;
     bool32 check_version = CM_TRUE;
 
-    LOG_DEBUG_INF("[ALLOC_FT]parent_node id:%llu name:%s.", DSS_ID_TO_U64(parent_node->id), parent_node->name);
+    LOG_DEBUG_INF("[FT][ALLOC] parent_node id: %s name:%s.", dss_display_metaid(parent_node->id), parent_node->name);
     status = dss_alloc_ft_au_when_no_free(session, vg_item, gft, &check_version);
     if (status != CM_SUCCESS) {
         return NULL;
@@ -2047,7 +2076,7 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     id = gft->free_list.first;
     gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, id, check_version, CM_FALSE);
     if (node == NULL) {
-        LOG_DEBUG_ERR("Failed to get file table node when allocating file table node.");
+        LOG_DEBUG_ERR("[FT][ALLOC] Failed to get file table node when allocating file table node.");
         return NULL;
     }
     dss_check_ft_node_free(node);
@@ -2067,7 +2096,7 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     } else {  // FILE or LINK
         if (dss_init_ft_node_entry(session, vg_item, node) != CM_SUCCESS) {
             dss_rollback_mem_update(session->log_split, vg_item);
-            LOG_DEBUG_ERR("Failed to get alloc fs block when allocating file table node %s.", node->name);
+            LOG_DEBUG_ERR("[FT][ALLOC] Failed to get alloc fs block when allocating file table node %s.", node->name);
             return NULL;
         }
     }
@@ -2075,10 +2104,12 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     gft->free_list.count--;
     bool32 cmp = dss_cmp_auid(gft->free_list.first, DSS_INVALID_64);
     if (cmp) {
-        LOG_DEBUG_INF("File table node free list will be empty, count: %u.", gft->free_list.count);
+        LOG_DEBUG_INF("[FT][ALLOC] File table node free list will be empty, count: %u.", gft->free_list.count);
         cm_panic(gft->free_list.count == 0);
         gft->free_list.last = gft->free_list.first;
     }
+    DSS_LOG_DEBUG_OP("[FT][ALLOC] Succeed to allocate ftnode: %s for file:%s.", dss_display_metaid(node->id), name);
+    LOG_DEBUG_INF("[FT][ALLOC] Parent node name:%s, %s", parent_node->name, dss_display_metaid(parent_node->id));
     dss_init_alloc_ft_node(gft, node, DSS_FT_NODE_FLAG_NORMAL, parent_node);
     dss_ft_node_link_list(session, vg_item, parent_node, id, node, gft);
     /*
@@ -2167,10 +2198,8 @@ void dss_free_ft_node_inner(
     redo_node.node[DSS_REDO_FREE_FT_NODE_SELF_INDEX] = *node;
     redo_node.ft_root = *gft;
     dss_put_log(session, vg_item, DSS_RT_FREE_FILE_TABLE_NODE, &redo_node, sizeof(dss_redo_free_ft_node_t));
-    DSS_LOG_DEBUG_OP(
-        "Free ft node, name:%s, volume:%u, au:%llu, block:%u, item:%u, id:%llu, free count:%u, real delete:%u",
-        node->name, node->id.volume, (uint64)node->id.au, node->id.block, node->id.item, DSS_ID_TO_U64(node->id),
-        gft->free_list.count, real_del);
+    DSS_LOG_DEBUG_OP("[FT][FREE] Free ft node, name:%s, %s, free count:%u, real delete:%u", node->name,
+        dss_display_metaid(node->id), gft->free_list.count, real_del);
 }
 
 // remove ftn from parent
@@ -2216,8 +2245,8 @@ gft_node_t *dss_find_ft_node_core(
     for (uint32 i = 0; i < parent_node->items.count; i++) {
         if (dss_cmp_blockid(id, CM_INVALID_ID64)) {
             // may be find uncommitted node when standby
-            LOG_DEBUG_INF("Get invalid id in parent name:%s, id:%llu, count:%u, when find node name:%s, index:%u.",
-                parent_node->name, *(uint64 *)&parent_node->id, parent_node->items.count, name, i);
+            LOG_DEBUG_INF("Get invalid id in parent name:%s, %s, count:%u, when find node name:%s, index:%u.",
+                parent_node->name, dss_display_metaid(parent_node->id), parent_node->items.count, name, i);
             return NULL;
         }
         gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, id, check_version, CM_FALSE);
@@ -2225,11 +2254,13 @@ gft_node_t *dss_find_ft_node_core(
             if (dss_is_server()) {
                 cm_oamap_destroy(&map);
             }
-            LOG_DEBUG_ERR("Can not get node:%llu,File name %s type:%u.", *(uint64 *)&id, name, parent_node->type);
+            LOG_DEBUG_ERR("Can not get node: %s, File name %s type:%u.", dss_display_metaid(id), name, parent_node->type);
             return NULL;
         }
+        LOG_DEBUG_INF("Current node name: %s, %s", node->name, dss_display_metaid(id));
         if (skip_del && (node->flags & DSS_FT_NODE_FLAG_DEL)) {
             id = node->next;
+            LOG_DEBUG_INF("Skip del the node, next node: %s", dss_display_metaid(id));
             continue;
         }
         if (strcmp(node->name, name) == 0) {
@@ -2256,7 +2287,7 @@ gft_node_t *dss_find_ft_node_core(
         int32 ret = cm_oamap_insert(&map, hash, &node->next, &node->next);
         if (ret != CM_SUCCESS) {
             cm_oamap_destroy(&map);
-            LOG_DEBUG_ERR("Insert the hash map failed, blockid:%llu.", DSS_ID_TO_U64(node->next));
+            LOG_DEBUG_ERR("Insert the hash map failed, blockid: %s.", dss_display_metaid(node->next));
             return NULL;
         }
     }
@@ -2351,7 +2382,7 @@ gft_node_t *dss_get_ft_node_by_ftid(
         dss_ft_block_t *block = (dss_ft_block_t *)dss_find_block_in_shm(
             session, vg_item, block_id, DSS_BLOCK_TYPE_FT, check_version, NULL, active_refresh);
         if (block == NULL) {
-            LOG_DEBUG_ERR("Failed to find block:%llu in mem.", *(uint64 *)&block_id);
+            LOG_DEBUG_ERR("Failed to find block: %s in mem.", dss_display_metaid(block_id));
             return NULL;
         }
 
@@ -2379,7 +2410,7 @@ gft_node_t *dss_get_ft_node_by_ftid_no_refresh(dss_session_t *session, dss_vg_in
         block_id.item = 0;
         dss_ft_block_t *block = (dss_ft_block_t *)dss_find_block_in_shm_no_refresh(session, vg_item, block_id, NULL);
         if (block == NULL) {
-            LOG_DEBUG_ERR("Failed to find block:%llu in mem.", *(uint64 *)&block_id);
+            LOG_DEBUG_ERR("Failed to find block:%s in mem.", dss_display_metaid(block_id));
             return NULL;
         }
 
@@ -2650,8 +2681,8 @@ status_t dss_update_fs_bitmap_block_disk(
         block->head.common.checksum = dss_get_checksum(block, DSS_FILE_SPACE_BLOCK_SIZE);
     }
 
-    DSS_LOG_DEBUG_OP("update_fs_bitmap_block_disk checksum:%u,%llu, version:%llu, size:%u.",
-        block->head.common.checksum, DSS_ID_TO_U64(block->head.common.id), block->head.common.version, size);
+    DSS_LOG_DEBUG_OP("[FS] update_fs_bitmap_block_disk checksum:%u, fsid: %s, version:%llu, size:%u.",
+        block->head.common.checksum, dss_display_metaid(block->head.common.id), block->head.common.version, size);
 
     CM_ASSERT(item->volume_handle[volume_id].handle != DSS_INVALID_HANDLE);
     status_t status = dss_check_write_volume(item, volume_id, offset, block, size);
@@ -2668,7 +2699,7 @@ static status_t dss_get_second_block(
         NULL, vg_item, second_block_id, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
     if (!*second_block) {
         DSS_RETURN_IFERR2(
-            CM_ERROR, LOG_DEBUG_ERR("Failed to find the second block:%llu.", DSS_ID_TO_U64(second_block_id)));
+            CM_ERROR, LOG_DEBUG_ERR("Failed to find the second block: %s.", dss_display_metaid(second_block_id)));
     }
     bool32 is_changed;
     status_t status = dss_check_refresh_fs_block(vg_item, second_block_id, (char *)(*second_block), &is_changed);
@@ -2693,9 +2724,8 @@ void dss_check_fs_block_affiliation(dss_fs_block_header *block, ftid_t id, uint1
     dss_check_fs_block_parent(block, id);
     bool8 is_invalid = (block->index != index && block->index != DSS_INVALID_ID16);
     DSS_ASSERT_LOG(!is_invalid,
-        "[FS][CHECK] Error index fs block id: %llu, volume:%u, au:%llu, block:%u, item:%u, index:%u, expect index:%u.",
-        DSS_ID_TO_U64(block->common.id), block->common.id.volume, (uint64)block->common.id.au, block->common.id.block,
-        block->common.id.item, block->index, index);
+        "[FS][CHECK] Error index fs block id: %s, index:%u, expect index:%u.", dss_display_metaid(block->common.id),
+        block->index, index);
 }
 
 static status_t dss_get_block_entry(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_config_t *inst_cfg,
@@ -2704,7 +2734,7 @@ static status_t dss_get_block_entry(dss_session_t *session, dss_vg_info_item_t *
     gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, ftid, CM_TRUE, CM_FALSE);
     if (!node) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find ftid,ftid: %llu.", *(uint64 *)&ftid));
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find ftid: %s.", dss_display_metaid(ftid)));
     }
 
     if (node->fid != fid) {
@@ -2716,7 +2746,7 @@ static status_t dss_get_block_entry(dss_session_t *session, dss_vg_info_item_t *
         session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
     if (entry_block == NULL) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find entry block:%llu.", *(uint64 *)&node->entry));
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find entry block: %s.", dss_display_metaid(node->entry)));
     }
     dss_check_fs_block_affiliation(entry_block, node->id, DSS_ENTRY_FS_INDEX);
     *node_out = node;
@@ -2767,8 +2797,8 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
     uint32 block_count = 0;
     uint32 block_au_count = 0;
     uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
-    LOG_DEBUG_INF("Try to extend ftid:%llu from size:%llu and offset:%llu with au_size:%llu.",
-        *(uint64 *)&node->id, node->size, (uint64)node_data->offset, au_size);
+    LOG_DEBUG_INF("Try to extend ftid: %s from size:%llu and offset:%llu with au_size:%llu.",
+        dss_display_metaid(node->id), node->size, (uint64)node_data->offset, au_size);
 
     status_t status = dss_get_fs_block_info_by_offset(node_data->offset, au_size, &block_count, &block_au_count, NULL);
     DSS_RETURN_IFERR2(
@@ -2791,7 +2821,7 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
                 DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("%s %s.", err_msg, vg_item->dss_ctrl->vg_info.vg_name));
             }
             second_block_id = second_block->head.common.id;
-            DSS_LOG_DEBUG_OP("Allocate second level block:%llu.", DSS_ID_TO_U64(second_block_id));
+            DSS_LOG_DEBUG_OP("Allocate second level block: %s.", dss_display_metaid(second_block_id));
             uint16 old_used_num = entry_fs_block->head.used_num;
             dss_block_id_t old_id = entry_fs_block->bitmap[block_count];
             entry_fs_block->bitmap[block_count] = second_block->head.common.id;
@@ -2850,8 +2880,8 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
         dss_put_log(session, vg_item, DSS_RT_SET_FILE_SIZE, &redo_size, sizeof(redo_size));
     }
 
-    LOG_DEBUG_INF("Try to process redo ftid:%llu to size:%llu from offset:%llu with au_size:%llu.",
-        *(uint64 *)&node->id, node->size, (uint64)node_data->offset, au_size);
+    LOG_DEBUG_INF("Try to process redo ftid: %s to size:%llu from offset:%llu with au_size:%llu.",
+        dss_display_metaid(node->id), node->size, (uint64)node_data->offset, au_size);
 
     status = dss_process_redo_log(session, vg_item);
     if (status != CM_SUCCESS) {
@@ -2861,8 +2891,8 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
         _exit(1);
     }
 
-    LOG_DEBUG_INF("Finish to extend ftid:%llu to size:%llu from offset:%llu with au_size:%llu.",
-        *(uint64 *)&node->id, node->size, (uint64)node_data->offset, au_size);
+    LOG_DEBUG_INF("Finish to extend ftid: %s to size:%llu from offset:%llu with au_size:%llu.",
+        dss_display_metaid(node->id), node->size, (uint64)node_data->offset, au_size);
 
     return CM_SUCCESS;
 }
@@ -2881,14 +2911,14 @@ status_t dss_extend_from_offset(
         offset = (int64)node->size;
     }
     // CM_CALC_ALGN_FLOOR from 0 will be -8, offset start from 0
-    uint64 algin_offset = CM_CALC_ALIGN_FLOOR((uint64)(offset + 1), au_size);
+    uint64 align_offset = CM_CALC_ALIGN_FLOOR((uint64)(offset + 1), au_size);
 
-    LOG_DEBUG_INF("Try to extend ftid:%llu from size:%llu to align_size:%llu, offset:%llu, algin_offset:%llu.",
-        *(uint64 *)&node_data->ftid, node->size, align_size, (uint64)node_data->offset, algin_offset);
+    LOG_DEBUG_INF("Try to extend ftid: %s from size:%llu to align_size:%llu, offset:%llu, algin_offset:%llu.",
+        dss_display_metaid(node_data->ftid), node->size, align_size, (uint64)node_data->offset, align_offset);
 
     dss_node_data_t node_data2 = *node_data;
     /* ready to exten file size to 'align_size' */
-    for (node_data2.offset = (int64)algin_offset; node_data2.offset < (int64)align_size;
+    for (node_data2.offset = (int64)align_offset; node_data2.offset < (int64)align_size;
         node_data2.offset += (int64)au_size) {
         status = dss_extend_inner(session, &node_data2);
         if (status != CM_SUCCESS) {
@@ -2900,6 +2930,9 @@ status_t dss_extend_from_offset(
 
 status_t dss_extend(dss_session_t *session, dss_node_data_t *node_data)
 {
+    DSS_LOG_DEBUG_OP("Begin to exted file, fid:%llu, ftid: %s, vg:%s, offset:%lld, size:%d", node_data->fid,
+        dss_display_metaid(node_data->ftid), node_data->vg_name, node_data->offset, node_data->size);
+
     status_t status;
     if (node_data->offset < 0 || node_data->size <= 0) {
         DSS_THROW_ERROR(ERR_DSS_FILE_INVALID_SIZE, node_data->offset, node_data->size);
@@ -2917,11 +2950,19 @@ status_t dss_extend(dss_session_t *session, dss_node_data_t *node_data)
     gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, node_data->ftid, CM_TRUE, CM_FALSE);
     if (!node) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find ftid, ftid: %llu.", *(int64*)&node_data->ftid));
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find ftid: %s.", dss_display_metaid(node_data->ftid)));
     }
 
     status = dss_extend_from_offset(session, vg_item, node, node_data);
     dss_unlock_vg_mem_and_shm(session, vg_item);
+    if (status == CM_SUCCESS)
+    {
+        LOG_DEBUG_INF("Succeed to extend file, fid:%llu, ftid: %s, vg:%s, offset:%lld, size:%d", node_data->fid,
+            dss_display_metaid(node_data->ftid), node_data->vg_name, node_data->offset, node_data->size);
+        return status;
+    }
+    LOG_DEBUG_ERR("Failed to extend file, fid:%llu, ftid: %s, vg:%s, offset:%lld, size:%d", node_data->fid,
+        dss_display_metaid(node_data->ftid), node_data->vg_name, node_data->offset, node_data->size);
     return status;
 }
 
@@ -2946,9 +2987,11 @@ static void dss_transfer_remaining_au(dss_session_t *session, dss_fs_block_t *sr
     CM_ASSERT(dst_au_idx <= au_idx_limit);
 
     LOG_DEBUG_INF("Begin to transfer the partial FSB, src_au_idx:%u, %u AUs to xfer, dst_au_idx:%u, au_idx_limit:%u, "
-                  "dst SFSB:%llu, used num:%hu, src SFSB:%llu, used num:%hu.",
-        src_au_idx, ((au_idx_limit - src_au_idx) + 1), dst_au_idx, au_idx_limit, DSS_ID_TO_U64(dst_sfsb->head.common.id),
-        dst_sfsb->head.used_num, DSS_ID_TO_U64(src_partial_sfsb->head.common.id), src_partial_sfsb->head.used_num);
+                  "dst SFSB: %s, used num:%hu.",
+        src_au_idx, ((au_idx_limit - src_au_idx) + 1), dst_au_idx, au_idx_limit,
+        dss_display_metaid(dst_sfsb->head.common.id), dst_sfsb->head.used_num);
+    LOG_DEBUG_INF("Src SFSB:%s, used num:%hu", dss_display_metaid(src_partial_sfsb->head.common.id),
+        src_partial_sfsb->head.used_num);
 
     // after whole FSB transfer, dst SFSB's remaning space might < src SFSB's AUs that need transfer
     // dst_second_sfsb should've been prepped in caller dss_build_truncated_ftn
@@ -2957,8 +3000,8 @@ static void dss_transfer_remaining_au(dss_session_t *session, dss_fs_block_t *sr
             CM_ASSERT(dst_second_sfsb != NULL);
             dst_sfsb = dst_second_sfsb;
             dst_au_idx = 0;
-            LOG_DEBUG_INF("Utilizing the second SFSB:%llu during xferring partial SFSB.",
-                DSS_ID_TO_U64(dst_second_sfsb->head.common.id));
+            LOG_DEBUG_INF("Utilizing the second SFSB: %s during xferring partial SFSB.",
+                dss_display_metaid(dst_second_sfsb->head.common.id));
         }
 
         CM_ASSERT(src_partial_sfsb->head.used_num > 0);
@@ -3021,7 +3064,7 @@ static void dss_transfer_second_level_fsb(dss_session_t *session, dss_vg_info_it
         src_entry_fsb->head.used_num--;
         CM_ASSERT(!dss_cmp_blockid(dst_entry_fsb->bitmap[*dst_sfsb_idx], DSS_INVALID_64));
 
-        DSS_LOG_DEBUG_OP("Transferring second level fs block:%llu.", DSS_ID_TO_U64(src_old_id));
+        DSS_LOG_DEBUG_OP("Transferring second level fs block: %s", dss_display_metaid(src_old_id));
 
         dss_redo_set_fs_block_t redo;
         redo.id = dst_entry_fsb->head.common.id;
@@ -3043,11 +3086,12 @@ static void dss_transfer_second_level_fsb(dss_session_t *session, dss_vg_info_it
         dss_put_log(session, vg_item, DSS_RT_SET_FILE_FS_BLOCK, &redo, sizeof(redo));
         // 512KB of redo size in total, capable of holding all these logs
 
-        LOG_DEBUG_INF("Success to transfer intact SFSB:%llu, from src EFSB:%llu[%u], to dst EFSB:%llu[%d], "
+        LOG_DEBUG_INF("Success to transfer intact SFSB:%llu, from src EFSB: %s[%u], to dst EFSB:%llu[%d], "
                       "curr src EFSB used num:%d, curr dst EFSB used num:%d.",
-            DSS_ID_TO_U64(dst_entry_fsb->bitmap[*dst_sfsb_idx]), DSS_ID_TO_U64(src_entry_fsb->head.common.id), curr_src_idx,
-            DSS_ID_TO_U64(dst_entry_fsb->head.common.id), *dst_sfsb_idx, src_entry_fsb->head.used_num,
+            DSS_ID_TO_U64(dst_entry_fsb->bitmap[*dst_sfsb_idx]), dss_display_metaid(src_entry_fsb->head.common.id),
+            curr_src_idx, DSS_ID_TO_U64(dst_entry_fsb->head.common.id), *dst_sfsb_idx, src_entry_fsb->head.used_num,
             dst_entry_fsb->head.used_num);
+        LOG_DEBUG_INF("Dst EFSB: %s", dss_display_metaid(dst_entry_fsb->head.common.id));
 
         curr_src_idx++;
         (*dst_sfsb_idx)++;
@@ -3121,7 +3165,8 @@ static void dss_build_truncated_ftn(dss_session_t *session, dss_vg_info_item_t *
             dss_fs_block_t *cached_block = (dss_fs_block_t *)dss_find_block_in_shm(
                 session, vg_item, cache_first_sfsb, DSS_BLOCK_TYPE_FS, CM_TRUE, &cached_objid, CM_FALSE);
             if (!cached_block) {
-                LOG_DEBUG_ERR("Failed to get cached fs block %llu, maybe no memory.", DSS_ID_TO_U64(cache_first_sfsb));
+                LOG_DEBUG_ERR(
+                    "Failed to get cached fs block: %s, maybe no memory.", dss_display_metaid(cache_first_sfsb));
                 DSS_THROW_ERROR(ERR_ALLOC_MEMORY, sizeof(dss_fs_block_t), "cached_block");
                 cm_panic(0);
             }
@@ -3162,7 +3207,7 @@ static status_t dss_init_trunc_ftn(dss_session_t *session, dss_vg_info_item_t *v
     gft_node_t *recycle_dir = dss_get_ft_node_by_ftid(session, vg_item, free_root, CM_TRUE, CM_FALSE);
     if (recycle_dir == NULL) {
         LOG_RUN_ERR("[FT] Get recycle dir failed id:%llu.", DSS_ID_TO_U64(free_root));
-        DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "recycle dir id", *(uint64 *)&free_root);
+        DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "recycle dir id", DSS_ID_TO_U64(free_root));
         return CM_ERROR;
     }
     char trunc_name[DSS_MAX_NAME_LEN];
@@ -3247,15 +3292,18 @@ void dss_set_node_flag(
     file_flag.flags = node->flags;
     if (dss_need_exec_local()) {
         dss_put_log(session, vg_item, DSS_RT_SET_NODE_FLAG, &file_flag, sizeof(dss_redo_set_file_flag_t));
-        LOG_DEBUG_INF("Successfully put the set flag redo log flags: %u, curr flags: %u, node id %llu, name %s", flags,
-            node->flags, *(uint64 *)&node->id, node->name);
+        LOG_DEBUG_INF("Successfully put the set flag redo log flags: %u, curr flags: %u, node: %s, name %s",
+            flags, node->flags, dss_display_metaid(node->id), node->name);
+    } else {
+        LOG_DEBUG_INF("Dont put the set flag redo log flags: %u, curr flags: %u, node: %s, name %s",
+            flags, node->flags, dss_display_metaid(node->id), node->name);
     }
 }
 
 void dss_validate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node)
 {
-    LOG_DEBUG_INF(
-        "[DSS] Try validate file:%s fid:%llu in vg:%s begin.", node->name, *(uint64 *)&node->id, vg_item->vg_name);
+    LOG_DEBUG_INF("[FS] Try validate file:%s fid:%llu, %s, in vg:%s begin.", node->name, node->fid,
+        dss_display_metaid(node->id), vg_item->vg_name);
     dss_set_node_flag(session, vg_item, node, CM_FALSE, DSS_FT_NODE_FLAG_INVALID_FS_META);
     status_t status = dss_process_redo_log(session, vg_item);
     if (status != CM_SUCCESS) {
@@ -3265,8 +3313,8 @@ void dss_validate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, g
         cm_fync_logfile();
         _exit(1);
     }
-    LOG_DEBUG_INF(
-        "[DSS] Try validate file:%s fid:%llu in vg:%s done.", node->name, *(uint64 *)&node->id, vg_item->vg_name);
+    LOG_DEBUG_INF("[FS] Try validate file:%s fid:%llu, %s in vg:%s done.", node->name, node->fid,
+        dss_display_metaid(node->id), vg_item->vg_name);
 }
 
 dss_invalidate_other_nodes_proc_t invalidate_other_nodes_proc = NULL;
@@ -3283,8 +3331,8 @@ void regist_broadcast_check_file_open_proc(dss_broadcast_check_file_open_proc_t 
 
 status_t dss_invalidate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node)
 {
-    LOG_DEBUG_INF(
-        "[DSS] Try invalidate file:%s fid:%llu in vg:%s begin.", node->name, *(uint64 *)&node->id, vg_item->vg_name);
+    LOG_DEBUG_INF("[FS] Try invalidate file:%s fid:%llu, %s in vg:%s begin.", node->name, node->fid,
+        dss_display_metaid(node->id), vg_item->vg_name);
     
     dss_set_node_flag(session, vg_item, node, CM_TRUE, DSS_FT_NODE_FLAG_INVALID_FS_META);
     status_t status = dss_process_redo_log(session, vg_item);
@@ -3301,19 +3349,19 @@ status_t dss_invalidate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_i
         bool32 invalid_ack = CM_TRUE;
         // let others can read disk or mem by force dss_latch_s_force before notify other nodes
         dss_lock_vg_mem_and_shm_x2ix(session, vg_item);
-        status = invalidate_other_nodes_proc(vg_item, *(uint64 *)&node->id, &invalid_ack);
+        status = invalidate_other_nodes_proc(vg_item, DSS_ID_TO_U64(node->id), &invalid_ack);
         // nned lock exec to finish truncate
         dss_lock_vg_mem_and_shm_ix2x(session, vg_item);
         if ( status != CM_SUCCESS || !invalid_ack) {
-            LOG_DEBUG_INF("[DSS] notify other nodes invalidate file:%s fid:%llu in vg:%s fail.", node->name,
-                *(uint64 *)&node->id, vg_item->vg_name);
+            LOG_DEBUG_INF("[FS] notify other nodes invalidate file:%s fid:%llu, %s, in vg:%s fail.", node->name,
+                node->fid, dss_display_metaid(node->id), vg_item->vg_name);
             dss_validate_fs_meta(session, vg_item, node);
             return CM_ERROR;
         }
     }
 
-    LOG_DEBUG_INF(
-        "[DSS] Try invaliate file:%s fid:%llu in vg:%s done.", node->name, *(uint64 *)&node->id,vg_item->vg_name);
+    LOG_DEBUG_INF("[FS] Try invaliate file:%s fid:%llu, %s, in vg:%s done.", node->name, node->fid,
+        dss_display_metaid(node->id),vg_item->vg_name);
     return CM_SUCCESS;
 }
 
@@ -3392,7 +3440,7 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 off
         dss_validate_fs_meta(session, vg_item, node);
         dss_unlock_vg_mem_and_shm(session, vg_item);
         DSS_RETURN_IFERR2(
-            CM_ERROR, LOG_DEBUG_ERR("Failed to find dst entry block:%llu.", *(uint64 *)&trunc_ftn->entry));
+            CM_ERROR, LOG_DEBUG_ERR("Failed to find dst entry block: %s.", dss_display_metaid(trunc_ftn->entry)));
     }
     dss_check_fs_block_affiliation(&dst_entry_fsb->head, trunc_ftn->id, DSS_ENTRY_FS_INDEX);
     uint32 au_trunc_idx = au_offset == 0 ? block_au_count : block_au_count + 1;
@@ -3430,8 +3478,8 @@ void regist_refresh_ft_by_primary_proc(dss_refresh_ft_by_primary_proc_t proc)
 // return is true means need to retry again
 bool32 dss_try_revalidate_file(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node)
 {
-    LOG_DEBUG_INF(
-        "Refresh file:%llu found node:%llu is invalid, need refresh from primary.", node->fid, *(uint64 *)&node->fid);
+    LOG_DEBUG_INF("Refresh file:%llu found node: %s is invalid, need refresh from primary.", node->fid,
+        dss_display_metaid(node->id));
 
     if (dss_need_exec_local()) {
         dss_validate_fs_meta(session, vg_item, node);
@@ -3447,7 +3495,7 @@ bool32 dss_try_revalidate_file(dss_session_t *session, dss_vg_info_item_t *vg_it
         dss_set_is_refresh_ftid(node, CM_FALSE);
         if (status != CM_SUCCESS) {
             LOG_RUN_ERR("Fail to apply refresh file:%s, curr size:%llu, ftid:%llu, entry id:%llu by session id:%u.",
-                node->name, node->size, *(uint64 *)&node->id, *(uint64 *)&(node->entry), session->id);
+                node->name, node->size, DSS_ID_TO_U64(node->id), DSS_ID_TO_U64(node->entry), session->id);
             cm_reset_error();
             return CM_TRUE;
         }
@@ -3462,13 +3510,13 @@ static status_t dss_refresh_file_core(
     bool32 need_retry = CM_FALSE;
     do {
         if (session != NULL && session->is_closed) {
-            LOG_DEBUG_ERR("Session:%u is closed, fail to refresh :%llu.", session->id, *(uint64 *)&ftid);
+            LOG_DEBUG_ERR("Session:%u is closed, fail to refresh: %s.", session->id, dss_display_metaid(ftid));
             return CM_ERROR;
         }
 
         node = dss_get_ft_node_by_ftid(NULL, vg_item, ftid, CM_TRUE, CM_FALSE);
         if (!node) {
-            DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find ftid,ftid: %llu.", *(uint64 *)&ftid));
+            DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find ftid: %s.", dss_display_metaid(ftid)));
         }
 
         if (node->fid != fid) {
@@ -3481,32 +3529,35 @@ static status_t dss_refresh_file_core(
         need_retry = dss_try_revalidate_file(session, vg_item, node);
         if (need_retry) {
             dss_unlock_vg_mem_and_shm(session, vg_item);
+            LOG_DEBUG_INF("Unlock vg:%s, sleep, then xlock, session id:%u", vg_item->vg_name, session->id);
             cm_sleep(DSS_READ_REMOTE_INTERVAL);
             dss_lock_vg_mem_and_shm_x(session, vg_item);
         }
     } while (CM_TRUE);
     
-    LOG_DEBUG_INF(
-        "Apply refresh file:%s, curr size:%llu, ftid:%llu, entry id:%llu, block id:%llu by session id:%u.",
-        node->name, node->size, *(uint64 *)&ftid, *(uint64 *)&(node->entry), *(uint64 *)&blockid, session->id);
-
+    LOG_DEBUG_INF("Apply refresh file:%s, curr size:%llu, ftid: %s by session id:%u.", node->name, node->size,
+        dss_display_metaid(ftid), session->id);
+    LOG_DEBUG_INF("Entry id: %s", dss_display_metaid(node->entry));
+    LOG_DEBUG_INF("Block id: %s", dss_display_metaid(blockid));
     // check the entry and load
     dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
         NULL, vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
     if (block == NULL) {
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find block:%llu.", *(uint64 *)&node->entry));
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find block: %s.", dss_display_metaid(node->entry)));
     }
     dss_check_fs_block_affiliation(&block->head, node->id, DSS_ENTRY_FS_INDEX);
     if (!dss_is_fs_block_valid(node, block)) {
         LOG_DEBUG_INF(
-            "block:%llu fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu by session id:%u",
-            DSS_ID_TO_U64(node->entry), dss_get_fs_block_fid(block), dss_get_fs_block_file_ver(block),
+            "block: %s fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu by session id:%u",
+            dss_display_metaid(node->entry), dss_get_fs_block_fid(block), dss_get_fs_block_file_ver(block),
             DSS_ID_TO_U64(node->id), node->fid, node->file_ver, session->id);
-            dss_set_fs_block_file_ver(node, block);
+        LOG_DEBUG_INF("Node ftid: %s", dss_display_metaid(node->id));
+        dss_set_fs_block_file_ver(node, block);
         LOG_DEBUG_INF(
-            "block:%llu fid:%llu, file ver:%llu setted with node:%llu, fid:%llu, file ver:%llu by session id:%u",
-            DSS_ID_TO_U64(node->entry), dss_get_fs_block_fid(block), dss_get_fs_block_file_ver(block),
+            "block: %s fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu by session id:%u",
+            dss_display_metaid(node->entry), dss_get_fs_block_fid(block), dss_get_fs_block_file_ver(block),
             DSS_ID_TO_U64(node->id), node->fid, node->file_ver, session->id);
+        LOG_DEBUG_INF("Node ftid: %s", dss_display_metaid(node->id));
     }
 
     bool32 cmp = dss_cmp_blockid(blockid, CM_INVALID_ID64);
@@ -3514,19 +3565,21 @@ static status_t dss_refresh_file_core(
         block = (dss_fs_block_t *)dss_find_block_in_shm(
             NULL, vg_item, blockid, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
         if (block == NULL) {
-            DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find block:%llu.", DSS_ID_TO_U64(blockid)));
+            DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find block: %s.", dss_display_metaid(blockid)));
         }
         dss_check_fs_block_parent(&block->head, node->id);
         if (!dss_is_fs_block_valid(node, block)) {
             LOG_DEBUG_INF(
-                "block:%llu fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu by session id:%u",
-                DSS_ID_TO_U64(blockid), dss_get_fs_block_fid(block), dss_get_fs_block_file_ver(block),
+                "block: %s fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu by session id:%u",
+                dss_display_metaid(blockid), dss_get_fs_block_fid(block), dss_get_fs_block_file_ver(block),
                 DSS_ID_TO_U64(node->id), node->fid, node->file_ver, session->id);
+            LOG_DEBUG_INF("Node ftid: %s", dss_display_metaid(node->id));
             dss_set_fs_block_file_ver(node, block);
             LOG_DEBUG_INF(
-                "block:%llu fid:%llu, file ver:%llu setted with node:%llu, fid:%llu, file ver:%llu by session id:%u",
-                DSS_ID_TO_U64(blockid), dss_get_fs_block_fid(block), dss_get_fs_block_file_ver(block),
+                "block: %s fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu by session id:%u",
+                dss_display_metaid(blockid), dss_get_fs_block_fid(block), dss_get_fs_block_file_ver(block),
                 DSS_ID_TO_U64(node->id), node->fid, node->file_ver, session->id);
+            LOG_DEBUG_INF("Node ftid: %s", dss_display_metaid(node->id));
         }
     }
 
@@ -3687,14 +3740,14 @@ status_t dss_refresh_ft_block(dss_session_t *session, char *vg_name, uint32 vgid
     gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, blockid, CM_TRUE, CM_TRUE);
     if (!node) {
         DSS_RETURN_IFERR3(CM_ERROR, dss_unlock_vg_mem_and_shm(session, vg_item),
-            LOG_DEBUG_ERR("Failed to find ftid,ftid: %llu.", *(uint64 *)&blockid));
+            LOG_DEBUG_ERR("Failed to find ftid,ftid: %s.", dss_display_metaid(blockid)));
     }
 
     if (node->type == GFT_PATH) {
         status_t status = dss_refresh_dir_r(vg_item, node, CM_FALSE);
         DSS_RETURN_IFERR3(status,
-            LOG_DEBUG_ERR("Failed to refesh dir vg:%s, dir name:%s, ftid:%llu, pid:%llu.", vg_item->vg_name, node->name,
-                *(uint64 *)&node->id, session->cli_info.cli_pid),
+            LOG_DEBUG_ERR("Failed to refesh dir vg:%s, dir name:%s, ftid: %s, pid:%llu.", vg_item->vg_name, node->name,
+                dss_display_metaid(node->id), session->cli_info.cli_pid),
             dss_unlock_vg_mem_and_shm(session, vg_item));
     }
     dss_unlock_vg_mem_and_shm(session, vg_item);
@@ -3715,7 +3768,7 @@ status_t dss_update_file_written_size(
     gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, blockid, CM_TRUE, CM_FALSE);
     if (!node) {
         DSS_RETURN_IFERR3(CM_ERROR, dss_unlock_vg_mem_and_shm(session, vg_item),
-            LOG_DEBUG_ERR("Failed to find FTN, ftid: %llu.", *(uint64 *)&blockid));
+            LOG_DEBUG_ERR("Failed to find FTN, ftid: %s.", dss_display_metaid(blockid)));
     }
 
     if (node->written_size >= written_size) {
@@ -3796,11 +3849,11 @@ static status_t dss_clean_delay_file_node(
 static status_t dss_clean_delay_node(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node)
 {
-    LOG_DEBUG_INF("[DELAY_CLEAN]Delay File begin to clean name %s ftid:%llu.", node->name, *(uint64 *)&node->id);
+    LOG_DEBUG_INF("[DELAY_CLEAN]Delay File begin to clean name %s ftid: %s.", node->name, dss_display_metaid(node->id));
     if (node->type == GFT_PATH) {
         // clean delay path only when they have no children node
-        LOG_DEBUG_INF("[DELAY_CLEAN]Delay File %s ftid:%llu is path, children node count %u .", node->name,
-            *(uint64 *)&node->id, node->items.count);
+        LOG_DEBUG_INF("[DELAY_CLEAN]Delay File %s ftid: %s is path, children node count %u .", node->name,
+            dss_display_metaid(node->id), node->items.count);
         dss_free_ft_node(session, vg_item, parent_node, node, CM_TRUE);
     } else {
         status_t status = dss_clean_delay_file_node(session, vg_item, parent_node, node);
@@ -3820,35 +3873,35 @@ static status_t dss_clean_delay_node(
 static status_t dss_check_delay_node(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node)
 {
-    LOG_DEBUG_INF("[DELAY_CLEAN]Delay File begin to check name %s ftid:%llu, parent name %s parent ftid:%llu.",
-        node->name, *(uint64 *)&node->id, parent_node->name, *(uint64 *)&parent_node->id);
+    LOG_DEBUG_INF("[DELAY_CLEAN]Delay File begin to check name %s ftid: %s.", node->name, dss_display_metaid(node->id));
+    LOG_DEBUG_INF("Parent name:%s ftid: %s", parent_node->name, dss_display_metaid(parent_node->id));
     bool32 is_open = CM_FALSE;
     // check delay file open local
-    status_t status = dss_check_open_file(session, vg_item, *(uint64 *)&node->id, &is_open);
+    status_t status = dss_check_open_file(session, vg_item, DSS_ID_TO_U64(node->id), &is_open);
     DSS_RETURN_IFERR2(status,
-        LOG_RUN_WAR("[DELAY_CLEAN]Failed to check local, name %s ftid:%llu.", node->name, *(uint64 *)&node->id));
+        LOG_RUN_WAR("[DELAY_CLEAN]Failed to check local, name %s ftid: %s.", node->name, dss_display_metaid(node->id)));
     if (is_open) {
-        LOG_DEBUG_INF("[DELAY_CLEAN]File %s ftid:%llu is delay node, but have opened local, check next time.",
-            node->name, *(uint64 *)&node->id);
+        LOG_DEBUG_INF("[DELAY_CLEAN]File %s ftid: %s is delay node, but have opened local, check next time.",
+            node->name, dss_display_metaid(node->id));
         return CM_SUCCESS;
     }
 
     if (broadcast_check_file_open_proc != NULL) {
         // broadcast to check file open
-        status = broadcast_check_file_open_proc(vg_item, *(uint64 *)&node->id, &is_open);
+        status = broadcast_check_file_open_proc(vg_item, DSS_ID_TO_U64(node->id), &is_open);
         DSS_RETURN_IFERR2(status,
-            LOG_RUN_WAR("[DELAY_CLEAN]Failed check broadcast, name %s ftid:%llu.", node->name, *(uint64 *)&node->id));
+            LOG_RUN_WAR("[DELAY_CLEAN]Failed check broadcast, name %s ftid:%llu.", node->name, DSS_ID_TO_U64(node->id)));
         if (is_open) {
             LOG_DEBUG_INF(
-                "[DELAY_CLEAN]File %s ftid:%llu is delay node, but have opened other instance, check next time.",
-                node->name, *(uint64 *)&node->id);
+                "[DELAY_CLEAN]File %s ftid: %s is delay node, but have opened other instance, check next time.",
+                node->name, dss_display_metaid(node->id));
             return CM_SUCCESS;
         }
     }
 
     status = dss_clean_delay_node(session, vg_item, parent_node, node);
     DSS_RETURN_IFERR2(status,
-        LOG_RUN_WAR("[DELAY_CLEAN]Failed to clean delay node, name %s ftid:%llu.", node->name, *(uint64 *)&node->id));
+        LOG_RUN_WAR("[DELAY_CLEAN]Failed to clean delay node, name %s ftid:%llu.", node->name, DSS_ID_TO_U64(node->id)));
     return CM_SUCCESS;
 }
 
@@ -3880,7 +3933,7 @@ static status_t dss_clean_node_tree(dss_session_t *session, dss_vg_info_item_t *
     gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, parent_node->items.first, CM_TRUE, CM_FALSE);
     if (node == NULL) {
         LOG_RUN_WAR("[DELAY_CLEAN]Failed to get children node id: %llu, parent_node name %s.",
-            *(uint64 *)&parent_node->items.first, parent_node->name);
+            DSS_ID_TO_U64(parent_node->items.first), parent_node->name);
         return CM_ERROR;
     }
     do {
@@ -3898,7 +3951,7 @@ static status_t dss_clean_node_tree(dss_session_t *session, dss_vg_info_item_t *
         }
         status = dss_clean_node_tree(session, vg_item, node);
         DSS_RETURN_IFERR2(
-            status, LOG_RUN_WAR("[DELAY_CLEAN]Failed to clean node tree, node name %s ftid:%llu.", node->name, *(uint64 *)&node->id));
+            status, LOG_RUN_WAR("[DELAY_CLEAN]Failed to clean node tree, node name %s ftid:%llu.", node->name, DSS_ID_TO_U64(node->id)));
         // maybe its children node have been cleaned
         if (((node->flags & DSS_FT_NODE_FLAG_DEL) != 0) && dss_is_last_tree_node(node)) {
             next_node = dss_get_next_node(session, vg_item, node);

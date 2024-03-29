@@ -162,22 +162,22 @@ status_t dss_check_block_version(
     // just read block header
     status_t status = dss_get_block_from_disk(vg_item, blockid, buf, offset, DSS_DISK_UNIT_SIZE, CM_FALSE);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to get block:%llu from disk, addr:%p, offset:%lld, size:%d.", DSS_ID_TO_U64(blockid), buf,
+        LOG_DEBUG_ERR("Failed to get block: %s from disk, addr:%p, offset:%lld, size:%d.", dss_display_metaid(blockid), buf,
             offset, DSS_DISK_UNIT_SIZE);
         return status;
     }
     uint64 disk_version = ((dss_common_block_t *)buf)->version;
     if (dss_compare_version(disk_version, version)) {
-        DSS_LOG_DEBUG_OP("dss_check_block_version, version:%llu, disk_version:%llu, blockid:%llu, type:%u.", version,
-            disk_version, DSS_ID_TO_U64(blockid), type);
+        DSS_LOG_DEBUG_OP("dss_check_block_version, version:%llu, disk_version:%llu, blockid: %s, type:%u.", version,
+            disk_version, dss_display_metaid(blockid), type);
         // if size == DSS_DISK_UNIT_SIZE, the buf has been changed all, not need load again
         if (size == DSS_DISK_UNIT_SIZE) {
             securec_check_ret(memcpy_s(addr, DSS_DISK_UNIT_SIZE, buf, DSS_DISK_UNIT_SIZE));
         } else {
             status = dss_get_block_from_disk(vg_item, blockid, addr, offset, (int32)size, CM_TRUE);
             if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("Failed to get block:%llu from disk, addr:%p, offset:%lld, size:%u.", DSS_ID_TO_U64(blockid),
-                    addr, offset, size);
+                LOG_DEBUG_ERR("Failed to get block: %s from disk, addr:%p, offset:%lld, size:%u.",
+                    dss_display_metaid(blockid), addr, offset, size);
                 return status;
             }
         }
@@ -510,7 +510,7 @@ char *dss_find_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item,
     }
     status = dss_load_buffer_cache(vg_item, block_id, type, &addr, out_obj_id);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to load meta block, block_id:%llu.", DSS_ID_TO_U64(block_id));
+        LOG_DEBUG_ERR("Failed to load meta block, block_id: %s.", dss_display_metaid(block_id));
         return NULL;
     }
     return addr;

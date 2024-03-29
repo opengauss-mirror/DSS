@@ -199,7 +199,8 @@ static status_t dss_mark_delete_flag_r(dss_session_t *session, dss_vg_info_item_
 static status_t dss_mark_delete_flag(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, const char *dir_name, bool recursive)
 {
-    LOG_DEBUG_INF("Mark delete flag for file or dir %s, ftid:%llu.", dir_name, *(uint64 *)&node->id);
+    LOG_DEBUG_INF(
+        "Mark delete flag for file or dir %s, fid:%llu, ftid: %s.", dir_name, node->fid, dss_display_metaid(node->id));
     if ((node->flags & DSS_FT_NODE_FLAG_DEL) != 0) {
         LOG_DEBUG_INF("File: %s has been marked for deletion, nothing need to do.", node->name);
         return CM_SUCCESS;
@@ -362,6 +363,7 @@ static status_t dss_make_dir_file_core(dss_session_t *session, const char *paren
     gft_node_t *out_node = NULL;
     status_t status = dss_open_file_check(session, parent, vg_item, GFT_PATH, &out_node);
     if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to open file check:%s when mkdir of file:%s", parent, dir_name);
         DSS_THROW_ERROR(ERR_DSS_VG_CHECK, (*vg_item)->dss_ctrl->volume.defs[0].name, "failed to open file check");
         return status;
     }
@@ -393,6 +395,8 @@ static status_t dss_make_dir_file_core(dss_session_t *session, const char *paren
         cm_fync_logfile();
         _exit(1);
     }
+    LOG_DEBUG_ERR("[FT][ALLOC] Succeed to mkdir or file, fid:%llu, ftid: %s for file:%s.", out_node->fid,
+        dss_display_metaid(out_node->id), dir_name);
     return CM_SUCCESS;
 }
 
@@ -417,7 +421,7 @@ static status_t dss_make_dir_file(
     dss_vg_info_item_t *vg_item = dss_find_vg_item(name);
     if (vg_item == NULL) {
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, name);
-        LOG_DEBUG_ERR("get vg item failed, vg name:%s.", name);
+        LOG_DEBUG_ERR("Failed to mkdir or file:%s in path:%s, cant get vg item, vg name:%s.", dir_name, parent, name);
         return CM_ERROR;
     }
     dss_lock_vg_mem_and_shm_x(session, vg_item);
@@ -425,7 +429,7 @@ static status_t dss_make_dir_file(
 
     dss_unlock_vg_mem_and_shm(session, vg_item);
     if (status == CM_SUCCESS) {
-        LOG_RUN_INF("Succeed to mk dir or file:%s in vg:%s.", dir_name, name);
+        LOG_RUN_INF("Succeed to mk dir or file:%s in path:%s in vg:%s.", dir_name, parent, name);
     }
     return status;
 }

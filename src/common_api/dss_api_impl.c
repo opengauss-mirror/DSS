@@ -188,13 +188,13 @@ static status_t dss_check_find_fs_block(
             if ((*fs_block) == NULL) {
                 DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
                 DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "fs_block", *(uint64 *)&block_id);
-                LOG_RUN_ERR("Failed to find block:%llu in mem.", DSS_ID_TO_U64(block_id));
+                LOG_RUN_ERR("Failed to find block: %s in mem.", dss_display_metaid(block_id));
                 return CM_ERROR;
             }
             break;
         }
-        LOG_DEBUG_INF("The node:%llu name:%s is invalid, need refresh from server again.",
-            *(uint64 *)&context->node->id, context->node->name);
+        LOG_DEBUG_INF("The node: %s name:%s is invalid, need refresh from server again.",
+            dss_display_metaid(context->node->id), context->node->name);
         cm_sleep(DSS_READ_REMOTE_INTERVAL);
     } while(!is_valid);
     return CM_SUCCESS;
@@ -224,11 +224,11 @@ static status_t dss_check_refresh_file_by_size(
         if (param->is_read && ((tmp_total_size + (uint64)offset) >= (uint64)context->node->size)) {
             // no data to read
             if ((uint64)offset >= (uint64)context->node->size) {
-                LOG_DEBUG_INF("Node:%llu has no data to read.", DSS_ID_TO_U64(context->node->id));
+                LOG_DEBUG_INF("Node:%s has no data to read.", dss_display_metaid(context->node->id));
                 *total_size = 0;
             // no enough data to read
             } else {
-                LOG_DEBUG_INF("Node:%llu has no enough data to read form offset.", DSS_ID_TO_U64(context->node->id));
+                LOG_DEBUG_INF("Node:%s has no enough data to read form offset.", dss_display_metaid(context->node->id));
                 *total_size = (int32)((uint64)context->node->size - (uint64)offset);
             }
         }
@@ -243,11 +243,11 @@ static void dss_check_file_written_size(
     if (is_read && ((tmp_total_size + start_offset) >= context->node->written_size)) {
         // no data to read
         if ((uint64)start_offset >= (uint64)context->node->written_size) {
-            LOG_DEBUG_INF("Node:%llu has node data to read.", DSS_ID_TO_U64(context->node->id));
+            LOG_DEBUG_INF("Node:%s has node data to read.", dss_display_metaid(context->node->id));
             *total_size = 0;
         // no enough data to read
         } else {
-            LOG_DEBUG_INF("Node:%llu has no enough data to read form offset.", DSS_ID_TO_U64(context->node->id));
+            LOG_DEBUG_INF("Node:%s has no enough data to read form offset.", dss_display_metaid(context->node->id));
             *total_size = (int32)((uint64)context->node->written_size - (uint64)start_offset);
         }
         if (*total_size > 0) {
@@ -299,14 +299,14 @@ static status_t dss_check_refresh_volume(dss_conn_t *conn, dss_file_context_t *c
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
         status = dss_apply_refresh_volume(conn, context, auid);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to refresh volum, auid:%llu.", DSS_ID_TO_U64(auid));
+            LOG_DEBUG_ERR("Failed to refresh volum, auid:%s.", dss_display_metaid(auid));
             return status;
         }
         DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
         status = dss_refresh_volume_handle(conn, context, auid);
         if (status != CM_SUCCESS) {
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-            LOG_DEBUG_ERR("Failed to refresh volume handle, auid:%llu.", DSS_ID_TO_U64(auid));
+            LOG_DEBUG_ERR("Failed to refresh volume handle, auid:%s.", dss_display_metaid(auid));
             return status;
         }
         *is_refresh = CM_TRUE;
@@ -317,7 +317,7 @@ static status_t dss_check_refresh_volume(dss_conn_t *conn, dss_file_context_t *c
         status = dss_reopen_volume_handle(conn, context, auid);
         if (status != CM_SUCCESS) {
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-            LOG_DEBUG_ERR("Failed to reopen volume handle, auid:%llu.", DSS_ID_TO_U64(auid));
+            LOG_DEBUG_ERR("Failed to reopen volume handle, auid:%s.", dss_display_metaid(auid));
             return status;
         }
         *is_refresh = CM_TRUE;
@@ -457,7 +457,7 @@ status_t dss_apply_refresh_file_table(dss_conn_t *conn, dss_dir_t *dir)
         return CM_ERROR;
     }
 
-    LOG_DEBUG_INF("Apply to refresh file table blockid:%llu, vgid:%u, vg name:%s.", DSS_ID_TO_U64(blockid),
+    LOG_DEBUG_INF("Apply to refresh file table blockid:%s, vgid:%u, vg name:%s.", dss_display_metaid(blockid),
         dir->vg_item->id, dir->vg_item->vg_name);
 
     return CM_SUCCESS;
@@ -998,7 +998,7 @@ static status_t dss_get_ftid_by_path_on_server(dss_conn_t *conn, const char *pat
         return CM_ERROR;
     }
 
-    LOG_DEBUG_INF("dss get node ftid: %llu, vg: %s by path: %s", DSS_ID_TO_U64(*ftid), vg_name, path);
+    LOG_DEBUG_INF("dss get node ftid: %s, vg: %s by path: %s", dss_display_metaid(*ftid), vg_name, path);
     return CM_SUCCESS;
 }
 
@@ -1527,7 +1527,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
                 DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to refresh file second block."));
             }
             retry_time++;
-            LOG_DEBUG_INF("Node:%llu, name:%s, fsize:%llu, written_size:%llu, retry_time:%u.", DSS_ID_TO_U64(node->id),
+            LOG_DEBUG_INF("Node:%s, name:%s, fsize:%llu, written_size:%llu, retry_time:%u.", dss_display_metaid(node->id),
                 node->name, node->size, node->written_size, retry_time);
             continue;
         }
@@ -1553,8 +1553,8 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         if (is_refresh) {
             // dss_check_refrsh_volume may unlock the vg, other task may truncate this file, need recheck from begin
             retry_time++;
-            LOG_DEBUG_INF("Node:%llu, name:%s, fsize:%llu, written_size:%llu, retry_time:%u.", DSS_ID_TO_U64(node->id),
-                node->name, node->size, node->written_size, retry_time);
+            LOG_DEBUG_INF("Node:%s, name:%s, fsize:%llu, written_size:%llu, retry_time:%u.",
+                dss_display_metaid(node->id), node->name, node->size, node->written_size, retry_time);
             continue;
         }
         dss_cli_vg_handles_t *cli_vg_handles = (dss_cli_vg_handles_t *)(conn->cli_vg_handles);
@@ -2423,7 +2423,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
                 DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to refresh file second block."));
             }
             retry_time++;
-            LOG_DEBUG_INF("Node:%llu, name:%s, fsize:%llu, written_size:%llu, retry_time:%u.", DSS_ID_TO_U64(node->id),
+            LOG_DEBUG_INF("Node:%s, name:%s, fsize:%llu, written_size:%llu, retry_time:%u.", dss_display_metaid(node->id),
                 node->name, node->size, node->written_size, retry_time);
             continue;
         }
@@ -2449,8 +2449,8 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
         if (is_refresh) {
             // dss_check_refrsh_volume may unlock the vg, other task may truncate this file, need recheck from begin
             retry_time++;
-            LOG_DEBUG_INF("Node:%llu, name:%s, fsize:%llu, written_size:%llu, retry_time:%u.", DSS_ID_TO_U64(node->id),
-                node->name, node->size, node->written_size, retry_time);
+            LOG_DEBUG_INF("Node:%s, name:%s, fsize:%llu, written_size:%llu, retry_time:%u.",
+                dss_display_metaid(node->id), node->name, node->size, node->written_size, retry_time);
             continue;
         }
         dss_cli_vg_handles_t *cli_vg_handles = (dss_cli_vg_handles_t *)(conn->cli_vg_handles);
