@@ -1274,20 +1274,8 @@ void dss_proc_loaddisk_req(dss_session_t *session, mes_msg_t *msg)
             req_dss_head->src_inst, req_dss_head->dst_inst);
         return;
     }
-
-    if (dss_is_readonly() == CM_TRUE) {
-        dss_config_t *cfg = dss_get_inst_cfg();
-        LOG_RUN_ERR("The local node:%u is in readonly state and cannot execute remote loaddisk requests.",
-            (uint32)(cfg->params.inst_id));
-        dss_proc_remote_req_err(session, req_dss_head, DSS_CMD_ACK_LOAD_DISK, ret);
-        return;
-    }
     LOG_DEBUG_INF("[MES] Exec load disk req, src node(%hu), volume id:%u, offset:%llu, size:%u.",
         req_dss_head->src_inst, req->volumeid, req->offset, req->size);
-    if (dss_check_srv_status(msg) != CM_TRUE) {
-        dss_proc_remote_req_err(session, req_dss_head, DSS_CMD_ACK_LOAD_DISK, ret);
-        return;
-    }
     ret = dss_batch_load(session, req, req_dss_head->msg_proto_ver);
     if (ret != CM_SUCCESS) {
         LOG_RUN_ERR("Exec load disk req failed, src node:%u, volume id:%u, offset:%llu, size:%u.",

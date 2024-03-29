@@ -85,6 +85,7 @@ uint64 dss_get_au_id(dss_vg_info_item_t *item, uint64 offset);
 void dss_set_blockid(dss_block_id_t *blockid, uint64 id);
 bool32 dss_cmp_blockid(dss_block_id_t blockid, uint64 id);
 status_t dss_get_volume_version(dss_vg_info_item_t *item, uint64 *version);
+status_t dss_load_redo_ctrl(dss_vg_info_item_t *vg_item);
 
 #ifdef __cplusplus
 }

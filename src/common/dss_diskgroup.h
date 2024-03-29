@@ -140,6 +140,18 @@ static inline dss_vg_info_item_t *dss_get_first_vg_item()
     return &g_vgs_info->volume_group[0];
 }
 
+static inline uint64 dss_get_redo_log_lsn(dss_vg_info_item_t *vg_item)
+{
+    return vg_item->dss_ctrl->redo_ctrl.lsn;
+}
+
+static inline uint64 dss_inc_redo_log_lsn(dss_vg_info_item_t *vg_item)
+{
+    uint64 lsn = dss_get_redo_log_lsn(vg_item);
+    lsn++;
+    return lsn;
+}
+
 // NOTE:has minus checksum field.
 static inline uint32 dss_get_checksum(void *data, uint32 len)
 {
@@ -162,6 +174,7 @@ static inline bool32 dss_read_remote_checksum(void *buf, int32 size)
 {
     uint32 sum1 = *(uint32 *)buf;
     uint32 sum2 = dss_get_checksum(buf, (uint32)size);
+    LOG_DEBUG_INF("read remote checksum, checksum1 is %u, checksum2 is %u.", sum1, sum2);
     return sum1 == sum2;
 }
 
@@ -225,6 +238,7 @@ status_t dss_gen_volume_head(
 status_t dss_check_remove_volume(dss_vg_info_item_t *vg_item, const char *volume_name, uint32 *volume_id);
 void dss_remove_volume_vg_ctrl(dss_ctrl_t *vg_ctrl, uint32 id);
 bool32 dss_meta_syn(dss_session_t *session, dss_bg_task_info_t *bg_task_info);
+status_t dss_update_redo_ctrl(dss_vg_info_item_t *vg_item, uint32 index, uint64 offset, uint64 lsn);
 
 #ifdef __cplusplus
 }

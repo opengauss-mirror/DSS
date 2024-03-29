@@ -380,6 +380,21 @@ status_t dss_load_core_ctrl(dss_vg_info_item_t *item, dss_core_ctrl_t *core)
     return CM_SUCCESS;
 }
 
+status_t dss_load_redo_ctrl(dss_vg_info_item_t *vg_item)
+{
+    if (vg_item->volume_handle[0].handle == DSS_INVALID_HANDLE) {
+        status_t ret = dss_open_volume(vg_item->entry_path, NULL, DSS_INSTANCE_OPEN_FLAG, &vg_item->volume_handle[0]);
+        DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("Failed to open volume %s.", vg_item->entry_path));
+    }
+    bool32 remote_checksum = CM_FALSE;
+    status_t status = dss_load_vg_ctrl_part(
+        vg_item, (int64)DSS_CTRL_REDO_OFFSET, &vg_item->dss_ctrl->redo_ctrl, DSS_DISK_UNIT_SIZE, &remote_checksum);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    return CM_SUCCESS;
+}
+
 void dss_update_core_ctrl(
     dss_session_t *session, dss_vg_info_item_t *item, dss_core_ctrl_t *core, uint32 volume_id, bool32 is_only_root)
 {

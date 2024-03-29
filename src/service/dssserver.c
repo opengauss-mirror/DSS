@@ -121,7 +121,7 @@ static void dss_clean_server()
     dss_close_thread(&g_dss_instance);
     dss_stop_mes();
     dss_uninit_cm(&g_dss_instance);
-    dss_free_log_ctrl(&g_dss_instance);
+    dss_free_log_ctrl();
     if (g_dss_instance.lock_fd != CM_INVALID_INT32) {
         (void)cm_unlock_fd(g_dss_instance.lock_fd);
         cm_close_file(g_dss_instance.lock_fd);

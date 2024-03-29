@@ -27,8 +27,6 @@
 #include "dss_errno.h"
 #include "cm_text.h"
 
-dss_kernel_instance_t g_dss_kernel_instance;
-
 auid_t dss_invalid_auid = {.volume = 0x3ff, .au = 0x3ffffffff, .block = 0x1ffff, .item = 0x7};
 auid_t dss_set_inited_mask = {.volume = 0, .au = 0, .block = 0, .item = 0x1};
 auid_t dss_unset_inited_mask = {.volume = 0x3ff, .au = 0x3ffffffff, .block = 0x1ffff, .item = 0};

@@ -13,7 +13,7 @@
  * See the Mulan PSL v2 for more details.
  * -------------------------------------------------------------------------
  *
- * dsscmd_create_vg.c
+ * dsscmd_volume.c
  *
  *
  * IDENTIFICATION
@@ -179,6 +179,8 @@ static status_t dss_initial_vg_ctrl(
         return CM_ERROR;
     }
     vg_ctrl->core.volume_attrs[0].free = vg_ctrl->core.volume_attrs[0].size - vg_ctrl->core.volume_attrs[0].hwm;
+    LOG_RUN_INF("After initial vg ctrl, au_size is %u, hwm is %llu, free is %llu, size is %llu", au_size,
+        vg_ctrl->core.volume_attrs[0].hwm, vg_ctrl->core.volume_attrs[0].free, vg_ctrl->core.volume_attrs[0].size);
     return CM_SUCCESS;
 }
 
@@ -239,7 +241,7 @@ static status_t dss_set_vg_ctrl(
             LOG_DEBUG_ERR("[VOL][CV] initial_vg_ctrl failed.vg %s,vm %s.", vg_name, volume_name);
             break;
         }
-        status = dss_set_log_buf(vg_name, vg_item, &volume);
+        status = dss_set_log_buf(vg_name, vg_item);
         if (status != CM_SUCCESS) {
             dss_close_volume(&volume);
             LOG_DEBUG_ERR("[VOL][CV] initial global log buffer failed.vg %s,vm %s.", vg_name, volume_name);
@@ -322,7 +324,7 @@ static status_t dss_modify_volume_head(
 #endif
     dss_volume_header_t *vol_head = (dss_volume_header_t *)buf;
     CM_RETURN_IFERR(dss_open_volume(vol_path, NULL, DSS_CLI_OPEN_FLAG, &vg_item->volume_handle[id]));
-    status_t ret =  dss_read_volume(&vg_item->volume_handle[id], 0, vol_head, DSS_DISK_UNIT_SIZE);
+    status_t ret = dss_read_volume(&vg_item->volume_handle[id], 0, vol_head, DSS_DISK_UNIT_SIZE);
     if (ret != CM_SUCCESS) {
         dss_close_volume(&vg_item->volume_handle[id]);
         return ret;
@@ -597,7 +599,7 @@ static status_t dss_replace_volume_inner(
 }
 
 static status_t dss_modify_volume_offline_inner(dss_vg_info_item_t *vg_item, const char *old_vol, const char *new_vol,
-    volume_modify_type_e type, dss_config_t *inst_cfg, bool32 is_first_vg)
+    volume_modify_type_e type, dss_config_t *inst_cfg)
 {
     status_t ret;
 
@@ -653,14 +655,7 @@ status_t dss_modify_volume_offline(
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
         return CM_ERROR;
     }
-
-    status_t ret = dss_get_vg_non_entry_info(&inst_cfg, vg_item, CM_TRUE, is_first_vg);
-    if (ret != CM_SUCCESS) {
-        dss_inq_free_vg_info(vg_info);
-        DSS_PRINT_ERROR("Failed to get vg non entry info when modify volume offline.\n");
-        return ret;
-    }
-
+    status_t ret;
     if (!is_first_vg) {
         ret = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[0], CM_TRUE, CM_TRUE);
         if (ret != CM_SUCCESS) {
@@ -669,14 +664,18 @@ status_t dss_modify_volume_offline(
             return ret;
         }
     }
-    
+    ret = dss_get_vg_non_entry_info(&inst_cfg, vg_item, CM_TRUE, CM_TRUE);
+    if (ret != CM_SUCCESS) {
+        dss_inq_free_vg_info(vg_info);
+        DSS_PRINT_ERROR("Failed to get vg non entry info when modify volume offline.\n");
+        return ret;
+    }
     if (dss_lock_vg_storage_w(vg_item, vg_item->entry_path, &inst_cfg) != CM_SUCCESS) {
         dss_inq_free_vg_info(vg_info);
         DSS_PRINT_ERROR("Failed to lock vg:%s.\n", vg_name);
         return CM_ERROR;
     }
-
-    ret = dss_modify_volume_offline_inner(vg_item, old_vol, new_vol, type, &inst_cfg, is_first_vg);
+    ret = dss_modify_volume_offline_inner(vg_item, old_vol, new_vol, type, &inst_cfg);
     dss_unlock_vg_storage(vg_item, vg_item->entry_path, &inst_cfg);
     dss_inq_free_vg_info(vg_info);
     if (ret != CM_SUCCESS) {

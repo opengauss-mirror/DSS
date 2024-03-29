@@ -85,7 +85,6 @@ typedef struct st_dss_instance {
     dss_cm_res cm_res;
     uint64 inst_work_status_map;  // one bit one inst, bit value is 1 means inst ok, 0 means inst not ok
     spinlock_t inst_work_lock;
-    dss_kernel_instance_t *kernel_instance;
     int32 cluster_proto_vers[DSS_MAX_INSTANCES];
     bool8 is_maintain;
     bool8 is_cleaning;
@@ -106,10 +105,8 @@ extern dss_instance_t g_dss_instance;
 status_t dss_start_lsnr(dss_instance_t *inst);
 void dss_uninit_cm(dss_instance_t *inst);
 void dss_check_peer_inst(dss_instance_t *inst, uint64 inst_id);
-void dss_free_log_ctrl(dss_instance_t *inst);
-status_t dss_get_instance_log_buf(dss_instance_t *inst);
-status_t dss_load_log_buffer(dss_redo_batch_t *batch);
-status_t dss_alloc_instance_log_buf(dss_instance_t *inst);
+void dss_free_log_ctrl();
+status_t dss_alloc_vg_item_redo_log_buf(dss_vg_info_item_t *vg_item);
 status_t dss_recover_from_instance(dss_instance_t *inst);
 void dss_check_peer_by_inst(dss_instance_t *inst, uint64 inst_id);
 uint64 dss_get_inst_work_status(void);

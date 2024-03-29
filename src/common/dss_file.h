@@ -98,6 +98,8 @@ gft_node_t *dss_find_ft_node(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, bool8 skip_del);
 gft_node_t *dss_get_ft_node_by_ftid(
     dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id, bool32 check_version, bool32 active_refresh);
+gft_node_t *dss_get_ft_node_by_ftid_from_disk_and_refresh_shm(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id);
 gft_node_t *dss_get_ft_node_by_ftid_no_refresh(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id);
 status_t dss_update_ft_block_disk(dss_vg_info_item_t *vg_item, dss_ft_block_t *block, ftid_t id);
 int64 dss_get_ft_block_offset(dss_vg_info_item_t *vg_item, ftid_t id);

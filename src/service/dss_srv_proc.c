@@ -251,7 +251,7 @@ static status_t dss_rm_dir_file(dss_session_t *session, const char *dir_name, gf
     dss_init_vg_cache_node_info(vg_item);
     status_t status = dss_rm_dir_file_inner(session, &vg_item, &node, dir_name, type, recursive);
     if (status != CM_SUCCESS) {
-        dss_rollback_mem_update(session->log_split, vg_item);
+        dss_rollback_mem_update(session, vg_item);
         dss_unlock_vg_mem_and_shm(session, vg_item);
         LOG_RUN_ERR("Failed to remove dir or file, name : %s.", dir_name);
         return status;
@@ -321,7 +321,7 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
 
     dss_init_vg_cache_node_info(vg_item);
     // error_handle: rollback memory
-    dss_rollback_mem_update(session->log_split, vg_item);
+    dss_rollback_mem_update(session, vg_item);
     int32 err_code = cm_get_error_code();
     if (err_code != ERR_DSS_FILE_RENAME_EXIST) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
@@ -331,7 +331,7 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
     cm_reset_error();
     ret = dss_rm_dir_file_in_rename(session, &vg_item, dst, GFT_FILE, CM_FALSE);
     if (ret != CM_SUCCESS) {
-        dss_rollback_mem_update(session->log_split, vg_item);
+        dss_rollback_mem_update(session, vg_item);
         dss_unlock_vg_mem_and_shm(session, vg_item);
         return ret;
     }
@@ -339,7 +339,7 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
 
     ret = dss_rename_file_inner(session, &vg_item, inst_cfg, src, dst, dst_name);
     if (ret != CM_SUCCESS) {
-        dss_rollback_mem_update(session->log_split, vg_item);
+        dss_rollback_mem_update(session, vg_item);
     }
     dss_init_vg_cache_node_info(vg_item);
 
@@ -389,7 +389,7 @@ static status_t dss_make_dir_file_core(dss_session_t *session, const char *paren
     }
     out_node = dss_alloc_ft_node(session, *vg_item, out_node, dir_name, type, flag);  // actual FTN creation
     bool32 result = (bool32)(out_node != NULL);
-    DSS_RETURN_IF_FALSE3(result, dss_rollback_mem_update(session->log_split, *vg_item),
+    DSS_RETURN_IF_FALSE3(result, dss_rollback_mem_update(session, *vg_item),
         LOG_DEBUG_ERR("Failed to alloc ft node %s.", dir_name));
 
     status = dss_process_redo_log(session, *vg_item);
