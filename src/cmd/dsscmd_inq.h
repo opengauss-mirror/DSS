@@ -46,7 +46,8 @@ status_t dss_inq_reg_core(const char *home, int64 host_id);
 bool32 is_register(iof_reg_in_t *reg, int64 host_id, int64 *iofence_key);
 status_t dss_clean_vg_lock(const char *home, int64 inst_id);
 status_t dss_kickh_core(const char *home, int64 host_id);
-status_t dss_get_vg_non_entry_info(dss_config_t *inst_cfg, dss_vg_info_item_t *vg_item, bool32 is_lock);
+status_t dss_get_vg_non_entry_info(
+    dss_config_t *inst_cfg, dss_vg_info_item_t *vg_item, bool32 is_lock, bool32 check_redo);
 status_t dss_inq_alloc_vg_info(const char *home, dss_config_t *inst_cfg, dss_vg_info_t **vg_info);
 void dss_inq_free_vg_info(dss_vg_info_t *vg_info);
 

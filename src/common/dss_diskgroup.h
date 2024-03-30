@@ -211,15 +211,14 @@ typedef status_t (*dss_remote_read_proc_t)(
     const char *vg_name, dss_volume_t *volume, int64 offset, void *buf, int size);
 void regist_remote_read_proc(dss_remote_read_proc_t proc);
 status_t dss_read_volume_4standby(const char *vg_name, uint32 volume_id, int64 offset, void *buf, uint32 size);
-status_t dss_remove_volume_core(dss_session_t *session, dss_vg_info_item_t *vg_item, const char *vg_name,
-    const char *volume_name, dss_config_t *inst_cfg);
+status_t dss_remove_volume_core(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, const char *volume_name, dss_config_t *inst_cfg);
 status_t dss_load_ctrl_core(dss_vg_info_item_t *vg_item, uint32 index);
 status_t dss_add_volume_vg_ctrl(
     dss_ctrl_t *vg_ctrl, uint32 id, uint64 vol_size, const char *volume_name, volume_slot_e volume_flag);
 status_t dss_gen_volume_head(
     dss_volume_header_t *vol_head, dss_vg_info_item_t *vg_item, const char *volume_name, uint32 id);
-status_t dss_check_remove_volume(
-    dss_vg_info_item_t *vg_item, const char *vg_name, const char *volume_name, uint32 *volume_id);
+status_t dss_check_remove_volume(dss_vg_info_item_t *vg_item, const char *volume_name, uint32 *volume_id);
 void dss_remove_volume_vg_ctrl(dss_ctrl_t *vg_ctrl, uint32 id);
 
 #ifdef __cplusplus

@@ -1524,6 +1524,34 @@ bool32 dss_check_redo_log_available(dss_redo_batch_t *batch, dss_vg_info_item_t 
     return CM_TRUE;
 }
 
+status_t dss_check_recover_redo_log(dss_vg_info_item_t *vg_item, bool32 *recover_redo)
+{
+#ifndef WIN32
+    char buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_ALIGN_SIZE)));
+#else
+    char buf[DSS_DISK_UNIT_SIZE];
+#endif
+
+    int64 offset = 0;
+    bool32 remote = CM_FALSE;
+    *recover_redo = CM_FALSE;
+    dss_redo_batch_t *batch = (dss_redo_batch_t *)buf;
+    int64 base_offset = (int64)dss_get_vg_au_size(vg_item->dss_ctrl);
+    
+    for (uint8 i = 0; i < DSS_LOG_BUF_SLOT_COUNT; i++) {
+        offset = base_offset + i * DSS_INSTANCE_LOG_SPLIT_SIZE;
+        if (dss_load_vg_ctrl_part(vg_item, offset, batch, DSS_DISK_UNIT_SIZE, &remote) != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to load log_buf from first vg ctrl when check redo log.");
+            return CM_ERROR;
+        }
+        if (batch->size != 0) {
+            *recover_redo = CM_TRUE;
+            break;
+        }
+    }
+    return CM_SUCCESS;
+}
+
 static int32 lsn_compare(const void *pa, const void *pb)
 {
     const dss_sort_handle_t *a = (const dss_sort_handle_t *)pa;
