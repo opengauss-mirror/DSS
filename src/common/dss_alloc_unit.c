@@ -22,6 +22,7 @@
  * -------------------------------------------------------------------------
  */
 
+#include "dss_defs.h"
 #include "dss_alloc_unit.h"
 #include "dss_file.h"
 #include "dss_redo.h"
@@ -61,10 +62,11 @@ static status_t dss_alloc_au_from_recycle(
     gft_node_t *root_node = dss_get_ft_node_by_ftid(session, vg_item, free_root, DSS_TRUE, CM_FALSE);
     CM_ASSERT(root_node != NULL);
     if (dss_can_alloc_from_recycle(root_node, is_before)) {
+        LOG_DEBUG_INF("[AU][ALLOC] Begin to alloc au from recycle dir in vg:%s.", vg_item->vg_name);
         ftid_t id = root_node->items.first;
         gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, id, DSS_TRUE, CM_FALSE);
         if (node == NULL) {
-            LOG_DEBUG_ERR("Failed to get ft node %llu,%llu, maybe no memory.", (uint64)(id.au), (uint64)(id.volume));
+            LOG_DEBUG_ERR("[AU][ALLOC] Failed to get ft node: %s, maybe no memory.", dss_display_metaid(id));
             return CM_ERROR;
         }
 
@@ -74,8 +76,8 @@ static status_t dss_alloc_au_from_recycle(
         dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
             session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, &entry_objid, CM_FALSE);
         if (entry_block == NULL) {
-            LOG_DEBUG_ERR("Failed to get fs block %llu,%llu,%llu, maybe no memory.", (uint64)node->entry.au,
-                (uint64)node->entry.volume, (uint64)node->entry.block);
+            LOG_DEBUG_ERR(
+                "[AU][ALLOC] Failed to get fs block: %s, maybe no memory.", dss_display_metaid(node->entry));
             return CM_ERROR;
         }
         dss_check_fs_block_affiliation(entry_block, node->id, DSS_ENTRY_FS_INDEX);
@@ -88,8 +90,7 @@ static status_t dss_alloc_au_from_recycle(
         dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
             session, vg_item, entry_fs_block->bitmap[index], DSS_BLOCK_TYPE_FS, DSS_TRUE, &sec_objid, CM_FALSE);
         if (block == NULL) {
-            LOG_DEBUG_ERR("Failed to get fs block %llu,%llu,%llu, maybe no memory.", (uint64)node->entry.au,
-                (uint64)node->entry.volume, (uint64)node->entry.block);
+            LOG_DEBUG_ERR("[AU][ALLOC] Failed to get fs block: %s, maybe no memory.", dss_display_metaid(node->entry));
             return CM_ERROR;
         }
         dss_check_fs_block_flags(&block->head, DSS_BLOCK_FLAG_USED);
@@ -153,7 +154,7 @@ static status_t dss_alloc_au_from_recycle(
             }
         }
 
-        DSS_LOG_DEBUG_OP("Succeed to allocate au:%llu from recyle dir.", DSS_ID_TO_U64(*auid));
+        DSS_LOG_DEBUG_OP("[AU][ALLOC] Succeed to allocate au: %s from recyle dir.", dss_display_metaid(*auid));
         return CM_SUCCESS;
     }
 
@@ -178,7 +179,7 @@ status_t dss_alloc_au_core(dss_session_t *session, dss_ctrl_t *dss_ctrl, dss_vg_
         if (dss_ctrl->volume.defs[i].flag != VOLUME_OCCUPY) {
             continue;
         }
-        LOG_DEBUG_INF("Allocate au, volume id:%u, free:%llu, au_size:%llu, version:%llu.", i,
+        LOG_DEBUG_INF("[AU][ALLOC] Allocate au, volume id:%u, free:%llu, au_size:%llu, version:%llu.", i,
             dss_ctrl->core.volume_attrs[i].free, au_size, disk_version);
         used_count++;
         if (dss_ctrl->core.volume_attrs[i].free >= au_size) {
@@ -193,8 +194,8 @@ status_t dss_alloc_au_core(dss_session_t *session, dss_ctrl_t *dss_ctrl, dss_vg_
             found = 1;
 
             dss_update_core_ctrl(session, vg_item, &dss_ctrl->core, 0, CM_FALSE);
-            DSS_LOG_DEBUG_OP("Allocate au, v:%u,au:%llu,block:%u,item:%u,hwm:%llu,i:%u.", auid->volume,
-                (uint64)auid->au, auid->block, auid->item, dss_ctrl->core.volume_attrs[i].hwm, i);
+            DSS_LOG_DEBUG_OP("[AU][ALLOC] Succed to allocate au: %s, hwm:%llu,i:%u.", dss_display_metaid(*auid),
+                dss_ctrl->core.volume_attrs[i].hwm, i);
             break;
         }
     }
@@ -203,7 +204,8 @@ status_t dss_alloc_au_core(dss_session_t *session, dss_ctrl_t *dss_ctrl, dss_vg_
         status_t status = dss_alloc_au_from_recycle(session, vg_item, CM_FALSE, auid);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR(
-                "Failed to allocate au from recycle dir after trying to allocate vg disk, vg %s.", entry_path);
+                "[AU][ALLOC] Failed to allocate au from recycle dir after trying to allocate vg disk, vg %s.",
+                entry_path);
             return status;
         }
     }
@@ -223,14 +225,14 @@ status_t dss_refresh_core_and_volume(dss_vg_info_item_t *vg_item)
     uint64 disk_version;
     status = dss_get_core_version(vg_item, &disk_version);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to get core version, vg %s.", entry_path);
+        LOG_DEBUG_ERR("[AU][ALLOC] Failed to get core version, vg %s.", entry_path);
         return status;
     }
 
     if (dss_compare_version(disk_version, dss_ctrl->core.version)) {
         status = dss_check_volume(vg_item, CM_INVALID_ID32);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to check volume, vg %s.", entry_path);
+            LOG_DEBUG_ERR("[AU][ALLOC] Failed to check volume, vg %s.", entry_path);
             return status;
         }
         status = dss_load_core_ctrl(vg_item, &dss_ctrl->core);
@@ -238,7 +240,8 @@ status_t dss_refresh_core_and_volume(dss_vg_info_item_t *vg_item)
             LOG_DEBUG_ERR("Failed to get core ctrl, vg %s.", entry_path);
             return status;
         }
-        DSS_LOG_DEBUG_OP("Allocate au check version, old:%llu, new:%llu.", dss_ctrl->core.version, disk_version);
+        DSS_LOG_DEBUG_OP(
+            "[AU][ALLOC] Allocate au check version, old:%llu, new:%llu.", dss_ctrl->core.version, disk_version);
     }
     return CM_SUCCESS;
 }
@@ -246,6 +249,7 @@ status_t dss_refresh_core_and_volume(dss_vg_info_item_t *vg_item)
 status_t dss_alloc_au(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_t *auid)
 {
     CM_ASSERT(vg_item != NULL && auid != NULL);
+    LOG_DEBUG_INF("[AU][ALLOC] Begin to allocate au in vg:%s", vg_item->vg_name);
     status_t status = dss_refresh_core_and_volume(vg_item);
     if (status != CM_SUCCESS) {
         return status;
@@ -258,12 +262,13 @@ status_t dss_alloc_au(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_
     if (au_root->free_root != CM_INVALID_ID64) {
         status = dss_alloc_au_from_recycle(session, vg_item, DSS_TRUE, auid);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to allocate au from recycle dir, vg %s.", entry_path);
+            LOG_DEBUG_ERR("[AU][ALLOC] Failed to allocate au from recycle dir, vg %s.", entry_path);
             return status;
         }
 
         if (!dss_cmp_auid(*auid, DSS_INVALID_64)) {
-            DSS_LOG_DEBUG_OP("Succeed to allocate au:%llu from recyle dir at first.", DSS_ID_TO_U64(*auid));
+            DSS_LOG_DEBUG_OP(
+                "[AU][ALLOC] Succeed to allocate au: %s from recyle dir at first.", dss_display_metaid(*auid));
             return CM_SUCCESS;
         }
     }

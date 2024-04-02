@@ -232,7 +232,15 @@ static status_t dss_process_mkdir(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &parent));
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &dir));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s/%s", parent, dir));
-    return dss_make_dir(session, (const char *)parent, (const char *)dir);
+    DSS_LOG_DEBUG_OP("Begin to mkdir:%s, in path:%s", dir, parent);
+    status_t status = dss_make_dir(session, (const char *)parent, (const char *)dir);
+    if (status == CM_SUCCESS)
+    {
+        LOG_DEBUG_INF("Succeed to mkdir:%s in path:%s", dir, parent);
+        return status;
+    }
+    LOG_DEBUG_ERR("Failed to mkdir:%s in path:%s", dir, parent);
+    return status;
 }
 
 static status_t dss_process_rmdir(dss_session_t *session)
@@ -243,7 +251,15 @@ static status_t dss_process_rmdir(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &dir));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &recursive));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", dir));
-    return dss_remove_dir(session, (const char *)dir, (bool32)recursive);
+    DSS_LOG_DEBUG_OP("Begin to rmdir:%s.", dir);
+    status_t status = dss_remove_dir(session, (const char *)dir, (bool32)recursive);
+    if (status == CM_SUCCESS)
+    {
+        LOG_DEBUG_INF("Succeed to rmdir:%s", dir);
+        return status;
+    }
+    LOG_DEBUG_ERR("Failed to rmdir:%s", dir);
+    return status;
 }
 
 static status_t dss_process_create_file(dss_session_t *session)
@@ -273,8 +289,16 @@ static status_t dss_process_create_file(dss_session_t *session)
     char name_str[DSS_MAX_NAME_LEN];
     DSS_RETURN_IF_ERROR(cm_text2str(&sub, parent_str, sizeof(parent_str)));
     DSS_RETURN_IF_ERROR(cm_text2str(&text, name_str, sizeof(name_str)));
-
-    return dss_create_file(session, (const char *)parent_str, (const char *)name_str, flag);
+    
+    DSS_LOG_DEBUG_OP("Begin to create file:%s in path:%s", name_str, parent_str);
+    status_t status = dss_create_file(session, (const char *)parent_str, (const char *)name_str, flag);
+    if (status == CM_SUCCESS)
+    {
+        LOG_DEBUG_INF("Succeed to create file:%s in path:%s", name_str, parent_str);
+        return status;
+    }
+    LOG_DEBUG_ERR("Failed to create file:%s in path:%s", name_str, parent_str);
+    return status;
 }
 
 static status_t dss_process_delete_file(dss_session_t *session)
@@ -284,7 +308,15 @@ static status_t dss_process_delete_file(dss_session_t *session)
     status_t status = dss_get_str(&session->recv_pack, &name);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("delete file get file name failed."));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", name));
-    return dss_remove_file(session, (const char *)name);
+    DSS_LOG_DEBUG_OP("Begin to rm file:%s", name);
+    status = dss_remove_file(session, (const char *)name);
+    if (status == CM_SUCCESS)
+    {
+        LOG_DEBUG_INF("Succeed to rm file:%s", name);
+        return status;
+    }
+    LOG_DEBUG_ERR("Failed to rm file:%s", name);
+    return status;
 }
 
 static status_t dss_process_exist(dss_session_t *session)
@@ -336,11 +368,11 @@ static status_t dss_process_close_file(dss_session_t *session)
     bool32 result = (bool32)(vg_item != NULL);
     DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name));
 
+    DSS_LOG_DEBUG_OP("Begin to close file, fid:%llu, %s", fid, dss_display_metaid(ftid));
     DSS_RETURN_IF_ERROR(dss_close_file(session, vg_item, *(uint64 *)&ftid));
-    DSS_LOG_DEBUG_OP(
-        "Succeed to close file, ftid:%llu, fid:%llu, vg: %s, session pid:%llu, v:%u, au:%llu, block:%u, item:%u.",
-        *(int64 *)&ftid, fid, vg_item->vg_name, session->cli_info.cli_pid, ftid.volume, (uint64)ftid.au, ftid.block,
-        ftid.item);
+    LOG_DEBUG_INF(
+        "Succeed to close file, ftid:%s, fid:%llu, vg: %s, session pid:%llu.", dss_display_metaid(ftid), fid,
+        vg_item->vg_name, session->cli_info.cli_pid);
     return CM_SUCCESS;
 }
 
@@ -353,10 +385,14 @@ static status_t dss_process_open_dir(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &refresh_recursive));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", name));
     dss_find_node_t find_info;
+    DSS_LOG_DEBUG_OP("Begin to open dir:%s, is_refresh:%d", name, refresh_recursive);
     status_t status = dss_open_dir(session, (const char *)name, (bool32)refresh_recursive, &find_info);
     if (status == CM_SUCCESS) {
         DSS_RETURN_IF_ERROR(dss_put_data(&session->send_pack, &find_info, sizeof(dss_find_node_t)));
+        LOG_DEBUG_INF("Succeed to open dir:%s, ftid: %s", name, dss_display_metaid(find_info.ftid));
+        return status;
     }
+    LOG_DEBUG_ERR("Failed to open dir:%s", name);
     return status;
 }
 
@@ -372,6 +408,7 @@ static status_t dss_process_close_dir(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&vgid));
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(
         session->audit_info.resource, DSS_AUDIT_MODIFY, "vg_name:%s, ftid:%llu", vg_name, *(uint64 *)&ftid));
+    DSS_LOG_DEBUG_OP("Begin to close dir, ftid:%llu, vg:%s.", ftid, vg_name);
     dss_close_dir(session, vg_name, ftid);
     return CM_SUCCESS;
 }
@@ -818,12 +855,12 @@ static status_t dss_process_switch_lock(dss_session_t *session)
     uint32 master_id = dss_get_master_id();
     if ((uint32)switch_id == master_id) {
         cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-        LOG_DEBUG_INF("switchid is equal to current master_id, which is %u.", master_id);
+        LOG_DEBUG_INF("[SWITCH] switchid is equal to current master_id, which is %u.", master_id);
         return CM_SUCCESS;
     }
     if (master_id != curr_id) {
         cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-        LOG_DEBUG_ERR("current id is %u, just master id %u can do switch lock.", curr_id, master_id);
+        LOG_DEBUG_ERR("[SWITCH] current id is %u, just master id %u can do switch lock.", curr_id, master_id);
         return CM_ERROR;
     }
     dss_wait_session_pause(&g_dss_instance);
@@ -841,7 +878,7 @@ static status_t dss_process_switch_lock(dss_session_t *session)
             LOG_RUN_INF("inst %u set status flag %u when failed to trans lock.", curr_id, DSS_STATUS_READWRITE);
             g_dss_instance.status = DSS_STATUS_OPEN;
             cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-            LOG_DEBUG_ERR("cm do switch lock failed from %u to %u.", curr_id, master_id);
+            LOG_DEBUG_ERR("[SWITCH] cm do switch lock failed from %u to %u.", curr_id, master_id);
             return ret;
         }
         dss_set_master_id((uint32)switch_id);
@@ -851,7 +888,7 @@ static status_t dss_process_switch_lock(dss_session_t *session)
         dss_set_session_running(&g_dss_instance);
         g_dss_instance.status = DSS_STATUS_OPEN;
         cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-        LOG_DEBUG_ERR("Only with cm can switch lock.");
+        LOG_DEBUG_ERR("[SWITCH] Only with cm can switch lock.");
         return CM_ERROR;
     }
     LOG_RUN_INF("Old main server %u switch lock to new main server %u successfully.", curr_id, (uint32)switch_id);
@@ -872,7 +909,7 @@ static status_t dss_process_remote_switch_lock(dss_session_t *session, uint32 cu
     dss_init_set(&session->recv_pack, current_proto_ver);
     session->recv_pack.head->cmd = DSS_CMD_SWITCH_LOCK;
     session->recv_pack.head->flags = 0;
-    LOG_DEBUG_INF("Try to switch lock to %u by %u.", curr_id, master_id);
+    LOG_DEBUG_INF("[SWITCH] Try to switch lock to %u by %u.", curr_id, master_id);
     (void)dss_put_int32(&session->recv_pack, curr_id);
     return dss_process_remote(session);
 }
@@ -899,7 +936,7 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
         if (!g_dss_instance.is_maintain) {
             status = dss_process_remote_switch_lock(session, curr_id, master_id);
             if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("Failed to switch lock to %u by %u.", curr_id, master_id);
+                LOG_DEBUG_ERR("[SWITCH] Failed to switch lock to %u by %u.", curr_id, master_id);
                 cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
                 cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
                 continue;

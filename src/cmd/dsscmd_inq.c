@@ -108,7 +108,7 @@ static status_t dss_modify_cluster_node_info(
     dss_vg_info_item_t *vg_item, dss_config_t *inst_cfg, dss_inq_status_e inq_status, int64 host_id)
 {
     if (dss_lock_vg_storage_w(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to lock vg:%s.", vg_item->entry_path);
+        LOG_DEBUG_ERR("[FENCE] Failed to lock vg:%s.", vg_item->entry_path);
         return CM_ERROR;
     }
 
@@ -118,7 +118,8 @@ static status_t dss_modify_cluster_node_info(
         vg_item, (int64)(DSS_VOLUME_HEAD_SIZE - DSS_DISK_UNIT_SIZE), global_ctrl, DSS_DISK_UNIT_SIZE, &remote);
     if (status != CM_SUCCESS) {
         dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
-        LOG_DEBUG_ERR("Failed to load global ctrl part %s.", vg_item->entry_path);
+        LOG_DEBUG_ERR("[FENCE] Failed to load global ctrl part %s, errno:%d, errmsg:%s.", vg_item->entry_path,
+            cm_get_os_error(), strerror(cm_get_os_error()));
         return status;
     }
 
@@ -366,7 +367,7 @@ status_t dss_check_volume_register(char *entry_path, int64 host_id, bool32 *is_r
     reg_info.dev = entry_path;
     status_t status = cm_iof_inql(&reg_info);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Inquiry reg info for entry path dev failed, dev %s.", reg_info.dev);
+        LOG_DEBUG_ERR("[FENCE] Inquiry reg info for entry path dev failed, dev %s.", reg_info.dev);
         return CM_ERROR;
     }
     if (!is_register(&reg_info, host_id, iofence_key)) {

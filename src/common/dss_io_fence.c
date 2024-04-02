@@ -82,14 +82,14 @@ status_t dss_iof_kick_one_volume(char *dev, int64 rk, int64 rk_kick, ptlist_t *r
 
     is_reg = dss_iof_is_register(dev, rk, regs);
     if (!is_reg) {
-        LOG_DEBUG_INF(
-            "Need to register node to dev before kick other nodes, dev %s, org rk %lld.", reg_info.dev, reg_info.rk);
+        LOG_DEBUG_INF("[FENCE][KICK] Need to register node to dev before kick other nodes, dev %s, org rk %lld.",
+            reg_info.dev, reg_info.rk);
         ret = cm_iof_register(&reg_info);
         if (ret != CM_SUCCESS) {
             if (ret == CM_IOF_ERR_DUP_OP) {
-                LOG_DEBUG_INF("The current host has been registered for dev %s.", reg_info.dev);
+                LOG_DEBUG_INF("[FENCE][KICK] The current host has been registered for dev %s.", reg_info.dev);
             } else {
-                LOG_DEBUG_ERR("Register dev failed, org rk %lld, dev %s.", reg_info.rk, reg_info.dev);
+                LOG_DEBUG_ERR("[FENCE][KICK] Register dev failed, org rk %lld, dev %s.", reg_info.rk, reg_info.dev);
                 return CM_ERROR;
             }
         }
@@ -98,14 +98,16 @@ status_t dss_iof_kick_one_volume(char *dev, int64 rk, int64 rk_kick, ptlist_t *r
     is_reg = dss_iof_is_register(dev, rk_kick, regs);
     if (!is_reg) {
         LOG_DEBUG_INF(
-            "The node to be kicked is not registered on the target volume, dev %s, rk_kick %lld.", dev, rk_kick);
+            "[FENCE][KICK] The node to be kicked is not registered on the target volume, dev %s, rk_kick %lld.", dev,
+            rk_kick);
         return CM_SUCCESS;
     }
 
     status = cm_iof_kick(&reg_info);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR(
-            "kick dev failed, org rk %lld, org sark %lld, dev %s.", reg_info.rk, reg_info.rk_kick, reg_info.dev);
+            "[FENCE][KICK] kick dev failed, org rk %lld, org sark %lld, dev %s.", reg_info.rk, reg_info.rk_kick,
+            reg_info.dev);
         return status;
     }
 #endif
@@ -124,7 +126,7 @@ status_t dss_iof_kick_all_volumes(dss_vg_info_t *dss_vg_info, int64 rk, int64 rk
         status = dss_iof_kick_one_volume(item->entry_path, rk, rk_kick, reg_list);
         if (status != CM_SUCCESS) {
             // continue to kick next volume
-            LOG_DEBUG_ERR("kick entry dev failed, dev %s.", item->entry_path);
+            LOG_DEBUG_ERR("[FENCE][KICK] kick entry dev failed, dev %s.", item->entry_path);
         }
 
         // volume_attrs[0] is the sys dev
@@ -136,7 +138,7 @@ status_t dss_iof_kick_all_volumes(dss_vg_info_t *dss_vg_info, int64 rk, int64 rk
             status = dss_iof_kick_one_volume(item->dss_ctrl->volume.defs[j].name, rk, rk_kick, reg_list);
             if (status != CM_SUCCESS) {
                 // continue to kick next volume
-                LOG_DEBUG_ERR("kick data dev failed, dev %s.", item->entry_path);
+                LOG_DEBUG_ERR("[FENCE][KICK] kick data dev failed, dev %s.", item->entry_path);
             }
         }
     }
@@ -153,7 +155,7 @@ status_t dss_iof_sync_vginfo(dss_session_t *session, dss_vg_info_item_t *vg_item
     dss_config_t *inst_cfg = dss_get_inst_cfg();
 
     if (dss_lock_vg_storage_r(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to lock vg entry %s.", vg_item->entry_path);
+        LOG_DEBUG_ERR("[FENCE] Failed to lock vg entry %s.", vg_item->entry_path);
         return CM_ERROR;
     }
 
@@ -162,7 +164,7 @@ status_t dss_iof_sync_vginfo(dss_session_t *session, dss_vg_info_item_t *vg_item
     if (dss_get_core_version(vg_item, &version) != CM_SUCCESS) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
         dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
-        LOG_DEBUG_ERR("Failed to get core version, vg %s.", vg_item->entry_path);
+        LOG_DEBUG_ERR("[FENCE] Failed to get core version, vg %s.", vg_item->entry_path);
         return CM_ERROR;
     }
 
@@ -170,14 +172,14 @@ status_t dss_iof_sync_vginfo(dss_session_t *session, dss_vg_info_item_t *vg_item
         if (dss_check_volume(vg_item, CM_INVALID_ID32) != CM_SUCCESS) {
             dss_unlock_vg_mem_and_shm(session, vg_item);
             dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
-            LOG_DEBUG_ERR("Failed to check volume, vg %s.", vg_item->entry_path);
+            LOG_DEBUG_ERR("[FENCE] Failed to check volume, vg %s.", vg_item->entry_path);
             return CM_ERROR;
         }
 
         if (dss_load_core_ctrl(vg_item, &vg_item->dss_ctrl->core) != CM_SUCCESS) {
             dss_unlock_vg_mem_and_shm(session, vg_item);
             dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
-            LOG_DEBUG_ERR("Failed to get core ctrl, vg %s.", vg_item->entry_path);
+            LOG_DEBUG_ERR("[FENCE] Failed to get core ctrl, vg %s.", vg_item->entry_path);
             return CM_ERROR;
         }
     }
@@ -197,7 +199,7 @@ status_t dss_iof_sync_all_vginfo(dss_session_t *session, dss_vg_info_t *dss_vg_i
         dss_vg_info_item_t *item = &dss_vg_info->volume_group[i];
         status = dss_iof_sync_vginfo(session, item);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("sync vginfo failed, vg name %s.", item->vg_name);
+            LOG_DEBUG_ERR("[FENCE] sync vginfo failed, vg name %s.", item->vg_name);
             return CM_ERROR;
         }
     }
@@ -213,17 +215,19 @@ status_t dss_iof_kick_all(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, int64 
     ptlist_t reg_list;
 
     if (rk_kick == inst_cfg->params.inst_id) {
-        LOG_DEBUG_ERR("Can't kick current node, rk_kick %lld, inst id %lld.", rk_kick, inst_cfg->params.inst_id);
+        LOG_DEBUG_ERR(
+            "[FENCE][KICK] Can't kick current node, rk_kick %lld, inst id %lld.", rk_kick, inst_cfg->params.inst_id);
         return CM_ERROR;
     }
 
     bool32 result = (bool32)(rk == inst_cfg->params.inst_id);
-    DSS_RETURN_IF_FALSE2(result,
-        LOG_DEBUG_ERR("Must use inst id of current node as rk, rk %lld, inst id %lld.", rk, inst_cfg->params.inst_id));
+    DSS_RETURN_IF_FALSE2(
+        result, LOG_DEBUG_ERR("[FENCE][KICK] Must use inst id of current node as rk, rk %lld, inst id %lld.", rk,
+                    inst_cfg->params.inst_id));
 
     cm_ptlist_init(&reg_list);
     status = dss_iof_inql_regs(vg_info, &reg_list);
-    DSS_RETURN_IFERR3(status, dss_destroy_ptlist(&reg_list), LOG_DEBUG_ERR("Inquiry regs info failed."));
+    DSS_RETURN_IFERR3(status, dss_destroy_ptlist(&reg_list), LOG_DEBUG_ERR("[FENCE][KICK] Inquiry regs info failed."));
 
     status = dss_iof_kick_all_volumes(vg_info, rk, rk_kick, &reg_list);
     DSS_RETURN_IFERR2(status, dss_destroy_ptlist(&reg_list));
@@ -306,7 +310,7 @@ status_t dss_iof_unregister_core(int64 rk, dss_vg_info_t *dss_vg_info)
             DSS_RETURN_IF_ERROR(dss_iof_unregister_single(rk, item->dss_ctrl->volume.defs[j].name));
         }
     }
-    LOG_DEBUG_INF("Unregister all succ.");
+    LOG_DEBUG_INF("[FENCE][UNREG] Unregister all succ.");
     return CM_SUCCESS;
 }
 
@@ -322,7 +326,7 @@ status_t dss_inquiry_lun(dev_info_t *dev_info)
 
     status = perctrl_scsi3_inql(dev_info->dev, &dev_info->data);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to inquiry lun info, status %d.", status);
+        LOG_DEBUG_ERR("[FENCE][INQ] Failed to inquiry lun info, status %d.", status);
         return CM_ERROR;
     }
 
@@ -341,7 +345,7 @@ status_t dss_inquiry_luns_from_ctrl(dss_vg_info_item_t *item, ptlist_t *lunlist)
 
         dev_info_t *dev_info = (dev_info_t *)malloc(sizeof(dev_info_t));
         bool32 result = (bool32)(dev_info != NULL);
-        DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Malloc failed."));
+        DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("[FENCE][INQ] Malloc failed."));
 
         errno_t ret = memset_sp(dev_info, sizeof(dev_info_t), 0, sizeof(dev_info_t));
         result = (bool32)(ret == EOK);
@@ -350,7 +354,7 @@ status_t dss_inquiry_luns_from_ctrl(dss_vg_info_item_t *item, ptlist_t *lunlist)
         dev_info->dev = item->dss_ctrl->volume.defs[j].name;
         status = dss_inquiry_lun(dev_info);
         DSS_RETURN_IFERR3(status, DSS_FREE_POINT(dev_info),
-            LOG_DEBUG_ERR("Inquiry dev failed, dev %s.", item->dss_ctrl->volume.defs[j].name));
+            LOG_DEBUG_ERR("[FENCE][INQ] Inquiry dev failed, dev %s.", item->dss_ctrl->volume.defs[j].name));
 
         status = cm_ptlist_add(lunlist, dev_info);
         DSS_RETURN_IFERR2(status, DSS_FREE_POINT(dev_info));
@@ -372,7 +376,7 @@ status_t dss_inquiry_luns(dss_vg_info_t *vg_info, ptlist_t *lunlist)
 
         dev_info = (dev_info_t *)malloc(sizeof(dev_info_t));
         bool32 result = (bool32)(dev_info != NULL);
-        DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Malloc failed."));
+        DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("[FENCE][INQ] Malloc failed."));
 
         ret = memset_sp(dev_info, sizeof(dev_info_t), 0, sizeof(dev_info_t));
         result = (bool32)(ret == EOK);
@@ -381,7 +385,7 @@ status_t dss_inquiry_luns(dss_vg_info_t *vg_info, ptlist_t *lunlist)
         dev_info->dev = item->entry_path;
         status = dss_inquiry_lun(dev_info);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Inquiry entry path dev failed, dev %s.", item->entry_path);
+            LOG_DEBUG_ERR("[FENCE][INQ] Inquiry entry path dev failed, dev %s.", item->entry_path);
             DSS_FREE_POINT(dev_info);
             return CM_ERROR;
         }
@@ -411,7 +415,7 @@ status_t dss_iof_inql_regs_core(ptlist_t *reglist, dss_vg_info_item_t *item)
 
         reg_info = (iof_reg_in_t *)malloc(sizeof(iof_reg_in_t));
         bool32 result = (bool32)(reg_info != NULL);
-        DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Malloc failed."));
+        DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("[FENCE][INQ] Malloc failed."));
 
         ret = memset_sp(reg_info, sizeof(iof_reg_in_t), 0, sizeof(iof_reg_in_t));
         result = (bool32)(ret == EOK);
@@ -420,7 +424,7 @@ status_t dss_iof_inql_regs_core(ptlist_t *reglist, dss_vg_info_item_t *item)
         reg_info->dev = item->dss_ctrl->volume.defs[j].name;
         status = cm_iof_inql(reg_info);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Inquiry reg info for dev failed, dev %s.", item->dss_ctrl->volume.defs[j].name);
+            LOG_DEBUG_ERR("[FENCE][INQ] Inquiry reg info for dev failed, dev %s.", item->dss_ctrl->volume.defs[j].name);
             DSS_FREE_POINT(reg_info);
             return CM_ERROR;
         }
@@ -443,7 +447,7 @@ status_t dss_iof_inql_regs(dss_vg_info_t *vg_info, ptlist_t *reglist)
         dss_vg_info_item_t *item = &vg_info->volume_group[i];
         reg_info = (iof_reg_in_t *)malloc(sizeof(iof_reg_in_t));
         bool32 result = (bool32)(reg_info != NULL);
-        DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Malloc failed."));
+        DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("[FENCE][INQ] Malloc failed."));
 
         ret = memset_sp(reg_info, sizeof(iof_reg_in_t), 0, sizeof(iof_reg_in_t));
         result = (bool32)(ret == EOK);
@@ -452,7 +456,7 @@ status_t dss_iof_inql_regs(dss_vg_info_t *vg_info, ptlist_t *reglist)
         reg_info->dev = item->entry_path;
         status = cm_iof_inql(reg_info);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Inquiry reg info for entry path dev failed, dev %s.", item->entry_path);
+            LOG_DEBUG_ERR("[FENCE][INQ] Inquiry reg info for entry path dev failed, dev %s.", item->entry_path);
             DSS_FREE_POINT(reg_info);
             return CM_ERROR;
         }

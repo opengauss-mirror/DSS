@@ -202,10 +202,10 @@ static status_t dss_write_volume_ctrl_info(
         // write to backup area
         status = dss_write_volume(volume, DSS_CTRL_BAK_ADDR, vg_ctrl, sizeof(dss_ctrl_t));
     }
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed write volume,errcode:%d.", status));
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[VOL][CV] Failed write volume,errcode:%d.", status));
 
     status = vg_initialize_resource(vg_item, node);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to initialize resource,errcode:%d.", status));
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[VOL][CV] Failed to initialize resource,errcode:%d.", status));
 
     // set the vg valid flag. avoid that write disk array failed.
     vg_ctrl->vg_info.valid_flag = DSS_CTRL_VALID_FLAG;
@@ -215,7 +215,7 @@ static status_t dss_write_volume_ctrl_info(
         // write to backup area
         status = dss_write_volume(volume, (int64)DSS_CTRL_BAK_VG_DATA_OFFSET, vg_ctrl, DSS_VG_DATA_SIZE);
     }
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("write volume %s failed.", volume_name));
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[VOL][CV] write volume %s failed.", volume_name));
     return CM_SUCCESS;
 }
 
@@ -226,7 +226,7 @@ static status_t dss_set_vg_ctrl(
     dss_ctrl_t *vg_ctrl = (dss_ctrl_t *)cm_malloc_align(DSS_ALIGN_SIZE, sizeof(dss_ctrl_t));
     if (vg_ctrl == NULL) {
         dss_free_vg_info();
-        LOG_DEBUG_ERR("Failed to alloc memory, vg name is %s, volume name is %s.\n", vg_name, volume_name);
+        LOG_DEBUG_ERR("[VOL][CV] Failed to alloc memory, vg name is %s, volume name is %s.\n", vg_name, volume_name);
         DSS_THROW_ERROR(ERR_ALLOC_MEMORY, sizeof(dss_ctrl_t), "vg_ctrl");
         return CM_ERROR;
     }
@@ -235,24 +235,24 @@ static status_t dss_set_vg_ctrl(
     do {
         dss_volume_t volume;
         status = dss_open_volume(volume_name, NULL, DSS_INSTANCE_OPEN_FLAG, &volume);
-        DSS_BREAK_IFERR2(status, LOG_DEBUG_ERR("open volume %s failed.", volume_name));
+        DSS_BREAK_IFERR2(status, LOG_DEBUG_ERR("[VOL][CV] Open volume %s failed.", volume_name));
 
         status = dss_initial_vg_ctrl(vg_name, volume_name, &volume, vg_ctrl, size);
         if (status != CM_SUCCESS) {
             dss_close_volume(&volume);
-            LOG_DEBUG_ERR("initial_vg_ctrl failed.vg %s,vm %s.", vg_name, volume_name);
+            LOG_DEBUG_ERR("[VOL][CV] initial_vg_ctrl failed.vg %s,vm %s.", vg_name, volume_name);
             break;
         }
         status = dss_set_log_buf(vg_name, vg_item, &volume);
         if (status != CM_SUCCESS) {
             dss_close_volume(&volume);
-            LOG_DEBUG_ERR("initial global log buffer failed.vg %s,vm %s.", vg_name, volume_name);
+            LOG_DEBUG_ERR("[VOL][CV] initial global log buffer failed.vg %s,vm %s.", vg_name, volume_name);
             break;
         }
         status = dss_write_volume_ctrl_info(volume_name, &volume, vg_ctrl, vg_item);
         if (status != CM_SUCCESS) {
             dss_close_volume(&volume);
-            LOG_DEBUG_ERR("dss write volume ctrl info failed.vm %s.", volume_name);
+            LOG_DEBUG_ERR("[VOL][CV] dss write volume ctrl info failed.vm %s.", volume_name);
             break;
         }
         dss_close_volume(&volume);
@@ -265,23 +265,25 @@ static status_t dss_set_vg_ctrl(
 status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_t *inst_cfg, uint32 size)
 {
     status_t status = dss_check_parameter(vg_name, volume_name, inst_cfg);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("parameter is invalid."));
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[VOL][CV] parameter is invalid."));
 
     dss_static_assert_info();
 
-    LOG_RUN_INF("Begin to create vg %s.", vg_name);
+    LOG_RUN_INF("[VOL][CV] Begin to create vg %s.", vg_name);
     status = dss_load_vg_conf_info(&g_vgs_info, inst_cfg);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to load vg info from config, vg name is %s, volume name is %s, errcode is %d.\n", vg_name,
-            volume_name, status);
+        LOG_DEBUG_ERR(
+            "[VOL][CV] Failed to load vg info from config, vg name is %s, volume name is %s, errcode is %d.\n",
+            vg_name, volume_name, status);
         return status;
     }
 
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item == NULL) {
         dss_free_vg_info();
-        LOG_DEBUG_ERR("Failed to find vg info from config, vg name is %s, volume name is %s, errcode is %d.\n", vg_name,
-            volume_name, status);
+        LOG_DEBUG_ERR(
+            "[VOL][CV] Failed to find vg info from config, vg name is %s, volume name is %s, errcode is %d.\n",
+            vg_name, volume_name, status);
         DSS_THROW_ERROR(ERR_DSS_VG_CREATE, vg_name, "Failed to find vg info from config");
         return CM_ERROR;
     }
@@ -294,7 +296,7 @@ status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_
     }
 
     status = dss_set_vg_ctrl(vg_name, volume_name, vg_item, inst_cfg, size);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("dss set vg ctrl failed."));
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[VOL][CV] dss set vg ctrl failed."));
     LOG_RUN_INF("End to create vg %s.", vg_name);
 
     return CM_SUCCESS;
