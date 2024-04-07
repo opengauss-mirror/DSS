@@ -3195,11 +3195,11 @@ static status_t fshowmem_proc(void)
             uint32_t beg_pos = 0;
             status = dss_get_name_from_path(path, &beg_pos, name);
             if (status != CM_SUCCESS) {
-                DSS_PRINT_ERROR("Failed to get vg name from path %s.", path);
+                DSS_PRINT_ERROR("Failed to get vg name from path %s.\n", path);
                 return status;
             }
             if (name[0] == 0) {
-                DSS_PRINT_ERROR("Failed to get vg name from path %s.", path);
+                DSS_PRINT_ERROR("Failed to get vg name from path %s.\n", path);
                 return CM_ERROR;
             }
             status = dss_load_vg_item_and_pool_from_file(file_name, name, &vg_item);
@@ -3597,7 +3597,7 @@ static status_t encrypt_proc(void)
     (void)(memset_s(plain, CM_PASSWD_MAX_LEN + 1, 0, CM_PASSWD_MAX_LEN + 1));
     status = dss_save_random_file(cipher.rand, RANDOM_LEN + 1);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to save random component");
+        DSS_PRINT_ERROR("Failed to save random component.\n");
         return CM_ERROR;
     }
     (void)(memset_s(cipher.rand, RANDOM_LEN + 1, 0, RANDOM_LEN + 1));

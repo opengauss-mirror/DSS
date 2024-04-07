@@ -579,30 +579,30 @@ status_t dss_print_entry_fs_block_detail(dss_session_t *session, dss_vg_info_ite
         (void)printf("  entry detail = {\n");
         status_t status = dss_print_fsb_by_id_detail(session, vg_item, *(uint64 *)entry, show_param);
         if (status != CM_SUCCESS) {
-            DSS_PRINT_ERROR("Failed to print fs block in detail.");
+            DSS_PRINT_ERROR("Failed to print fs block in detail.\n");
             return CM_ERROR;
         }
         (void)printf("  }\n");
     } else {
         if (show_param->offset + show_param->size > gft_node->size) {
-            DSS_PRINT_ERROR("invalid offset %lld and size %u, it is larger than actural size.", show_param->offset, show_param->size);
+            DSS_PRINT_ERROR("invalid offset %lld and size %u, it is larger than actural size.\n", show_param->offset, show_param->size);
             return CM_ERROR;
         }
         uint64 au_size = vg_item->dss_ctrl->core.au_size;
         status_t status = dss_get_fs_block_info_by_offset(show_param->offset, au_size, &show_param->start_first_fs_index, &show_param->start_second_fs_index, NULL);
         if (status != CM_SUCCESS) {
-            DSS_PRINT_ERROR("Failed to get fs block info by offset.");
+            DSS_PRINT_ERROR("Failed to get fs block info by offset.\n");
             return CM_ERROR;
         }
         status = dss_get_fs_block_info_by_offset(show_param->offset + show_param->size - 1, au_size, &show_param->end_first_fs_index, &show_param->end_second_fs_index, NULL);
         if (status != CM_SUCCESS) {
-            DSS_PRINT_ERROR("Failed to get fs block info by offset.");
+            DSS_PRINT_ERROR("Failed to get fs block info by offset.\n");
             return CM_ERROR;
         }
         (void)printf("  fs block range = {\n");
         status = dss_print_fsb_by_id_detail(session, vg_item, *(uint64 *)entry, show_param);
         if (status != CM_SUCCESS) {
-            DSS_PRINT_ERROR("Failed to print fs block in detail.");
+            DSS_PRINT_ERROR("Failed to print fs block in detail.\n");
             return CM_ERROR;
         }
         (void)printf("  }\n");
@@ -1026,7 +1026,7 @@ status_t dss_print_gft_node_by_path(dss_session_t *session, dss_vg_info_item_t *
     dss_vg_info_item_t *dir_vg_item = NULL;
     show_param->node = dss_get_gft_node_by_path(session, vg_item, show_param->path, &dir_vg_item);
     if (show_param->node == NULL) {
-        DSS_PRINT_ERROR("Failed to find ft node by path %s.\n", show_param->path);
+        DSS_PRINT_ERROR("Failed to find ft node by path %s in share memory.\n", show_param->path);
         return CM_ERROR;
     }
     printf_gft_node(show_param->node);
@@ -1055,7 +1055,7 @@ status_t dss_print_gft_node_by_ftid_and_fid(dss_session_t *session, dss_vg_info_
             return CM_ERROR;
         }
         if (show_param->node->fid != show_param->fid) {
-            DSS_PRINT_ERROR("Failed to find ft node by id, expect is %llu, actural is %llu.", show_param->fid, show_param->node->fid);
+            DSS_PRINT_ERROR("Failed to find ft node by id, expect is %llu, actural is %llu.\n", show_param->fid, show_param->node->fid);
             return CM_ERROR;
         }
     }
