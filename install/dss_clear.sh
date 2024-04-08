@@ -263,8 +263,8 @@ function unregister()
 
 function Main()
 {
-    check_dss_config
     get_clear_dss_log
+    check_dss_config
     if [ "$CMD" == "-clearVg" ]; then
         clearVg "$@"
         exit 0
