@@ -43,7 +43,7 @@ extern "C" {
 
 #define GA_EXT_SHM_POOLID(id) ((id) - (GA_APP_AREA))
 
-#define GA_APP_POOL_COUNT 4
+#define GA_APP_POOL_COUNT 5
 
 #define GA_INSTANCE_POOL_SIZE (uint32)(1048576) /* 1M */
 
@@ -54,6 +54,7 @@ typedef enum tagga_pool_name {
     GA_SESSION_POOL = (GA_APP_AREA + 1),
     GA_8K_POOL = (GA_APP_AREA + 2),
     GA_16K_POOL = (GA_APP_AREA + 3),
+    GA_FS_AUX_POOL = (GA_APP_AREA + 4)
 } ga_pool_id_e;
 
 typedef struct tagga_object_map {

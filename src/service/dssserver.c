@@ -35,6 +35,10 @@
 #include "dss_instance.h"
 #include "dss_mes.h"
 #include "dss_blackbox.h"
+#include "dss_zero.h"
+#include "cm_utils.h"
+#include "dss_meta_buf.h"
+#include "dss_syn_meta.h"
 
 #ifndef _NSIG
 #define MAX_SIG_NUM 32
@@ -69,10 +73,13 @@ status_t dss_signal_proc(void)
 static void dss_close_background_task(dss_instance_t *inst)
 {
     if (!inst->is_maintain) {
-        uint32 recovery_thread_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
-        cm_close_thread(&inst->threads[recovery_thread_id]);
-        uint32 delay_clean_id = dss_get_delay_clean_task_idx();
-        cm_close_thread(&inst->threads[delay_clean_id]);
+        uint32 bg_task_base_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
+        for (uint32 i = 0; i < DSS_BACKGROUND_TASK_NUM; i++) {
+            uint32 bg_task_id = bg_task_base_id + i;
+            if (inst->threads[bg_task_id].id != 0) {
+                cm_close_thread(&inst->threads[bg_task_id]);
+            }
+        }
     }
 }
 
@@ -97,7 +104,7 @@ static void dss_close_thread(dss_instance_t *inst)
     cm_close_timer(g_timer());
 }
 
-// only detach success, will destory shm memory 
+// only detach success, will destory shm memory
 static void dss_destory_shm_memory()
 {
     if (!g_shm_inited) {
@@ -123,6 +130,7 @@ static void dss_clean_server()
     }
     CM_FREE_PTR(cm_log_param_instance()->log_compress_buf);
     dss_destory_shm_memory();
+    dss_uninit_zero_buf();
 }
 
 static void handle_main_wait(void)
@@ -171,17 +179,79 @@ static status_t dss_delay_clean_background_task(dss_instance_t *inst)
     return status;
 }
 
+static status_t dss_create_bg_task_set(dss_instance_t *inst, char *task_name, uint32 max_task_num,
+    dss_get_bg_task_idx_func_t get_bg_task_idx, thread_entry_t bg_task_entry, dss_bg_task_info_t *bg_task_info_set)
+{
+    LOG_RUN_INF("create dss background task set for:%s", task_name);
+
+    uint32 task_num = g_vgs_info->group_num;
+    if (task_num > max_task_num) {
+        task_num = max_task_num;
+    }
+
+    uint32 vg_per_task = g_vgs_info->group_num / task_num;
+    uint32 vg_left = g_vgs_info->group_num % task_num;
+
+    uint32 vg_id = 0;
+    uint32 cur_range = 0;
+
+    for (uint32 i = 0; i < task_num; i++) {
+        bg_task_info_set[i].task_num_max = task_num;
+        bg_task_info_set[i].my_task_id = i;
+        bg_task_info_set[i].vg_id_beg = vg_id;
+        if (vg_left > 0) {
+            cur_range = vg_per_task + 1;
+            vg_left--;
+        } else {
+            cur_range = vg_per_task;
+        }
+        bg_task_info_set[i].vg_id_end = bg_task_info_set[i].vg_id_beg + cur_range;
+        vg_id = bg_task_info_set[i].vg_id_end;
+        LOG_RUN_INF("task:%s id:%u, vg_range:[%u-%u).", task_name, bg_task_info_set[i].my_task_id,
+            bg_task_info_set[i].vg_id_beg, bg_task_info_set[i].vg_id_end);
+
+        uint32 work_idx = get_bg_task_idx(i);
+        status_t status = cm_create_thread(bg_task_entry, 0, &(bg_task_info_set[i]), &(inst->threads[work_idx]));
+        if (status != CM_SUCCESS) {
+            return CM_ERROR;
+        }
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_create_meta_syn_bg_task_set(dss_instance_t *inst)
+{
+    if (!dss_is_syn_meta_enable()) {
+        return CM_SUCCESS;
+    }
+    LOG_RUN_INF("create dss meta syn background task.");
+    status_t status = dss_create_bg_task_set(&g_dss_instance, "dss meta syn background task",
+        DSS_META_SYN_BG_TASK_NUM_MAX, dss_get_meta_syn_task_idx, dss_meta_syn_proc, g_dss_instance.syn_meta_task);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Create dss meta syn background task set failed.");
+    }
+    return status;
+}
+
 static status_t dss_init_background_tasks(void)
 {
     status_t status = dss_recovery_background_task(&g_dss_instance);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Create dss recovery background task failed.");
+        return status;
     }
     status = dss_delay_clean_background_task(&g_dss_instance);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Create dss delay clean background task failed.");
+        return status;
     }
-    return status;
+
+    status = dss_create_meta_syn_bg_task_set(&g_dss_instance);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Create dss syn meta background task failed.");
+        return status;
+    }
+    return CM_SUCCESS;
 }
 
 typedef status_t (*dss_srv_arg_parser)(int argc, char **argv, int *argIdx, dss_srv_args_t *dss_args);
@@ -220,10 +290,7 @@ status_t dss_srv_parse_maintain(int argc, char **argv, int *argIdx, dss_srv_args
     return CM_SUCCESS;
 }
 
-dss_srv_arg_handler_t g_dss_args_handler[] = {
-    {"-D", dss_srv_parse_home}, 
-    {"-M", dss_srv_parse_maintain}
-};
+dss_srv_arg_handler_t g_dss_args_handler[] = {{"-D", dss_srv_parse_home}, {"-M", dss_srv_parse_maintain}};
 
 status_t dss_srv_parse_one_agr(int argc, char **argv, dss_srv_args_t *dss_args, int *argIdx)
 {
@@ -289,7 +356,7 @@ int main(int argc, char **argv)
     sigset_t sign_old_mask;
     (void)sigprocmask(0, NULL, &sign_old_mask);
     (void)sigprocmask(SIG_UNBLOCK, &sign_old_mask, NULL);
-#endif  
+#endif
     if (dss_startup(&g_dss_instance, dss_args) != CM_SUCCESS) {
         printf("dss failed to startup.\n");
         fflush(stdout);

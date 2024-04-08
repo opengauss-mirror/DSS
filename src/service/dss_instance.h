@@ -83,7 +83,7 @@ typedef struct st_dss_instance {
     int64 active_sessions;
     bool32 abort_status;
     dss_cm_res cm_res;
-    uint64 inst_work_status_map; // one bit one inst, bit value is 1 means inst ok, 0 means inst not ok
+    uint64 inst_work_status_map;  // one bit one inst, bit value is 1 means inst ok, 0 means inst not ok
     spinlock_t inst_work_lock;
     dss_kernel_instance_t *kernel_instance;
     int32 cluster_proto_vers[DSS_MAX_INSTANCES];
@@ -92,6 +92,7 @@ typedef struct st_dss_instance {
     uint8 reserve[2];
     bool32 is_join_cluster;
     dss_session_t *handle_session;
+    dss_bg_task_info_t syn_meta_task[DSS_META_SYN_BG_TASK_NUM_MAX];
 } dss_instance_t;
 
 status_t dss_lock_instance(void);
@@ -118,6 +119,7 @@ void dss_get_cm_lock_and_recover(thread_t *thread);
 void dss_delay_clean_proc(thread_t *thread);
 bool32 dss_check_join_cluster();
 void dss_check_unreg_volume(dss_session_t *session);
+void dss_meta_syn_proc(thread_t *thread);
 
 #ifdef __cplusplus
 }

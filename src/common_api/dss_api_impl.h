@@ -69,8 +69,8 @@ typedef struct st_dss_add_or_remove_info {
 typedef struct st_dss_extend_info {
     uint64 fid;
     uint64 ftid;
-    uint64 offset;
-    uint32 size;
+    int64 offset;
+    int64 size;
     const char *vg_name;
     uint32 vg_id;
 } dss_extend_info_t;
@@ -90,6 +90,14 @@ typedef struct st_dss_get_server_info {
     uint32 sid;
 } dss_get_server_info_t;
 
+typedef struct st_dss_fallocate_info {
+    uint64 fid;
+    uint64 ftid;
+    int64 offset;
+    int64 size;
+    uint32 vg_id;
+    int32 mode;
+} dss_fallocate_info_t;
 typedef struct st_dss_conn_opt {
     int32 timeout;
     char *user_name;
@@ -117,7 +125,7 @@ status_t dss_lock_vg_s(dss_vg_info_item_t *vg_item, dss_session_t *session);
 status_t dss_make_dir_impl(dss_conn_t *conn, const char *parent, const char *dir_name);
 status_t dss_remove_dir_impl(dss_conn_t *conn, const char *dir, bool32 recursive);
 dss_dir_t *dss_open_dir_impl(dss_conn_t *conn, const char *dir_path, bool32 refresh_recursive);
-gft_node_t * dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 skip_delete);
+gft_node_t *dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 skip_delete);
 status_t dss_close_dir_impl(dss_conn_t *conn, dss_dir_t *dir);
 status_t dss_create_file_impl(dss_conn_t *conn, const char *file_path, int flag);
 status_t dss_remove_file_impl(dss_conn_t *conn, const char *file_path);
@@ -130,7 +138,7 @@ status_t dss_write_file_impl(dss_conn_t *conn, int handle, const void *buf, int 
 status_t dss_read_file_impl(dss_conn_t *conn, int handle, void *buf, int size, int *read_size);
 status_t dss_copy_file_impl(dss_conn_t *conn, const char *src, const char *dest);
 status_t dss_rename_file_impl(dss_conn_t *conn, const char *src, const char *dst);
-status_t dss_truncate_impl(dss_conn_t *conn, int handle, uint64 length);
+status_t dss_truncate_impl(dss_conn_t *conn, int handle, long long int length);
 status_t dss_add_volume_impl(dss_conn_t *conn, const char *vg_name, const char *volume_name);
 status_t dss_remove_volume_impl(dss_conn_t *conn, const char *vg_name, const char *volume_name);
 status_t dss_fstat_impl(dss_conn_t *conn, int handle, dss_stat_info_t item);
@@ -152,8 +160,8 @@ status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, 
 status_t dss_get_addr_impl(dss_conn_t *conn, int32 handle, long long offset, char *pool_name, char *image_name,
     char *obj_addr, unsigned int *obj_id, unsigned long int *obj_offset);
 gft_node_t *dss_get_node_by_path_impl(dss_conn_t *conn, const char *path);
-status_t dss_get_fd_by_offset(
-    dss_conn_t *conn, int handle, long long offset, int32 size, bool32 is_read, int *fd, int64 *vol_offset);
+status_t dss_get_fd_by_offset(dss_conn_t *conn, int handle, long long offset, int32 size, bool32 is_read, int *fd,
+    int64 *vol_offset, int32 *real_count);
 status_t get_au_size_impl(dss_conn_t *conn, int handle, long long *au_size);
 status_t dss_compare_size_equal_impl(const char *vg_name, long long *au_size);
 status_t dss_setcfg_impl(dss_conn_t *conn, const char *name, const char *value, const char *scope);
@@ -163,6 +171,7 @@ void dss_get_api_volume_error(void);
 status_t dss_get_phy_size_impl(dss_conn_t *conn, int handle, long long *size);
 status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long offset, int size);
 status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ack);
+status_t dss_fallocate_impl(dss_conn_t *conn, int handle, int mode, long long int offset, long long int length);
 
 #define DSS_SET_PTR_VALUE_IF_NOT_NULL(ptr, value) \
     do {                                          \

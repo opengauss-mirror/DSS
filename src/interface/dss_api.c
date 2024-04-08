@@ -136,7 +136,8 @@ static status_t dss_try_conn(dss_conn_opt_t *options, dss_conn_t *conn)
             dss_disconnect(conn));
 
         status = dss_init_vol_handle_sync(conn);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client init vol handle failed."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client init vol handle failed."),
+            dss_disconnect(conn));
 
         g_dss_conn_info.conn_num++;
     } while (0);
@@ -578,19 +579,17 @@ int dss_pread(int handle, void *buf, int size, long long offset, int *read_size)
     return (int)ret;
 }
 
-int dss_get_addr(int handle, long long offset, char *pool_name, char *image_name, char *obj_addr,
-    unsigned int *obj_id, unsigned long int *obj_offset)
+int dss_get_addr(int handle, long long offset, char *pool_name, char *image_name, char *obj_addr, unsigned int *obj_id,
+    unsigned long int *obj_offset)
 {
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("get conn error when get ceph address."));
 
-    ret = dss_get_addr_impl(conn, HANDLE_VALUE(handle), offset, pool_name, image_name, obj_addr,
-        obj_id, obj_offset);
+    ret = dss_get_addr_impl(conn, HANDLE_VALUE(handle), offset, pool_name, image_name, obj_addr, obj_id, obj_offset);
     dss_get_api_volume_error();
     return (int)ret;
 }
-
 
 int dss_fcopy(const char *src_path, const char *dest_path)
 {
@@ -619,7 +618,7 @@ int dss_ftruncate(int handle, long long length)
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("ftruncate get conn error."));
-    ret = dss_truncate_impl(conn, HANDLE_VALUE(handle), (uint64)length);
+    ret = dss_truncate_impl(conn, HANDLE_VALUE(handle), length);
     dss_get_api_volume_error();
     return (int)ret;
 }
@@ -705,6 +704,17 @@ int dss_get_fname(int handle, char *fname, int fname_size)
     return (int)ret;
 }
 
+int dss_fallocate(int handle, int mode, long long offset, long long length)
+{
+    dss_conn_t *conn = NULL;
+    status_t ret = dss_get_conn(&conn);
+    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fallocate get conn error"));
+    ret = dss_fallocate_impl(conn, HANDLE_VALUE(handle), mode, offset, length);
+    dss_get_api_volume_error();
+
+    return (int)ret;
+}
+
 int dss_set_svr_path(const char *conn_path)
 {
     if (conn_path == NULL) {
@@ -767,7 +777,7 @@ int dss_set_conn_opts(dss_conn_opt_key_e key, void *value)
     }
     switch (key) {
         case DSS_CONN_OPT_TIME_OUT:
-            return dss_set_thread_conn_timeout(thv_opts, *(int32*)value);
+            return dss_set_thread_conn_timeout(thv_opts, *(int32 *)value);
         default:
             DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid key when set connection options");
             return CM_ERROR;
@@ -779,16 +789,20 @@ static int32 init_single_logger_core(log_param_t *log_param, log_type_t log_id, 
     int32 ret;
     switch (log_id) {
         case LOG_RUN:
-            ret = snprintf_s(file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/run/%s", log_param->log_home, "dss.rlog");
+            ret = snprintf_s(
+                file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/run/%s", log_param->log_home, "dss.rlog");
             break;
         case LOG_DEBUG:
-            ret = snprintf_s(file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/debug/%s", log_param->log_home, "dss.dlog");
+            ret = snprintf_s(
+                file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/debug/%s", log_param->log_home, "dss.dlog");
             break;
         case LOG_ALARM:
-            ret = snprintf_s(file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/alarm/%s", log_param->log_home, "dss.alog");
+            ret = snprintf_s(
+                file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/alarm/%s", log_param->log_home, "dss.alog");
             break;
         case LOG_AUDIT:
-            ret = snprintf_s(file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/audit/%s", log_param->log_home, "dss.aud");
+            ret = snprintf_s(
+                file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/audit/%s", log_param->log_home, "dss.aud");
             break;
         default:
             ret = 0;
@@ -809,24 +823,23 @@ static int32 init_single_logger(log_param_t *log_param, log_type_t log_id)
 
 void dss_refresh_logger(char *log_field, unsigned long long *value)
 {
-    if (log_field ==NULL) {
+    if (log_field == NULL) {
         return;
     }
 
     if (strcmp(log_field, "LOG_LEVEL") == 0) {
         cm_log_param_instance()->log_level = (uint32)(*value);
-    }
-    else if (strcmp(log_field, "LOG_MAX_FILE_SIZE") == 0) {
+    } else if (strcmp(log_field, "LOG_MAX_FILE_SIZE") == 0) {
         cm_log_param_instance()->max_log_file_size = (uint64)(*value);
         cm_log_param_instance()->max_audit_file_size = (uint64)(*value);
-    }
-    else if (strcmp(log_field, "LOG_BACKUP_FILE_COUNT") == 0) {
+    } else if (strcmp(log_field, "LOG_BACKUP_FILE_COUNT") == 0) {
         cm_log_param_instance()->log_backup_file_count = (uint32)(*value);
         cm_log_param_instance()->audit_backup_file_count = (uint32)(*value);
     }
 }
 
-int32 dss_init_logger(char *log_home, unsigned int log_level, unsigned int log_backup_file_count, unsigned long long log_max_file_size)
+int32 dss_init_logger(
+    char *log_home, unsigned int log_level, unsigned int log_backup_file_count, unsigned long long log_max_file_size)
 {
     errno_t ret;
     log_param_t *log_param = cm_log_param_instance();
@@ -884,10 +897,12 @@ int dss_aio_prep_pread(void *iocb, int handle, void *buf, size_t count, long lon
 
     int dev_fd = DSS_INVALID_HANDLE;
     long long new_offset = 0;
-    ret = dss_get_fd_by_offset(conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_TRUE, &dev_fd, &new_offset);
+    int32 real_count = (int32)count;
+    ret = dss_get_fd_by_offset(
+        conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_TRUE, &dev_fd, &new_offset, &real_count);
     DSS_RETURN_IF_ERROR(ret);
 
-    io_prep_pread(iocb, dev_fd, buf, count, new_offset);
+    io_prep_pread(iocb, dev_fd, buf, (size_t)real_count, new_offset);
     return CM_SUCCESS;
 }
 
@@ -904,7 +919,7 @@ int dss_aio_prep_pwrite(void *iocb, int handle, void *buf, size_t count, long lo
 
     int dev_fd = DSS_INVALID_HANDLE;
     long long new_offset = 0;
-    ret = dss_get_fd_by_offset(conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_FALSE, &dev_fd, &new_offset);
+    ret = dss_get_fd_by_offset(conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_FALSE, &dev_fd, &new_offset, NULL);
     DSS_RETURN_IF_ERROR(ret);
 
     io_prep_pwrite(iocb, dev_fd, buf, count, new_offset);
@@ -939,7 +954,6 @@ int dss_compare_size_equal(const char *vg_name, long long *au_size)
 {
     return dss_compare_size_equal_impl(vg_name, au_size);
 }
-
 
 int dss_setcfg(const char *name, const char *value, const char *scope)
 {

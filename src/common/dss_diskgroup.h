@@ -41,7 +41,6 @@
 extern "C" {
 #endif
 
-#define DSS_LOADDISK_BUFFER_SIZE SIZE_K(32)
 #define DSS_READ4STANDBY_ERR (int32)3
 /*
     1、when the node is standby, just send message to primary to read volume
@@ -85,6 +84,8 @@ status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_
 status_t dss_load_vg_conf_info(dss_vg_info_t **vgs, const dss_config_t *inst_cfg);
 void dss_free_vg_info();
 dss_vg_info_item_t *dss_find_vg_item(const char *vg_name);
+dss_vg_info_item_t *dss_find_vg_item_by_id(uint32 vg_id);
+
 status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **info);
 status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock);
 
@@ -133,7 +134,6 @@ uint32_t dss_find_volume(dss_vg_info_item_t *vg_item, const char *volume_name);
 uint32_t dss_find_free_volume_id(const dss_vg_info_item_t *vg_item);
 status_t dss_cmp_volume_head(dss_vg_info_item_t *vg_item, const char *volume_name, uint32 id);
 
-
 static inline dss_vg_info_item_t *dss_get_first_vg_item()
 {
     return &g_vgs_info->volume_group[0];
@@ -180,7 +180,7 @@ static inline void dss_set_vg_au_size(dss_ctrl_t *ctrl, uint32 au_size)
 static inline bool32 dss_check_volume_is_used(dss_vg_info_item_t *vg_item, uint32 vid)
 {
     return (CM_CALC_ALIGN(DSS_VOLUME_HEAD_SIZE, dss_get_vg_au_size(vg_item->dss_ctrl)) <
-        vg_item->dss_ctrl->core.volume_attrs[vid].hwm);
+            vg_item->dss_ctrl->core.volume_attrs[vid].hwm);
 }
 
 static inline bool32 dss_compare_version(uint64 disk_version, uint64 mem_version)
@@ -220,6 +220,7 @@ status_t dss_gen_volume_head(
     dss_volume_header_t *vol_head, dss_vg_info_item_t *vg_item, const char *volume_name, uint32 id);
 status_t dss_check_remove_volume(dss_vg_info_item_t *vg_item, const char *volume_name, uint32 *volume_id);
 void dss_remove_volume_vg_ctrl(dss_ctrl_t *vg_ctrl, uint32 id);
+bool32 dss_meta_syn(dss_session_t *session, dss_bg_task_info_t *bg_task_info);
 
 #ifdef __cplusplus
 }

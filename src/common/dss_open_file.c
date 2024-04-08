@@ -88,7 +88,8 @@ status_t dss_delete_open_file_index(
         return CM_ERROR;
     }
     dss_open_file_info_t *open_file = BILIST_NODE_OF(dss_open_file_info_t, node, link);
-    LOG_DEBUG_INF("Succeed to delete open file index, ftid:%llu, pid:%llu, old ref is %llu.", ftid, pid, open_file->ref);
+    LOG_DEBUG_INF(
+        "Succeed to delete open file index, ftid:%llu, pid:%llu, old ref is %llu.", ftid, pid, open_file->ref);
     if (open_file->ref > 1) {
         open_file->ref--;
     } else {
@@ -120,7 +121,7 @@ status_t dss_check_open_file(dss_session_t *session, dss_vg_info_item_t *vg_item
         }
         curr_node = next_node;
     }
-    
+
     dss_unlatch(&vg_item->open_file_latch);
     return CM_SUCCESS;
 }

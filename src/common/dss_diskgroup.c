@@ -31,9 +31,13 @@
 #include "dss_io_fence.h"
 #include "dss_open_file.h"
 #include "dss_diskgroup.h"
+
 #ifndef WIN32
 #include <sys/file.h>
 #endif
+#include "dss_meta_buf.h"
+#include "dss_fs_aux.h"
+#include "dss_syn_meta.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -211,6 +215,14 @@ dss_vg_info_item_t *dss_find_vg_item(const char *vg_name)
     return NULL;
 }
 
+dss_vg_info_item_t *dss_find_vg_item_by_id(uint32 vg_id)
+{
+    if (vg_id > g_vgs_info->group_num) {
+        return NULL;
+    }
+    return &g_vgs_info->volume_group[vg_id];
+}
+
 status_t dss_load_ctrlinfo(uint32 index)
 {
     dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[index];
@@ -316,6 +328,7 @@ static status_t dss_get_vg_info_core(uint32 i, dss_share_vg_info_t *share_vg_inf
 
     dss_checksum_vg_ctrl(&g_vgs_info->volume_group[i]);
     cm_bilist_init(&g_vgs_info->volume_group[i].open_file_list);
+    cm_bilist_init(&g_vgs_info->volume_group[i].syn_meta_desc.bilist);
 
     status = dss_init_vol_handle(&g_vgs_info->volume_group[i], flags, NULL);
     if (status != CM_SUCCESS) {
@@ -327,7 +340,7 @@ static status_t dss_get_vg_info_core(uint32 i, dss_share_vg_info_t *share_vg_inf
 
 void dss_free_shm_hashmap_memory(uint32 num)
 {
-    for (uint32 i = 0; i <= num; i ++) {
+    for (uint32 i = 0; i <= num; i++) {
         (void)cm_del_shm(SHM_TYPE_HASH, i);
     }
 }
@@ -717,7 +730,7 @@ status_t dss_file_lock_vg(dss_config_t *inst_cfg, struct flock *lk)
     int iret_snprintf;
 
     iret_snprintf = snprintf_s(
-        file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/%s",  inst_cfg->home, g_dss_lock_vg_file);
+        file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/%s", inst_cfg->home, g_dss_lock_vg_file);
     DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
 
     if (cm_open_file(file_name, O_CREAT | O_RDWR | O_BINARY, &g_dss_lock_vg_fd) != CM_SUCCESS) {
@@ -797,8 +810,8 @@ status_t dss_lock_disk_vg(const char *entry_path, dss_config_t *inst_cfg)
             LOG_DEBUG_INF("Lock vg timeout, get current lock info, entry_path %s.", entry_path);
             // get old lock info from disk
             status_t ret = cm_get_dlock_info_s(&lock, entry_path);
-            DSS_RETURN_IFERR3(ret, cm_destory_dlock(&lock),
-                LOG_DEBUG_ERR("Failed to get old lock info, entry path %s.", entry_path));
+            DSS_RETURN_IFERR3(
+                ret, cm_destory_dlock(&lock), LOG_DEBUG_ERR("Failed to get old lock info, entry path %s.", entry_path));
 
             // Get the status of the instance that owns the lock
             LOG_DEBUG_INF("The node that owns the lock is online, inst_id(disk) %lld, inst_id(lock) %lld.",
@@ -944,7 +957,6 @@ status_t dss_check_lock_instid(dss_vg_info_item_t *vg_item, const char *entry_pa
         cm_destory_dlock(&lock);
         dss_unlatch(&vg_item->disk_latch);
         return CM_ERROR;
-
     }
 
     status = cm_get_dlock_info(&lock, fd);
@@ -1532,6 +1544,7 @@ status_t dss_refresh_meta_info(dss_session_t *session)
                 return status;
             }
         }
+        dss_init_vg_cache_node_info(&g_vgs_info->volume_group[i]);
         status = dss_refresh_buffer_cache(&g_vgs_info->volume_group[i], g_vgs_info->volume_group[i].buffer_cache);
         if (status != CM_SUCCESS) {
             return status;
@@ -1579,6 +1592,9 @@ status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item)
     uint64 core_version = vg_item->dss_ctrl->core.version;
     dss_fs_block_root_t *fs_root = (dss_fs_block_root_t *)vg_item->dss_ctrl->core.fs_block_root;
     uint64 fs_version = fs_root->version;
+    dss_fs_aux_root_t *fs_aux_root = (dss_fs_aux_root_t *)vg_item->dss_ctrl->core.fs_aux_root;
+    uint64 fs_aux_version = fs_aux_root->version;
+
     status_t status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_CORE_OFFSET, buf, DSS_DISK_UNIT_SIZE, &remote);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load vg core version %s.", vg_item->entry_path);
@@ -1596,7 +1612,9 @@ status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item)
         }
     } else {
         fs_root = (dss_fs_block_root_t *)new_core->fs_block_root;
-        if (dss_compare_version(fs_root->version, fs_version)) {
+        fs_aux_root = (dss_fs_aux_root_t *)new_core->fs_aux_root;
+        if (dss_compare_version(fs_root->version, fs_version) ||
+            dss_compare_version(fs_aux_root->version, fs_aux_version)) {
             LOG_RUN_INF("Refresh core head, old version:%llu, disk version:%llu.", fs_version, fs_root->version);
             errno_t errcode = memcpy_s(&vg_item->dss_ctrl->core, DSS_DISK_UNIT_SIZE, buf, DSS_DISK_UNIT_SIZE);
             securec_check_ret(errcode);
@@ -1612,7 +1630,7 @@ static status_t dss_init_volume_core(dss_vg_info_item_t *vg_item, dss_volume_ctr
     }
 
     if (vg_item->volume_handle[i].handle != DSS_INVALID_HANDLE) {
-            dss_close_volume(&vg_item->volume_handle[i]);
+        dss_close_volume(&vg_item->volume_handle[i]);
     }
 
     if (volume->defs[i].flag == VOLUME_OCCUPY) {
@@ -1626,7 +1644,7 @@ static status_t dss_init_volume_core(dss_vg_info_item_t *vg_item, dss_volume_ctr
     }
 
     vg_item->dss_ctrl->volume.defs[i] = volume->defs[i];
-    LOG_RUN_INF("Refresh volume, remove id:%u, name:%s.", i, vg_item->dss_ctrl->volume.defs[i].name);
+    LOG_RUN_INF("Refresh volume, add id:%u, name:%s.", i, vg_item->dss_ctrl->volume.defs[i].name);
     return CM_SUCCESS;
 }
 
@@ -1779,7 +1797,7 @@ status_t dss_read_volume_inst(
                 continue;
             }
         }
-        
+
         return status;
     }
     *remote_chksum = CM_FALSE;
@@ -1810,16 +1828,16 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volume_id, int64 o
         if (dss_open_volume(volume->name_p, NULL, DSS_INSTANCE_OPEN_FLAG, volume) != CM_SUCCESS) {
             LOG_RUN_ERR("Read volume for standby failed, failed to open volume(%s).", volume->name_p);
             return CM_ERROR;
-        } 
+        }
     }
 
     uint64 volumesize = vg_item->dss_ctrl->core.volume_attrs[volume_id].size;
     if (((uint64)offset > volumesize) || ((uint64)size > (volumesize - (uint64)offset))) {
-        LOG_RUN_ERR("Read volume for standby failed, params err, vg(%s) voiume id[%u] offset[%llu] size[%u] volume size[%llu].",
+        LOG_RUN_ERR(
+            "Read volume for standby failed, params err, vg(%s) voiume id[%u] offset[%llu] size[%u] volume size[%llu].",
             vg_name, volume_id, offset, size, volumesize);
         return CM_ERROR;
     }
-    
 
     if (dss_read_volume(volume, offset, buf, (int32)size) != CM_SUCCESS) {
         LOG_RUN_ERR("Read volume for standby failed, failed to load disk(%s) data.", volume->name_p);
@@ -1828,6 +1846,18 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volume_id, int64 o
 
     LOG_DEBUG_INF("load disk(%s) data for standby success.", volume->name_p);
     return CM_SUCCESS;
+}
+
+bool32 dss_meta_syn(dss_session_t *session, dss_bg_task_info_t *bg_task_info)
+{
+    bool32 finish = CM_TRUE;
+    for (uint32_t i = bg_task_info->vg_id_beg; i < bg_task_info->vg_id_end; i++) {
+        bool32 cur_finish = dss_syn_buffer_cache(&g_vgs_info->volume_group[i]);
+        if (!cur_finish && !finish) {
+            finish = CM_FALSE;
+        }
+    }
+    return finish;
 }
 
 #ifdef __cplusplus

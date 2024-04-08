@@ -82,6 +82,16 @@ uint32 dss_get_delay_clean_task_idx(void)
     return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_DELAY_CLEAN_BACKGROUND_TASK;
 }
 
+uint32 dss_get_bg_task_set_idx(uint32 task_id_base, uint32 idx)
+{
+    return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + task_id_base + idx;
+}
+
+uint32 dss_get_meta_syn_task_idx(uint32 idx)
+{
+    return dss_get_bg_task_set_idx(DSS_META_SYN_BG_TASK_BASE, idx);
+}
+
 status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
 {
     uint32 i, id;
@@ -133,7 +143,7 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
 void dss_destroy_session(dss_session_t *session)
 {
     uint32 id = session->id;
-    if ( g_dss_session_ctrl.sessions[id].connected == CM_TRUE) {
+    if (g_dss_session_ctrl.sessions[id].connected == CM_TRUE) {
         cs_disconnect(&session->pipe);
         g_dss_session_ctrl.sessions[id].connected = CM_FALSE;
     }
@@ -270,7 +280,7 @@ status_t dss_lock_shm_meta_s_with_stack(
             // latch
             session->latch_stack.stack_top++;
             session->latch_stack.op = LATCH_SHARED_OP_LATCH_S_END;
- 
+
             cm_spin_unlock(&shared_latch->latch.lock);
             cm_latch_stat_inc(stat, count);
             return CM_SUCCESS;
@@ -530,9 +540,9 @@ static void dss_clean_latch_s_with_bak(dss_session_t *session, dss_shared_latch_
         shared_latch->latch.sid = 0;
     }
 
-    LOG_DEBUG_INF("Clean sid:%u shared_latch new count:%hu, new stat:%u.",
-        DSS_SESSIONID_IN_LOCK(session->id), shared_latch->latch.shared_count, shared_latch->latch.stat);
-    
+    LOG_DEBUG_INF("Clean sid:%u shared_latch new count:%hu, new stat:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        shared_latch->latch.shared_count, shared_latch->latch.stat);
+
     LOG_DEBUG_INF("Clean sid:%u latch_stack old stack_top:%u.", DSS_SESSIONID_IN_LOCK(session->id),
         session->latch_stack.stack_top);
     // not sure last latch finish, so using the stack_top_bak
@@ -625,7 +635,7 @@ static void dss_clean_last_op_with_lock(dss_session_t *session, dss_shared_latch
         dss_clean_latch_s_without_bak(session, shared_latch);
         // when latch with backup, undo the latch witch backup
     } else if (session->latch_stack.op == LATCH_SHARED_OP_LATCH_S_BEG ||
-                session->latch_stack.op == LATCH_SHARED_OP_LATCH_S_END) {
+               session->latch_stack.op == LATCH_SHARED_OP_LATCH_S_END) {
         dss_clean_latch_s_with_bak(session, shared_latch);
         // when unlatch, no backup, no change, redo the unlatch without backup
     } else if (session->latch_stack.op == LATCH_SHARED_OP_UNLATCH) {
@@ -668,7 +678,7 @@ static bool32 dss_clean_lock_for_shm_meta(dss_session_t *session, dss_shared_lat
         dss_clean_last_op_with_lock(session, shared_latch);
         // if last op not happen, or latch not begin
     } else if (session->latch_stack.op == LATCH_SHARED_OP_NONE || session->latch_stack.op == LATCH_SHARED_OP_LATCH_S ||
-                session->latch_stack.op == LATCH_SHARED_OP_UNLATCH_BEG) {
+               session->latch_stack.op == LATCH_SHARED_OP_UNLATCH_BEG) {
         dss_clean_last_op_without_lock(session, shared_latch);
         // otherwise unlatch the latch
     } else {
@@ -743,8 +753,8 @@ void dss_clean_session_latch(dss_session_t *session, bool32 is_daemon)
     if (is_daemon && !dss_need_clean_session_latch(session, cli_pid, start_time)) {
         LOG_RUN_INF("[CLEAN_LATCH]session id %u, pid %llu, start_time %lld, process name:%s need check next time.",
             session->id, cli_pid, start_time, session->cli_info.process_name);
-            cm_spin_unlock(&session->lock);
-            return;
+        cm_spin_unlock(&session->lock);
+        return;
     }
     LOG_RUN_INF("[CLEAN_LATCH]session id %u, pid %llu, start_time %lld, process name:%s in lock.", session->id, cli_pid,
         start_time, session->cli_info.process_name);
@@ -778,7 +788,7 @@ void dss_clean_session_latch(dss_session_t *session, bool32 is_daemon)
             LOG_DEBUG_INF("Clean sid:%u shared_latch,latch_place:%d, offset:%llu.", DSS_SESSIONID_IN_LOCK(session->id),
                 latch_place, (uint64)offset);
         }
-    
+
         // the lock is locked by this session in the dead-client,
         if (is_daemon && shared_latch->latch.lock != 0 &&
             DSS_SESSIONID_IN_LOCK(session->id) != shared_latch->latch.lock) {

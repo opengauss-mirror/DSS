@@ -51,9 +51,10 @@ typedef struct st_dss_packet_head {
 
 typedef enum en_dss_packet_version {
     DSS_VERSION_0 = 0, /* version 0 */
+    DSS_VERSION_1 = 1, /* version 1 */
 } dss_packet_version_e;
 
-#define DSS_PROTO_VERSION DSS_VERSION_0
+#define DSS_PROTO_VERSION DSS_VERSION_1
 #define DSS_INVALID_VERSION (int32)0x7FFFFFFF
 
 #define DSS_PACKET_SIZE(pack) ((pack)->head->size)

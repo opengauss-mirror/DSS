@@ -37,9 +37,8 @@
 extern "C" {
 #endif
 
-int32 g_sign_array[] = {SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT, SIGBUS, SIGFPE,
-                        SIGSEGV, SIGUSR2, SIGALRM, SIGTERM, SIGSTKFLT, SIGTSTP, SIGTTIN, SIGTTOU,
-                        SIGXCPU, SIGXFSZ, SIGVTALRM, SIGPROF, SIGIO, SIGPWR, SIGSYS};
+int32 g_sign_array[] = {SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT, SIGBUS, SIGFPE, SIGSEGV, SIGUSR2, SIGALRM,
+    SIGTERM, SIGSTKFLT, SIGTSTP, SIGTTIN, SIGTTOU, SIGXCPU, SIGXFSZ, SIGVTALRM, SIGPROF, SIGIO, SIGPWR, SIGSYS};
 
 box_excp_item_t g_excep_info = {0};
 static const char *g_core_state_file = "dss.core.state";
@@ -88,8 +87,8 @@ static inline bool8 need_dump(int signum)
     return CM_FALSE;
 }
 
-const char* const g_other_signal_format = "Real-time signal %d";
-const char* const g_unknown_signal_format = "Unknown signal %d";
+const char *const g_other_signal_format = "Real-time signal %d";
+const char *const g_unknown_signal_format = "Unknown signal %d";
 
 void dss_get_signal_info(int signum, char *buf, uint32 buf_size)
 {
@@ -131,7 +130,7 @@ static void dss_sig_collect_timer_bt(void)
     cm_sig_collect_backtrace(LOG_BLACKBOX, &timer->thread, "timer");
 }
 
-static void dss_sig_collect_recovery_bt(void) 
+static void dss_sig_collect_recovery_bt(void)
 {
     if (g_dss_instance.is_maintain) {
         LOG_BLACKBOX_INF("%s", "No dss recovery background task when dss is maintain.");
@@ -141,7 +140,7 @@ static void dss_sig_collect_recovery_bt(void)
     cm_sig_collect_backtrace(LOG_BLACKBOX, &(g_dss_instance.threads[recovery_thread_id]), "recovery");
 }
 
-static void dss_sig_collect_mes_task_bt(void) 
+static void dss_sig_collect_mes_task_bt(void)
 {
     uint32 count = mes_get_started_task_count(CM_FALSE);
     for (uint32 i = 0; i < count; i++) {
@@ -149,7 +148,7 @@ static void dss_sig_collect_mes_task_bt(void)
     }
 }
 
-static void dss_sig_collect_mes_listener_bt(void) 
+static void dss_sig_collect_mes_listener_bt(void)
 {
     mes_lsnr_t *lsnr = &MES_GLOBAL_INST_MSG.mes_ctx.lsnr;
     if (MES_GLOBAL_INST_MSG.profile.pipe_type == MES_TYPE_TCP) {
@@ -194,8 +193,7 @@ static void dss_sig_collect_work_session_bt(void)
         }
         dss_workthread_t *workthread_ctx = (dss_workthread_t *)session->workthread_ctx;
         if (workthread_ctx != NULL && workthread_ctx->status == THREAD_STATUS_PROCESSSING) {
-            cm_sig_collect_backtrace(LOG_BLACKBOX, &workthread_ctx->thread_obj->thread,
-                "session %d", session->id);
+            cm_sig_collect_backtrace(LOG_BLACKBOX, &workthread_ctx->thread_obj->thread, "session %d", session->id);
         }
     }
 }
@@ -226,7 +224,7 @@ void dss_print_effect_param(void)
 
 void dss_write_block_pool(int32 handle, int64 *length, ga_pool_id_e pool_id)
 {
-    if (pool_id != GA_8K_POOL && pool_id != GA_16K_POOL) {
+    if (pool_id != GA_8K_POOL && pool_id != GA_16K_POOL && pool_id != GA_FS_AUX_POOL) {
         return;
     }
     ga_pool_t *pool = &g_app_pools[GA_POOL_IDX((uint32)pool_id)];
@@ -247,8 +245,7 @@ void dss_write_block_pool(int32 handle, int64 *length, ga_pool_id_e pool_id)
     }
     for (uint32 i = 0; i < pool->ctrl->ex_count; i++) {
         ret = dss_write_shm_memory_file_inner(handle, length, pool->ex_pool_addr[i], (int32)ex_pool_size);
-        LOG_BLACKBOX_INF("Failed to write extend ga pool, pool id is %u, ex_num is %u\n.",
-            (uint32)pool_id, i);
+        LOG_BLACKBOX_INF("Failed to write extend ga pool, pool id is %u, ex_num is %u\n.", (uint32)pool_id, i);
     }
 }
 
@@ -258,12 +255,12 @@ static void dss_update_shm_memory_length(int32 handle, int64 length, int64 begin
     if (end == -1) {
         LOG_BLACKBOX_INF("Failed to seek file %d", handle);
         return;
-    } 
+    }
     int64 offset = cm_seek_file(handle, begin, SEEK_SET);
     if (offset == -1) {
         LOG_BLACKBOX_INF("Failed to seek file %d", handle);
         return;
-    } 
+    }
     status_t ret = cm_write_file(handle, &length, sizeof(int64));
     if (ret != CM_SUCCESS) {
         LOG_BLACKBOX_INF("Failed to update length %lld\n.", length);
@@ -271,7 +268,7 @@ static void dss_update_shm_memory_length(int32 handle, int64 length, int64 begin
     offset = cm_seek_file(handle, end, SEEK_SET);
     if (offset == -1) {
         LOG_BLACKBOX_INF("Failed to seek file %d", handle);
-    } 
+    }
 }
 
 // length| vg_num| software_version|vg_name|dss_ctrl|software_version|vg_name|dss_ctrl|...
@@ -281,7 +278,7 @@ void dss_write_share_vg_info(int32 handle)
     int64 begin = cm_seek_file(handle, 0, SEEK_CUR);
     if (begin == -1) {
         LOG_BLACKBOX_INF("Failed to seek file %d", handle);
-    } 
+    }
     status_t ret = dss_write_shm_memory_file_inner(handle, &length, &length, sizeof(int64));
     if (ret != CM_SUCCESS) {
         LOG_BLACKBOX_INF("Failed to write length %lld\n.", length);
@@ -309,14 +306,15 @@ void dss_write_share_vg_info(int32 handle)
     dss_update_shm_memory_length(handle, length, begin);
 }
 
-// length| vg_num|vg_name|size|buckets|map->num|vg_name|size|buckets|map->num|...|pool_size|pool->addr|pool->ex_pool_addr[0]|...|pool->ex_pool_addr[excount-1]|...
+// length|
+// vg_num|vg_name|size|buckets|map->num|vg_name|size|buckets|map->num|...|pool_size|pool->addr|pool->ex_pool_addr[0]|...|pool->ex_pool_addr[excount-1]|...
 void dss_write_hashmap_and_pool_info(int32 handle)
 {
     int64 length = 0;
     int64 begin = cm_seek_file(handle, 0, SEEK_CUR);
     if (begin == -1) {
         LOG_BLACKBOX_INF("Failed to seek file %d", handle);
-    } 
+    }
     status_t ret = dss_write_shm_memory_file_inner(handle, &length, &length, sizeof(int64));
     if (ret != CM_SUCCESS) {
         LOG_BLACKBOX_INF("Failed to write length %lld\n.", length);
@@ -337,7 +335,7 @@ void dss_write_hashmap_and_pool_info(int32 handle)
         ret = dss_write_shm_memory_file_inner(handle, &length, &size, sizeof(uint64_t));
         if (ret != CM_SUCCESS) {
             LOG_BLACKBOX_INF("Failed to write bucket size %llu\n.", size);
-        }  
+        }
         ret = dss_write_shm_memory_file_inner(handle, &length, (char *)buckets, (int32)size);
         if (ret != CM_SUCCESS) {
             LOG_BLACKBOX_INF("Failed to write shm hashmap of vg %u\n.", i);
@@ -349,10 +347,11 @@ void dss_write_hashmap_and_pool_info(int32 handle)
     }
     dss_write_block_pool(handle, &length, GA_8K_POOL);
     dss_write_block_pool(handle, &length, GA_16K_POOL);
+    dss_write_block_pool(handle, &length, GA_FS_AUX_POOL);
     dss_update_shm_memory_length(handle, length, begin);
 }
 
-void dss_write_shm_memory(void) 
+void dss_write_shm_memory(void)
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     bool8 blackbox_detail_on = inst_cfg->params.blackbox_detail_on;
@@ -365,8 +364,7 @@ void dss_write_shm_memory(void)
     char file_name[CM_FILE_NAME_BUFFER_SIZE] = {0};
     date_detail_t detail = g_timer()->detail;
     errno_t errcode = snprintf_s(timestamp, CM_MAX_NAME_LEN, CM_MAX_NAME_LEN - 1, "%4u%02u%02u%02u%02u%02u%03u",
-                         detail.year, detail.mon, detail.day,
-                         detail.hour, detail.min, detail.sec, detail.millisec);
+        detail.year, detail.mon, detail.day, detail.hour, detail.min, detail.sec, detail.millisec);
     if (SECUREC_UNLIKELY(errcode == -1)) {
         LOG_BLACKBOX_INF("print dss_shm_file failed.");
         return;
@@ -377,10 +375,10 @@ void dss_write_shm_memory(void)
         LOG_BLACKBOX_INF("print dss_shm_file failed.");
         return;
     }
-    if (cm_open_file_ex(
-        file_name, O_SYNC | O_CREAT | O_RDWR | O_TRUNC | O_BINARY, S_IRUSR | S_IWUSR, &handle) != CM_SUCCESS) {
+    if (cm_open_file_ex(file_name, O_SYNC | O_CREAT | O_RDWR | O_TRUNC | O_BINARY, S_IRUSR | S_IWUSR, &handle) !=
+        CM_SUCCESS) {
         LOG_BLACKBOX_INF("open %s failed.", file_name);
-        return;            
+        return;
     }
     dss_write_share_vg_info(handle);
     dss_write_hashmap_and_pool_info(handle);
@@ -413,7 +411,7 @@ uint32 g_sign_mutex = 0;
 void dss_proc_sign_func(int32 sig_num, siginfo_t *sig_info, void *context)
 {
     box_excp_item_t *excep_info = &g_excep_info;
-    uint64 loc_id =0;
+    uint64 loc_id = 0;
     sigset_t sign_old_mask;
     sigset_t sign_mask;
     char signal_name[CM_NAME_BUFFER_SIZE] = {0};
@@ -533,7 +531,6 @@ status_t dss_sigcap_handle_reg()
     }
     return dss_sig_reg_backtrace();
 }
-
 
 #ifdef __cplusplus
 }
