@@ -291,7 +291,7 @@ status_t dss_invalidate_meta_remote(
     } else {
         char *addr = dss_find_block_in_shm_no_refresh(session, vg_item, block_id, NULL);
         if (addr != NULL) {
-            LOG_DEBUG_ERR("Success to find block:%llu in mem.", *(uint64 *)&block_id);
+            LOG_DEBUG_ERR("Success to find block:%s in mem.", dss_display_metaid(block_id));
             dss_block_ctrl_t *block_ctrl = dss_buffer_cache_get_block_ctrl(invalidate_meta_msg->meta_type, addr);
             block_ctrl->fid = 0;
             block_ctrl->ftid = 0;

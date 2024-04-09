@@ -144,9 +144,9 @@ status_t dss_apply_refresh_file(dss_conn_t *conn, dss_file_context_t *context, i
     send_pack->head->cmd = DSS_CMD_REFRESH_FILE;
     send_pack->head->flags = 0;
 
-    LOG_DEBUG_INF(
-        "Apply refresh file:%s, curr size:%llu, refresh ft id:%llu, refresh entry id:%llu, refresh offset:%llu.",
-        context->node->name, context->node->size, *(uint64 *)&ftid, *(uint64 *)&(context->node->entry), offset);
+    LOG_DEBUG_INF("Apply refresh file:%s, curr size:%llu, refresh ft id:%s, refresh entry id:%s, refresh offset:%llu.",
+        context->node->name, context->node->size, dss_display_metaid(ftid), dss_display_metaid(context->node->entry),
+        offset);
     // 1. fid
     CM_RETURN_IFERR(dss_put_int64(send_pack, fid));
     // 2. ftid
@@ -187,8 +187,8 @@ static status_t dss_check_apply_refresh_file(dss_conn_t *conn, dss_file_context_
         if (is_valid) {
             break;
         }
-        LOG_DEBUG_INF("The node:%llu name:%s is invalid, need refresh from server again.",
-            *(uint64 *)&context->node->id, context->node->name);
+        LOG_DEBUG_INF("The node:%s name:%s is invalid, need refresh from server again.",
+            dss_display_metaid(context->node->id), context->node->name);
         cm_sleep(DSS_READ_REMOTE_INTERVAL);
     } while (!is_valid);
     return CM_SUCCESS;
@@ -205,7 +205,7 @@ static status_t dss_check_find_fs_block(files_rw_ctx_t *rw_ctx, dss_fs_pos_desc_
     fs_pos->is_valid = CM_FALSE;
 
     if (node->flags & DSS_FT_NODE_FLAG_INVALID_FS_META) {
-        LOG_DEBUG_INF("File:%llu, node:%llu is not invalid.", node->fid, DSS_ID_TO_U64(node->id));
+        LOG_DEBUG_INF("File:%llu, node:%s is not invalid.", node->fid, dss_display_metaid(node->id));
         return CM_SUCCESS;
     }
 
@@ -251,9 +251,9 @@ static status_t dss_check_find_fs_block(files_rw_ctx_t *rw_ctx, dss_fs_pos_desc_
 
         fs_pos->is_exist_aux = CM_TRUE;
         fs_pos->data_auid = fs_pos->fs_aux->head.data_id;
-        LOG_DEBUG_INF("Found fs aux block:%llu, data_id:%llu for fs_aux.parent:%llu, file:%llu, node:%llu.",
-            DSS_ID_TO_U64(fs_pos->fs_aux->head.common.id), DSS_ID_TO_U64(fs_pos->fs_aux->head.data_id),
-            DSS_ID_TO_U64(fs_pos->fs_aux->head.ftid), node->fid, DSS_ID_TO_U64(node->id));
+        LOG_DEBUG_INF("Found fs aux block:%s, data_id:%s for fs_aux.parent:%s, file:%llu, node:%s.",
+            dss_display_metaid(fs_pos->fs_aux->head.common.id), dss_display_metaid(fs_pos->fs_aux->head.data_id),
+            dss_display_metaid(fs_pos->fs_aux->head.ftid), node->fid, dss_display_metaid(node->id));
     }
     fs_pos->is_valid = CM_TRUE;
     return CM_SUCCESS;
@@ -1609,8 +1609,8 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
             return CM_ERROR;
         }
 
-        LOG_DEBUG_INF("Found auid:%llu for node:%llu, name:%s.", DSS_ID_TO_U64(auid), DSS_ID_TO_U64(context->node->id),
-            context->node->name);
+        LOG_DEBUG_INF("Found auid:%s for node:%s, name:%s.", dss_display_metaid(auid),
+            dss_display_metaid(context->node->id), context->node->name);
 
         bool32 is_refresh = CM_FALSE;
         status = dss_check_refresh_volume(conn, context, auid, &is_refresh);
@@ -2587,8 +2587,8 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
             return CM_ERROR;
         }
 
-        LOG_DEBUG_INF("Found auid:%llu for node:%llu, name:%s.", DSS_ID_TO_U64(auid), DSS_ID_TO_U64(context->node->id),
-            context->node->name);
+        LOG_DEBUG_INF("Found auid:%s for node:%s, name:%s.", dss_display_metaid(auid),
+            dss_display_metaid(context->node->id), context->node->name);
 
         bool32 is_refresh = CM_FALSE;
         status = dss_check_refresh_volume(conn, context, auid, &is_refresh);
