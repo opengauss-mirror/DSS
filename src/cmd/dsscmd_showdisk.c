@@ -399,8 +399,7 @@ static status_t dss_printf_root_ft_block(const dss_vg_info_item_t *vg_item, dss_
     return CM_SUCCESS;
 }
 
-status_t dss_print_struct_name_inner(
-    dss_vg_info_item_t *vg_item, dss_volume_t *volume, const char *struct_name)
+status_t dss_print_struct_name_inner(dss_vg_info_item_t *vg_item, dss_volume_t *volume, const char *struct_name)
 {
     status_t status;
     if (strcmp("vg_header", struct_name) == 0) {
@@ -416,7 +415,9 @@ status_t dss_print_struct_name_inner(
         status = dss_printf_root_ft_block(vg_item, volume);
         DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to printf metadata root_ft_block.\n"));
     } else {
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_PRINT_ERROR("Incorrect input, %s is not in core_ctrl vg_header volume_ctrl root_ft_block.\n", struct_name));
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_PRINT_ERROR("Incorrect input, %s is not in core_ctrl vg_header volume_ctrl root_ft_block.\n",
+                          struct_name));
     }
     return CM_SUCCESS;
 }
@@ -460,7 +461,8 @@ static void printf_fs_block(dss_fs_block_t *fs_block)
     (void)printf("%s  }\n", tab);
 }
 
-static status_t dss_print_fsb_by_range(dss_block_id_t *node, dss_session_t *session, dss_vg_info_item_t *vg_item, dss_show_param_t *show_param)
+static status_t dss_print_fsb_by_range(
+    dss_block_id_t *node, dss_session_t *session, dss_vg_info_item_t *vg_item, dss_show_param_t *show_param)
 {
     printf_auid(node);
     if (g_print_level == DSS_SECOND_PRINT_LEVEL) {
@@ -480,19 +482,20 @@ void dss_reset_first_fs_index(dss_show_param_t *show_param, uint32 start, uint32
 }
 
 // print range by offset and size
-status_t dss_print_fsb_by_id_detail_part(dss_session_t *session, dss_vg_info_item_t *vg_item, char *block, dss_show_param_t *show_param)
+status_t dss_print_fsb_by_id_detail_part(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, char *block, dss_show_param_t *show_param)
 {
     dss_block_id_t *node = NULL;
-    char *tab = dss_get_print_tab(g_print_level - 1); 
+    char *tab = dss_get_print_tab(g_print_level - 1);
     uint32 size = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_t)) / sizeof(dss_block_id_t);
     uint32 start_first_fs_index = show_param->start_first_fs_index;
     uint32 end_first_fs_index = show_param->end_first_fs_index;
     uint32 start_second_fs_index = show_param->start_second_fs_index;
     uint32 end_second_fs_index = show_param->end_second_fs_index;
-    if (start_first_fs_index > size - 1 
-    || ((end_first_fs_index != CM_INVALID_ID32) && (end_first_fs_index > size - 1)) 
-    || ((start_second_fs_index != CM_INVALID_ID32) && (start_second_fs_index > size - 1)) 
-    || ((end_second_fs_index != CM_INVALID_ID32) && (end_second_fs_index > size - 1))) {
+    if (start_first_fs_index > size - 1 ||
+        ((end_first_fs_index != CM_INVALID_ID32) && (end_first_fs_index > size - 1)) ||
+        ((start_second_fs_index != CM_INVALID_ID32) && (start_second_fs_index > size - 1)) ||
+        ((end_second_fs_index != CM_INVALID_ID32) && (end_second_fs_index > size - 1))) {
         DSS_PRINT_ERROR("node_id should be in range 0-%u.\n", size - 1);
         return CM_ERROR;
     }
@@ -501,7 +504,7 @@ status_t dss_print_fsb_by_id_detail_part(dss_session_t *session, dss_vg_info_ite
         node = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + start_first_fs_index * sizeof(dss_block_id_t));
         dss_reset_first_fs_index(show_param, start_second_fs_index, end_second_fs_index);
         DSS_RETURN_IF_ERROR(dss_print_fsb_by_range(node, session, vg_item, show_param));
-        (void)printf("%s}\n", tab); 
+        (void)printf("%s}\n", tab);
         return CM_SUCCESS;
     }
     for (uint32 i = start_first_fs_index; i <= end_first_fs_index; i++) {
@@ -510,7 +513,7 @@ status_t dss_print_fsb_by_id_detail_part(dss_session_t *session, dss_vg_info_ite
             (void)printf("%sbitmap[%u] = {\n", tab, i);
             dss_reset_first_fs_index(show_param, start_second_fs_index, size - 1);
             DSS_RETURN_IF_ERROR(dss_print_fsb_by_range(node, session, vg_item, show_param));
-            (void)printf("%s}\n", tab); 
+            (void)printf("%s}\n", tab);
         } else if (i == end_first_fs_index) {
             (void)printf("%sbitmap[%u] = {\n", tab, i);
             dss_reset_first_fs_index(show_param, 0, end_second_fs_index);
@@ -525,7 +528,8 @@ status_t dss_print_fsb_by_id_detail_part(dss_session_t *session, dss_vg_info_ite
     }
     return CM_SUCCESS;
 }
-status_t dss_print_fsb_by_id_detail(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 block_id, dss_show_param_t *show_param)
+status_t dss_print_fsb_by_id_detail(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 block_id, dss_show_param_t *show_param)
 {
     dss_block_id_t *real_block_id = (dss_block_id_t *)&block_id;
     if (dss_cmp_auid(*(auid_t *)real_block_id, DSS_INVALID_64)) {
@@ -570,7 +574,8 @@ status_t dss_print_fsb_by_id_detail(dss_session_t *session, dss_vg_info_item_t *
     return CM_SUCCESS;
 }
 
-status_t dss_print_entry_fs_block_detail(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_show_param_t *show_param)
+status_t dss_print_entry_fs_block_detail(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_show_param_t *show_param)
 {
     gft_node_t *gft_node = show_param->node;
     dss_block_id_t *entry = &gft_node->entry;
@@ -586,16 +591,19 @@ status_t dss_print_entry_fs_block_detail(dss_session_t *session, dss_vg_info_ite
         (void)printf("  }\n");
     } else {
         if (show_param->offset + show_param->size > gft_node->size) {
-            DSS_PRINT_ERROR("invalid offset %lld and size %u, it is larger than actural size.\n", show_param->offset, show_param->size);
+            DSS_PRINT_ERROR("invalid offset %lld and size %u, it is larger than actural size.\n", show_param->offset,
+                show_param->size);
             return CM_ERROR;
         }
         uint64 au_size = vg_item->dss_ctrl->core.au_size;
-        status_t status = dss_get_fs_block_info_by_offset(show_param->offset, au_size, &show_param->start_first_fs_index, &show_param->start_second_fs_index, NULL);
+        status_t status = dss_get_fs_block_info_by_offset(
+            show_param->offset, au_size, &show_param->start_first_fs_index, &show_param->start_second_fs_index, NULL);
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to get fs block info by offset.\n");
             return CM_ERROR;
         }
-        status = dss_get_fs_block_info_by_offset(show_param->offset + show_param->size - 1, au_size, &show_param->end_first_fs_index, &show_param->end_second_fs_index, NULL);
+        status = dss_get_fs_block_info_by_offset(show_param->offset + show_param->size - 1, au_size,
+            &show_param->end_first_fs_index, &show_param->end_second_fs_index, NULL);
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to get fs block info by offset.\n");
             return CM_ERROR;
@@ -690,28 +698,28 @@ static status_t dss_print_ftn_by_id(char *block, uint64 node_id)
     return CM_SUCCESS;
 }
 
-static void printf_fs_aux_block_detail(dss_fs_aux_t *fs_aux)
+static void print_fs_aux_block_detail(dss_fs_aux_t *fs_aux)
 {
-    (void)printf("  block_common = {\n");
+    (void)printf("    block_common = {\n");
 
     dss_common_block_t *common = &fs_aux->head.common;
     printf_common_block_t(common);
-    (void)printf("  }\n");
+    (void)printf("    }\n");
 
     (void)printf("  owner ftid = {\n");
     printf_auid(&fs_aux->head.ftid);
-    (void)printf("  }\n");
+    (void)printf("    }\n");
 
-    (void)printf("  data ftid = {\n");
+    (void)printf("  data id = {\n");
     printf_auid(&fs_aux->head.data_id);
-    (void)printf("  }\n");
+    (void)printf("    }\n");
 }
 
-static status_t dss_printf_fs_aux(char *block)
+static status_t dss_print_fs_aux(char *block)
 {
     dss_fs_aux_t *fs_aux = (dss_fs_aux_t *)block;
     (void)printf("fs aux = {\n");
-    printf_fs_aux_block_detail(fs_aux);
+    print_fs_aux_block_detail(fs_aux);
     (void)printf("}\n\n");
     return CM_SUCCESS;
 }
@@ -918,7 +926,8 @@ static status_t get_volume_core_ctrl(dss_vg_info_item_t *vg_item, dss_volume_t *
     return CM_SUCCESS;
 }
 
-status_t dss_printf_block_with_blockid_from_disk(dss_vg_info_item_t *vg_item, uint64 block_id, uint64 node_id, int64 offset)
+status_t dss_printf_block_with_blockid_from_disk(
+    dss_vg_info_item_t *vg_item, uint64 block_id, uint64 node_id, int64 offset)
 {
     dss_volume_t volume;
     dss_core_ctrl_t *core_ctrl = (dss_core_ctrl_t *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_CORE_CTRL_SIZE);
@@ -946,10 +955,11 @@ status_t dss_printf_block_with_blockid_from_disk(dss_vg_info_item_t *vg_item, ui
     dss_close_volume(&volume);
     DSS_FREE_POINT(core_ctrl);
     DSS_FREE_POINT(volume_ctrl);
-    return status;  
+    return status;
 }
 
-status_t dss_printf_block_with_blockid_from_memory(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 block_id, uint64 node_id)
+status_t dss_printf_block_with_blockid_from_memory(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 block_id, uint64 node_id)
 {
     dss_block_id_t *real_block_id = (dss_block_id_t *)&block_id;
     char *block = dss_find_block_in_shm_no_refresh(session, vg_item, *real_block_id, NULL);
@@ -964,7 +974,7 @@ status_t dss_printf_block_with_blockid_from_memory(dss_session_t *session, dss_v
     } else if (block_head->type == DSS_BLOCK_TYPE_FS) {
         status = dss_print_fsb_by_id(block, node_id);
     } else if (block_head->type == DSS_BLOCK_TYPE_FS_AUX) {
-        status = dss_printf_fs_aux(block);
+        status = dss_print_fs_aux(block);
     } else {
         DSS_PRINT_ERROR("Invalid block type %u, block id is %llu.\n", block_head->type, block_id);
         return CM_ERROR;
@@ -972,7 +982,8 @@ status_t dss_printf_block_with_blockid_from_memory(dss_session_t *session, dss_v
     return status;
 }
 
-status_t dss_printf_block_with_blockid(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 block_id, uint64 node_id)
+status_t dss_printf_block_with_blockid(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 block_id, uint64 node_id)
 {
     status_t status;
     int64 offset = (int64)OFFSET_OF(dss_ctrl_t, volume);
@@ -988,7 +999,7 @@ status_t dss_printf_block_with_blockid(dss_session_t *session, dss_vg_info_item_
     return status;
 }
 
-gft_node_t* dss_find_gft_node_by_fid_in_bucket_inner(dss_ft_block_t *block, uint64 fid)
+gft_node_t *dss_find_gft_node_by_fid_in_bucket_inner(dss_ft_block_t *block, uint64 fid)
 {
     gft_node_t *node = NULL;
     for (uint32 j = 0; j < block->node_num; j++) {
@@ -1000,7 +1011,8 @@ gft_node_t* dss_find_gft_node_by_fid_in_bucket_inner(dss_ft_block_t *block, uint
     return NULL;
 }
 
-gft_node_t* dss_find_gft_node_by_fid_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_item, shm_hashmap_bucket_t *bucket, uint64 fid)
+gft_node_t *dss_find_gft_node_by_fid_in_bucket(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, shm_hashmap_bucket_t *bucket, uint64 fid)
 {
     char *addr = NULL;
     dss_block_ctrl_t *block_ctrl = NULL;
@@ -1013,17 +1025,15 @@ gft_node_t* dss_find_gft_node_by_fid_in_bucket(dss_session_t *session, dss_vg_in
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     while (has_next) {
-        addr = ga_object_addr(next_id.pool_id, next_id.obj_id);   
+        addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
         block_head = DSS_GET_COMMON_BLOCK_HEAD(addr);
+        block_ctrl = dss_buffer_cache_get_block_ctrl(block_head->type, addr);
         if (block_head->type == DSS_BLOCK_TYPE_FT) {
             block = (dss_ft_block_t *)addr;
-            block_ctrl = (dss_block_ctrl_t *)(addr + DSS_BLOCK_SIZE); 
-            node = dss_find_gft_node_by_fid_in_bucket_inner(block, fid);      
+            node = dss_find_gft_node_by_fid_in_bucket_inner(block, fid);
             if (node != NULL) {
                 break;
             }
-        } else {
-            block_ctrl = (dss_block_ctrl_t *)(addr + DSS_FILE_SPACE_BLOCK_SIZE);
         }
         has_next = block_ctrl->has_next;
         next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
@@ -1034,7 +1044,7 @@ gft_node_t* dss_find_gft_node_by_fid_in_bucket(dss_session_t *session, dss_vg_in
     return node;
 }
 
-gft_node_t* dss_get_gft_node_by_fid(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 fid)
+gft_node_t *dss_get_gft_node_by_fid(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 fid)
 {
     shm_hashmap_t *map = vg_item->buffer_cache;
     shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
@@ -1068,7 +1078,8 @@ status_t dss_print_gft_node_by_path(dss_session_t *session, dss_vg_info_item_t *
     return CM_SUCCESS;
 }
 
-status_t dss_print_gft_node_by_ftid_and_fid(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_show_param_t *show_param)
+status_t dss_print_gft_node_by_ftid_and_fid(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_show_param_t *show_param)
 {
     if (show_param->ftid == 0) {
         show_param->node = dss_get_gft_node_by_fid(session, vg_item, show_param->fid);
@@ -1084,7 +1095,8 @@ status_t dss_print_gft_node_by_ftid_and_fid(dss_session_t *session, dss_vg_info_
             return CM_ERROR;
         }
         if (show_param->node->fid != show_param->fid) {
-            DSS_PRINT_ERROR("Failed to find ft node by id, expect is %llu, actural is %llu.\n", show_param->fid, show_param->node->fid);
+            DSS_PRINT_ERROR("Failed to find ft node by id, expect is %llu, actural is %llu.\n", show_param->fid,
+                show_param->node->fid);
             return CM_ERROR;
         }
     }

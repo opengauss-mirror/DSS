@@ -1700,8 +1700,8 @@ void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_msg_t *msg)
         refresh_ft_req->vg_name);
     if (dss_refresh_ft_block(session, refresh_ft_req->vg_name, refresh_ft_req->vgid, refresh_ft_req->blockid) !=
         CM_SUCCESS) {
-        LOG_RUN_ERR("Refresh ft by primary from remote node:%u, blockid:%llu, vgid:%u, vg_name:%s refresh fail.",
-            (uint32)(req_head->src_inst), DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid,
+        LOG_RUN_ERR("Refresh ft by primary from remote node:%u, blockid:%s, vgid:%u, vg_name:%s refresh fail.",
+            (uint32)(req_head->src_inst), dss_display_metaid(refresh_ft_req->blockid), refresh_ft_req->vgid,
             refresh_ft_req->vg_name);
         dss_proc_remote_req_err(session, &refresh_ft_req->dss_head, DSS_CMD_ACK_REFRESH_FT, CM_ERROR);
         return;
@@ -1717,8 +1717,9 @@ void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_msg_t *msg)
     ack.ack_head.result = CM_SUCCESS;
     int send_ret = mes_send_response(dst_inst, ack.ack_head.flags, ruid, (char *)&ack, ack.ack_head.size);
     if (send_ret != CM_SUCCESS) {
-        LOG_RUN_ERR("Refresh ft by primary from remote node:%u, blockid:%llu, vgid:%u, vg_name:%s send ack fail.",
-            (uint32)dst_inst, DSS_ID_TO_U64(refresh_ft_req->blockid), refresh_ft_req->vgid, refresh_ft_req->vg_name);
+        LOG_RUN_ERR("Refresh ft by primary from remote node:%u, blockid:%s, vgid:%u, vg_name:%s send ack fail.",
+            (uint32)dst_inst, dss_display_metaid(refresh_ft_req->blockid), refresh_ft_req->vgid,
+            refresh_ft_req->vg_name);
         return;
     }
 
