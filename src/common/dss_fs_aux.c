@@ -119,8 +119,8 @@ void dss_check_fs_aux_parent(dss_fs_aux_header_t *block, ftid_t id)
 {
     bool8 is_invalid =
         (!dss_cmp_blockid(block->ftid, DSS_ID_TO_U64(id)) && !dss_cmp_blockid(block->ftid, DSS_INVALID_64));
-    DSS_ASSERT_LOG(!is_invalid, "[FS AUX][CHECK]Error ftid, fs aux id:%s, ftid:%s, expect ftid:%s",
-        dss_display_metaid(block->common.id), dss_display_metaid(block->ftid), dss_display_metaid(id));
+    DSS_ASSERT_LOG(!is_invalid, "[FS AUX][CHECK]Error ftid, fs aux id:%llu, ftid:%llu, expect ftid:%llu",
+        DSS_ID_TO_U64(block->common.id), DSS_ID_TO_U64(block->ftid), DSS_ID_TO_U64(id));
     dss_check_fs_aux_flags(block, DSS_BLOCK_FLAG_USED);
 }
 
@@ -135,8 +135,8 @@ void dss_check_fs_aux_affiliation(dss_fs_aux_header_t *block, ftid_t id, uint16_
 void dss_check_fs_aux_free(dss_fs_aux_header_t *block)
 {
     bool8 is_invalid = (!dss_cmp_auid(block->ftid, DSS_BLOCK_ID_INIT) && !dss_cmp_auid(block->ftid, DSS_INVALID_64));
-    DSS_ASSERT_LOG(!is_invalid, "[FS AUX][CHECK] Error ftid, fs aux id:%s, ftid:%s",
-        dss_display_metaid(block->common.id), dss_display_metaid(block->ftid));
+    DSS_ASSERT_LOG(!is_invalid, "[FS AUX][CHECK] Error ftid, fs aux id:%llu, ftid:%llu",
+        DSS_ID_TO_U64(block->common.id), DSS_ID_TO_U64(block->ftid));
     is_invalid = (block->index != DSS_FS_INDEX_INIT && block->index != DSS_INVALID_ID16);
     DSS_ASSERT_LOG(!is_invalid, "[FS AUX][CHECK] Error index, fs aux id:%s, index:%u",
         dss_display_metaid(block->common.id), block->index);
@@ -185,9 +185,9 @@ void dss_format_fs_aux_inner(dss_ctrl_t *dss_ctrl, dss_fs_aux_t *fs_aux, uint32_
         fs_aux_root->free.last = fs_aux_root->free.first;
     }
 
-    LOG_DEBUG_INF("[FS AUX]Init bitmap block, free count:%llu, old first:%s, new first:%s, first next:%s.",
-        fs_aux_root->free.count, dss_display_metaid(first), dss_display_metaid(fs_aux_root->free.first),
-        dss_display_metaid(fs_aux->head.next));
+    LOG_DEBUG_INF("[FS AUX]Init bitmap block, free count:%llu, old first:%llu, new first:%llu, first next:%llu.",
+        fs_aux_root->free.count, DSS_ID_TO_U64(first), DSS_ID_TO_U64(fs_aux_root->free.first),
+        DSS_ID_TO_U64(fs_aux->head.next));
 }
 
 status_t dss_format_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_t auid)
@@ -264,8 +264,8 @@ status_t dss_alloc_fs_aux_inner(dss_session_t *session, dss_vg_info_item_t *vg_i
     redo.root = *root;
     dss_put_log(session, vg_item, DSS_RT_ALLOC_FS_AUX, &redo, sizeof(redo));
 
-    LOG_DEBUG_INF("[FS AUX]Alloc fs aux, id:%s, free count:%llu, new free first:%s.", dss_display_metaid(block_id),
-        root->free.count, dss_display_metaid(root->free.first));
+    LOG_DEBUG_INF("[FS AUX]Alloc fs aux, id:%llu, free count:%llu, new free first:%llu.", DSS_ID_TO_U64(block_id),
+        root->free.count, DSS_ID_TO_U64(root->free.first));
     return CM_SUCCESS;
 }
 
@@ -338,8 +338,8 @@ void dss_free_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_fs
     redo.root = *root;
     dss_put_log(session, vg_item, DSS_RT_FREE_FS_AUX, &redo, sizeof(redo));
 
-    LOG_DEBUG_INF("[FS AUX]Free fs aux, id:%s, next:%s, count:%llu for fs aux root.",
-        dss_display_metaid(fs_aux->head.common.id), dss_display_metaid(fs_aux->head.next), root->free.count);
+    LOG_DEBUG_INF("[FS AUX]Free fs aux, id:%llu, next:%llu, count:%llu for fs aux root.",
+        DSS_ID_TO_U64(fs_aux->head.common.id), DSS_ID_TO_U64(fs_aux->head.next), root->free.count);
 }
 
 void dss_init_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_fs_aux_t *block, dss_block_id_t data_id,
@@ -353,8 +353,7 @@ void dss_init_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_fs
     redo.ftid = ftid;
     dss_put_log(session, vg_item, DSS_RT_INIT_FS_AUX, &redo, sizeof(redo));
 
-    LOG_DEBUG_INF(
-        "Init fs aux, fs aux id:%s, data_id:%s.", dss_display_metaid(redo.id), dss_display_metaid(redo.data_id));
+    LOG_DEBUG_INF("Init fs aux, fs aux id:%llu, data_id:%llu.", DSS_ID_TO_U64(redo.id), DSS_ID_TO_U64(redo.data_id));
 }
 
 static bool32 dss_updt_fs_aux_bitmap_value(bool32 is_set, uint8 bit_beg, uint8 bit_end, uint8 *value)
@@ -483,9 +482,8 @@ static status_t dss_updt_one_fs_aux_base(dss_session_t *session, dss_vg_info_ite
     DSS_RETURN_IF_FALSE2(
         (fs_aux != NULL), LOG_RUN_ERR("[FS AUX]Failed to find fs aux block:%s.", dss_display_metaid(auid)));
 
-    LOG_DEBUG_INF("[FS AUX]Try updt fs aux, fid:%llu, ftid:%s, offset:%lld, size:%lld, fs aux id:%s, data_id:%s.",
-        node->fid, dss_display_metaid(node->id), offset, size, dss_display_metaid(auid),
-        dss_display_metaid(fs_aux->head.data_id));
+    LOG_DEBUG_INF("[FS AUX]Try updt fs aux, fid:%llu, ftid:%llu, offset:%lld, size:%lld, fs aux id:%llu, data_id:%llu.",
+        node->fid, DSS_ID_TO_U64(node->id), offset, size, DSS_ID_TO_U64(auid), DSS_ID_TO_U64(fs_aux->head.data_id));
 
     if (!DSS_BLOCK_ID_IS_INITED(fs_aux->head.data_id)) {
         bool32 has_changed = CM_FALSE;
@@ -504,9 +502,8 @@ static status_t dss_updt_one_fs_aux_base(dss_session_t *session, dss_vg_info_ite
             dss_add_syn_meta(vg_item, fs_aux_block_ctrl);
         }
     }
-    LOG_DEBUG_INF("[FS AUX]End updt fs aux, fid:%llu, ftid:%s, offset:%lld, size:%lld, fs aux id:%s, data_id:%s.",
-        node->fid, dss_display_metaid(node->id), offset, size, dss_display_metaid(auid),
-        dss_display_metaid(fs_aux->head.data_id));
+    LOG_DEBUG_INF("[FS AUX]End updt fs aux, fid:%llu, ftid:%llu, offset:%lld, size:%lld, fs aux id:%llu, data_id:%llu.",
+        node->fid, DSS_ID_TO_U64(node->id), offset, size, DSS_ID_TO_U64(auid), DSS_ID_TO_U64(fs_aux->head.data_id));
 
     return CM_SUCCESS;
 }
@@ -717,16 +714,17 @@ dss_fs_aux_t *dss_find_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_ite
 
     if (!dss_is_fs_aux_valid_all(node, fs_aux, index)) {
         LOG_DEBUG_INF(
-            "block:%s fid:%llu, file ver:%llu is not same as node:%s, fid:%llu, file ver:%llu by session id:%u",
-            dss_display_metaid(block_id), dss_get_fs_aux_fid(fs_aux), dss_get_fs_aux_file_ver(fs_aux),
-            dss_display_metaid(node->id), node->fid, node->file_ver, session->id);
+            "block:%llu fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu by session id:%u",
+            DSS_ID_TO_U64(block_id), dss_get_fs_aux_fid(fs_aux), dss_get_fs_aux_file_ver(fs_aux),
+            DSS_ID_TO_U64(node->id), node->fid, node->file_ver, session->id);
         if (!dss_is_server()) {
             return NULL;
         }
         dss_updt_fs_aux_file_ver(node, fs_aux);
-        LOG_DEBUG_INF("block:%s fid:%llu, file ver:%llu setted with node:%s, fid:%llu, file ver:%llu by session id:%u",
-            dss_display_metaid(block_id), dss_get_fs_aux_fid(fs_aux), dss_get_fs_aux_file_ver(fs_aux),
-            dss_display_metaid(node->id), node->fid, node->file_ver, session->id);
+        LOG_DEBUG_INF(
+            "block:%llu fid:%llu, file ver:%llu setted with node:%llu, fid:%llu, file ver:%llu by session id:%u",
+            DSS_ID_TO_U64(block_id), dss_get_fs_aux_fid(fs_aux), dss_get_fs_aux_file_ver(fs_aux),
+            DSS_ID_TO_U64(node->id), node->fid, node->file_ver, session->id);
     }
     return fs_aux;
 }

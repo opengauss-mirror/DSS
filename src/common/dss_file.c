@@ -565,8 +565,8 @@ void dss_check_ft_block_flags(dss_ft_block_t *block, dss_block_flag_e flags)
 void dss_check_ft_node_free(gft_node_t *node)
 {
     bool8 is_invalid = (!dss_cmp_auid(node->parent, DSS_BLOCK_ID_INIT) && !dss_cmp_auid(node->parent, DSS_INVALID_64));
-    DSS_ASSERT_LOG(!is_invalid, "[FT][CHECK] Error parent, node id:%s, parent:%s", dss_display_metaid(node->id),
-        dss_display_metaid(node->parent));
+    DSS_ASSERT_LOG(!is_invalid, "[FT][CHECK] Error parent, node id:%llu, parent:%llu", DSS_ID_TO_U64(node->id),
+        DSS_ID_TO_U64(node->parent));
     dss_ft_block_t *block = dss_get_ft_by_node(node);
     dss_check_ft_block_flags(block, DSS_BLOCK_FLAG_FREE);
 }
@@ -574,8 +574,8 @@ void dss_check_ft_node_free(gft_node_t *node)
 void dss_check_ft_node_parent(gft_node_t *node, ftid_t parent_id)
 {
     bool8 is_invalid = (!compare_auid(node->parent, parent_id) && !dss_cmp_auid(node->parent, DSS_INVALID_64));
-    DSS_ASSERT_LOG(!is_invalid, "[FT][CHECK] Error parent, node id:%s, parent:%s", dss_display_metaid(node->id),
-        dss_display_metaid(node->parent));
+    DSS_ASSERT_LOG(!is_invalid, "[FT][CHECK] Error parent, node id:%llu, parent:%llu", DSS_ID_TO_U64(node->id),
+        DSS_ID_TO_U64(node->parent));
     dss_ft_block_t *block = dss_get_ft_by_node(node);
     dss_check_ft_block_flags(block, DSS_BLOCK_FLAG_USED);
 }
@@ -890,8 +890,8 @@ void dss_check_fs_block_flags(dss_fs_block_header *block, dss_block_flag_e flags
 void dss_check_fs_block_free(dss_fs_block_header *block)
 {
     bool8 is_invalid = (!dss_cmp_auid(block->ftid, DSS_BLOCK_ID_INIT) && !dss_cmp_auid(block->ftid, DSS_INVALID_64));
-    DSS_ASSERT_LOG(!is_invalid, "[FS][CHECK] Error ftid, fs block id:%s, ftid:%s", dss_display_metaid(block->common.id),
-        dss_display_metaid(block->ftid));
+    DSS_ASSERT_LOG(!is_invalid, "[FS][CHECK] Error ftid, fs block id:%llu, ftid:%llu", DSS_ID_TO_U64(block->common.id),
+        DSS_ID_TO_U64(block->ftid));
     is_invalid = (block->index != DSS_FS_INDEX_INIT && block->index != DSS_INVALID_ID16);
     DSS_ASSERT_LOG(!is_invalid, "[FS][CHECK] Error index, fs block id:%s, index:%u",
         dss_display_metaid(block->common.id), block->index);
@@ -2323,13 +2323,13 @@ gft_node_t *dss_get_ft_node_by_ftid(
             return node;
         }
 
-        LOG_DEBUG_INF("block:%s fid:%llu, file ver:%llu is not same as node:%s, fid:%llu, file ver:%llu",
-            dss_display_metaid(block_id), dss_get_ft_block_fid(ft_block), dss_get_ft_block_file_ver(ft_block),
-            dss_display_metaid(node->id), node->fid, node->file_ver);
+        LOG_DEBUG_INF("block:%llu fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu",
+            DSS_ID_TO_U64(block_id), dss_get_ft_block_fid(ft_block), dss_get_ft_block_file_ver(ft_block),
+            DSS_ID_TO_U64(node->id), node->fid, node->file_ver);
         dss_set_ft_block_file_ver(node, ft_block);
-        LOG_DEBUG_INF("block:%s fid:%llu, file ver:%llu setted with node:%s, fid:%llu, file ver:%llu",
-            dss_display_metaid(block_id), dss_get_ft_block_fid(ft_block), dss_get_ft_block_file_ver(ft_block),
-            dss_display_metaid(node->id), node->fid, node->file_ver);
+        LOG_DEBUG_INF("block:%llu fid:%llu, file ver:%llu setted with node:%llu, fid:%llu, file ver:%llu",
+            DSS_ID_TO_U64(block_id), dss_get_ft_block_fid(ft_block), dss_get_ft_block_file_ver(ft_block),
+            DSS_ID_TO_U64(node->id), node->fid, node->file_ver);
         return node;
     }
     return NULL;
@@ -2638,8 +2638,8 @@ static status_t dss_get_second_block(
 void dss_check_fs_block_parent(dss_fs_block_header *block, ftid_t id)
 {
     bool8 is_invalid = (!dss_cmp_auid(block->ftid, DSS_ID_TO_U64(id)) && !dss_cmp_auid(block->ftid, DSS_INVALID_64));
-    DSS_ASSERT_LOG(!is_invalid, "[FS][CHECK] Error ftid, fs id:%s , ftid:%s, expect ftid:%s",
-        dss_display_metaid(block->common.id), dss_display_metaid(block->ftid), dss_display_metaid(id));
+    DSS_ASSERT_LOG(!is_invalid, "[FS][CHECK] Error ftid, fs id:%llu , ftid:%llu, expect ftid:%llu",
+        DSS_ID_TO_U64(block->common.id), DSS_ID_TO_U64(block->ftid), DSS_ID_TO_U64(id));
     dss_check_fs_block_flags(block, DSS_BLOCK_FLAG_USED);
 }
 
@@ -3727,8 +3727,8 @@ bool32 dss_try_revalidate_file(dss_session_t *session, dss_vg_info_item_t *vg_it
         dss_lock_vg_mem_and_shm_x(session, vg_item);
         dss_set_is_refresh_ftid(node, CM_FALSE);
         if (status != CM_SUCCESS) {
-            LOG_RUN_ERR("Fail to apply refresh file:%s, curr size:%llu, ftid:%s, entry id:%s by session id:%u.",
-                node->name, node->size, dss_display_metaid(node->id), dss_display_metaid(node->entry), session->id);
+            LOG_RUN_ERR("Fail to apply refresh file:%s, curr size:%llu, ftid:%llu, entry id:%llu by session id:%u.",
+                node->name, node->size, DSS_ID_TO_U64(node->id), DSS_ID_TO_U64(node->entry), session->id);
             cm_reset_error();
             return CM_TRUE;
         }
@@ -3748,17 +3748,18 @@ dss_fs_block_t *dss_find_fs_block(dss_session_t *session, dss_vg_info_item_t *vg
 
     if (!dss_is_fs_block_valid_all(node, fs_block, index)) {
         LOG_DEBUG_INF(
-            "block:%s fid:%llu, file ver:%llu is not same as node:%s, fid:%llu, file ver:%llu by session id:%u",
-            dss_display_metaid(block_id), dss_get_fs_block_fid(fs_block), dss_get_fs_block_file_ver(fs_block),
-            dss_display_metaid(node->id), node->fid, node->file_ver, session->id);
+            "block:%llu fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu by session id:%u",
+            DSS_ID_TO_U64(block_id), dss_get_fs_block_fid(fs_block), dss_get_fs_block_file_ver(fs_block),
+            DSS_ID_TO_U64(node->id), node->fid, node->file_ver, session->id);
         if (!dss_is_server()) {
             return NULL;
         }
 
         dss_set_fs_block_file_ver(node, fs_block);
-        LOG_DEBUG_INF("block:%s fid:%llu, file ver:%llu setted with node:%s, fid:%llu, file ver:%llu by session id:%u",
-            dss_display_metaid(block_id), dss_get_fs_block_fid(fs_block), dss_get_fs_block_file_ver(fs_block),
-            dss_display_metaid(node->id), node->fid, node->file_ver, session->id);
+        LOG_DEBUG_INF(
+            "block:%llu fid:%llu, file ver:%llu setted with node:%llu, fid:%llu, file ver:%llu by session id:%u",
+            DSS_ID_TO_U64(block_id), dss_get_fs_block_fid(fs_block), dss_get_fs_block_file_ver(fs_block),
+            DSS_ID_TO_U64(node->id), node->fid, node->file_ver, session->id);
     }
     return fs_block;
 }
