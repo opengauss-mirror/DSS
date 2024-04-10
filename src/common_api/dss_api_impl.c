@@ -2201,12 +2201,10 @@ status_t dss_init(uint32 max_open_files, char *home)
     if (share_vg_info == NULL) {
         return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "Failed to attach shared vg info", CM_ERROR);
     }
-
     status_t status = dss_get_vg_info(share_vg_info, NULL);
     if (status != CM_SUCCESS) {
         return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "Failed to get shared vg info", status);
     }
-
     dss_env->session = (dss_session_t *)ga_object_addr(GA_SESSION_POOL, 0);
     if (dss_env->session == NULL) {
         return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "Failed to attach shared session info", CM_ERROR);

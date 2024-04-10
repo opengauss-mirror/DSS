@@ -274,75 +274,6 @@ bool32 dss_config_cm()
     }
     return CM_TRUE;
 }
-/*
-    1、NO CM:every node can do readwrite
-    2、CM:get cm lock to be master
-    3、ENABLE_DSSTEST: for test, select min id as master
-*/
-status_t dss_recover_no_cm(dss_instance_t *inst)
-{
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    uint32 curr_id = (uint32)inst_cfg->params.inst_id;
-    status_t ret;
-    if (inst_cfg->params.inst_cnt <= 1) {
-        dss_set_master_id(curr_id);
-        dss_set_server_status_flag(DSS_STATUS_READWRITE);
-        LOG_RUN_INF("inst %u set status flag %u when server start.", curr_id, DSS_STATUS_READWRITE);
-        ret = dss_recover_from_instance(inst);
-        if (ret == CM_SUCCESS) {
-            // when no cm, set in cluster
-            g_dss_instance.is_join_cluster = CM_TRUE;
-            inst->status = DSS_STATUS_OPEN;
-        }
-        return ret;
-    }
-#ifdef ENABLE_DSSTEST
-    if (!dss_config_cm()) {
-        uint32 master_id = 0;
-        uint32 i;
-        for (i = 0; i < DSS_MAX_INSTANCES; i++) {
-            if (inst_cfg->params.ports[i] != 0) {
-                master_id = i;
-                break;
-            }
-        }
-        dss_set_master_id(master_id);
-        LOG_RUN_INF("Set min id %u as master id.", i);
-        if (master_id == curr_id) {
-            dss_set_server_status_flag(DSS_STATUS_READWRITE);
-            ret = dss_recover_from_instance(inst);
-            if (ret != CM_SUCCESS) {
-                LOG_RUN_ERR("[DSS] ABORT INFO: Fail to change status open without cm, exit.");
-                cm_fync_logfile();
-                _exit(1);
-            }
-            // when no cm, set in cluster
-            g_dss_instance.is_join_cluster = CM_TRUE;
-            inst->status = DSS_STATUS_OPEN;
-        } else {
-            dss_set_server_status_flag(DSS_STATUS_READONLY);
-            // when no cm, set in cluster
-            g_dss_instance.is_join_cluster = CM_TRUE;
-            inst->status = DSS_STATUS_OPEN;
-        }
-        return CM_SUCCESS;
-    }
-#else
-    if (inst->is_maintain) {
-        dss_set_master_id(curr_id);
-        dss_set_server_status_flag(DSS_STATUS_READWRITE);
-        LOG_RUN_INF("inst %u set status flag %u when server start.", curr_id, DSS_STATUS_READWRITE);
-        ret = dss_recover_from_instance(inst);
-        if (ret == CM_SUCCESS) {
-            // when no cm, set in cluster
-            g_dss_instance.is_join_cluster = CM_TRUE;
-            inst->status = DSS_STATUS_OPEN;
-        }
-        return ret;
-    }
-#endif
-    return CM_SUCCESS;
-}
 
 /*
    1、when create first vg, init global log buffer;
@@ -350,11 +281,7 @@ status_t dss_recover_no_cm(dss_instance_t *inst)
 */
 status_t dss_get_instance_log_buf(dss_instance_t *inst)
 {
-    status_t ret = dss_alloc_instance_log_buf(inst);
-    if (ret != CM_SUCCESS) {
-        return ret;
-    }
-    return dss_recover_no_cm(inst);
+    return dss_alloc_instance_log_buf(inst);
 }
 
 static status_t dss_init_inst_handle_session(dss_instance_t *inst)
@@ -366,19 +293,16 @@ static status_t dss_init_inst_handle_session(dss_instance_t *inst)
 
 static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
 {
+    errno_t errcode = memset_s(&g_dss_kernel_instance, sizeof(g_dss_kernel_instance), 0, sizeof(g_dss_kernel_instance));
+    securec_check_ret(errcode);
+    inst->kernel_instance = &g_dss_kernel_instance;
     g_dss_share_vg_info = (dss_share_vg_info_t *)ga_object_addr(GA_INSTANCE_POOL, objectid);
     if (g_dss_share_vg_info == NULL) {
         DSS_RETURN_IFERR2(
             CM_ERROR, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to get instance object address!"));
     }
-
     status_t status = dss_get_vg_info(g_dss_share_vg_info, NULL);
-    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to get vg info"));
-    errno_t errcode = memset_s(&g_dss_kernel_instance, sizeof(g_dss_kernel_instance), 0, sizeof(g_dss_kernel_instance));
-    securec_check_ret(errcode);
-    inst->kernel_instance = &g_dss_kernel_instance;
-    status = dss_get_instance_log_buf(inst);
-    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to get log buf"));
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to get vg info."));
     uint32 sess_cnt = inst->inst_cfg.params.cfg_session_num + inst->inst_cfg.params.work_thread_cnt +
                       inst->inst_cfg.params.channel_num;
     status = dss_init_session(sess_cnt);
@@ -387,6 +311,8 @@ static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to initialize thread."));
     status = dss_startup_mes();
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to startup mes"));
+    status = dss_get_instance_log_buf(inst);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to get log buf"));
     status = dss_start_lsnr(inst);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to start lsnr!"));
     status = dss_create_reactors();
@@ -720,12 +646,16 @@ status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 // get cm lock owner, if no owner, try to become.master_id can not be DSS_INVALID_ID32.
 uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try_lock)
 {
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    if (inst->is_maintain || inst->inst_cfg.params.inst_cnt <= 1) {
+        *grab_lock = CM_TRUE;
+        return (uint32)inst_cfg->params.inst_id;
+    }
     dss_cm_res *cm_res = &inst->cm_res;
     uint32 master_id = DSS_INVALID_ID32;
     status_t ret = CM_SUCCESS;
     date_t time_start = g_timer()->now;
     date_t time_now = 0;
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 max_time = inst_cfg->params.master_lock_timeout;
     while (CM_TRUE) {
         time_now = g_timer()->now;
@@ -776,7 +706,7 @@ bool32 dss_check_whether_recovery(dss_instance_t *inst, uint32 curr_id)
     return CM_TRUE;
 }
 
-void dss_recovery_when_get_lock(dss_instance_t *inst, uint32 curr_id, bool32 grab_lock)
+void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab_lock)
 {
     bool32 first_start = CM_FALSE;
     if (!grab_lock) {
@@ -792,6 +722,14 @@ void dss_recovery_when_get_lock(dss_instance_t *inst, uint32 curr_id, bool32 gra
         LOG_RUN_INF("master_id is %u when get cm lock to do recovery.", curr_id);
     }
     dss_set_master_id(curr_id);
+    if (inst->status == DSS_STATUS_PREPARE) {
+        status_t status = dss_load_vg_info_and_recover(CM_TRUE);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("[DSS] ABORT INFO: Failed to get vg info when instance start.");
+            cm_fync_logfile();
+            _exit(1);
+        }
+    }
     if (!first_start) {
         dss_wait_session_pause(inst);
     }
@@ -825,15 +763,33 @@ void dss_recovery_when_get_lock(dss_instance_t *inst, uint32 curr_id, bool32 gra
     g_dss_instance.is_join_cluster = CM_TRUE;
     inst->status = DSS_STATUS_OPEN;
 }
+
+void dss_recovery_when_standby(dss_instance_t *inst, uint32 curr_id, uint32 master_id)
+{
+    uint32 old_master_id = dss_get_master_id();
+    if (old_master_id != master_id) {
+        dss_set_master_id(master_id);
+        dss_set_server_status_flag(DSS_STATUS_READONLY);
+        LOG_RUN_INF("inst %u set status flag %u when not get cm lock.", curr_id, DSS_STATUS_READONLY);
+    }
+    if (!dss_check_join_cluster()) {
+        return;
+    }
+    if (inst->status == DSS_STATUS_PREPARE) {
+        status_t status = dss_load_vg_info_and_recover(CM_FALSE);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("[DSS] Just try again to load dss ctrl.");
+            return;
+        }
+    }
+    inst->status = DSS_STATUS_OPEN;
+}
 /*
     1、old_master_id == master_id, just return;
     2、old_master_id ！= master_id, just indicates that the master has been reselected.so to juge whether recover.
 */
 void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
 {
-    if (!inst->cm_res.is_valid) {
-        return;
-    }
     cm_latch_x(&g_dss_instance.switch_latch, DSS_DEFAULT_SESSIONID, LATCH_STAT(LATCH_SWITCH));
     uint32 old_master_id = dss_get_master_id();
     bool32 grab_lock = CM_FALSE;
@@ -851,40 +807,31 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
             cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
             return;
         }
-        // before set open, join to cluster
-        if (!dss_check_join_cluster()) {
-            cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-            return;
-        }
-        inst->status = DSS_STATUS_OPEN;
     }
     // standby is started or masterid has been changed
     if (master_id != curr_id) {
-        dss_set_master_id(master_id);
-        dss_set_server_status_flag(DSS_STATUS_READONLY);
-        LOG_RUN_INF("inst %u set status flag %u when not get cm lock.", curr_id, DSS_STATUS_READONLY);
-        // before set open, join to cluster
-        if (!dss_check_join_cluster()) {
-            cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-            return;
-        }
-        inst->status = DSS_STATUS_OPEN;
+        dss_recovery_when_standby(inst, curr_id, master_id);
         cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
         return;
     }
     /*1、grab lock success 2、set main,other switch lock 3、restart, lock no transfer*/
-    dss_recovery_when_get_lock(inst, curr_id, grab_lock);
+    dss_recovery_when_primary(inst, curr_id, grab_lock);
     cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
 }
 
 #define DSS_RECOVERY_INTERVAL 500
+#define DSS_SHORT_RECOVERY_INTERVAL 100
 void dss_get_cm_lock_and_recover(thread_t *thread)
 {
     cm_set_thread_name("recovery");
     while (!thread->closed) {
         dss_instance_t *inst = (dss_instance_t *)thread->argument;
         dss_get_cm_lock_and_recover_inner(inst);
-        cm_sleep(DSS_RECOVERY_INTERVAL);
+        if (inst->status == DSS_STATUS_PREPARE) {
+            cm_sleep(DSS_SHORT_RECOVERY_INTERVAL);
+        } else {
+            cm_sleep(DSS_RECOVERY_INTERVAL);
+        }
     }
 }
 

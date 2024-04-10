@@ -53,11 +53,12 @@ typedef enum en_dss_mes_command {
 #define DSS_MES_TRY_TIMES 100
 #define DSS_BROADCAST_WAIT_INFINITE (0xFFFFFFFF)
 #define DSS_IS_INST_SEND(bits, id) (((bits) >> (id)) & 0x1)
-#define DSS_BUFFER_POOL_NUM (3)
+#define DSS_BUFFER_POOL_NUM (4)
 #define DSS_MSG_BUFFER_QUEUE_NUM (8)
 #define DSS_FIRST_BUFFER_LENGTH (128)
 #define DSS_SECOND_BUFFER_LENGTH (256)
 #define DSS_THIRD_BUFFER_LENGTH (SIZE_K(32) + 256)
+#define DSS_FOURTH_BUFFER_LENGTH (DSS_LOADDISK_BUFFER_SIZE + 256)
 #define DSS_CKPT_NOTIFY_TASK_RATIO (1.0f / 4)
 #define DSS_CLEAN_EDP_TASK_RATIO (1.0f / 4)
 #define DSS_TXN_INFO_TASK_RATIO (1.0f / 16)
@@ -147,7 +148,7 @@ typedef struct st_dss_notify_req_msg_ex {
     dss_message_head_t dss_head;
     dss_bcast_req_cmd_t type;
     uint32 data_size;
-    char data[DSS_LOADDISK_BUFFER_SIZE + DSS_BLOCK_SIZE];
+    char data[DSS_MAX_META_BLOCK_SIZE];
 } dss_notify_req_msg_ex_t;
 typedef struct st_dss_notify_ack_msg {
     dss_message_head_t dss_head;

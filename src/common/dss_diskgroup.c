@@ -223,9 +223,8 @@ dss_vg_info_item_t *dss_find_vg_item_by_id(uint32 vg_id)
     return &g_vgs_info->volume_group[vg_id];
 }
 
-status_t dss_load_ctrlinfo(uint32 index)
+status_t dss_load_ctrlinfo(dss_vg_info_item_t *vg_item)
 {
-    dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[index];
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     status_t status = dss_lock_vg_storage_w(vg_item, vg_item->entry_path, inst_cfg);
     if (status != CM_SUCCESS) {
@@ -308,32 +307,74 @@ void dss_destroy_vol_handle(dss_vg_info_item_t *vg_item, dss_vol_handles_t *vol_
     return;
 }
 
-static status_t dss_get_vg_info_core(uint32 i, dss_share_vg_info_t *share_vg_info)
+status_t dss_checksum_vg_ctrl_remote(dss_vg_info_item_t *vg_item)
+{
+    LOG_RUN_INF("Begin to checksum vg:%s ctrl loaded from remote.", vg_item->vg_name);
+    char *buf = vg_item->dss_ctrl->vg_data;
+    uint32 checksum = dss_get_checksum(buf, DSS_VG_DATA_SIZE);
+    uint32 old_checksum = vg_item->dss_ctrl->vg_info.checksum;
+    if (checksum != old_checksum) {
+        LOG_RUN_ERR("Failed to check checksum of vg data:%u,%u", checksum, old_checksum);
+        return CM_ERROR;
+    }
+    buf = vg_item->dss_ctrl->root;
+    checksum = dss_get_checksum(buf, DSS_BLOCK_SIZE);
+    dss_common_block_t *block = (dss_common_block_t *)buf;
+    old_checksum = block->checksum;
+    if (checksum != old_checksum) {
+        LOG_RUN_ERR("Failed to check checksum of vg root:%u,%u", checksum, old_checksum);
+        return CM_ERROR;
+    }
+    buf = vg_item->dss_ctrl->volume_data;
+    checksum = dss_get_checksum(buf, DSS_VOLUME_CTRL_SIZE);
+    old_checksum = vg_item->dss_ctrl->volume.checksum;
+    if (checksum != old_checksum) {
+        LOG_RUN_ERR("Failed to check checksum of vg volume:%u,%u", checksum, old_checksum);
+        return CM_ERROR;
+    }
+    LOG_RUN_INF("Succeed to checksum vg:%s ctrl loaded from remote.", vg_item->vg_name);
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_vg_info_and_recover_core(uint32 i, bool8 need_recovery)
 {
     int flags = DSS_INSTANCE_OPEN_FLAG;
-    g_vgs_info->volume_group[i].buffer_cache = &share_vg_info->vg[i].buffer_cache;
-    g_vgs_info->volume_group[i].dss_ctrl = &share_vg_info->vg[i].dss_ctrl;
-    g_vgs_info->volume_group[i].vg_latch = &share_vg_info->vg[i].vg_latch;
     status_t status = dss_load_vg_ctrl(&g_vgs_info->volume_group[i], DSS_TRUE);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("DSS instance failed to load vg:%s ctrl!", g_vgs_info->volume_group[i].vg_name);
         return status;
     }
-
-    status = dss_load_ctrlinfo(i);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("DSS instance failed to load dss ctrl of vg:%s!", g_vgs_info->volume_group[i].vg_name);
-        return status;
+    if (need_recovery) {
+        status = dss_load_ctrlinfo(&g_vgs_info->volume_group[i]);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("DSS instance failed to load dss ctrl of vg:%s!", g_vgs_info->volume_group[i].vg_name);
+            return status;
+        }
+        dss_checksum_vg_ctrl(&g_vgs_info->volume_group[i]);
+    } else {
+        status = dss_checksum_vg_ctrl_remote(&g_vgs_info->volume_group[i]);
+        if (status != CM_SUCCESS) {
+            return status;
+        }
     }
-
-    dss_checksum_vg_ctrl(&g_vgs_info->volume_group[i]);
-    cm_bilist_init(&g_vgs_info->volume_group[i].open_file_list);
-    cm_bilist_init(&g_vgs_info->volume_group[i].syn_meta_desc.bilist);
-
     status = dss_init_vol_handle(&g_vgs_info->volume_group[i], flags, NULL);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("DSS instance failed to init volume handle vg:%s!", g_vgs_info->volume_group[i].vg_name);
         return status;
+    }
+    LOG_RUN_INF("DSS succeed to load vgs, open volume count is %d, flag is 0x%x, 0x%x, is direct:0x%x.", 0,
+        DSS_INSTANCE_OPEN_FLAG, O_DIRECT, DSS_INSTANCE_OPEN_FLAG & O_DIRECT);
+    return CM_SUCCESS;
+}
+
+status_t dss_load_vg_info_and_recover(bool8 need_recovery)
+{
+    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+        status_t status = dss_load_vg_info_and_recover_core(i, need_recovery);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("DSS instance failed to load vg:%s!", g_vgs_info->volume_group[i].vg_name);
+            return status;
+        }
     }
     return CM_SUCCESS;
 }
@@ -347,16 +388,12 @@ void dss_free_shm_hashmap_memory(uint32 num)
 status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **info)
 {
     bool32 is_server = dss_is_server();
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    // initialize g_vgs_info
-    status_t status = dss_load_vg_conf_info(&g_vgs_info, inst_cfg);
-    DSS_RETURN_IF_ERROR(status);
-
+    status_t status = CM_SUCCESS;
     for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+        g_vgs_info->volume_group[i].buffer_cache = &share_vg_info->vg[i].buffer_cache;
+        g_vgs_info->volume_group[i].dss_ctrl = &share_vg_info->vg[i].dss_ctrl;
+        g_vgs_info->volume_group[i].vg_latch = &share_vg_info->vg[i].vg_latch;
         if (!is_server) {
-            g_vgs_info->volume_group[i].buffer_cache = &share_vg_info->vg[i].buffer_cache;
-            g_vgs_info->volume_group[i].dss_ctrl = &share_vg_info->vg[i].dss_ctrl;
-            g_vgs_info->volume_group[i].vg_latch = &share_vg_info->vg[i].vg_latch;
             continue;
         }
         g_vgs_info->volume_group[i].stack.buff = (char *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_MAX_STACK_BUF_SIZE);
@@ -376,19 +413,13 @@ status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **inf
             DSS_THROW_ERROR(ret);
             return CM_ERROR;
         }
-        status = dss_get_vg_info_core(i, share_vg_info);
-        if (status != CM_SUCCESS) {
-            DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
-            dss_free_shm_hashmap_memory(i);
-            dss_free_vg_info();
-            return status;
-        }
+        cm_bilist_init(&g_vgs_info->volume_group[i].open_file_list);
+        cm_bilist_init(&g_vgs_info->volume_group[i].syn_meta_desc.bilist);
     }
     if (info) {
         *info = g_vgs_info;
     }
-    LOG_RUN_INF("DSS succeed to load vgs, open volume count is %d, flag is 0x%x, 0x%x, is direct:0x%x.", 0,
-        DSS_INSTANCE_OPEN_FLAG, O_DIRECT, DSS_INSTANCE_OPEN_FLAG & O_DIRECT);
+    LOG_RUN_INF("DSS succeed to init vgs in memory.");
     return status;
 }
 
@@ -519,11 +550,9 @@ status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock)
         LOG_RUN_ERR("Failed to read volume %s.", vg_item->entry_path);
         return status;
     }
-
     if (is_lock) {
         dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
-    }
-
+    }    
     if (!DSS_VG_IS_VALID(vg_item->dss_ctrl)) {
         DSS_THROW_ERROR(ERR_DSS_VG_CHECK_NOT_INIT);
         LOG_RUN_ERR("Invalid vg %s ctrl", vg_item->vg_name);
@@ -1773,8 +1802,8 @@ status_t dss_read_volume_inst(
     CM_ASSERT(((uint64)buf) % DSS_DISK_UNIT_SIZE == 0);
 
     while (dss_need_load_remote(size) == CM_TRUE && status != CM_SUCCESS) {
-        if (g_dss_instance_status != NULL && *g_dss_instance_status < DSS_STATUS_OPEN) {
-            break;
+        if (size == (int32)sizeof(dss_ctrl_t)) {
+            LOG_RUN_INF("Try to load dssctrl from remote.");
         }
         status = remote_read_proc(vg_item->vg_name, volume, offset, buf, size);
         if (status != CM_SUCCESS) {
