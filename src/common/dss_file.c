@@ -574,8 +574,8 @@ void dss_check_ft_node_free(gft_node_t *node)
 void dss_check_ft_node_parent(gft_node_t *node, ftid_t parent_id)
 {
     bool8 is_invalid = (!compare_auid(node->parent, parent_id) && !dss_cmp_auid(node->parent, DSS_INVALID_64));
-    DSS_ASSERT_LOG(!is_invalid, "[FT][CHECK] Error parent, node id:%llu, parent:%llu", DSS_ID_TO_U64(node->id),
-        DSS_ID_TO_U64(node->parent));
+    DSS_ASSERT_LOG(!is_invalid, "[FT][CHECK] Error parent, node id:%llu, parent:%llu, expect parent:%llu",
+        DSS_ID_TO_U64(node->id), DSS_ID_TO_U64(node->parent), DSS_ID_TO_U64(parent_id));
     dss_ft_block_t *block = dss_get_ft_by_node(node);
     dss_check_ft_block_flags(block, DSS_BLOCK_FLAG_USED);
 }

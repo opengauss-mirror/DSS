@@ -188,6 +188,35 @@ static void cmd_parse_clean(dss_args_t *cmd_args_set, int set_size)
 
 // add uni-check function after here
 // ------------------------
+static status_t cmd_check_flag(const char *input_flag)
+{
+    uint64 flag;
+    status_t ret = cm_str2uint64(input_flag, &flag);
+    if (ret != CM_SUCCESS) {
+        DSS_PRINT_ERROR("The value of flag is invalid.\n");
+        return CM_ERROR;
+    }
+    if (flag != 0 && flag != DSS_FILE_FLAG_INNER_INITED) {
+        DSS_PRINT_ERROR("The value of flag must be 0 or 2147483648(means 0x80000000).\n");
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t cmd_check_length(const char *input_length)
+{
+    uint64 length;
+    status_t ret = cm_str2uint64(input_length, &length);
+    if (ret != CM_SUCCESS) {
+        DSS_PRINT_ERROR("The value of length is invalid.\n");
+        return CM_ERROR;
+    }
+    if ((int64)length < 0) {
+        DSS_PRINT_ERROR("The value of length mush not be a negative number.\n");
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
 
 static status_t cmd_check_zero_or_one(const char *zero_or_one_str)
 {
@@ -198,7 +227,7 @@ static status_t cmd_check_zero_or_one(const char *zero_or_one_str)
         return CM_ERROR;
     }
     if (zero_or_one != 0 && zero_or_one != 1) {
-        DSS_PRINT_ERROR("The value of zero_of one should be in 0 or 1.\n");
+        DSS_PRINT_ERROR("The value of zero_or_one should be 0 or 1.\n");
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -1321,7 +1350,7 @@ static dss_args_t cmd_touch_args[] = {
     {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
-    {'f', "flag", CM_FALSE, CM_TRUE, NULL, NULL, NULL, 0, NULL, NULL, 0}};
+    {'f', "flag", CM_FALSE, CM_TRUE, cmd_check_flag, NULL, NULL, 0, NULL, NULL, 0}};
 static dss_args_set_t cmd_touch_args_set = {
     cmd_touch_args,
     sizeof(cmd_touch_args) / sizeof(dss_args_t),
@@ -4171,7 +4200,7 @@ static status_t rollback_proc(void)
 
 static dss_args_t cmd_truncate_args[] = {
     {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
-    {'l', "length", CM_TRUE, CM_TRUE, NULL, NULL, NULL, 0, NULL, NULL, 0},
+    {'l', "length", CM_TRUE, CM_TRUE, cmd_check_length, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
