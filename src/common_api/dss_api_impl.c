@@ -2214,7 +2214,7 @@ status_t dss_init(uint32 max_open_files, char *home)
 
     for (int32_t i = 0; i < (int32_t)g_vgs_info->group_num; i++) {
         dss_vg_info_item_t *item = &g_vgs_info->volume_group[i];
-        cm_attach_shm(SHM_TYPE_HASH, item->buffer_cache->shm_id, 0, CM_SHM_ATTACH_RW);
+        (void)cm_attach_shm(SHM_TYPE_HASH, item->buffer_cache->shm_id, 0, CM_SHM_ATTACH_RW);
     }
 
     status = cm_create_thread(dss_heartbeat_entry, SIZE_K(512), NULL, &dss_env->thread_heartbeat);

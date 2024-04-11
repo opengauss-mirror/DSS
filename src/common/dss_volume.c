@@ -264,9 +264,9 @@ void dss_close_volume_raw(dss_volume_t *volume)
 
 void dss_close_simple_volume_raw(dss_simple_volume_t *simple_volume)
 {
-    close(simple_volume->handle);
+    (void)close(simple_volume->handle);
     simple_volume->handle = DSS_INVALID_HANDLE;
-    close(simple_volume->unaligned_handle);
+    (void)close(simple_volume->unaligned_handle);
     simple_volume->unaligned_handle = DSS_INVALID_HANDLE;
 }
 

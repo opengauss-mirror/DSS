@@ -3365,7 +3365,7 @@ static void dss_build_truncated_ftn(dss_session_t *session, dss_vg_info_item_t *
         }
 
         dss_fs_block_t *dst_second_sfsb = NULL;
-        dss_get_second_block(vg_item, cache_first_sfsb, &dst_second_sfsb);
+        (void)dss_get_second_block(vg_item, cache_first_sfsb, &dst_second_sfsb);
         dst_second_sfsb = dst_sfsb_idx < 0 ? NULL : dst_second_sfsb;
         dss_transfer_remaining_au(
             session, src_partial_sfsb, dst_sfsb, dst_second_sfsb, src_au_idx, dst_au_idx, vg_item);

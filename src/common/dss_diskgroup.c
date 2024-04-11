@@ -499,7 +499,7 @@ status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock)
     bool32 remote = CM_FALSE;
     dss_config_t *inst_cfg = dss_get_inst_cfg();
 
-    if (vg_item->vg_name[0] == '0' || vg_item->entry_path[0] == '0') {
+    if (vg_item->vg_name[0] == '\0' || vg_item->entry_path[0] == '\0') {
         LOG_RUN_ERR("Failed to load vg ctrl, input parameter is invalid.");
         return CM_ERROR;
     }
@@ -686,7 +686,7 @@ static FILE *dss_get_vglock_fp(const char *lock_file, bool32 need_new)
         char cmd[DSS_MAX_CMD_LEN];
         ret = snprintf_s(cmd, DSS_MAX_CMD_LEN, DSS_MAX_CMD_LEN - 1, "touch %s", lock_file);
         DSS_SECUREC_SS_RETURN_IF_ERROR(ret, NULL);
-        system(cmd);
+        (void)system(cmd);
         g_fp_list[ifree].fp = fopen(lock_file, "w");
     }
 
@@ -1512,7 +1512,7 @@ status_t dss_load_ctrl(dss_session_t *session, const char *vg_name, uint32 index
         return CM_ERROR;
     }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
-    if (vg_item->vg_name[0] == '0' || vg_item->entry_path[0] == '0') {
+    if (vg_item->vg_name[0] == '\0' || vg_item->entry_path[0] == '\0') {
         LOG_DEBUG_ERR("Failed to load vg ctrl, input parameter is invalid.");
         return CM_ERROR;
     }

@@ -555,7 +555,7 @@ static inline uint64 cm_day_usec(void)
 #else
     uint64 usec;
     struct timeval tv;
-    gettimeofday(&tv, NULL);
+    (void)gettimeofday(&tv, NULL);
     usec = (uint64)(tv.tv_sec * MICROSECS_PER_SECOND);
     usec += (uint64)tv.tv_usec;
 #endif

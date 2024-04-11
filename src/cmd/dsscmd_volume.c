@@ -373,6 +373,7 @@ static status_t dss_check_volume_flag(dss_vg_info_item_t *vg_item)
 
 static status_t dss_add_volume_inner(dss_vg_info_item_t *vg_item, const char *vol_path)
 {
+    LOG_RUN_INF("Begin to add volume, vg_name is %s, vol_path is %s.", vg_item->vg_name, vol_path);
     CM_RETURN_IFERR(dss_check_volume_flag(vg_item));
     if (dss_find_volume(vg_item, vol_path) != CM_INVALID_ID32) {
         DSS_THROW_ERROR(ERR_DSS_VOLUME_EXISTED, vol_path, vg_item->vg_name);
@@ -401,16 +402,32 @@ static status_t dss_add_volume_inner(dss_vg_info_item_t *vg_item, const char *vo
      * Secondly, write the core_ctrl and volume_head to disk.
      * Finally, update the status of volume_ctrl to disk, where the status is occupy.
      */
-    CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
-    CM_RETURN_IFERR(dss_update_core_ctrl_disk(vg_item));
-    CM_RETURN_IFERR(dss_modify_volume_head(vg_item, vol_path, id, VOLUME_MODIFY_ADD));
-    vg_item->dss_ctrl->volume.defs[id].flag =  VOLUME_OCCUPY;
-    CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
+    LOG_RUN_INF(
+        "Update volume_ctrl, core_ctrl and volume_head, vg_name is %s, vol_path is %s.", vg_item->vg_name, vol_path);
+    if (dss_update_volume_ctrl(vg_item) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to update volume_ctrl, vg_name is %s, vol_path is %s.", vg_item->vg_name, vol_path);
+        return CM_ERROR;
+    }
+    if (dss_update_core_ctrl_disk(vg_item) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to update core_ctrl, vg_name is %s, vol_path is %s.", vg_item->vg_name, vol_path);
+        return CM_ERROR;
+    }
+    if (dss_modify_volume_head(vg_item, vol_path, id, VOLUME_MODIFY_ADD) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to update volume_head, vg_name is %s, vol_path is %s.", vg_item->vg_name, vol_path);
+        return CM_ERROR;
+    }
+    vg_item->dss_ctrl->volume.defs[id].flag = VOLUME_OCCUPY;
+    if (dss_update_volume_ctrl(vg_item) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to update volume_ctrl flag, vg_name is %s, vol_path is %s.", vg_item->vg_name, vol_path);
+        return CM_ERROR;
+    }
+    LOG_RUN_INF("End to add volume, vg_name is %s, vol_path is %s.", vg_item->vg_name, vol_path);
     return CM_SUCCESS;
 }
 
 static status_t dss_remove_volume_inner(dss_vg_info_item_t* vg_item, const char *vol_path)
 {
+    LOG_RUN_INF("Begin to remove volume, vg_name is %s, vol_path is %s.", vg_item->vg_name, vol_path);
     uint32 id;
     CM_RETURN_IFERR(dss_check_volume_flag(vg_item));
     CM_RETURN_IFERR(dss_check_remove_volume(vg_item, vol_path, &id));
@@ -420,11 +437,24 @@ static status_t dss_remove_volume_inner(dss_vg_info_item_t* vg_item, const char 
     }
 
     vg_item->dss_ctrl->volume.defs[id].flag = VOLUME_REMOVE;
-    CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
+    if (dss_update_volume_ctrl(vg_item) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to update volume_ctrl flag, vg_name is %s, vol_path is %s.", vg_item->vg_name, vol_path);
+        return CM_ERROR;
+    }
     dss_remove_volume_vg_ctrl(vg_item->dss_ctrl, id);
-    CM_RETURN_IFERR(dss_update_core_ctrl_disk(vg_item));
-    CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
-    CM_RETURN_IFERR(dss_modify_volume_head(vg_item, vol_path, id, VOLUME_MODIFY_REMOVE));
+    if (dss_update_core_ctrl_disk(vg_item) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to update core_ctrl, vg_name is %s, vol_path is %s.", vg_item->vg_name, vol_path);
+        return CM_ERROR;
+    }
+    if (dss_update_volume_ctrl(vg_item) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to update volume_ctrl, vg_name is %s, vol_path is %s.", vg_item->vg_name, vol_path);
+        return CM_ERROR;
+    }
+    if (dss_modify_volume_head(vg_item, vol_path, id, VOLUME_MODIFY_REMOVE) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to update volume_head, vg_name is %s, vol_path is %s.", vg_item->vg_name, vol_path);
+        return CM_ERROR;
+    }
+    LOG_RUN_INF("End to remove volume, vg_name is %s, vol_path is %s.", vg_item->vg_name, vol_path);
     return CM_SUCCESS;
 }
 
@@ -487,7 +517,10 @@ static status_t dss_replace_volume_to_disk(dss_vg_info_item_t* vg_item, const ch
     dss_ctrl_t *vg_ctrl = vg_item->dss_ctrl;
     vg_ctrl->volume.defs[id].flag = VOLUME_REPLACE;
     vg_ctrl->volume.defs[id].version++;
-    CM_RETURN_IFERR(dss_update_volume_ctrl(vg_item));
+    if (dss_update_volume_ctrl(vg_item) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to update volume_ctrl flag, vg_name is %s, vol_path is %s.", vg_item->vg_name, old_vol);
+        return CM_ERROR;
+    }
 
     status_t ret;
     vg_ctrl->core.volume_attrs[id].size = new_size;
@@ -506,9 +539,13 @@ static status_t dss_replace_volume_to_disk(dss_vg_info_item_t* vg_item, const ch
     do {
         ret = dss_update_core_ctrl_disk(vg_item);
         if (ret != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to update core_ctrl, vg_name is %s, vol_path is %s.", vg_item->vg_name, new_vol);
             break;
         }
         ret = dss_update_volume_ctrl(vg_item);
+        if (ret != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to update volume_ctrl, vg_name is %s, vol_path is %s.", vg_item->vg_name, new_vol);
+        }
     } while (0);
   
     if (id == 0) {
@@ -518,12 +555,18 @@ static status_t dss_replace_volume_to_disk(dss_vg_info_item_t* vg_item, const ch
     if (ret != CM_SUCCESS) {
         return ret;
     }
-    return dss_modify_volume_head(vg_item, old_vol, id, VOLUME_MODIFY_REMOVE);
+    ret = dss_modify_volume_head(vg_item, old_vol, id, VOLUME_MODIFY_REMOVE);
+    if (ret != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to update volume_head, vg_name is %s, vol_path is %s.", vg_item->vg_name, old_vol);
+    }
+    return ret;
 }
 
 static status_t dss_replace_volume_inner(
     dss_vg_info_item_t *vg_item, const char *old_vol, const char *new_vol, dss_config_t *inst_cfg)
 {
+    LOG_RUN_INF(
+        "Begin to replace volume, vg_name is %s, old_vol is %s, new_vol is %s.", vg_item->vg_name, old_vol, new_vol);
     CM_RETURN_IFERR(dss_check_volume_flag(vg_item));
     uint32 id = dss_find_volume(vg_item, old_vol);
     if (id == CM_INVALID_ID32) {
@@ -542,10 +585,19 @@ static status_t dss_replace_volume_inner(
     ret =  dss_replace_prepare_new_volume(vg_item, &new_volume, id, &new_size);
     dss_close_volume(&new_volume);
     if (ret != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to prepare new volume, vg_name is %s, new_vol is %s.", vg_item->vg_name, new_vol);
         return ret;
     }
 
-    return dss_replace_volume_to_disk(vg_item, old_vol, new_vol, id, new_size, inst_cfg);
+    ret = dss_replace_volume_to_disk(vg_item, old_vol, new_vol, id, new_size, inst_cfg);
+    if (ret != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to replace volume to disk, vg_name is %s, old_vol is %s, new_vol is %s.", vg_item->vg_name,
+            old_vol, new_vol);
+        return ret;
+    }
+    LOG_RUN_INF(
+        "End to replace volume, vg_name is %s, old_vol is %s, new_vol is %s.", vg_item->vg_name, old_vol, new_vol);
+    return CM_SUCCESS;
 }
 
 static status_t dss_modify_volume_offline_inner(dss_vg_info_item_t *vg_item, const char *old_vol, const char *new_vol,

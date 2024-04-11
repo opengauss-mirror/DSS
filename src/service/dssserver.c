@@ -358,7 +358,7 @@ int main(int argc, char **argv)
     (void)sigprocmask(SIG_UNBLOCK, &sign_old_mask, NULL);
 #endif
     if (dss_startup(&g_dss_instance, dss_args) != CM_SUCCESS) {
-        printf("dss failed to startup.\n");
+        (void)printf("dss failed to startup.\n");
         fflush(stdout);
         dss_clean_server();
         LOG_RUN_ERR("dss failed to startup.");
@@ -369,7 +369,7 @@ int main(int argc, char **argv)
         LOG_RUN_WAR("failed to update state file.");
     }
     if (dss_signal_proc() != CM_SUCCESS) {
-        printf("dss instance startup failed.\n");
+        (void)printf("dss instance startup failed.\n");
         fflush(stdout);
         dss_clean_server();
         LOG_RUN_ERR("dss failed to startup.");

@@ -61,7 +61,7 @@ static void find_traverse_node(
     }
 
     if (is_match(node->name, name)) {
-        printf("%s\n", path_text.str);
+        (void)printf("%s\n", path_text.str);
     }
     if (memset_s(tmp + origin_len, DSS_MAX_PATH_BUFFER_SIZE - origin_len, 0, strlen(node->name) + 1) != EOK) {
         cm_panic(0);
@@ -76,7 +76,7 @@ static status_t find_try_match_link(dss_conn_t *conn, char *path, const char *na
         DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE));
         if (node != NULL) {  // check the link name
             if (is_match(node->name, name)) {
-                printf("%s\n", path);
+                (void)printf("%s\n", path);
             }
             return CM_SUCCESS;
         }
@@ -107,7 +107,7 @@ status_t find_traverse_path(dss_conn_t *conn, char *path, size_t path_size, char
         status = dss_check_dir(conn->session, path, GFT_FILE, &output_info, CM_FALSE);
         if (status == CM_SUCCESS && node != NULL) {
             if (is_match(node->name, name)) {
-                printf("%s\n", path);
+                (void)printf("%s\n", path);
             }
             DSS_UNLOCK_VG_META_S(vg_item, conn->session);
             return CM_SUCCESS;
