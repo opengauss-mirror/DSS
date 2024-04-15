@@ -438,21 +438,12 @@ static status_t dss_broadcast_msg(char *req_buf, uint32 size, dss_recv_msg_t *re
 
 static bool32 dss_check_srv_status(mes_msg_t *msg)
 {
-    date_t time_start = g_timer()->now;
-    date_t time_now = 0;
     dss_message_head_t *dss_head = (dss_message_head_t *)(msg->buffer);
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    uint32 max_time = inst_cfg->params.master_lock_timeout;
-    while (g_dss_instance.status != DSS_STATUS_OPEN && dss_head->dss_cmd != DSS_CMD_ACK_JOIN_CLUSTER) {
-        LOG_DEBUG_INF(
-            "[MES] Could not exec remote req for the dssserver is not open or msg not join cluster, src node:%u.",
+    if (g_dss_instance.status != DSS_STATUS_OPEN && dss_head->dss_cmd != DSS_CMD_ACK_JOIN_CLUSTER) {
+        LOG_DEBUG_INF("[MES] Could not exec remote req for the dssserver is not open or msg not join cluster, src "
+                      "node:%u, wait try again.",
             (uint32)(dss_head->src_inst));
-        DSS_GET_CM_LOCK_LONG_SLEEP;
-        time_now = g_timer()->now;
-        if (time_now - time_start > max_time * MICROSECS_PER_SECOND) {
-            LOG_RUN_ERR("Fail to change status open for %d seconds when exec remote req.", max_time);
-            return CM_FALSE;
-        }
+         return CM_FALSE;
     }
     return CM_TRUE;
 }
@@ -510,8 +501,8 @@ static status_t dss_process_remote_req_prepare(dss_session_t *session, mes_msg_t
     }
 
     if (dss_check_srv_status(msg) != CM_TRUE) {
-        LOG_RUN_ERR("Proc msg cmd:%u from remote node:%u fail, local status fail.", (uint32)dss_head->dss_cmd,
-            dss_head->src_inst);
+        LOG_RUN_WAR("Proc msg cmd:%u from remote node:%u fail, local status %u not open, wait try again.",
+            (uint32)dss_head->dss_cmd, dss_head->src_inst, g_dss_instance.status);
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -521,8 +512,8 @@ static status_t dss_process_remote_ack_prepare(dss_session_t *session, mes_msg_t
 {
     if (dss_check_srv_status(msg) != CM_TRUE) {
         dss_message_head_t *dss_head = (dss_message_head_t *)msg->buffer;
-        LOG_RUN_ERR("Proc msg cmd:%u from remote node:%u fail, local status fail.", (uint32)dss_head->dss_cmd,
-            dss_head->src_inst);
+        LOG_RUN_WAR("Proc msg cmd:%u from remote node:%u fail, local status %u not open, wait try again.",
+            (uint32)dss_head->dss_cmd, dss_head->src_inst, g_dss_instance.status);
         return CM_ERROR;
     }
     return CM_SUCCESS;
