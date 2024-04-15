@@ -1111,7 +1111,7 @@ status_t dss_gen_volume_head(
     vol_head->valid_flag = DSS_CTRL_VALID_FLAG;
     errcode = strcpy_s(vol_head->vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name);
     DSS_SECUREC_SS_RETURN_IF_ERROR(errcode, CM_ERROR);
-    dss_set_software_version((dss_vg_header_t *)&vol_head, (uint32)DSS_SOFTWARE_VERSION);
+    dss_set_software_version((dss_vg_header_t *)vol_head, (uint32)DSS_SOFTWARE_VERSION);
     (void)cm_gettimeofday(&vol_head->create_time);
     vol_head->checksum = dss_get_checksum((char *)vol_head, DSS_VG_DATA_SIZE);
     return CM_SUCCESS;

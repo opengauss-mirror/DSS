@@ -233,7 +233,7 @@ function clearVg()
             log "[CLEARVG]dsscmd add volume vg:${VG_NAME[$i]} volume:${VOLUME_NAME[$volume_index]}"
             expect << EOF
             set timeout -1
-            spawn dsscmd adv -g ${VG_NAME[$i]} -v ${VOLUME_NAME[$volume_index]}
+            spawn dsscmd adv -g ${VG_NAME[$i]} -v ${VOLUME_NAME[$volume_index]} -f
             expect {
             "Please ensure that the cluster is stopped, enter yes*" { send "yes\r"; exp_continue }
             }
