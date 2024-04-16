@@ -2019,14 +2019,14 @@ status_t dss_truncate_impl(dss_conn_t *conn, int handle, long long int length)
     char *errmsg = NULL;
 
     if (length < 0) {
-        LOG_DEBUG_ERR("File length is invalid:%lld.", length);
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "length must be a positive integer");
+        LOG_DEBUG_ERR("File length is invalid:%lld.", length);
         return CM_ERROR;
     }
 
-    if (length > (int64)DSS_MAX_FILE_SIZE) {
-        LOG_DEBUG_ERR("File length is invalid:%lld.", length);
+    if (length > (int64)DSS_MAX_FILE_SIZE) { 
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "length must less than DSS_MAX_FILE_SIZE");
+        LOG_DEBUG_ERR("File length is invalid:%lld.", length);
         return CM_ERROR;
     }
 

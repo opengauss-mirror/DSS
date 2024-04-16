@@ -798,7 +798,12 @@ static status_t cv_proc(void)
     vg_name = cmd_cv_args[DSS_ARG_IDX_0].input_args;
     volume_name = cmd_cv_args[DSS_ARG_IDX_1].input_args;
     // Documentation Constraints:au_size=0 equals default_au_size
-    int64 au_size = (cmd_cv_args[DSS_ARG_IDX_2].input_args) ? atoll(cmd_cv_args[DSS_ARG_IDX_2].input_args) : 0;
+    int64 au_size = 0;
+    if (cmd_cv_args[DSS_ARG_IDX_2].input_args) {
+        status = cm_str2bigint(cmd_cv_args[DSS_ARG_IDX_2].input_args, &au_size);
+        DSS_RETURN_IFERR2(
+            status, DSS_PRINT_ERROR("au_size:%s is not a valid int64.\n", cmd_cv_args[DSS_ARG_IDX_2].input_args));
+    }
     char *home = cmd_cv_args[DSS_ARG_IDX_3].input_args;
 
     status = dss_set_cfg_dir(home, &cv_cfg);
@@ -1924,9 +1929,12 @@ static void inq_reg_help(const char *prog_name, int print_flag)
 static status_t inq_reg_proc(void)
 {
     DSS_PRINT_INF("Begin to inq reg.\n");
-    int64 host_id = atoll(cmd_inq_req_args[DSS_ARG_IDX_0].input_args);
+    int64 host_id;
+    status_t status = cm_str2bigint(cmd_inq_req_args[DSS_ARG_IDX_0].input_args, &host_id);
+    DSS_RETURN_IFERR2(
+        status, DSS_PRINT_ERROR("host_id:%s is not a valid int64.\n", cmd_inq_req_args[DSS_ARG_IDX_0].input_args));
     char *home = cmd_inq_req_args[DSS_ARG_IDX_1].input_args;
-    status_t status = dss_inq_reg_core(home, host_id);
+    status = dss_inq_reg_core(home, host_id);
     if (status == CM_ERROR) {
         DSS_PRINT_ERROR("Failed to inq reg host %lld.\n", host_id);
     } else {
@@ -1996,10 +2004,13 @@ static void kickh_help(const char *prog_name, int print_flag)
 static status_t kickh_proc(void)
 {
     DSS_PRINT_INF("Begin to kick.\n");
-    int64 kick_hostid = atoll(cmd_kickh_args[DSS_ARG_IDX_0].input_args);
+    int64 kick_hostid;
+    status_t status = cm_str2bigint(cmd_kickh_args[DSS_ARG_IDX_0].input_args, &kick_hostid);
+    DSS_RETURN_IFERR2(
+        status, DSS_PRINT_ERROR("kick_hostid:%s is not a valid int64.\n", cmd_kickh_args[DSS_ARG_IDX_0].input_args));
     char *home = cmd_kickh_args[DSS_ARG_IDX_1].input_args;
 
-    status_t status = dss_kickh_core(home, kick_hostid);
+    status = dss_kickh_core(home, kick_hostid);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to kick host, kickid %lld.\n", kick_hostid);
         return CM_ERROR;
@@ -2987,7 +2998,7 @@ static void fshowmem_help(const char *prog_name, int print_flag)
     (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name\n");
     (void)printf("-s/--struct_name <struct_name>, <required>, the struct name of volume group, "
                  "the optional value(s):\n");
-    (void)printf("    [core_ctrl | vg_header | volume_ctrl | root_ft_block]\n");
+    (void)printf("    [core_ctrl | volume_ctrl | vg_header | root_ft_block]\n");
     (void)printf("-b/--block_id <block_id>, <required>, fs block id or ft block id\n");
     (void)printf("-i/--index_id <index_id>, <required>, index id in block\n");
     (void)printf("-f/--fid <fid>, <required>, file id\n");
@@ -3166,7 +3177,7 @@ status_t dss_load_buffer_cache_group_from_file(
         if (strcmp(vg_name, read_vg_name) != 0) {
             status = cm_read_file(file_fd, &bucket_size, sizeof(uint64), &read_size);
             DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
-            offset = offset + sizeof(uint64) + bucket_size + sizeof(uint32);
+            offset = offset + (int64)sizeof(uint64) + (int64)bucket_size + (int64)sizeof(uint32);
             result = (bool32)(cm_seek_file(file_fd, offset, SEEK_SET) != -1);
             DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Failed to seek file %d", file_fd));
             continue;
@@ -4226,10 +4237,16 @@ static void truncate_help(const char *prog_name, int print_flag)
 static status_t truncate_proc(void)
 {
     const char *path = cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_PATH].input_args;
-    int64 length = atoll(cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_LENGTH].input_args);
+    int64 length;
+    status_t status = cm_str2bigint(cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_LENGTH].input_args, &length);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR(
+            "length:%s is not a valid int64.\n", cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_LENGTH].input_args);
+        return status;
+    }
 
     dss_conn_t conn;
-    status_t status = get_connection_by_input_args(cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_UDS].input_args, &conn);
+    status = get_connection_by_input_args(cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_UDS].input_args, &conn);
     if (status != CM_SUCCESS) {
         return status;
     }

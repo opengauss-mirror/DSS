@@ -444,7 +444,7 @@ static void printf_fs_block_header(dss_fs_block_header *fs_block_header)
     (void)printf("%s    }\n", tab);
     (void)printf("%s    used_num = %hu\n", tab, fs_block_header->used_num);
     (void)printf("%s    total_num = %hu\n", tab, fs_block_header->total_num);
-    (void)printf("%s    reserve = %u\n", tab, fs_block_header->reserve);
+    (void)printf("%s    reserve = %hu\n", tab, fs_block_header->reserve);
 }
 
 static void printf_fs_block(dss_fs_block_t *fs_block)
@@ -487,7 +487,7 @@ status_t dss_print_fsb_by_id_detail_part(
 {
     dss_block_id_t *node = NULL;
     char *tab = dss_get_print_tab(g_print_level - 1);
-    uint32 size = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_t)) / sizeof(dss_block_id_t);
+    uint32 size = (DSS_FILE_SPACE_BLOCK_SIZE - (uint32)sizeof(dss_fs_block_t)) / (uint32)sizeof(dss_block_id_t);
     uint32 start_first_fs_index = show_param->start_first_fs_index;
     uint32 end_first_fs_index = show_param->end_first_fs_index;
     uint32 start_second_fs_index = show_param->start_second_fs_index;
@@ -550,12 +550,12 @@ status_t dss_print_fsb_by_id_detail(
     (void)printf("%sfile_space_block = {\n", tab);
     printf_fs_block(file_space_block);
     (void)printf("%s}\n\n", tab);
-    uint32 size = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_t)) / sizeof(dss_block_id_t);
+    uint32 size = (DSS_FILE_SPACE_BLOCK_SIZE - (uint32)sizeof(dss_fs_block_t)) / (uint32)sizeof(dss_block_id_t);
     dss_block_id_t *node = NULL;
     g_print_level++;
     if (show_param->start_first_fs_index == CM_INVALID_ID32) {
         for (uint32 i = 0; i < size; ++i) {
-            node = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + i * sizeof(dss_block_id_t));
+            node = (dss_block_id_t *)(block + (uint32)sizeof(dss_fs_block_t) + i * (uint32)sizeof(dss_block_id_t));
             if (dss_cmp_auid(*(auid_t *)node, DSS_INVALID_64)) {
                 continue;
             }
@@ -591,7 +591,7 @@ status_t dss_print_entry_fs_block_detail(
         (void)printf("  }\n");
     } else {
         if (show_param->offset + show_param->size > gft_node->size) {
-            DSS_PRINT_ERROR("invalid offset %lld and size %u, it is larger than actural size.\n", show_param->offset,
+            DSS_PRINT_ERROR("invalid offset %lld and size %d, it is larger than actural size.\n", show_param->offset,
                 show_param->size);
             return CM_ERROR;
         }
@@ -675,12 +675,12 @@ static status_t dss_print_ftn_by_id(char *block, uint64 node_id)
     printf_ft_block(file_table_block);
     (void)printf("}\n\n");
 
-    uint32 size = (DSS_BLOCK_SIZE - sizeof(dss_ft_block_t)) / sizeof(gft_node_t);
+    uint32 size = (DSS_BLOCK_SIZE - (uint32)sizeof(dss_ft_block_t)) / (uint32)sizeof(gft_node_t);
     gft_node_t *node = NULL;
 
     if (node_id == DSS_DEFAULT_NODE_ID) {
         for (uint32 i = 0; i < size; ++i) {
-            node = (gft_node_t *)(block + sizeof(dss_ft_block_t) + i * sizeof(gft_node_t));
+            node = (gft_node_t *)(block + (uint32)sizeof(dss_ft_block_t) + i * (uint32)sizeof(gft_node_t));
             (void)printf("gft_node[%u] = {\n", i);
             printf_gft_node(node);
             (void)printf("}\n");
@@ -775,7 +775,7 @@ static status_t dss_print_fsb_by_id(char *block, uint64 node_id)
     printf_fs_block(file_space_block);
     (void)printf("}\n\n");
 
-    uint32 size = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_t)) / sizeof(dss_block_id_t);
+    uint32 size = (DSS_FILE_SPACE_BLOCK_SIZE - (uint32)sizeof(dss_fs_block_t)) / (uint32)sizeof(dss_block_id_t);
     dss_block_id_t *node = NULL;
 
     if (node_id == DSS_DEFAULT_NODE_ID) {

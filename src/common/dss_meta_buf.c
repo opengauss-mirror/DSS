@@ -314,16 +314,16 @@ static status_t dss_load_buffer_cache(
 
 void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 hash, uint64 *key,
     bool32 is_print_error_log, ga_obj_id_t *out_obj_id)
-{
-    shm_hashmap_t *map = vg_item->buffer_cache;
+{ 
     CM_ASSERT(key != NULL);
-    if (map == NULL) {
+    shm_hashmap_t *hashmap = vg_item->buffer_cache;
+    if (hashmap == NULL) {
         if (is_print_error_log) {
             LOG_DEBUG_ERR("Pointer to map or compare_func is NULL");
         }
         return NULL;
     }
-    if (map->num == 0) {
+    if (hashmap->num == 0) {
         if (is_print_error_log) {
             LOG_DEBUG_ERR("The map is not initialized.");
         }
@@ -334,8 +334,8 @@ void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_it
     dss_block_ctrl_t *block_ctrl = NULL;
     dss_common_block_t *block = NULL;
     auid_t block_id_tmp = {0};
-    shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
-    shm_hashmap_bucket_t *bucket = &buckets[hash % map->num];
+    shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(hashmap->buckets);
+    shm_hashmap_bucket_t *bucket = &buckets[hash % hashmap->num];
     if (vg_item->from_type == FROM_SHM) {
         dss_lock_shm_meta_bucket_s(session, vg_item->id, &bucket->enque_lock);
     }
