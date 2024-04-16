@@ -33,7 +33,7 @@ extern "C" {
 
 static void print_dev_info(ptlist_t *devs)
 {
-    printf("%-20s %-20s %-20s %-20s %-15s %-20s\n", "Dev", "Vendor", "Model", "ArraySN", "LUNID", "LUNWWN");
+    (void)printf("%-20s %-20s %-20s %-20s %-15s %-20s\n", "Dev", "Vendor", "Model", "ArraySN", "LUNID", "LUNWWN");
 
     uint32 i;
     dev_info_t *dev_info = NULL;
@@ -49,7 +49,7 @@ static void print_dev_info(ptlist_t *devs)
             cm_str2text(dev_info->data.vendor_info.product, &text);
             cm_trim_text(&text);
             DSS_RETURN_DRIECT_IFERR(cm_text2str(&text, dev_info->data.vendor_info.product, CM_MAX_PRODUCT_LEN));
-            printf("%-20s %-20s %-20s %-20s %-15d %-20s\n", dev_info->dev, dev_info->data.vendor_info.vendor,
+            (void)printf("%-20s %-20s %-20s %-20s %-15d %-20s\n", dev_info->dev, dev_info->data.vendor_info.vendor,
                 dev_info->data.vendor_info.product, dev_info->data.array_info.array_sn, dev_info->data.lun_info.lun_id,
                 dev_info->data.lun_info.lun_wwn);
         }
@@ -60,9 +60,9 @@ static void print_dev_info(ptlist_t *devs)
 static void print_reg_info_rely_resk(int64 resk)
 {
     if (resk > 0) {
-        printf("%-20lld ", resk - 1);
+        (void)printf("%-20lld ", resk - 1);
     } else {
-        printf("%-20c ", '-');
+        (void)printf("%-20c ", '-');
     }
 }
 
@@ -81,15 +81,15 @@ static void print_reg_info_rely_key_count(iof_reg_in_t *reg_info)
                 (void)cm_concat_string(&text, DSS_MAX_REKEY_BUFF, ",");
             }
         }
-        printf("%-20s\n", text.str);
+        (void)printf("%-20s\n", text.str);
     } else {
-        printf("%-20c\n", '-');
+        (void)printf("%-20c\n", '-');
     }
 }
 
 static void print_reg_info(ptlist_t *regs)
 {
-    printf("%-20s %-20s %-20s %-20s\n", "Dev", "Generation", "RESKEY", "REGKEY");
+    (void)printf("%-20s %-20s %-20s %-20s\n", "Dev", "Generation", "RESKEY", "REGKEY");
 
     uint32 i;
     iof_reg_in_t *reg_info = NULL;
@@ -97,7 +97,7 @@ static void print_reg_info(ptlist_t *regs)
     for (i = 0; i < regs->count; i++) {
         reg_info = (iof_reg_in_t *)cm_ptlist_get(regs, i);
         if (reg_info != NULL) {
-            printf("%-20s %-20u ", reg_info->dev, reg_info->generation);
+            (void)printf("%-20s %-20u ", reg_info->dev, reg_info->generation);
             print_reg_info_rely_resk(reg_info->resk);
             print_reg_info_rely_key_count(reg_info);
         }
@@ -149,7 +149,7 @@ static status_t dss_modify_cluster_node_info(
 status_t dss_get_vg_non_entry_info(
     dss_config_t *inst_cfg, dss_vg_info_item_t *vg_item, bool32 is_lock, bool32 check_redo)
 {
-    if (vg_item->vg_name[0] == '0' || vg_item->entry_path[0] == '0') {
+    if (vg_item->vg_name[0] == '\0' || vg_item->entry_path[0] == '\0') {
         LOG_DEBUG_ERR("Failed to load vg ctrl, input parameter is invalid.");
         return CM_ERROR;
     }
@@ -242,7 +242,7 @@ static status_t dss_get_vg_entry_info(const char *home, dss_config_t *inst_cfg, 
 
 status_t dss_inq_alloc_vg_info(const char *home, dss_config_t *inst_cfg, dss_vg_info_t **vg_info)
 {
-    *vg_info = cm_malloc(sizeof(dss_vg_info_t));
+    *vg_info = (dss_vg_info_t *)cm_malloc(sizeof(dss_vg_info_t));
     if (*vg_info == NULL) {
         DSS_PRINT_ERROR("Failed to malloc vg_info when alloc vg info.\n");
         return CM_ERROR;
@@ -374,6 +374,7 @@ status_t dss_check_volume_register(char *entry_path, int64 host_id, bool32 *is_r
         *is_reg = DSS_FALSE;
     }
 
+    LOG_RUN_INF("Succeed to check volume register, vol_path is %s, result is %d.", entry_path, *is_reg);
     return CM_SUCCESS;
 }
 
@@ -406,8 +407,10 @@ static void dss_printf_iofence_key(int64 *iofence_key)
     }
     if (text.len == 0) {
         (void)printf("iofence_key=-1\n");
+        LOG_RUN_INF("iofence_key=-1.");
     } else {
         (void)printf("iofence_key=%-20s\n", text.str);
+        LOG_RUN_INF("iofence_key=%-20s.", text.str);
     }
 }
 
@@ -455,6 +458,7 @@ status_t dss_reghl_core(const char *home)
         }
     }
     dss_inq_free_vg_info(vg_info);
+    LOG_RUN_INF("Succeed to register instance %llu.", inst_cfg.params.inst_id);
 #endif
     return CM_SUCCESS;
 }
@@ -521,6 +525,7 @@ status_t dss_unreghl_core(const char *home, bool32 is_lock)
         }
     }
     dss_inq_free_vg_info(vg_info);
+    LOG_RUN_INF("Succeed to unregister instance %llu.", inst_cfg.params.inst_id);
 #endif
     return CM_SUCCESS;
 }
@@ -540,11 +545,13 @@ static status_t dss_inq_reg_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg
                 dss_check_volume_register(item->dss_ctrl->volume.defs[j].name, host_id, &is_reg, iofence_key));
             if (!is_reg) {
                 DSS_PRINT_INF("The node %lld is registered partially, inq_result = 1.\n", host_id);
+                LOG_RUN_INF("The node %lld is registered partially, inq_result = 1.", host_id);
                 return CM_TIMEDOUT;
             }
         }
     }
     DSS_PRINT_INF("The node %lld is registered, inq_result = 2.\n", host_id);
+    LOG_RUN_INF("The node %lld is registered, inq_result = 2.", host_id);
     return CM_PIPECLOSED;
 }
 
@@ -580,12 +587,14 @@ status_t dss_inq_reg_core(const char *home, int64 host_id)
         dss_printf_iofence_key(iofence_key);
         dss_inq_free_vg_info(vg_info);
         DSS_PRINT_INF("The node %lld is not registered, inq_result = 0.\n", host_id);
+        LOG_RUN_INF("The node %lld is not registered, inq_result = 0.", host_id);
         return CM_SUCCESS;
     }
     if (count != 0 && count != vg_info->group_num) {
         dss_printf_iofence_key(iofence_key);
         dss_inq_free_vg_info(vg_info);
         DSS_PRINT_INF("The node %lld is registered partially, inq_result = 1.\n", host_id);
+        LOG_RUN_INF("The node %lld is registered partially, inq_result = 1.", host_id);
         return CM_TIMEDOUT;
     }
     status = dss_inq_reg_inner(vg_info, &inst_cfg, host_id, iofence_key);
@@ -607,7 +616,7 @@ static status_t dss_clean_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, 
     int64 tmp_inst_id = (inst_id == DSS_MAX_INST_ID) ? inst_cfg->params.inst_id : inst_id;
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         vg_item = &vg_info->volume_group[i];
-        if (vg_item->vg_name[0] == '0' || vg_item->entry_path[0] == '0') {
+        if (vg_item->vg_name[0] == '\0' || vg_item->entry_path[0] == '\0') {
             return CM_ERROR;
         }
         if (dss_check_lock_instid(vg_item, vg_item->entry_path, tmp_inst_id, &is_lock) != CM_SUCCESS) {
@@ -706,8 +715,9 @@ status_t dss_kickh_core(const char *home, int64 host_id)
     dss_inq_free_vg_info(vg_info);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to kickh with lock.\n");
+        return status;
     }
-    return status;
+    LOG_RUN_INF("Succeed to kick host, kickid %lld.", host_id);
 #endif
     return CM_SUCCESS;
 }

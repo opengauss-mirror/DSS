@@ -288,6 +288,8 @@ status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32
         CM_THROW_ERROR(ERR_SYSTEM_CALL, rc);
         return CM_ERROR;
     }
+    LOG_RUN_INF("dss set log param _LOG_LEVEL, param_value = %u", log_param->log_level);
+    LOG_RUN_INF("dss set log param _AUDIT_LEVEL, param_value = %u", log_param->audit_level);
     return CM_SUCCESS;
 }
 

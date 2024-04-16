@@ -72,7 +72,7 @@ static void du_print(double size, const char *params, const char *path)
         cm_panic(0);
     }
     buf[buf_size - 1] = 0;
-    printf("%s%s\n", buf, path);
+    (void)printf("%s%s\n", buf, path);
 }
 
 static double du_traverse_node(

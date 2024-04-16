@@ -730,7 +730,7 @@ static status_t dss_set_cfg_param_core(text_t *text, char *value, dss_def_t *def
     if (cm_alter_config(&g_inst_cfg->config, def->name, def->value, def->scope, force) != CM_SUCCESS) {
         return CM_ERROR;
     }
-    LOG_RUN_INF("parameter %s has been changed successfully", def->name);
+    LOG_RUN_INF("parameter %s has been changed successfully, new value is %s", def->name, value);
     return CM_SUCCESS;
 }
 
