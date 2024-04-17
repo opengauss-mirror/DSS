@@ -3086,7 +3086,7 @@ static status_t dss_extend_with_updt_written_size(
         }
 
         dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(block);
-        dss_add_syn_meta(vg_item, block_ctrl);
+        dss_add_syn_meta(vg_item, block_ctrl, block->common.version);
 
         LOG_DEBUG_INF("Try to extend ftid:%s to size:%llu, written_size:%llu.", dss_display_metaid(node_data->ftid),
             node->size, node->written_size);
@@ -3447,7 +3447,7 @@ static void dss_truncate_set_sizes(
     dss_put_log(session, vg_item, DSS_RT_SET_FILE_SIZE, &redo_size, sizeof(redo_size));
 }
 
-status_t truncate_to_extend(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, uint64 size)
+status_t truncate_to_extend(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, int64 size)
 {
     dss_node_data_t node_data;
     node_data.fid = node->fid;
@@ -3743,6 +3743,11 @@ dss_fs_block_t *dss_find_fs_block(dss_session_t *session, dss_vg_info_item_t *vg
         session, vg_item, block_id, DSS_BLOCK_TYPE_FS, check_version, out_obj_id, CM_FALSE);
     if (fs_block == NULL) {
         LOG_DEBUG_ERR("Failed to get fs block:%s.", dss_display_metaid(block_id));
+        if (dss_is_server()) {
+            LOG_RUN_ERR("Failed to get fs block:%s.", dss_display_metaid(block_id));
+        } else {
+            LOG_DEBUG_INF("Failed to get fs block:%s.", dss_display_metaid(block_id));
+        }
         return NULL;
     }
 
@@ -4036,7 +4041,7 @@ status_t dss_update_file_written_size(
 
     dss_unlatch_node(node);
 
-    dss_add_syn_meta(vg_item, block_ctrl);
+    dss_add_syn_meta(vg_item, block_ctrl, cur_block->common.version);
 
     dss_unlock_vg_mem_and_shm(session, vg_item);
 

@@ -68,7 +68,6 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_FILE_TYPE_MISMATCH] = "The type of directory link or file %s is not matched.",
     [ERR_DSS_FILE_PATH_ILL] = "Path %s decode error %s",
     [ERR_DSS_FILE_INVALID_SIZE] = "Invalid extend offset %lld, size %d.",
-    [ERR_DSS_FILE_INVALID_WRITTEN_SIZE] = "Invalid written size %lld.",
     [ERR_DSS_DIR_REMOVE_NOT_EMPTY] = "The dir is not empty, can not remove.",
     [ERR_DSS_DIR_CREATE_DUPLICATED] = "Make dir or Create file failed, %s has already existed",
     [ERR_DSS_LINK_READ_NOT_LINK] = "The path %s is not a soft link.",
@@ -114,6 +113,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
         "[CHECK_PROTO]Protocol version need be changed, old protocol version is %u, new protocol version is %u.",
     [ERR_DSS_INVALID_BLOCK_TYPE] =
         "Get Invalid block type, expect type is %u, but the type in share memory is %u.",
+    [ERR_DSS_RECOVER_CAUSE_BREAK] = "Req break by recovery.",
 };
 
 static status_t dss_init_log_file(log_param_t *log_param, dss_config_t *inst_cfg)

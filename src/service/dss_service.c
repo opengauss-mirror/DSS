@@ -85,6 +85,12 @@ static status_t dss_process_remote(dss_session_t *session)
         session->recv_pack.head->cmd, remoteid, currid);
     status_t remote_result = CM_ERROR;
     while (CM_TRUE) {
+        if (dss_get_recover_status() == DSS_STATUS_RECOVERY) {
+            DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
+            LOG_RUN_INF("Req break by recovery");
+            return CM_ERROR;
+        }
+
         ret = dss_exec_sync(session, remoteid, currid, &remote_result);
         if (ret != CM_SUCCESS) {
             LOG_DEBUG_ERR(
@@ -1044,12 +1050,6 @@ static dss_cmd_hdl_t *dss_get_cmd_handle(int32 cmd, bool32 local_req)
         }
     }
 
-    if (handle != NULL) {
-        if (dss_need_exec_remote(handle->exec_on_active, local_req)) {
-            handle = &g_dss_remote_handle;
-        }
-    }
-
     return handle;
 }
 
@@ -1085,12 +1085,69 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
         return CM_ERROR;
     }
 
+    status_t status;
+    do {
+        cm_reset_error();
+
+        (void)cm_atomic_inc(&g_dss_instance.active_sessions);
+        LOG_DEBUG_INF("session:%u inc active_sessions to:%lld for cmd:%u", session->id, g_dss_instance.active_sessions,
+            (uint32)session->recv_pack.head->cmd);
+        if (dss_can_cmd_type_no_open(session->recv_pack.head->cmd)) {
+            status = handle->proc(session);
+        } else if (!dss_need_exec_remote(handle->exec_on_active, local_req)) {
+            // if cur node is standby, may reset it to recovery to do recovery
+            if (g_dss_instance.status != DSS_STATUS_OPEN && g_dss_instance.status != DSS_STATUS_PREPARE) {
+                LOG_RUN_INF("Req forbided by recovery for cmd:%u", (uint32)session->recv_pack.head->cmd);
+
+                (void)cm_atomic_dec(&g_dss_instance.active_sessions);
+                LOG_DEBUG_INF("session:%u dec active_session to:%lld for cmd:%u", session->id,
+                    g_dss_instance.active_sessions, (uint32)session->recv_pack.head->cmd);
+                cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
+                continue;
+            }
+            status = handle->proc(session);
+        } else {
+            status = g_dss_remote_handle.proc(session);
+        }
+
+        (void)cm_atomic_dec(&g_dss_instance.active_sessions);
+        LOG_DEBUG_INF("session:%u dec active_sessions to:%lld for cmd:%u", session->id, g_dss_instance.active_sessions,
+            (uint32)session->recv_pack.head->cmd);
+
+        if (status != CM_SUCCESS && cm_get_error_code() == ERR_DSS_RECOVER_CAUSE_BREAK) {
+            LOG_RUN_INF("Req breaked by recovery for cmd:%u", session->recv_pack.head->cmd);
+            cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
+            continue;
+        }
+        break;
+    } while(CM_TRUE);
+
     session->audit_info.action = dss_get_cmd_desc(session->recv_pack.head->cmd);
-    status_t status = handle->proc(session);
+
     if (local_req) {
         sql_record_audit_log(session, status, session->recv_pack.head->cmd);
     }
     return status;
+}
+
+void dss_process_cmd_wait_be_open(dss_session_t *session)
+{
+    date_t time_start = g_timer()->now;
+    date_t time_now = 0;
+
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    uint32 max_time = inst_cfg->params.master_lock_timeout;
+    while (g_dss_instance.status != DSS_STATUS_OPEN) {
+        DSS_GET_CM_LOCK_LONG_SLEEP;
+        LOG_RUN_INF("The status %d of instance %lld is not open, just wait.\n", (int32)g_dss_instance.status,
+            dss_get_inst_cfg()->params.inst_id);
+        time_now = g_timer()->now;
+        if (time_now - time_start > max_time * MICROSECS_PER_SECOND) {
+            LOG_RUN_ERR("[DSS] ABORT INFO: Fail to change status open for %d seconds, exit.", max_time);
+            cm_fync_logfile();
+            _exit(1);
+        }
+    }
 }
 
 status_t dss_process_command(dss_session_t *session)
@@ -1114,37 +1171,17 @@ status_t dss_process_command(dss_session_t *session)
         session->is_closed = CM_TRUE;
         return CM_ERROR;
     }
-    date_t time_start = g_timer()->now;
-    date_t time_now = 0;
+
     status = dss_check_proto_version(session);
     if (status != CM_SUCCESS) {
         dss_return_error(session);
         return CM_ERROR;
     }
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    uint32 max_time = inst_cfg->params.master_lock_timeout;
-    while (g_dss_instance.status != DSS_STATUS_OPEN) {
-        if (dss_can_cmd_type_no_open(session->recv_pack.head->cmd)) {
-            status = dss_exec_cmd(session, CM_TRUE);
-            if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("Failed to execute command:%d.", session->recv_pack.head->cmd);
-                dss_return_error(session);
-                return CM_ERROR;
-            } else {
-                dss_return_success(session);
-                return CM_SUCCESS;
-            }
-        }
-        DSS_GET_CM_LOCK_LONG_SLEEP;
-        LOG_RUN_INF("The status %d of instance %lld is not open, just wait.\n", (int32)g_dss_instance.status,
-            dss_get_inst_cfg()->params.inst_id);
-        time_now = g_timer()->now;
-        if (time_now - time_start > max_time * MICROSECS_PER_SECOND) {
-            LOG_RUN_ERR("[DSS] ABORT INFO: Fail to change status open for %d seconds, exit.", max_time);
-            cm_fync_logfile();
-            _exit(1);
-        }
+
+    if (!dss_can_cmd_type_no_open(session->recv_pack.head->cmd)) {
+        dss_process_cmd_wait_be_open(session);
     }
+
     status = dss_exec_cmd(session, CM_TRUE);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to execute command:%d.", session->recv_pack.head->cmd);

@@ -85,6 +85,7 @@ status_t cm_get_thv(thv_type_e var_type, bool32 is_create, pointer_t *result);
 
 status_t cm_launch_thv(thv_ctrl_t *thv_ctrls, uint32 thv_ctrl_cnt);
 
+uint32 dss_get_current_thread_id();
 #ifdef __cplusplus
 }
 #endif

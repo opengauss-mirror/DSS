@@ -264,8 +264,8 @@ status_t dss_alloc_fs_aux_inner(dss_session_t *session, dss_vg_info_item_t *vg_i
     redo.root = *root;
     dss_put_log(session, vg_item, DSS_RT_ALLOC_FS_AUX, &redo, sizeof(redo));
 
-    LOG_DEBUG_INF("[FS AUX]Alloc fs aux, id:%llu, free count:%llu, new free first:%llu.", DSS_ID_TO_U64(block_id),
-        root->free.count, DSS_ID_TO_U64(root->free.first));
+    LOG_DEBUG_INF("[FS AUX]Alloc fs aux, id:%llu, free count:%llu, new free first:%llu for core.version:%llu.",
+        DSS_ID_TO_U64(block_id), root->free.count, DSS_ID_TO_U64(root->free.first), vg_item->dss_ctrl->core.version);
     return CM_SUCCESS;
 }
 
@@ -499,7 +499,7 @@ static status_t dss_updt_one_fs_aux_base(dss_session_t *session, dss_vg_info_ite
         dss_unlatch_fs_aux(fs_aux);
         if (has_changed) {
             dss_block_ctrl_t *fs_aux_block_ctrl = dss_get_fs_aux_ctrl(fs_aux);
-            dss_add_syn_meta(vg_item, fs_aux_block_ctrl);
+            dss_add_syn_meta(vg_item, fs_aux_block_ctrl, fs_aux->head.common.version);
         }
     }
     LOG_DEBUG_INF("[FS AUX]End updt fs aux, fid:%llu, ftid:%llu, offset:%lld, size:%lld, fs aux id:%llu, data_id:%llu.",
@@ -708,7 +708,11 @@ dss_fs_aux_t *dss_find_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_ite
     dss_fs_aux_t *fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
         session, vg_item, block_id, DSS_BLOCK_TYPE_FS_AUX, check_version, out_obj_id, CM_FALSE);
     if (fs_aux == NULL) {
-        LOG_RUN_ERR("[FS AUX]Failed to get fs aux block:%s.", dss_display_metaid(block_id));
+        if (dss_is_server()) {
+            LOG_RUN_ERR("[FS AUX]Failed to get fs aux block:%s.", dss_display_metaid(block_id));
+        } else {
+            LOG_DEBUG_INF("[FS AUX]Failed to get fs aux block:%s.", dss_display_metaid(block_id));
+        }
         return NULL;
     }
 
@@ -770,9 +774,9 @@ void dss_get_inited_size_with_fs_aux(
 status_t dss_try_find_data_au_batch(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node,
     dss_fs_block_t *second_block, uint32 block_au_count_beg)
 {
-    // whn be primary, reload all th eblock meta by dss_refresh buffer_cache
     bool32 check_version = CM_TRUE;
-    if (dss_need_exec_local()) {
+    // when be primary and not in recovery, desc the find cost
+    if (dss_need_exec_local() && (dss_get_recover_status() == DSS_STATUS_OPEN)) {
         check_version = CM_FALSE;
     }
 
@@ -806,7 +810,8 @@ status_t dss_find_data_au_by_offset(
     }
 
     bool32 check_version = CM_TRUE;
-    if (dss_need_exec_local()) {
+    // when be primary and not in recovery, desc the find cost
+    if (dss_need_exec_local() && (dss_get_recover_status() == DSS_STATUS_OPEN)) {
         check_version = CM_FALSE;
     }
 
@@ -935,7 +940,13 @@ status_t dss_get_gft_node_with_cache(
         *node_out = node;
     } else {
         dss_unlatch(&vg_cache_node->latch);
-        node = dss_get_ft_node_by_ftid(session, vg_item, ftid, CM_FALSE, CM_FALSE);
+
+        bool32 check_version = CM_TRUE;
+        // when be primary and not in recovery, desc the find cost
+        if (dss_need_exec_local() && (dss_get_recover_status() == DSS_STATUS_OPEN)) {
+            check_version = CM_FALSE;
+        }
+        node = dss_get_ft_node_by_ftid(session, vg_item, ftid, check_version, CM_FALSE);
         if (!node) {
             DSS_RETURN_IFERR2(CM_ERROR, LOG_RUN_ERR("[FS AUX]Failed to find FTN, ftid:%s.", dss_display_metaid(ftid)));
         }
@@ -973,7 +984,13 @@ status_t dss_get_entry_block_with_cache(
         dss_unlatch_node(node);
     } else {
         dss_unlatch_node(node);
-        entry_block = dss_find_fs_block(session, vg_item, node, node->entry, CM_FALSE, NULL, DSS_ENTRY_FS_INDEX);
+
+        bool32 check_version = CM_TRUE;
+        // when be primary and not in recovery, desc the find cost
+        if (dss_need_exec_local() && (dss_get_recover_status() == DSS_STATUS_OPEN)) {
+            check_version = CM_FALSE;
+        }
+        entry_block = dss_find_fs_block(session, vg_item, node, node->entry, check_version, NULL, DSS_ENTRY_FS_INDEX);
         if (!entry_block) {
             DSS_RETURN_IFERR2(
                 CM_ERROR, LOG_RUN_ERR("[FS AUX]Failed to find entry block:%s.", dss_display_metaid(node->entry)));
@@ -1002,7 +1019,13 @@ status_t dss_get_second_block_with_cache(dss_session_t *session, dss_vg_info_ite
         dss_unlatch_node(node);
     } else {
         dss_unlatch_node(node);
-        second_block = dss_find_fs_block(session, vg_item, node, block_id, CM_FALSE, NULL, (uint16)block_count);
+
+        bool32 check_version = CM_TRUE;
+        // when be primary and not in recovery, desc the find cost
+        if (dss_need_exec_local() && (dss_get_recover_status() == DSS_STATUS_OPEN)) {
+            check_version = CM_FALSE;
+        }
+        second_block = dss_find_fs_block(session, vg_item, node, block_id, check_version, NULL, (uint16)block_count);
         if (!second_block) {
             DSS_RETURN_IFERR2(
                 CM_ERROR, LOG_RUN_ERR("[FS AUX]Failed to find second block:%s.", dss_display_metaid(block_id)));
@@ -1031,7 +1054,13 @@ status_t dss_get_fs_aux_with_cache(dss_session_t *session, dss_vg_info_item_t *v
         dss_unlatch_node(node);
     } else {
         dss_unlatch_node(node);
-        fs_aux = dss_find_fs_aux(session, vg_item, node, block_id, CM_FALSE, NULL, (uint16)block_au_count);
+
+        bool32 check_version = CM_TRUE;
+        // when be primary and not in recovery, desc the find cost
+        if (dss_need_exec_local() && (dss_get_recover_status() == DSS_STATUS_OPEN)) {
+            check_version = CM_FALSE;
+        }
+        fs_aux = dss_find_fs_aux(session, vg_item, node, block_id, check_version, NULL, (uint16)block_au_count);
         if (!fs_aux) {
             DSS_RETURN_IFERR2(
                 CM_ERROR, LOG_RUN_ERR("[FS AUX]Failed to find fs aux block:%s.", dss_display_metaid(block_id)));

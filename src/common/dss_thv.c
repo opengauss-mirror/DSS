@@ -36,6 +36,12 @@ extern "C" {
 #endif
 
 #ifndef WIN32
+static __thread uint32 run_ctx_thread_id = 0;
+#else
+__declspec(thread) uint32 run_ctx_thread_id = 0;
+#endif
+
+#ifndef WIN32
 /* ****Thread variable defined begin.**** */
 // THV --> THREAD VARIANT
 // Thread variable control function.
@@ -175,6 +181,15 @@ status_t cm_launch_thv(thv_ctrl_t *thv_ctrls, uint32 thv_ctrl_cnt)
 }
 
 #endif
+
+uint32 dss_get_current_thread_id()
+{
+    if (run_ctx_thread_id != 0) {
+        return run_ctx_thread_id;
+    }
+    run_ctx_thread_id = cm_get_current_thread_id();
+    return run_ctx_thread_id;
+}
 
 #ifdef __cplusplus
 }

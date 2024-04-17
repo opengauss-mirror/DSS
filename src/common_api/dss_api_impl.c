@@ -251,9 +251,10 @@ static status_t dss_check_find_fs_block(files_rw_ctx_t *rw_ctx, dss_fs_pos_desc_
 
         fs_pos->is_exist_aux = CM_TRUE;
         fs_pos->data_auid = fs_pos->fs_aux->head.data_id;
-        LOG_DEBUG_INF("Found fs aux block:%llu, data_id:%llu for fs_aux.parent:%llu, file:%llu, node:%llu.",
+        LOG_DEBUG_INF("Found fs aux block:%llu, data_id:%llu, version:%llu, for fs_aux.parent:%llu, file:%llu, node:%llu.",
             DSS_ID_TO_U64(fs_pos->fs_aux->head.common.id), DSS_ID_TO_U64(fs_pos->fs_aux->head.data_id),
-            DSS_ID_TO_U64(fs_pos->fs_aux->head.ftid), node->fid, DSS_ID_TO_U64(node->id));
+            fs_pos->fs_aux->head.common.version, DSS_ID_TO_U64(fs_pos->fs_aux->head.ftid), node->fid,
+            DSS_ID_TO_U64(node->id));
     }
     fs_pos->is_valid = CM_TRUE;
     return CM_SUCCESS;

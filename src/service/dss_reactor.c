@@ -99,7 +99,6 @@ void dss_reactor_attach_workthread(dss_session_t *session)
             workthread_ctx->current_session = session;
             workthread_ctx->task.param = workthread_ctx;
             session->workthread_ctx = workthread_ctx;
-            (void)cm_atomic_inc(&g_dss_instance.active_sessions);
             cm_dispatch_pooling_thread(workthread_ctx->thread_obj, &workthread_ctx->task);
             LOG_DEBUG_INF("[reactor] attach workthread %u to session %u sucessfully, active_sessions is %lld.", workthread_ctx->thread_obj->spid,
                 session->id, g_dss_instance.active_sessions);
@@ -127,7 +126,6 @@ static inline void dss_session_detach_workthread_inner(dss_session_t *session)
     dss_workthread_t *workthread_ctx = (dss_workthread_t *)session->workthread_ctx;
     session->workthread_ctx = NULL;
     session->status = DSS_SESSION_STATUS_IDLE;
-    (void)cm_atomic_dec(&g_dss_instance.active_sessions);
     LOG_DEBUG_INF("[reactor] detach workthread %u to session %u sucessfully, active_sessions is %lld.",
         workthread_ctx->thread_obj->spid, session->id, g_dss_instance.active_sessions);
     return;
