@@ -1001,7 +1001,10 @@ static void lsvg_printf_vlm_info(vg_vlm_space_info_t *vg_vlm_info, const char *m
         (void)printf("vg_name:%s\n", vg_vlm_info->vg_name);
         (void)printf("   volume_count:%u\n", vg_vlm_info->volume_count);
         (void)printf("   volumes:\n");
-        for (uint32 vol_id = 0; vol_id < vg_vlm_info->volume_count; vol_id++) {
+        for (uint32 vol_id = 0; vol_id < DSS_MAX_VOLUMES; vol_id++) {
+            if ((uint32)vg_vlm_info->volume_space_info[vol_id].volume_size == 0) {
+                continue;
+            }
             (void)printf("      volume_name:%s\n", vg_vlm_info->volume_space_info[vol_id].volume_name);
             double volume_free = vg_vlm_info->volume_space_info[vol_id].volume_free;
             volume_free = dss_convert_size(volume_free, measure);
