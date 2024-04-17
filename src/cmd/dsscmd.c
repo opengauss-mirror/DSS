@@ -410,6 +410,22 @@ static status_t cmd_check_inst_id(const char *inst_str)
     return CM_SUCCESS;
 }
 
+static status_t cmd_check_block_index_id(const char *index_str)
+{
+    uint32 index_id;
+    status_t ret = cm_str2uint32(index_str, &index_id);
+    if (ret != CM_SUCCESS) {
+        DSS_PRINT_ERROR("The value of index_id  or node_id is invalid.\n");
+        return CM_ERROR;
+    }
+    uint32 max_block_index_id = MAX(DSS_MAX_FS_BLOCK_INDEX_ID, DSS_MAX_FT_BLOCK_INDEX_ID);
+    if (index_id < DSS_MIN_BLOCK_INDEX_ID || index_id >= max_block_index_id) {
+        DSS_PRINT_ERROR("The value of index_id or node_id should be in [%u, %u).\n", DSS_MIN_BLOCK_INDEX_ID, max_block_index_id);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
 static status_t cmd_check_show_type(const char *show_type)
 {
     if (strlen(show_type) != 1) {
@@ -2472,7 +2488,7 @@ static dss_args_t cmd_showdisk_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
     {'s', "struct_name", CM_TRUE, CM_TRUE, cmd_check_struct_name, NULL, NULL, 0, NULL, NULL, 0},
     {'b', "block_id", CM_TRUE, CM_TRUE, cmd_check_disk_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'n', "node_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
+    {'n', "node_id", CM_TRUE, CM_TRUE, cmd_check_block_index_id, NULL, NULL, 0, NULL, NULL, 0},
     {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
         NULL, NULL, 0},
 };
@@ -2624,7 +2640,7 @@ static dss_args_t cmd_showmem_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
     {'s', "struct_name", CM_TRUE, CM_TRUE, cmd_check_struct_name, NULL, NULL, 0, NULL, NULL, 0},
     {'b', "block_id", CM_TRUE, CM_TRUE, cmd_check_disk_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'i', "index_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
+    {'i', "index_id", CM_TRUE, CM_TRUE, cmd_check_block_index_id, NULL, NULL, 0, NULL, NULL, 0},
     {'f', "fid", CM_TRUE, CM_TRUE, cmd_check_fid, NULL, NULL, 0, NULL, NULL, 0},
     {'n', "node_id", CM_TRUE, CM_TRUE, cmd_check_disk_id, NULL, NULL, 0, NULL, NULL, 0},
     {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
@@ -2733,9 +2749,9 @@ static void showmem_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s showmem <-g vg_name> <-s struct_name> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("      %s showmem <-g vg_name> <-b block_id> <-i index_id> [-U UDS:socket_domain]\n", prog_name);
-    (void)printf("      %s showmem <-g vg_name> <-f fid> <-n node_id> [-o offset] [-z size] [-U UDS:socket_domain]\n",
+    (void)printf("      %s showmem <-g vg_name> <-f fid> <-n node_id> [-o offset -z size] [-U UDS:socket_domain]\n",
         prog_name);
-    (void)printf("      %s showmem <-p path> [-o offset] [-z size] [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("      %s showmem <-p path> [-o offset -z size] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command] showmem information\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
@@ -2749,8 +2765,8 @@ static void showmem_help(const char *prog_name, int print_flag)
     (void)printf("-f/--fid <fid>, <required>, file id\n");
     (void)printf("-n/--node_id <node_id>, <required>, node id\n");
     (void)printf("-p/--path <path>, <required>, dss file path\n");
-    (void)printf("-o/--offset <offset>, <required>, offset\n");
-    (void)printf("-z/--size <size>, <required>, size\n");
+    (void)printf("-o/--offset <offset>, [optional], offset\n");
+    (void)printf("-z/--size <size>, [optional], size\n");
     help_param_uds();
 }
 
@@ -2863,7 +2879,7 @@ static dss_args_t cmd_fshowmem_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
     {'s', "struct_name", CM_TRUE, CM_TRUE, cmd_check_struct_name, NULL, NULL, 0, NULL, NULL, 0},
     {'b', "block_id", CM_TRUE, CM_TRUE, cmd_check_disk_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'i', "index_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
+    {'i', "index_id", CM_TRUE, CM_TRUE, cmd_check_block_index_id, NULL, NULL, 0, NULL, NULL, 0},
     {'f', "fid", CM_TRUE, CM_TRUE, cmd_check_fid, NULL, NULL, 0, NULL, NULL, 0},
     {'n', "node_id", CM_TRUE, CM_TRUE, cmd_check_disk_id, NULL, NULL, 0, NULL, NULL, 0},
     {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
@@ -2977,10 +2993,10 @@ static void fshowmem_help(const char *prog_name, int print_flag)
     (void)printf("\nUsage:%s fshowmem <-m memory_file_path> <-g vg_name> <-s struct_name> [-D DSS_HOME]\n", prog_name);
     (void)printf(
         "      %s fshowmem <-m memory_file_path> <-g vg_name> <-b block_id> <-i index_id> [-D DSS_HOME]\n", prog_name);
-    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-f fid> <-n node_id> [-o offset] [-z size] [-D "
+    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-f fid> <-n node_id> [-o offset -z size] [-D "
                  "DSS_HOME]\n",
         prog_name);
-    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-p path> [-o offset] [-z size] [-D DSS_HOME]\n",
+    (void)printf("      %s fshowmem <-m memory_file_path> <-g vg_name> <-p path> [-o offset -z size] [-D DSS_HOME]\n",
         prog_name);
     (void)printf("[client command] fshowmem information\n");
     if (print_flag == DSS_HELP_SIMPLE) {
@@ -2996,8 +3012,8 @@ static void fshowmem_help(const char *prog_name, int print_flag)
     (void)printf("-f/--fid <fid>, <required>, file id\n");
     (void)printf("-n/--node_id <node_id>, <required>, node id\n");
     (void)printf("-p/--path <path>, <required>, dss file path\n");
-    (void)printf("-o/--offset <offset>, <required>, offset\n");
-    (void)printf("-z/--size <size>, <required>, size\n");
+    (void)printf("-o/--offset <offset>, [optional], offset\n");
+    (void)printf("-z/--size <size>, [optional], size\n");
     help_param_dsshome();
 }
 
