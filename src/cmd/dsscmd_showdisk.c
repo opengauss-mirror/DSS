@@ -496,7 +496,7 @@ status_t dss_print_fsb_by_id_detail_part(
         ((end_first_fs_index != CM_INVALID_ID32) && (end_first_fs_index > size - 1)) ||
         ((start_second_fs_index != CM_INVALID_ID32) && (start_second_fs_index > size - 1)) ||
         ((end_second_fs_index != CM_INVALID_ID32) && (end_second_fs_index > size - 1))) {
-        DSS_PRINT_ERROR("node_id should be in range 0-%u.\n", size - 1);
+        DSS_PRINT_ERROR("index should be in range 0-%u.\n", size - 1);
         return CM_ERROR;
     }
     if (start_first_fs_index == end_first_fs_index) {
@@ -687,7 +687,7 @@ static status_t dss_print_ftn_by_id(char *block, uint64 node_id)
         }
     } else {
         if (node_id > size - 1) {
-            DSS_PRINT_ERROR("node_id should be in range 0-%u.\n", size - 1);
+            DSS_PRINT_ERROR("The value of index_id or node_id should be in range 0-%u.\n", size - 1);
             return CM_ERROR;
         }
         node = (gft_node_t *)(block + sizeof(dss_ft_block_t) + node_id * sizeof(gft_node_t));
@@ -790,7 +790,7 @@ static status_t dss_print_fsb_by_id(char *block, uint64 node_id)
         }
     } else {
         if (node_id > size - 1) {
-            DSS_PRINT_ERROR("node_id should be in range 0-%u.\n", size - 1);
+            DSS_PRINT_ERROR("The value of index_id or node_id should be in range 0-%u.\n", size - 1);
             return CM_ERROR;
         }
         node = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + node_id * sizeof(dss_block_id_t));
