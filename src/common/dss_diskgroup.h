@@ -87,6 +87,7 @@ dss_vg_info_item_t *dss_find_vg_item(const char *vg_name);
 dss_vg_info_item_t *dss_find_vg_item_by_id(uint32 vg_id);
 
 status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **info);
+status_t dss_load_vg_info_and_recover(bool8 need_recovery);
 status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock);
 
 status_t dss_load_vg_ctrl_part(dss_vg_info_item_t *vg_item, int64 offset, void *buf, int32 size, bool32 *remote);
@@ -200,7 +201,6 @@ extern dss_is_open_status_proc_t is_open_status_proc;
 void regist_is_open_status_proc(dss_is_open_status_proc_t proc);
 int32 dss_get_server_status_flag();
 void dss_set_server_status_flag(int32 dss_status);
-status_t dss_load_ctrlinfo(uint32 index);
 
 status_t dss_init_volume(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume);
 status_t dss_check_write_volume(dss_vg_info_item_t *vg_item, uint32 volumeid, int64 offset, void *buf, uint32 size);

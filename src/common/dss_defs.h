@@ -166,7 +166,8 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_FILE_SPACE_BLOCK_SIZE SIZE_K(16)  // unit:K
 #define DSS_BLOCK_CTRL_SIZE 512
 #define DSS_META_BITMAP_SIZE (DSS_FILE_SPACE_BLOCK_SIZE / 8)  // UNUSED
-#define DSS_LOADDISK_BUFFER_SIZE SIZE_K(32)
+#define DSS_LOADDISK_BUFFER_SIZE SIZE_M(1)
+#define DSS_MAX_META_BLOCK_SIZE (SIZE_K(16) + 512)
 
 #define DSS_INVALID_64 DSS_INVALID_ID64
 

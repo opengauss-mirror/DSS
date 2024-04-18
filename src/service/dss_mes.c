@@ -408,8 +408,7 @@ static bool32 dss_check_srv_status(mes_msg_t *msg)
     dss_message_head_t *dss_head = (dss_message_head_t *)(msg->buffer);
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 max_time = inst_cfg->params.master_lock_timeout;
-    while (g_dss_instance.status != DSS_STATUS_OPEN &&
-           (dss_head->dss_cmd != DSS_CMD_REQ_JOIN_CLUSTER && dss_head->dss_cmd != DSS_CMD_ACK_JOIN_CLUSTER)) {
+    while (g_dss_instance.status != DSS_STATUS_OPEN && dss_head->dss_cmd != DSS_CMD_ACK_JOIN_CLUSTER) {
         LOG_DEBUG_INF(
             "[MES] Could not exec remote req for the dssserver is not open or msg not join cluster, src node:%u.",
             (uint32)(dss_head->src_inst));
@@ -560,31 +559,46 @@ static status_t dss_register_proc(void)
 }
 
 #define DSS_MES_PRIO_CNT 2
-static void dss_set_mes_buffer_pool(unsigned long long recv_msg_buf_size, mes_profile_t *profile)
+static status_t dss_set_mes_buffer_pool(unsigned long long recv_msg_buf_size, mes_profile_t *profile)
 {
+    unsigned long long fourth_pool_total_size = DSS_FOURTH_BUFFER_LENGTH * DSS_MSG_BUFFER_QUEUE_NUM;
+    if (recv_msg_buf_size < fourth_pool_total_size) {
+        LOG_RUN_ERR("recv_msg_buf_size should be greater than fourth pool size");
+        return CM_ERROR;
+    }
+    recv_msg_buf_size = recv_msg_buf_size - fourth_pool_total_size;
     uint32 pool_idx;
     for (uint32 i = 0; i < profile->priority_cnt; i++) {
         pool_idx = 0;
         profile->buffer_pool_attr[i].pool_count = DSS_BUFFER_POOL_NUM;
         profile->buffer_pool_attr[i].queue_count = DSS_MSG_BUFFER_QUEUE_NUM;
-
         // 64 buffer pool
         profile->buffer_pool_attr[i].buf_attr[pool_idx].count =
             (uint32)(recv_msg_buf_size * DSS_FIRST_BUFFER_RATIO) / DSS_FIRST_BUFFER_LENGTH;
         profile->buffer_pool_attr[i].buf_attr[pool_idx].size = DSS_FIRST_BUFFER_LENGTH;
-
+        LOG_RUN_INF("First buffer pool count is %u, pool size is %u.",
+            profile->buffer_pool_attr[i].buf_attr[pool_idx].count, profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
         // 128 buffer pool
         pool_idx++;
         profile->buffer_pool_attr[i].buf_attr[pool_idx].count =
             (uint32)(recv_msg_buf_size * DSS_SECOND_BUFFER_RATIO) / DSS_SECOND_BUFFER_LENGTH;
         profile->buffer_pool_attr[i].buf_attr[pool_idx].size = DSS_SECOND_BUFFER_LENGTH;
-
+        LOG_RUN_INF("Second buffer pool count is %u, pool size is %u.",
+            profile->buffer_pool_attr[i].buf_attr[pool_idx].count, profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
         // 32k buffer pool
         pool_idx++;
         profile->buffer_pool_attr[i].buf_attr[pool_idx].count =
             (uint32)(recv_msg_buf_size * DSS_THIRDLY_BUFFER_RATIO) / DSS_THIRD_BUFFER_LENGTH;
         profile->buffer_pool_attr[i].buf_attr[pool_idx].size = DSS_THIRD_BUFFER_LENGTH;
+                LOG_RUN_INF("Third buffer pool count is %u, pool size is %u.",
+            profile->buffer_pool_attr[i].buf_attr[pool_idx].count, profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
+        pool_idx++;
+        profile->buffer_pool_attr[i].buf_attr[pool_idx].count = DSS_MSG_BUFFER_QUEUE_NUM;
+        profile->buffer_pool_attr[i].buf_attr[pool_idx].size = DSS_FOURTH_BUFFER_LENGTH;
+                LOG_RUN_INF("Third buffer pool count is %u, pool size is %u.",
+            profile->buffer_pool_attr[i].buf_attr[pool_idx].count, profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
     }
+    return CM_SUCCESS;
 }
 
 static void dss_set_group_task_num(dss_config_t *dss_profile, mes_profile_t *mes_profile)
@@ -607,7 +621,6 @@ static void dss_set_group_task_num(dss_config_t *dss_profile, mes_profile_t *mes
         MAX(1, (uint32)(work_thread_cnt_comm * DSS_RECV_WORK_THREAD_RATIO));
 }
 
-#define DSS_MES_FRAG_SIZE (32 * 1024)
 static status_t dss_set_mes_profile(mes_profile_t *profile)
 {
     errno_t errcode = memset_sp(profile, sizeof(mes_profile_t), 0, sizeof(mes_profile_t));
@@ -640,12 +653,15 @@ static status_t dss_set_mes_profile(mes_profile_t *profile)
         }
     }
     profile->priority_cnt = DSS_MES_PRIO_CNT;
-    profile->frag_size = DSS_MES_FRAG_SIZE;
+    profile->frag_size = DSS_FOURTH_BUFFER_LENGTH;
     profile->max_wait_time = inst_cfg->params.mes_wait_timeout;
     profile->connect_timeout = CM_CONNECT_TIMEOUT;
     profile->socket_timeout = CM_NETWORK_IO_TIMEOUT;
 
-    dss_set_mes_buffer_pool(inst_cfg->params.mes_pool_size, profile);
+    status_t status = dss_set_mes_buffer_pool(inst_cfg->params.mes_pool_size, profile);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
     dss_set_group_task_num(inst_cfg, profile);
     profile->tpool_attr.enable_threadpool = CM_FALSE;
     return CM_SUCCESS;
@@ -1255,9 +1271,15 @@ static status_t dss_init_readvlm_remote_params(
     return CM_SUCCESS;
 }
 
-static bool32 dss_packets_verify(big_packets_ctrl_t *lastctrl, big_packets_ctrl_t *ctrl)
+static bool32 dss_packets_verify(big_packets_ctrl_t *lastctrl, big_packets_ctrl_t *ctrl, uint32 size)
 {
-    if ((ctrl->endflag != CM_TRUE) || (ctrl->cursize + ctrl->offset != ctrl->totalsize)) {
+    if (ctrl->endflag != CM_TRUE && size != ctrl->totalsize) {
+        LOG_RUN_ERR("[MES] end flag is not CM_TRUE.");
+        return CM_FALSE;
+    }
+    if (ctrl->endflag == CM_TRUE && ctrl->cursize + ctrl->offset != ctrl->totalsize) {
+        LOG_RUN_ERR("[MES]size is not true, cursize is %u, offset is %u, total size is %u.",
+            ctrl->cursize, ctrl->offset, ctrl->totalsize);
         return CM_FALSE;
     }
 
@@ -1294,7 +1316,7 @@ static status_t dss_rec_msgs(ruid_type ruid, void *buf, uint32 size)
             return ret;
         }
         ctrl = (big_packets_ctrl_t *)msg.buffer;
-        if (dss_packets_verify(&lastctrl, ctrl) == CM_FALSE) {
+        if (dss_packets_verify(&lastctrl, ctrl, size) == CM_FALSE) {
             mes_release_msg(&msg);
             LOG_RUN_ERR("dss server receive msg verify failed.");
             return CM_ERROR;
