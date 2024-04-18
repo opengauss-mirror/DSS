@@ -3590,7 +3590,7 @@ status_t dss_truncate_inner(dss_session_t *session, uint64 fid, ftid_t ftid, int
     CM_RETURN_IFERR(dss_get_block_entry(session, vg_item, inst_cfg, fid, ftid, &node, &entry_block));
 
     uint64 written_size = (uint64)length;
-    if (written_size == node->written_size) {
+    if ((written_size == node->written_size) && (align_length == (uint64)node->size)) {
         LOG_DEBUG_INF("No truncate file:%s, size:%llu, written_size:%llu", node->name, node->size, node->written_size);
         dss_unlock_vg_mem_and_shm(session, vg_item);
         return CM_SUCCESS;
