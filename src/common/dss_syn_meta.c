@@ -45,16 +45,16 @@ void regist_meta_syn2other_nodes_proc(dss_meta_syn2other_nodes_proc_t proc)
     meta_syn2other_nodes_proc = proc;
 }
 
-void dss_add_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl)
+void dss_add_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl, uint64 version)
 {
     if (!enable_syn_meta || meta_syn2other_nodes_proc == NULL || !dss_is_block_ctrl_valid(block_ctrl)) {
         return;
     }
 
     (void)cm_atomic_inc((atomic_t *)&block_ctrl->syn_meta_ref_cnt);
-    LOG_DEBUG_INF("add syn meta for fid:%llu, ftid:%llu, file_ver:%llu, type:%u, id:%llu, ref_cnt:%llu",
+    LOG_DEBUG_INF("add syn meta for fid:%llu, ftid:%llu, file_ver:%llu, type:%u, id:%llu, ref_cnt:%llu, version:%llu",
         block_ctrl->fid, block_ctrl->ftid, block_ctrl->file_ver, (uint32)block_ctrl->type,
-        DSS_ID_TO_U64(block_ctrl->block_id), block_ctrl->syn_meta_ref_cnt);
+        DSS_ID_TO_U64(block_ctrl->block_id), block_ctrl->syn_meta_ref_cnt, version);
 
     dss_latch_x(&vg_item->syn_meta_desc.latch);
     // if has been in the link, just leave

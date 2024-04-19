@@ -31,6 +31,7 @@
 #include "dss_api.h"
 #include "dss_mes.h"
 #include "dss_syn_meta.h"
+#include "dss_thv.h"
 
 #ifndef WIN32
 static __thread char *g_thv_read_buf = NULL;
@@ -467,11 +468,13 @@ static status_t dss_process_remote_req_prepare(dss_session_t *session, mes_msg_t
     dss_message_head_t *dss_head = (dss_message_head_t *)msg->buffer;
     // ready the ack connection
     dss_check_peer_by_inst(&g_dss_instance, dss_head->src_inst);
-    if (dss_head->dss_cmd != DSS_CMD_REQ_BROADCAST && !dss_need_exec_local()) {
+    if (dss_head->dss_cmd != DSS_CMD_REQ_BROADCAST &&
+        (!dss_need_exec_local() || dss_get_recover_status() != DSS_STATUS_OPEN)) {
         LOG_RUN_ERR("Proc msg cmd:%u from remote node:%u fail, can NOT exec here.", (uint32)dss_head->dss_cmd,
             dss_head->src_inst);
         return CM_ERROR;
     }
+
     if (dss_check_srv_status(msg) != CM_TRUE) {
         LOG_RUN_ERR("Proc msg cmd:%u from remote node:%u fail, local status fail.", (uint32)dss_head->dss_cmd,
             dss_head->src_inst);

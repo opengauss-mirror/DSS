@@ -54,7 +54,7 @@ typedef struct st_dss_invalidate_meta_msg {
 bool32 dss_is_syn_meta_enable();
 void dss_set_syn_meta_enable(bool32 is_enable_syn_meta);
 
-void dss_add_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl);
+void dss_add_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl, uint64 version);
 void dss_del_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl, int64 syn_meta_ref_cnt);
 bool32 dss_syn_buffer_cache(dss_vg_info_item_t *vg_item);
 status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, uint32 size, bool32 *ack);

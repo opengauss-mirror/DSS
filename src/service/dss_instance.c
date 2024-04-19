@@ -42,6 +42,7 @@
 #include "dss_service.h"
 #include "dss_zero.h"
 #include "cm_utils.h"
+#include "dss_thv.h"
 
 #define DSS_MAINTAIN_ENV "DSS_MAINTAIN"
 dss_instance_t g_dss_instance;
@@ -721,8 +722,14 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
     } else {
         LOG_RUN_INF("master_id is %u when get cm lock to do recovery.", curr_id);
     }
-    dss_set_master_id(curr_id);
-    if (inst->status == DSS_STATUS_PREPARE) {
+
+    dss_instance_status_e old_status = inst->status;
+
+    inst->status = DSS_STATUS_RECOVERY;
+    dss_set_recover_status((uint32)DSS_STATUS_RECOVERY);
+    CM_MFENCE;
+
+    if (old_status == DSS_STATUS_PREPARE) {
         status_t status = dss_load_vg_info_and_recover(CM_TRUE);
         if (status != CM_SUCCESS) {
             LOG_RUN_ERR("[DSS] ABORT INFO: Failed to get vg info when instance start.");
@@ -730,10 +737,10 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
             _exit(1);
         }
     }
-    if (!first_start) {
+
+    if (old_status == DSS_STATUS_OPEN && !first_start) {
         dss_wait_session_pause(inst);
     }
-    inst->status = DSS_STATUS_RECOVERY;
     dss_wait_background_pause(inst);
 
     status_t ret = dss_recover_from_instance(inst);
@@ -757,11 +764,17 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
         dss_destroy_session(session);
         dss_set_session_running(inst);
     }
+
+    // when current node is standby, and will change to primary, the status is from DSS_STATUS_OPEN to
+    // DSS_STATUS_RECOVERY, need to set the master id after the status finish
+    dss_set_master_id(curr_id);
+
     dss_set_server_status_flag(DSS_STATUS_READWRITE);
     LOG_RUN_INF("inst %u set status flag %u when get cm lock.", curr_id, DSS_STATUS_READWRITE);
     // when primary, no need to check result
     g_dss_instance.is_join_cluster = CM_TRUE;
     inst->status = DSS_STATUS_OPEN;
+    dss_set_recover_status((uint32)DSS_STATUS_OPEN);
 }
 
 void dss_recovery_when_standby(dss_instance_t *inst, uint32 curr_id, uint32 master_id)
@@ -824,8 +837,13 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
 void dss_get_cm_lock_and_recover(thread_t *thread)
 {
     cm_set_thread_name("recovery");
+
+    dss_set_recover_thread_id(dss_get_current_thread_id());
+
+    dss_instance_t *inst = (dss_instance_t *)thread->argument;
+
+
     while (!thread->closed) {
-        dss_instance_t *inst = (dss_instance_t *)thread->argument;
         dss_get_cm_lock_and_recover_inner(inst);
         if (inst->status == DSS_STATUS_PREPARE) {
             cm_sleep(DSS_SHORT_RECOVERY_INTERVAL);
