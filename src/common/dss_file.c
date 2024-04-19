@@ -1428,8 +1428,9 @@ status_t dss_init_ft_block(dss_vg_info_item_t *vg_item, char *block, uint32_t bl
         if (!cmp) {
             last_node = dss_get_ft_node_by_ftid(NULL, vg_item, gft->free_list.last, CM_FALSE, CM_FALSE);
             if (last_node == NULL) {
-                DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("[FT][FORMAT] Failed to get file table node:%s.",
-                                                dss_display_metaid(gft->free_list.last)));
+                LOG_DEBUG_ERR(
+                    "[FT][FORMAT] Failed to get file table node:%s.", dss_display_metaid(gft->free_list.last));
+                return CM_ERROR;
             }
 
             last_node->next = auid;
@@ -2032,7 +2033,7 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     }
     DSS_LOG_DEBUG_OP("[FT][ALLOC] Succeed to allocate ftnode:%s for file:%s.", dss_display_metaid(node->id), name);
     LOG_DEBUG_INF("[FT][ALLOC] Parent node name:%s, %s", parent_node->name, dss_display_metaid(parent_node->id));
-    int32 node_flag = DSS_FT_NODE_FLAG_NORMAL;
+    uint32 node_flag = DSS_FT_NODE_FLAG_NORMAL;
     if (type == GFT_FILE && DSS_IS_FILE_INNER_INITED(flag)) {
         node_flag |= DSS_FT_NODE_FLAG_INNER_INITED;
     }
@@ -2854,7 +2855,8 @@ status_t dss_extend_batch(
     int64 file_size = node_data->offset + node_data->size;
     uint64 align_size = CM_CALC_ALIGN((uint64)file_size, au_size);
 
-    uint64 au_count = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(auid_t);  // 2043 2nd FSBs
+    uint64 au_count =
+        (DSS_FILE_SPACE_BLOCK_SIZE - (uint64)sizeof(dss_fs_block_header)) / (uint64)sizeof(auid_t);  // 2043 2nd FSBs
     uint64 block_len = au_count * au_size;  // [4G, 128G] per 2nd_level FSB, with AU range [2MB, 64MB]
 
     bool32 cur_finish;
@@ -2937,10 +2939,10 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
             dss_redo_set_fs_block_t redo;
             redo.id = node->entry;
             redo.index = (uint16)block_count;
-            redo.value = second_block->head.common.id;
-            redo.used_num = entry_block->head.used_num;
-            redo.old_used_num = old_used_num;
             redo.old_value = old_id;
+            redo.value = second_block->head.common.id;
+            redo.old_used_num = old_used_num;
+            redo.used_num = entry_block->head.used_num;    
             dss_put_log(session, vg_item, DSS_RT_SET_FILE_FS_BLOCK, &redo, sizeof(redo));
         } else {
             need_get_second = CM_TRUE;

@@ -105,7 +105,12 @@ void dss_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl, dss
         meta_syn.vg_id = vg_item->id;
         meta_syn.meta_type = block_ctrl->type;
         meta_syn.meta_len = dss_buffer_cache_get_block_size(block_ctrl->type);
-        (void)memcpy_s(meta_syn.meta, meta_syn.meta_len, (char *)block, meta_syn.meta_len);
+        errno_t errcode = memcpy_s(meta_syn.meta, meta_syn.meta_len, (char *)block, meta_syn.meta_len);
+        if (SECUREC_UNLIKELY(errcode != EOK)) {
+            dss_unlock_vg_mem_and_shm(NULL, vg_item);
+            DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
+            return;
+        }
         dss_unlock_vg_mem_and_shm(NULL, vg_item);
 
         (void)meta_syn2other_nodes_proc(
@@ -156,10 +161,10 @@ bool32 dss_syn_buffer_cache(dss_vg_info_item_t *vg_item)
 
         is_valid = dss_is_block_ctrl_valid(block_ctrl);
         if (!is_valid) {
-            if (bilist_node_tail != bilist_node) {
-                bilist_node_next = BINODE_NEXT(bilist_node);
-            } else {
+            if (bilist_node_tail == bilist_node) {
                 bilist_node_next = NULL;
+            } else {
+                bilist_node_next = BINODE_NEXT(bilist_node);
             }
             dss_del_syn_meta(vg_item, block_ctrl, syn_meta_ref_cnt);
             if (block_ctrl->type == DSS_BLOCK_TYPE_FT) {
@@ -252,7 +257,12 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
             meta_syn->fid, meta_syn->file_ver, meta_syn->vg_id, meta_syn->meta_block_id, meta_syn->meta_type,
             meta_syn->syn_meta_version);
     } else {
-        (void)memcpy_s(block, meta_len, meta_syn->meta, meta_syn->meta_len);
+        errno_t errcode = memcpy_s(block, meta_len, meta_syn->meta, meta_syn->meta_len);
+        if (SECUREC_UNLIKELY(errcode != EOK)) {
+            dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);
+            DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
+            return CM_ERROR;
+        }
     }
 
     dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);

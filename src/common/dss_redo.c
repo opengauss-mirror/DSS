@@ -499,8 +499,11 @@ static status_t rb_redo_alloc_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entr
 static status_t dss_update_ft_info(dss_vg_info_item_t *vg_item, dss_ft_block_t *block, dss_redo_format_ft_t *data)
 {
     status_t status = dss_update_ft_block_disk(vg_item, block, data->old_last_block);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO] Failed to update file table block to disk, %s.",
-                                  dss_display_metaid(data->old_last_block)));
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR(
+            "[REDO] Failed to update file table block to disk, %s.", dss_display_metaid(data->old_last_block));
+        return status;
+    }
     status = dss_update_ft_root(vg_item);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO] Failed to update file table root, vg:%s.", vg_item->vg_name));
     return CM_SUCCESS;
@@ -806,17 +809,15 @@ status_t rp_redo_set_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
     status_t status;
     dss_redo_set_fs_block_t *data = (dss_redo_set_fs_block_t *)entry->data;
 
-    dss_fs_block_t *block;
     bool32 check_version = CM_FALSE;
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
         check_version = CM_TRUE;
     }
 
-    block = (dss_fs_block_t *)dss_find_block_in_shm(
+    dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
         NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
     if (block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
-        return CM_ERROR;
     }
 
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
@@ -1274,7 +1275,6 @@ status_t rp_redo_set_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_
         NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
     if (block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
-        return CM_ERROR;
     }
 
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {

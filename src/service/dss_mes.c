@@ -658,8 +658,8 @@ static status_t dss_set_mes_profile(mes_profile_t *profile)
     profile->priority_cnt = DSS_MES_PRIO_CNT;
     profile->frag_size = DSS_FOURTH_BUFFER_LENGTH;
     profile->max_wait_time = inst_cfg->params.mes_wait_timeout;
-    profile->connect_timeout = CM_CONNECT_TIMEOUT;
-    profile->socket_timeout = CM_NETWORK_IO_TIMEOUT;
+    profile->connect_timeout = (int)CM_CONNECT_TIMEOUT;
+    profile->socket_timeout = (int)CM_NETWORK_IO_TIMEOUT;
 
     status_t status = dss_set_mes_buffer_pool(inst_cfg->params.mes_pool_size, profile);
     if (status != CM_SUCCESS) {
@@ -760,7 +760,7 @@ status_t dss_notify_expect_bool_ack(dss_vg_info_item_t *vg_item, dss_bcast_req_c
     dss_recv_msg_t recv_msg = {CM_TRUE, *cmd_ack, DSS_PROTO_VERSION, 0, 0, CM_FALSE};
     recv_msg.broadcast_proto_ver = dss_get_broadcast_proto_ver(0);
     dss_notify_req_msg_t req;
-    status_t status;
+    status_t ret;
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     dss_params_t *param = &inst_cfg->params;
     do {
@@ -774,8 +774,8 @@ status_t dss_notify_expect_bool_ack(dss_vg_info_item_t *vg_item, dss_bcast_req_c
         LOG_DEBUG_INF("[MES] notify other dss instance to do cmd %u, ftid:%llu in vg:%s.", cmd, ftid, vg_item->vg_name);
         dss_init_mes_head(&req.dss_head, DSS_CMD_REQ_BROADCAST, 0, (uint16)param->inst_id, CM_INVALID_ID16,
             sizeof(dss_notify_req_msg_t), recv_msg.broadcast_proto_ver, 0);
-        status = dss_notify_sync((char *)&req, req.dss_head.size, &recv_msg);
-        if (status == ERR_DSS_VERSION_NOT_MATCH) {
+        ret = dss_notify_sync((char *)&req, req.dss_head.size, &recv_msg);
+        if (ret == ERR_DSS_VERSION_NOT_MATCH) {
             uint32 new_proto_ver = dss_get_broadcast_proto_ver(recv_msg.succ_inst);
             LOG_RUN_INF("[CHECK_PROTO]broadcast msg proto version has changed, old is %hhu, new is %hhu",
                 recv_msg.broadcast_proto_ver, new_proto_ver);
@@ -787,14 +787,14 @@ status_t dss_notify_expect_bool_ack(dss_vg_info_item_t *vg_item, dss_bcast_req_c
             break;
         }
     } while (CM_TRUE);
-    if (status != CM_SUCCESS) {
+    if (ret != CM_SUCCESS) {
         LOG_RUN_ERR("[DSS]: Failed to notify other dss instance, cmd: %u, file: %llu, vg: %s, errcode:%d, "
                     "OS errno:%d, OS errmsg:%s.",
             cmd, ftid, vg_item->vg_name, cm_get_error_code(), errno, strerror(errno));
         return CM_ERROR;
     }
     *cmd_ack = recv_msg.cmd_ack;
-    return status;
+    return ret;
 }
 
 status_t dss_notify_data_expect_bool_ack(

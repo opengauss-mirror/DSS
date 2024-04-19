@@ -39,7 +39,7 @@ void dss_calc_fs_aux_pos(uint64 au_size, int64 offset, dss_fs_aux_pos_desc_t *po
     uint32 block_len = (DSS_BYTE_BITS_SIZE * DSS_PAGE_SIZE);
 
     pos->byte_index = (au_offset / (int64)block_len);
-    int64 block_offset = (au_offset % (int64)block_len);
+    uint64 block_offset = (au_offset % (int64)block_len);
     if (is_end) {
         // such as 512 byte, it's in [(0, 0), (0,1))
         block_offset = CM_CALC_ALIGN(block_offset, DSS_PAGE_SIZE);
@@ -215,8 +215,11 @@ status_t dss_format_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, 
         ga_obj_id.obj_id = obj_id;
         status = dss_register_buffer_cache(vg_item, block->head.common.id, ga_obj_id,
             (dss_block_ctrl_t *)((char *)block + DSS_FS_AUX_SIZE), DSS_BLOCK_TYPE_FS_AUX);
-        DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[FS AUX]Failed to register fs aux, id:%s, obj id:%u.",
-                                      dss_display_metaid(block->head.common.id), obj_id));
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("[FS AUX]Failed to register fs aux, id:%s, obj id:%u.",
+                dss_display_metaid(block->head.common.id), obj_id);
+            return status;
+        }
         obj_id = ga_next_object(GA_FS_AUX_POOL, obj_id);
     }
 
@@ -479,8 +482,8 @@ static status_t dss_updt_one_fs_aux_base(dss_session_t *session, dss_vg_info_ite
 
     status_t status = dss_get_fs_aux_with_cache(session, vg_item, node, auid, (block_au_count), &fs_aux);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[FS AUX]Failed to find fs aux block:%s.", dss_display_metaid(auid)));
-    DSS_RETURN_IF_FALSE2(
-        (fs_aux != NULL), LOG_RUN_ERR("[FS AUX]Failed to find fs aux block:%s.", dss_display_metaid(auid)));
+    bool32 result = (bool32)(fs_aux != NULL);
+    DSS_RETURN_IF_FALSE2(result, LOG_RUN_ERR("[FS AUX]Failed to find fs aux block:%s.", dss_display_metaid(auid)));
 
     LOG_DEBUG_INF("[FS AUX]Try updt fs aux, fid:%llu, ftid:%llu, offset:%lld, size:%lld, fs aux id:%llu, data_id:%llu.",
         node->fid, DSS_ID_TO_U64(node->id), offset, size, DSS_ID_TO_U64(auid), DSS_ID_TO_U64(fs_aux->head.data_id));
@@ -531,8 +534,8 @@ static status_t dss_updt_one_fs_aux(dss_session_t *session, dss_vg_info_item_t *
     dss_fs_block_t *second_block = NULL;
     status = dss_get_second_block_with_cache(session, vg_item, node, auid, block_count, &second_block);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[FS AUX]Failed to find second block:%s.", dss_display_metaid(auid)));
-    DSS_RETURN_IF_FALSE2(
-        (second_block != NULL), LOG_RUN_ERR("[FS AUX]Failed to find entry block:%s.", dss_display_metaid(auid)));
+    bool32 result = (bool32)(second_block != NULL);
+    DSS_RETURN_IF_FALSE2(result, LOG_RUN_ERR("[FS AUX]Failed to find entry block:%s.", dss_display_metaid(auid)));
 
     auid = second_block->bitmap[block_au_count];
     if (!dss_cmp_auid(auid, CM_INVALID_ID64)) {
@@ -563,12 +566,13 @@ status_t dss_updt_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, gf
     dss_fs_block_t *entry_block = NULL;
     status_t status = dss_get_entry_block_with_cache(session, vg_item, node, &entry_block);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[FS AUX]Failed to find entry block:%s.", dss_display_metaid(node->entry)));
+    bool32 result  = (bool32)(entry_block != NULL);
     DSS_RETURN_IF_FALSE2(
-        (entry_block != NULL), LOG_RUN_ERR("[FS AUX]Failed to find entry block:%s.", dss_display_metaid(node->entry)));
+        result, LOG_RUN_ERR("[FS AUX]Failed to find entry block:%s.", dss_display_metaid(node->entry)));
 
-    int64 top_size = (node->size > (offset + size)) ? (offset + size) : node->size;
-    int64 left_size = size;
     int64 cur_size = 0;
+    int64 left_size = size; 
+    int64 top_size = (node->size > (offset + size)) ? (offset + size) : node->size;   
     do {
         int64 align_size = (int64)CM_CALC_ALIGN((uint64)(offset + 1), au_size);
         if (offset + left_size > align_size) {
@@ -623,8 +627,8 @@ static status_t dss_check_need_updt_one_fs_aux(dss_session_t *session, dss_vg_in
     uint32 au_offset = 0;
     uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
 
-    status_t status = dss_get_fs_block_info_by_offset(offset, au_size, &block_count, &block_au_count, &au_offset);
-    if (status != CM_SUCCESS) {
+    status_t ret = dss_get_fs_block_info_by_offset(offset, au_size, &block_count, &block_au_count, &au_offset);
+    if (ret != CM_SUCCESS) {
         LOG_RUN_ERR("[FS AUX]The offset:%llu is not correct.", offset);
         return CM_ERROR;
     }
@@ -636,16 +640,17 @@ static status_t dss_check_need_updt_one_fs_aux(dss_session_t *session, dss_vg_in
     }
 
     dss_fs_block_t *second_block = dss_find_fs_block(session, vg_item, node, auid, CM_FALSE, NULL, (uint16)block_count);
-    DSS_RETURN_IF_FALSE2(
-        (second_block != NULL), LOG_RUN_ERR("[FS AUX]Failed to find second block:%s.", dss_display_metaid(auid)));
+    bool32 result = (bool32)(second_block != NULL);
+    DSS_RETURN_IF_FALSE2(result, LOG_RUN_ERR("[FS AUX]Failed to find second block:%s.", dss_display_metaid(auid)));
 
     auid = second_block->bitmap[block_au_count];
     if (!dss_cmp_auid(auid, CM_INVALID_ID64)) {
         if (DSS_BLOCK_ID_IS_AUX(auid)) {
             dss_fs_aux_t *fs_aux =
                 dss_find_fs_aux(session, vg_item, node, auid, CM_FALSE, NULL, (uint16)block_au_count);
+            result = (bool32)(fs_aux != NULL);
             DSS_RETURN_IF_FALSE2(
-                (fs_aux != NULL), LOG_RUN_ERR("[FS AUX]Failed to find fs aux block:%s.", dss_display_metaid(auid)));
+                result, LOG_RUN_ERR("[FS AUX]Failed to find fs aux block:%s.", dss_display_metaid(auid)));
 
             // if found one, ignore others
             bool32 is_inited = dss_check_fs_aux_inited(vg_item, fs_aux, offset, size);
@@ -788,8 +793,9 @@ status_t dss_try_find_data_au_batch(dss_session_t *session, dss_vg_info_item_t *
                 continue;
             }
             dss_fs_aux_t *fs_aux_tmp = dss_find_fs_aux(session, vg_item, node, auid, check_version, NULL, (uint16)i);
+            bool32 result = (bool32)(fs_aux_tmp != NULL);
             DSS_RETURN_IF_FALSE2(
-                (fs_aux_tmp != NULL), LOG_RUN_ERR("[FS AUX]Failed to find fs aux block:%s.", dss_display_metaid(auid)));
+                result, LOG_RUN_ERR("[FS AUX]Failed to find fs aux block:%s.", dss_display_metaid(auid)));
         }
     }
 
@@ -817,8 +823,9 @@ status_t dss_find_data_au_by_offset(
 
     fs_pos->entry_fs_block =
         dss_find_fs_block(session, vg_item, node, node->entry, check_version, NULL, DSS_ENTRY_FS_INDEX);
-    DSS_RETURN_IF_FALSE2((fs_pos->entry_fs_block != NULL),
-        LOG_RUN_ERR("[FS AUX]Failed to find entry block:%s.", dss_display_metaid(node->entry)));
+    bool32 result = (bool32)(fs_pos->entry_fs_block != NULL);
+    DSS_RETURN_IF_FALSE2(
+        result, LOG_RUN_ERR("[FS AUX]Failed to find entry block:%s.", dss_display_metaid(node->entry)));
 
     auid_t auid = fs_pos->entry_fs_block->bitmap[fs_pos->block_count];
     if (dss_cmp_auid(auid, CM_INVALID_ID64)) {
@@ -828,8 +835,8 @@ status_t dss_find_data_au_by_offset(
 
     fs_pos->second_fs_block =
         dss_find_fs_block(session, vg_item, node, auid, check_version, NULL, (uint16)fs_pos->block_count);
-    DSS_RETURN_IF_FALSE2((fs_pos->second_fs_block != NULL),
-        LOG_RUN_ERR("[FS AUX]Failed to find second block:%s.", dss_display_metaid(auid)));
+    result = (bool32)(fs_pos->second_fs_block != NULL);
+    DSS_RETURN_IF_FALSE2(result, LOG_RUN_ERR("[FS AUX]Failed to find second block:%s.", dss_display_metaid(auid)));
 
     auid = fs_pos->second_fs_block->bitmap[fs_pos->block_au_count];
     if (!dss_cmp_auid(auid, CM_INVALID_ID64)) {
@@ -837,8 +844,9 @@ status_t dss_find_data_au_by_offset(
         if (DSS_IS_FILE_INNER_INITED(node->flags) && DSS_BLOCK_ID_IS_AUX(auid)) {
             fs_pos->fs_aux =
                 dss_find_fs_aux(session, vg_item, node, auid, check_version, NULL, (uint16)fs_pos->block_au_count);
-            DSS_RETURN_IF_FALSE2((fs_pos->fs_aux != NULL),
-                LOG_RUN_ERR("[FS AUX]Failed to find fs aux block:%s.", dss_display_metaid(auid)));
+            result = (bool32)(fs_pos->fs_aux != NULL);
+            DSS_RETURN_IF_FALSE2(
+                result, LOG_RUN_ERR("[FS AUX]Failed to find fs aux block:%s.", dss_display_metaid(auid)));
             if (dss_cmp_auid(fs_pos->fs_aux->head.data_id, CM_INVALID_ID64)) {
                 LOG_RUN_ERR("[FS AUX]The offset:%llu fs aux not correct.", offset);
                 return CM_ERROR;
@@ -1176,8 +1184,9 @@ status_t rp_redo_alloc_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
 
     fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
         NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, check_version, NULL, CM_FALSE);
+    bool32 result = (bool32)(fs_aux != NULL);
     DSS_RETURN_IF_FALSE2(
-        (fs_aux != NULL), LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));
+        result, LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));
 
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
         dss_init_fs_aux_head(fs_aux, data->ftid, data->index);
@@ -1242,7 +1251,8 @@ status_t rp_redo_free_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
     ga_obj_id_t obj_id;
     fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
         NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, check_version, &obj_id, CM_FALSE);
-    DSS_RETURN_IF_FALSE2((fs_aux != NULL), DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid fs_aux"));
+    bool32 result = (bool32)(fs_aux != NULL);
+    DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid fs_aux"));
 
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
         fs_aux->head.next = data->next;
@@ -1275,8 +1285,9 @@ status_t rb_redo_free_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
     // recover the fs aux
     dss_fs_aux_t *fs_aux =
         (dss_fs_aux_t *)dss_find_block_in_shm(NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, CM_TRUE, NULL, CM_FALSE);
+    bool32 result = (bool32)(fs_aux != NULL);
     DSS_RETURN_IF_FALSE2(
-        (fs_aux != NULL), LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));
+        result, LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));
 
     // recover the root
     status_t status = rb_reload_fs_aux_root(vg_item);
@@ -1294,21 +1305,24 @@ status_t rp_redo_init_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
     status_t status;
     dss_redo_init_fs_aux_t *data = (dss_redo_init_fs_aux_t *)entry->data;
 
+    bool32 result = CM_FALSE;
     dss_fs_aux_t *fs_aux = NULL;
 
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
         fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
             NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, CM_TRUE, NULL, CM_FALSE);
-        DSS_RETURN_IF_FALSE2((fs_aux != NULL),
-            LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));
+        result = (bool32)(fs_aux != NULL);
+        DSS_RETURN_IF_FALSE2(
+            result, LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));
 
         dss_set_blockid(&fs_aux->head.data_id, DSS_BLOCK_ID_SET_UNINITED(data->data_id));
         fs_aux->head.ftid = data->ftid;
     } else {
         fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
             NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, CM_FALSE, NULL, CM_FALSE);
-        DSS_RETURN_IF_FALSE2((fs_aux != NULL),
-            LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));
+        result = (bool32)(fs_aux != NULL);
+        DSS_RETURN_IF_FALSE2(
+            result, LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));
     }
 
     status = dss_update_fs_aux_bitmap2disk(vg_item, fs_aux, DSS_FS_AUX_SIZE, CM_FALSE);
@@ -1328,8 +1342,9 @@ status_t rb_redo_init_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
 
     dss_fs_aux_t *fs_aux =
         (dss_fs_aux_t *)dss_find_block_in_shm(NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, CM_TRUE, NULL, CM_FALSE);
+    bool32 result = (bool32)(fs_aux != NULL);
     DSS_RETURN_IF_FALSE2(
-        (fs_aux != NULL), LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));
+        result, LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));
 
     (void)memset_s(&fs_aux->bitmap[0], fs_aux->head.bitmap_num, 0xFF, fs_aux->head.bitmap_num);
 

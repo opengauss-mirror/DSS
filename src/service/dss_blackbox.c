@@ -239,12 +239,12 @@ void dss_write_block_pool(int32 handle, int64 *length, ga_pool_id_e pool_id)
     if (ret != CM_SUCCESS) {
         LOG_BLACKBOX_INF("Failed to write ga pool size, pool id is %u\n.", (uint32)pool_id);
     }
-    ret = dss_write_shm_memory_file_inner(handle, length, (char *)pool->addr, pool->capacity);
+    ret = dss_write_shm_memory_file_inner(handle, length, (char *)pool->addr, (int32)pool->capacity);
     if (ret != CM_SUCCESS) {
         LOG_BLACKBOX_INF("Failed to write init ga pool, pool id is %u\n.", (uint32)pool_id);
     }
     for (uint32 i = 0; i < pool->ctrl->ex_count; i++) {
-        ret = dss_write_shm_memory_file_inner(handle, length, pool->ex_pool_addr[i], (int32)ex_pool_size);
+        (void)dss_write_shm_memory_file_inner(handle, length, pool->ex_pool_addr[i], (int32)ex_pool_size);
         LOG_BLACKBOX_INF("Failed to write extend ga pool, pool id is %u, ex_num is %u\n.", (uint32)pool_id, i);
     }
 }
@@ -279,27 +279,27 @@ void dss_write_share_vg_info(int32 handle)
     if (begin == -1) {
         LOG_BLACKBOX_INF("Failed to seek file %d", handle);
     }
-    status_t ret = dss_write_shm_memory_file_inner(handle, &length, &length, sizeof(int64));
-    if (ret != CM_SUCCESS) {
+    status_t status = dss_write_shm_memory_file_inner(handle, &length, &length, sizeof(int64));
+    if (status != CM_SUCCESS) {
         LOG_BLACKBOX_INF("Failed to write length %lld\n.", length);
     }
-    ret = dss_write_shm_memory_file_inner(handle, &length, &g_vgs_info->group_num, sizeof(uint32_t));
-    if (ret != CM_SUCCESS) {
+    status = dss_write_shm_memory_file_inner(handle, &length, &g_vgs_info->group_num, sizeof(uint32_t));
+    if (status != CM_SUCCESS) {
         LOG_BLACKBOX_INF("Failed to write vg num %u\n.", g_vgs_info->group_num);
     }
     for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
         dss_vg_info_item_t *vg = &g_vgs_info->volume_group[i];
         uint32 software_version = dss_get_software_version(&vg->dss_ctrl->vg_info);
-        ret = dss_write_shm_memory_file_inner(handle, &length, &software_version, sizeof(uint32_t));
-        if (ret != CM_SUCCESS) {
+        status = dss_write_shm_memory_file_inner(handle, &length, &software_version, sizeof(uint32_t));
+        if (status != CM_SUCCESS) {
             LOG_BLACKBOX_INF("Failed to write software version %u.\n", software_version);
         }
-        ret = dss_write_shm_memory_file_inner(handle, &length, vg->dss_ctrl->vg_info.vg_name, DSS_MAX_NAME_LEN);
-        if (ret != CM_SUCCESS) {
+        status = dss_write_shm_memory_file_inner(handle, &length, vg->dss_ctrl->vg_info.vg_name, DSS_MAX_NAME_LEN);
+        if (status != CM_SUCCESS) {
             LOG_BLACKBOX_INF("Failed to write vg name %s\n.", vg->dss_ctrl->vg_info.vg_name);
         }
-        ret = dss_write_shm_memory_file_inner(handle, &length, vg->dss_ctrl, sizeof(dss_ctrl_t));
-        if (ret != CM_SUCCESS) {
+        status = dss_write_shm_memory_file_inner(handle, &length, vg->dss_ctrl, sizeof(dss_ctrl_t));
+        if (status != CM_SUCCESS) {
             LOG_BLACKBOX_INF("Failed to write ctrl info of vg %u\n.", i);
         }
     }
@@ -354,7 +354,7 @@ void dss_write_hashmap_and_pool_info(int32 handle)
 void dss_write_shm_memory(void)
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
-    bool8 blackbox_detail_on = inst_cfg->params.blackbox_detail_on;
+    bool32 blackbox_detail_on = inst_cfg->params.blackbox_detail_on;
     if (!blackbox_detail_on) {
         LOG_BLACKBOX_INF("_BLACKBOX_DETAIL_ON is FALSE, no need to print shm_memory\n.");
         return;
