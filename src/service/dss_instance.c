@@ -654,6 +654,9 @@ uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try
     }
     dss_cm_res *cm_res = &inst->cm_res;
     uint32 master_id = DSS_INVALID_ID32;
+    if (!cm_res->is_init) {
+        return master_id;
+    }
     status_t ret = CM_SUCCESS;
     date_t time_start = g_timer()->now;
     date_t time_now = 0;
@@ -807,6 +810,11 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
     uint32 old_master_id = dss_get_master_id();
     bool32 grab_lock = CM_FALSE;
     uint32 master_id = dss_get_cm_lock_owner(inst, &grab_lock, CM_TRUE);
+    if (master_id == DSS_INVALID_ID32) {
+        LOG_RUN_WAR("cm is not init, just try again.");
+        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
+        return;
+    }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)inst_cfg->params.inst_id;
     // master no change
