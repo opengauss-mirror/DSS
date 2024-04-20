@@ -650,6 +650,8 @@ uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     if (inst->is_maintain || inst->inst_cfg.params.inst_cnt <= 1) {
         *grab_lock = CM_TRUE;
+        LOG_RUN_INF("[RECOVERY]Set curr_id %u to be primary when dssserver is maintain or just one inst.",
+            (uint32)inst_cfg->params.inst_id);
         return (uint32)inst_cfg->params.inst_id;
     }
     dss_cm_res *cm_res = &inst->cm_res;
@@ -664,7 +666,7 @@ uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try
     while (CM_TRUE) {
         time_now = g_timer()->now;
         if (time_now - time_start > max_time * MICROSECS_PER_SECOND) {
-            LOG_RUN_ERR("[DSS] ABORT INFO: Fail to get lock owner for %d seconds, exit.", max_time);
+            LOG_RUN_ERR("[RECOVERY]ABORT INFO: Fail to get lock owner for %d seconds, exit.", max_time);
             cm_fync_logfile();
             _exit(1);
         }
@@ -681,7 +683,7 @@ uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try
             *grab_lock = ((int)ret == CM_RES_SUCCESS);
             if (*grab_lock) {
                 master_id = (uint32)inst->inst_cfg.params.inst_id;
-                LOG_RUN_INF("inst id %u succeed to get lock owner.", master_id);
+                LOG_RUN_INF("[RECOVERY]inst id %u succeed to get lock owner.", master_id);
                 break;
             }
             continue;
@@ -721,9 +723,9 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
         first_start = (inst->status == DSS_STATUS_PREPARE);
     }
     if (first_start) {
-        LOG_RUN_INF("inst %u is old main inst to do recovery.", curr_id);
+        LOG_RUN_INF("[RECOVERY]inst %u is old main inst to do recovery.", curr_id);
     } else {
-        LOG_RUN_INF("master_id is %u when get cm lock to do recovery.", curr_id);
+        LOG_RUN_INF("[RECOVERY]master_id is %u when get cm lock to do recovery.", curr_id);
     }
 
     dss_instance_status_e old_status = inst->status;
@@ -735,7 +737,7 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
     if (old_status == DSS_STATUS_PREPARE) {
         status_t status = dss_load_vg_info_and_recover(CM_TRUE);
         if (status != CM_SUCCESS) {
-            LOG_RUN_ERR("[DSS] ABORT INFO: Failed to get vg info when instance start.");
+            LOG_RUN_ERR("[RECOVERY]ABORT INFO: Failed to get vg info when instance start.");
             cm_fync_logfile();
             _exit(1);
         }
@@ -748,19 +750,19 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
 
     status_t ret = dss_recover_from_instance(inst);
     if (ret != CM_SUCCESS) {
-        LOG_RUN_ERR("[DSS] ABORT INFO: Recover failed when get cm lock.");
+        LOG_RUN_ERR("[RECOVERY]ABORT INFO: Recover failed when get cm lock.");
         cm_fync_logfile();
         _exit(1);
     }
     if (!first_start) {
         dss_session_t *session = NULL;
         if (dss_create_session(NULL, &session) != CM_SUCCESS) {
-            LOG_RUN_ERR("[DSS] ABORT INFO: Refresh meta info failed when create session.");
+            LOG_RUN_ERR("[RECOVERY]ABORT INFO: Refresh meta info failed when create session.");
             cm_fync_logfile();
             _exit(1);
         }
         if (dss_refresh_meta_info(session) != CM_SUCCESS) {
-            LOG_RUN_ERR("[DSS] ABORT INFO: Refresh meta info failed after recovery.");
+            LOG_RUN_ERR("[RECOVERY]ABORT INFO: Refresh meta info failed after recovery.");
             cm_fync_logfile();
             _exit(1);
         }
@@ -771,9 +773,8 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
     // when current node is standby, and will change to primary, the status is from DSS_STATUS_OPEN to
     // DSS_STATUS_RECOVERY, need to set the master id after the status finish
     dss_set_master_id(curr_id);
-
     dss_set_server_status_flag(DSS_STATUS_READWRITE);
-    LOG_RUN_INF("inst %u set status flag %u when get cm lock.", curr_id, DSS_STATUS_READWRITE);
+    LOG_RUN_INF("[RECOVERY]inst %u set status flag %u when get cm lock.", curr_id, DSS_STATUS_READWRITE);
     // when primary, no need to check result
     g_dss_instance.is_join_cluster = CM_TRUE;
     inst->status = DSS_STATUS_OPEN;
@@ -783,18 +784,26 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
 void dss_recovery_when_standby(dss_instance_t *inst, uint32 curr_id, uint32 master_id)
 {
     uint32 old_master_id = dss_get_master_id();
+    int32 old_status = dss_get_server_status_flag();
     if (old_master_id != master_id) {
         dss_set_master_id(master_id);
         dss_set_server_status_flag(DSS_STATUS_READONLY);
-        LOG_RUN_INF("inst %u set status flag %u when not get cm lock.", curr_id, DSS_STATUS_READONLY);
+        LOG_RUN_INF("[RECOVERY]inst %u set status flag %u when not get cm lock.", curr_id, DSS_STATUS_READONLY);
     }
     if (!dss_check_join_cluster()) {
+        dss_set_master_id(old_master_id);
+        dss_set_server_status_flag(old_status);
+        LOG_RUN_INF("[RECOVERY]inst %u reset status flag %d and master_id %u when join failed.", curr_id, old_status, old_master_id);
         return;
     }
     if (inst->status == DSS_STATUS_PREPARE) {
         status_t status = dss_load_vg_info_and_recover(CM_FALSE);
         if (status != CM_SUCCESS) {
-            LOG_RUN_ERR("[DSS] Just try again to load dss ctrl.");
+            dss_set_master_id(old_master_id);
+            dss_set_server_status_flag(old_status);
+            g_dss_instance.is_join_cluster = CM_FALSE;
+            LOG_RUN_INF("[RECOVERY]inst %u reset status flag %d and master_id %u and join cluster when load failed.", curr_id, old_status, old_master_id);
+            LOG_RUN_ERR("[RECOVERY]Just try again to load dss ctrl.");
             return;
         }
     }
@@ -811,7 +820,7 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
     bool32 grab_lock = CM_FALSE;
     uint32 master_id = dss_get_cm_lock_owner(inst, &grab_lock, CM_TRUE);
     if (master_id == DSS_INVALID_ID32) {
-        LOG_RUN_WAR("cm is not init, just try again.");
+        LOG_RUN_WAR("[RECOVERY]cm is not init, just try again.");
         cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
         return;
     }
@@ -854,6 +863,7 @@ void dss_get_cm_lock_and_recover(thread_t *thread)
     while (!thread->closed) {
         dss_get_cm_lock_and_recover_inner(inst);
         if (inst->status == DSS_STATUS_PREPARE) {
+            LOG_RUN_WAR("[RECOVERY]Try to sleep when in prepare status.\n");
             cm_sleep(DSS_SHORT_RECOVERY_INTERVAL);
         } else {
             cm_sleep(DSS_RECOVERY_INTERVAL);

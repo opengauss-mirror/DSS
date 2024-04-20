@@ -124,6 +124,7 @@ uint32 dss_get_recover_thread_id(void)
 
 void dss_set_recover_status(uint32 status)
 {
+    LOG_RUN_INF("set instance status %u", status);
     g_dss_recover_status = status;
 }
 

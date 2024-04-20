@@ -153,7 +153,7 @@ static inline uint32 dss_get_checksum(void *data, uint32 len)
 static inline void dss_check_checksum(uint32 checksum0, uint32 checksum1)
 {
     if (checksum0 != checksum1) {
-        LOG_DEBUG_ERR("Failed to check checksum:%u,%u.", checksum0, checksum1);
+        LOG_RUN_ERR("Failed to check checksum:%u,%u.", checksum0, checksum1);
         cm_panic(0);
     }
 }
