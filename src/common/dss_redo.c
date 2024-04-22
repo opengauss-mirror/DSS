@@ -1394,22 +1394,22 @@ static status_t dss_recover_core_ctrlinfo(dss_vg_info_item_t *vg_item)
     bool32 remote = CM_FALSE;
     status = dss_load_vg_ctrl_part(
         vg_item, (int64)DSS_CTRL_CORE_OFFSET, &vg_item->dss_ctrl->core, (int32)DSS_CORE_CTRL_SIZE, &remote);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Load dss ctrl core failed."));
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Load dss ctrl core failed."));
     checksum = dss_get_checksum(&vg_item->dss_ctrl->core, DSS_CORE_CTRL_SIZE);
     if (checksum != vg_item->dss_ctrl->core.checksum) {
         LOG_RUN_INF("Try recover dss ctrl core.");
         status = dss_load_vg_ctrl_part(
             vg_item, (int64)DSS_CTRL_BAK_CORE_OFFSET, &vg_item->dss_ctrl->core, (int32)DSS_CORE_CTRL_SIZE, &remote);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Load dss ctrl bak core failed."));
+        DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Load dss ctrl bak core failed."));
         checksum = dss_get_checksum(&vg_item->dss_ctrl->core, DSS_CORE_CTRL_SIZE);
         dss_check_checksum(checksum, vg_item->dss_ctrl->core.checksum);
         status =
             dss_write_ctrl_to_disk(vg_item, (int64)DSS_CTRL_CORE_OFFSET, &vg_item->dss_ctrl->core, DSS_CORE_CTRL_SIZE);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Write dss ctrl core failed."));
+        DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Write dss ctrl core failed."));
     } else {
         status = dss_write_ctrl_to_disk(
             vg_item, (int64)DSS_CTRL_BAK_CORE_OFFSET, &vg_item->dss_ctrl->core, DSS_CORE_CTRL_SIZE);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Write dss ctrl bak core failed."));
+        DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Write dss ctrl bak core failed."));
     }
     return status;
 }
@@ -1421,24 +1421,24 @@ static status_t dss_recover_volume_ctrlinfo(dss_vg_info_item_t *vg_item)
     bool32 remote = CM_FALSE;
     dss_volume_ctrl_t *volume = (dss_volume_ctrl_t *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_VOLUME_CTRL_SIZE);
     if (volume == NULL) {
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Can not allocate memory in stack."));
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_RUN_ERR("Can not allocate memory in stack."));
     }
     status =
         dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_VOLUME_OFFSET, volume, (int32)DSS_VOLUME_CTRL_SIZE, &remote);
-    DSS_RETURN_IFERR3(status, DSS_FREE_POINT(volume), LOG_DEBUG_ERR("Load dss ctrl volume failed."));
+    DSS_RETURN_IFERR3(status, DSS_FREE_POINT(volume), LOG_RUN_ERR("Load dss ctrl volume failed."));
     checksum = dss_get_checksum(volume, DSS_VOLUME_CTRL_SIZE);
     if (checksum != volume->checksum) {
         LOG_RUN_INF("Try recover dss ctrl volume.");
         status = dss_load_vg_ctrl_part(
             vg_item, (int64)DSS_CTRL_BAK_VOLUME_OFFSET, volume, (int32)DSS_VOLUME_CTRL_SIZE, &remote);
-        DSS_RETURN_IFERR3(status, DSS_FREE_POINT(volume), LOG_DEBUG_ERR("Load dss ctrl bak volume failed."));
+        DSS_RETURN_IFERR3(status, DSS_FREE_POINT(volume), LOG_RUN_ERR("Load dss ctrl bak volume failed."));
         checksum = dss_get_checksum(volume, DSS_VOLUME_CTRL_SIZE);
         dss_check_checksum(checksum, volume->checksum);
         status = dss_write_ctrl_to_disk(vg_item, (int64)DSS_CTRL_VOLUME_OFFSET, volume, DSS_VOLUME_CTRL_SIZE);
-        DSS_RETURN_IFERR3(status, DSS_FREE_POINT(volume), LOG_DEBUG_ERR("Write dss ctrl volume failed."));
+        DSS_RETURN_IFERR3(status, DSS_FREE_POINT(volume), LOG_RUN_ERR("Write dss ctrl volume failed."));
     } else {
         status = dss_write_ctrl_to_disk(vg_item, (int64)DSS_CTRL_BAK_VOLUME_OFFSET, volume, DSS_VOLUME_CTRL_SIZE);
-        DSS_RETURN_IFERR3(status, DSS_FREE_POINT(volume), LOG_DEBUG_ERR("Write dss ctrl bak volume failed."));
+        DSS_RETURN_IFERR3(status, DSS_FREE_POINT(volume), LOG_RUN_ERR("Write dss ctrl bak volume failed."));
     }
     status = dss_init_volume(vg_item, volume);
     if (status == CM_SUCCESS) {  // - redundant?
@@ -1456,19 +1456,19 @@ static status_t dss_recover_root_ft_ctrlinfo(dss_vg_info_item_t *vg_item)
     bool32 remote = CM_FALSE;
     dss_common_block_t *block = (dss_common_block_t *)vg_item->dss_ctrl->root;
     status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_ROOT_OFFSET, block, (int32)DSS_BLOCK_SIZE, &remote);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Load dss ctrl root failed."));
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Load dss ctrl root failed."));
     checksum = dss_get_checksum(block, DSS_BLOCK_SIZE);
     if (checksum != block->checksum) {
         LOG_RUN_INF("Try recover dss ctrl root.");
         status = dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_BAK_ROOT_OFFSET, block, (int32)DSS_BLOCK_SIZE, &remote);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Load dss ctrl bak root failed."));
+        DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Load dss ctrl bak root failed."));
         checksum = dss_get_checksum(block, DSS_BLOCK_SIZE);
         dss_check_checksum(checksum, block->checksum);
         status = dss_write_ctrl_to_disk(vg_item, (int64)DSS_CTRL_ROOT_OFFSET, block, DSS_BLOCK_SIZE);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Write dss ctrl root failed."));
+        DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Write dss ctrl root failed."));
     } else {
         status = dss_write_ctrl_to_disk(vg_item, (int64)DSS_CTRL_BAK_ROOT_OFFSET, block, DSS_BLOCK_SIZE);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Write dss ctrl bak root failed."));
+        DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Write dss ctrl bak root failed."));
     }
     return status;
 }
