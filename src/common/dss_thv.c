@@ -36,9 +36,9 @@ extern "C" {
 #endif
 
 #ifndef WIN32
-static __thread uint32 run_ctx_thread_id = 0;
+static __thread dss_thv_run_ctx_t dss_thv_run_ctx = {0};
 #else
-__declspec(thread) uint32 run_ctx_thread_id = 0;
+__declspec(thread) dss_thv_run_ctx_t dss_thv_run_ctx = {0};
 #endif
 
 #ifndef WIN32
@@ -147,7 +147,7 @@ status_t cm_launch_thv(thv_ctrl_t *thv_ctrls, uint32 thv_ctrl_cnt)
             return CM_ERROR;
         }
     }
-    
+
     cm_init_thv();
 
     return CM_SUCCESS;
@@ -184,11 +184,26 @@ status_t cm_launch_thv(thv_ctrl_t *thv_ctrls, uint32 thv_ctrl_cnt)
 
 uint32 dss_get_current_thread_id()
 {
-    if (run_ctx_thread_id != 0) {
-        return run_ctx_thread_id;
+    if (dss_thv_run_ctx.thread_id != 0) {
+        return dss_thv_run_ctx.thread_id;
     }
-    run_ctx_thread_id = cm_get_current_thread_id();
-    return run_ctx_thread_id;
+    dss_thv_run_ctx.thread_id = cm_get_current_thread_id();
+    return dss_thv_run_ctx.thread_id;
+}
+
+void dss_set_thv_run_ctx_item(dss_thv_run_ctx_item_e item, void *item_addr)
+{
+    if (item < DSS_THV_RUN_CTX_ITEM_MAX) {
+        dss_thv_run_ctx.item_addr[item] = item_addr;
+    }
+}
+
+void *dss_get_thv_run_ctx_item(dss_thv_run_ctx_item_e item)
+{
+    if (item < DSS_THV_RUN_CTX_ITEM_MAX) {
+        return dss_thv_run_ctx.item_addr[item];
+    }
+    return NULL;
 }
 
 #ifdef __cplusplus

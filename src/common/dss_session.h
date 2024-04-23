@@ -126,6 +126,7 @@ typedef struct st_dss_session {
     dss_stat_item_t dss_session_stat[DSS_EVT_COUNT];
     uint32 client_version; /* client version */
     uint32 proto_version;  /* client and server negotiated version */
+    dss_stat_ctx_t stat_ctx;
 } dss_session_t;
 
 static inline char *dss_init_sendinfo_buf(char *input)
