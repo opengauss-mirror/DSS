@@ -234,6 +234,16 @@ status_t dss_verify_log_file_size(void *lex, void *def)
     uint64 num;
     text_t text = {.str = value, .len = (uint32)strlen(value)};
     cm_trim_text(&text);
+
+    // The last char of _LOG_MAX_FILE_SIZE is size unit, which should not be checked for number.
+    char unit = text.str[text.len - 1];
+    text.str[text.len - 1] = '\0';
+    if (cm_check_is_number(text.str) != CM_SUCCESS) {
+        CM_THROW_ERROR_EX(ERR_VALUE_ERROR, "The text for _LOG_MAX_FILE_SIZE is not integer, text = %s", text.str);
+        return CM_ERROR;
+    }
+    text.str[text.len - 1] = unit;
+
     status_t status = cm_text2size(&text, (int64 *)&num);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_LOG_MAX_FILE_SIZE"));
     if (num < CM_MIN_LOG_FILE_SIZE || num > CM_MAX_LOG_FILE_SIZE) {
@@ -317,6 +327,16 @@ status_t dss_verify_audit_file_size(void *lex, void *def)
     uint64 num;
     text_t text = {.str = value, .len = (uint32)strlen(value)};
     cm_trim_text(&text);
+
+    // The last char of _AUDIT_FILE_SIZE is size unit, which should not be checked for number.
+    char unit = text.str[text.len - 1];
+    text.str[text.len - 1] = '\0';
+    if (cm_check_is_number(text.str) != CM_SUCCESS) {
+        CM_THROW_ERROR_EX(ERR_VALUE_ERROR, "The text for _AUDIT_MAX_FILE_SIZE is not integer, text = %s", text.str);
+        return CM_ERROR;
+    }
+    text.str[text.len - 1] = unit;
+
     status_t status = cm_text2size(&text, (int64 *)&num);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_AUDIT_MAX_FILE_SIZE"));
     if (num < CM_MIN_LOG_FILE_SIZE || num > CM_MAX_LOG_FILE_SIZE) {
