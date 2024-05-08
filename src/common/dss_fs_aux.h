@@ -201,8 +201,6 @@ status_t dss_updt_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, gf
     int64 size, bool32 is_init_tail);
 
 bool32 dss_check_fs_aux_inited(dss_vg_info_item_t *vg_item, dss_fs_aux_t *fs_aux, int64 offset, int64 size);
-status_t dss_check_need_updt_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, int64 offset,
-    int64 size, bool32 *need_updt_fs_aux);
 
 void dss_get_inited_size_with_fs_aux(
     dss_vg_info_item_t *vg_item, dss_fs_aux_t *fs_aux, int64 offset, int32 size, int32 *inited_size);

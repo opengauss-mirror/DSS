@@ -2856,11 +2856,78 @@ status_t dss_fstat_impl(dss_conn_t *conn, int handle, dss_stat_info_t item)
     return ret;
 }
 
-static status_t dss_aio_post_pwrite_file_prepare(
-    dss_conn_t *conn, dss_file_context_t *context, long long offset, int32 size, bool32 *need_update, int64 *new_offset)
+status_t dss_aio_check_need_updt_fs_aux(dss_rw_param_t *param, int32 size, bool32 *need_update)
 {
+    dss_conn_t *conn = param->conn;
+    dss_file_context_t *context = param->context;
+    long long offset = param->offset;
+
+    *need_update = CM_FALSE;
+    if (context->node->min_inited_size >= (uint64)(offset + size)) {
+        return CM_SUCCESS;
+    }
+
+    uint64 au_size = dss_get_vg_au_size(context->vg_item->dss_ctrl);
+
+    dss_fs_pos_desc_t fs_pos = {0};
+    files_rw_ctx_t rw_ctx;
+    rw_ctx.conn = conn;
+    rw_ctx.env = param->dss_env;
+    rw_ctx.file_ctx = context;
+    rw_ctx.handle = param->handle;
+    rw_ctx.read = CM_TRUE; // should NOT apply extend for aio post
+
+    int64 top_size = (context->node->size > (param->offset + size)) ? (offset + size) : context->node->size;
+    int64 left_size = size;
+    int64 cur_size = 0;
+
+    do {
+        int64 align_size = (int64)CM_CALC_ALIGN((uint64)(offset + 1), au_size);
+        if (offset + left_size > align_size) {
+            cur_size = align_size - offset;
+        } else {
+            cur_size = left_size;
+        }
+
+        rw_ctx.offset = offset;
+        rw_ctx.size = (int32)cur_size;
+
+        status_t status = dss_check_ready_fs_block(&rw_ctx, &fs_pos);
+        DSS_RETURN_IF_ERROR(status);
+        if (!fs_pos.is_valid) {
+            LOG_RUN_ERR("Fail to find fs block for file:%s, fid:%llu, fti:%llu, cur offset:%llu, size:%lld,"
+                "written_size:%llu, file size:%llu.",
+                context->node->name, context->node->fid, DSS_ID_TO_U64(context->node->id), offset, cur_size,
+                context->node->written_size, (uint64)context->node->size);
+            return CM_ERROR;
+        }
+    
+        if (fs_pos.fs_aux != NULL) {
+            // if found one, ignore others
+            bool32 is_inited = dss_check_fs_aux_inited(context->vg_item, fs_pos.fs_aux, offset, cur_size);
+            if (!is_inited) {
+                *need_update = CM_TRUE;
+                break;
+            }
+        }
+
+        offset += cur_size;
+        left_size -= cur_size;
+    } while (offset < top_size);
+
+    return CM_SUCCESS;
+}
+
+static status_t dss_aio_post_pwrite_file_prepare(
+    dss_rw_param_t *param, int32 size, bool32 *need_update, int64 *new_offset)
+{
+    dss_conn_t *conn = param->conn;
+    dss_file_context_t *context = param->context;
+    long long offset = param->offset;
+
     *need_update = CM_FALSE;
     *new_offset = 0;
+
     DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
     status_t status = dss_check_refresh_file_by_offset(conn, context, offset, CM_FALSE);
     if (status != CM_SUCCESS) {
@@ -2874,8 +2941,7 @@ static status_t dss_aio_post_pwrite_file_prepare(
             context->node->name, offset, context->node->written_size, size);
     } else {
         if (DSS_IS_FILE_INNER_INITED(context->node->flags)) {
-            status =
-                dss_check_need_updt_fs_aux(conn->session, context->vg_item, context->node, offset, size, need_update);
+            status = dss_aio_check_need_updt_fs_aux(param, size, need_update);
             if (status != CM_SUCCESS) {
                 DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
                 return CM_ERROR;
@@ -2901,7 +2967,7 @@ status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long o
 
     bool32 need_update;
     int64 new_offset;
-    status = dss_aio_post_pwrite_file_prepare(conn, context, offset, size, &need_update, &new_offset);
+    status = dss_aio_post_pwrite_file_prepare(&param, size, &need_update, &new_offset);
     DSS_RETURN_IFERR2(status, dss_unlatch(&context->latch));
 
     if (need_update) {
