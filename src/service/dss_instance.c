@@ -560,9 +560,14 @@ static void dss_check_peer_by_cm(dss_instance_t *inst)
     }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint64 cur_inst_map = 0;
-    int insttotal = cm_res_get_instance_count(&inst->cm_res.mgr, res);
-    for (int32_t idx = 0; idx < insttotal; idx++) {
-        const cm_res_inst_info_ptr_t inst_res = cm_res_get_instance_info(&inst->cm_res.mgr, res, (unsigned int)idx);
+    uint32 instance_count = 0;
+    if (cm_res_get_instance_count(&instance_count, &inst->cm_res.mgr, res) != CM_SUCCESS) {
+        cm_res_free_stat(&inst->cm_res.mgr, res);
+        cm_res_uninit_memctx(&res_mem_ctx);
+        return;
+    }
+    for (uint32_t idx = 0; idx < instance_count; idx++) {
+        const cm_res_inst_info_ptr_t inst_res = cm_res_get_instance_info(&inst->cm_res.mgr, res, idx);
         if (inst_res == NULL) {
             cm_res_free_stat(&inst->cm_res.mgr, res);
             cm_res_uninit_memctx(&res_mem_ctx);
