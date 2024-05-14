@@ -634,6 +634,21 @@ void dss_init_cm_res(dss_instance_t *inst)
     return;
 }
 
+#ifdef ENABLE_DSSTEST
+status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
+{
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    for (int i = 0; i < DSS_MAX_INSTANCES; i++) {
+        if (inst_cfg->params.ports[i] != 0) {
+            *master_id = i;
+            LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "Set min id %u as master id.", i);
+            break;
+        }
+    }
+    LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "master_id is %u when get cm lock.", *master_id);
+    return CM_SUCCESS;
+}
+#else
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 {
     int ret = cm_res_get_lock_owner(&cm_res->mgr, DSS_CM_LOCK, master_id);
@@ -648,7 +663,7 @@ status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
     }
     return CM_SUCCESS;
 }
-
+#endif
 // get cm lock owner, if no owner, try to become.master_id can not be DSS_INVALID_ID32.
 uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try_lock)
 {
