@@ -4368,48 +4368,50 @@ static status_t enable_grab_lock_proc(void)
 }
 
 // clang-format off
-dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set},
-                                      {"lsvg", lsvg_help, lsvg_proc, &cmd_lsvg_args_set},
-                                      {"adv", adv_help, adv_proc, &cmd_adv_args_set},
-                                      {"mkdir", mkdir_help, mkdir_proc, &cmd_mkdir_args_set},
-                                      {"touch", touch_help, touch_proc, &cmd_touch_args_set},
-                                      {"ts", ts_help, ts_proc, &cmd_ts_args_set},
-                                      {"ls", ls_help, ls_proc, &cmd_ls_args_set},
-                                      {"cp", cp_help, cp_proc, &cmd_cp_args_set},
-                                      {"rm", rm_help, rm_proc, &cmd_rm_args_set},
-                                      {"rmv", rmv_help, rmv_proc, &cmd_rmv_args_set},
-                                      {"rmdir", rmdir_help, rmdir_proc, &cmd_rmdir_args_set},
-                                      {"inq", inq_help, inq_proc, &cmd_inq_args_set},
-                                      {"inq_reg", inq_reg_help, inq_reg_proc, &cmd_inq_req_args_set},
-                                      {"lscli", lscli_help, lscli_proc, &cmd_lscli_args_set},
-                                      {"kickh", kickh_help, kickh_proc, &cmd_kickh_args_set},
-                                      {"reghl", reghl_help, reghl_proc, &cmd_reghl_args_set},
-                                      {"unreghl", unreghl_help, unreghl_proc, &cmd_unreghl_args_set},
-                                      {"auid", auid_help, auid_proc, &cmd_auid_args_set},
-                                      {"examine", examine_help, examine_proc, &cmd_examine_args_set},
-                                      {"dev", dev_help, dev_proc, &cmd_dev_args_set},
-                                      {"showdisk", showdisk_help, showdisk_proc, &cmd_showdisk_args_set},
-                                      {"rename", rename_help, rename_proc, &cmd_rename_args_set},
-                                      {"du", du_help, du_proc, &cmd_du_args_set},
-                                      {"find", find_help, find_proc, &cmd_find_args_set},
-                                      {"ln", ln_help, ln_proc, &cmd_ln_args_set},
-                                      {"readlink", readlink_help, readlink_proc, &cmd_readlink_args_set},
-                                      {"unlink", unlink_help, unlink_proc, &cmd_unlink_args_set},
-                                      {"encrypt", encrypt_help, encrypt_proc, &cmd_encrypt_args_set},
-                                      {"setcfg", setcfg_help, setcfg_proc, &cmd_setcfg_args_set},
-                                      {"getcfg", getcfg_help, getcfg_proc, &cmd_getcfg_args_set},
-                                      {"getstatus", getstatus_help, getstatus_proc, &cmd_getstatus_args_set},
-                                      {"stopdss", stopdss_help, stopdss_proc, &cmd_stopdss_args_set},
-                                      {"scandisk", scandisk_help, scandisk_proc, &cmd_scandisk_args_set},
+dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set, true},
+                                      {"lsvg", lsvg_help, lsvg_proc, &cmd_lsvg_args_set, false},
+                                      {"adv", adv_help, adv_proc, &cmd_adv_args_set, true},
+                                      {"mkdir", mkdir_help, mkdir_proc, &cmd_mkdir_args_set, true},
+                                      {"touch", touch_help, touch_proc, &cmd_touch_args_set, true},
+                                      {"ts", ts_help, ts_proc, &cmd_ts_args_set, false},
+                                      {"ls", ls_help, ls_proc, &cmd_ls_args_set, false},
+                                      {"cp", cp_help, cp_proc, &cmd_cp_args_set, true},
+                                      {"rm", rm_help, rm_proc, &cmd_rm_args_set, true},
+                                      {"rmv", rmv_help, rmv_proc, &cmd_rmv_args_set, true},
+                                      {"rmdir", rmdir_help, rmdir_proc, &cmd_rmdir_args_set, true},
+                                      {"inq", inq_help, inq_proc, &cmd_inq_args_set, false},
+                                      {"inq_reg", inq_reg_help, inq_reg_proc, &cmd_inq_req_args_set, false},
+                                      {"lscli", lscli_help, lscli_proc, &cmd_lscli_args_set, false},
+                                      {"kickh", kickh_help, kickh_proc, &cmd_kickh_args_set, true},
+                                      {"reghl", reghl_help, reghl_proc, &cmd_reghl_args_set, true},
+                                      {"unreghl", unreghl_help, unreghl_proc, &cmd_unreghl_args_set, true},
+                                      {"auid", auid_help, auid_proc, &cmd_auid_args_set, false},
+                                      {"examine", examine_help, examine_proc, &cmd_examine_args_set, false},
+                                      {"dev", dev_help, dev_proc, &cmd_dev_args_set, false},
+                                      {"showdisk", showdisk_help, showdisk_proc, &cmd_showdisk_args_set, false},
+                                      {"rename", rename_help, rename_proc, &cmd_rename_args_set, true},
+                                      {"du", du_help, du_proc, &cmd_du_args_set, false},
+                                      {"find", find_help, find_proc, &cmd_find_args_set, false},
+                                      {"ln", ln_help, ln_proc, &cmd_ln_args_set, true},
+                                      {"readlink", readlink_help, readlink_proc, &cmd_readlink_args_set, false},
+                                      {"unlink", unlink_help, unlink_proc, &cmd_unlink_args_set, true},
+                                      {"encrypt", encrypt_help, encrypt_proc, &cmd_encrypt_args_set, true},
+                                      {"setcfg", setcfg_help, setcfg_proc, &cmd_setcfg_args_set, true},
+                                      {"getcfg", getcfg_help, getcfg_proc, &cmd_getcfg_args_set, false},
+                                      {"getstatus", getstatus_help, getstatus_proc, &cmd_getstatus_args_set, false},
+                                      {"stopdss", stopdss_help, stopdss_proc, &cmd_stopdss_args_set, true},
+                                      {"scandisk", scandisk_help, scandisk_proc, &cmd_scandisk_args_set, true},
                                       {"clean_vglock", clean_vglock_help, clean_vglock_proc,
-                                          &cmd_clean_vglock_args_set},
-                                      {"repl", repl_help, repl_proc, &cmd_repl_args_set},
-                                      {"rollback", rollback_help, rollback_proc, &cmd_rollback_args_set},
-                                      {"showmem", showmem_help, showmem_proc, &cmd_showmem_args_set},
-                                      {"fshowmem", fshowmem_help, fshowmem_proc, &cmd_fshowmem_args_set},
-                                      {"truncate", truncate_help, truncate_proc, &cmd_truncate_args_set},
-                                      {"dis_grab_lock", disable_grab_lock_help, disable_grab_lock_proc, &cmd_disable_grab_lock_args_set},
-                                      {"en_grab_lock", enable_grab_lock_help, enable_grab_lock_proc, &cmd_enable_grab_lock_args_set},
+                                          &cmd_clean_vglock_args_set, true},
+                                      {"repl", repl_help, repl_proc, &cmd_repl_args_set, true},
+                                      {"rollback", rollback_help, rollback_proc, &cmd_rollback_args_set, true},
+                                      {"showmem", showmem_help, showmem_proc, &cmd_showmem_args_set, false},
+                                      {"fshowmem", fshowmem_help, fshowmem_proc, &cmd_fshowmem_args_set, false},
+                                      {"truncate", truncate_help, truncate_proc, &cmd_truncate_args_set, true},
+                                      {"dis_grab_lock", disable_grab_lock_help, disable_grab_lock_proc,
+                                        &cmd_disable_grab_lock_args_set, true},
+                                      {"en_grab_lock", enable_grab_lock_help, enable_grab_lock_proc,
+                                        &cmd_enable_grab_lock_args_set, true}
 };
 
 // clang-format on
@@ -4542,6 +4544,15 @@ static void clean_cmd()
     dss_free_vg_info();
 }
 
+static bool32 is_log_necessary(int argc, char **argv)
+{
+    uint32_t cmd_idx;
+    if (get_cmd_idx(argc, argv, &cmd_idx) && g_dss_admin_cmd[cmd_idx].log_necessary) {
+        return true;
+    }
+    return false;
+}
+
 int main(int argc, char **argv)
 {
 #ifndef WIN32
@@ -4577,7 +4588,7 @@ int main(int argc, char **argv)
     }
 
     ret = dss_init_loggers(&inst_cfg, g_dss_admin_log, sizeof(g_dss_admin_log) / sizeof(dss_log_def_t), "dsscmd");
-    if (ret != CM_SUCCESS) {
+    if (ret != CM_SUCCESS && is_log_necessary(argc, argv)) {
         (void)printf("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code()));
         return ret;
     }
