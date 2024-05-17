@@ -40,7 +40,7 @@ fi
 
 assert_nonempty()
 {
-    if [[ -z ${2} ]]
+    if [[ -z "${2}" ]]
     then
         echo "[SCRIPT]The ${1} parameter is empty."
         exit 1
@@ -79,7 +79,7 @@ function check_dss_config()
 create_log_directory()
 {
     log_directory=$1
-    if [ ! -d $log_directory ]
+    if [ ! -d "$log_directory" ]
     then
         mkdir -p $log_directory
         chmod 700 $log_directory
@@ -89,7 +89,7 @@ create_log_directory()
 touch_logfile()
 {
     log_file=$1
-    if [ ! -f $log_file ]
+    if [ ! -f "$log_file" ]
     then
         touch $log_file
         chmod 600 $log_file
@@ -98,14 +98,14 @@ touch_logfile()
 
 get_clear_dss_log()
 {
-    LOG_HOME=`cat ${DSS_HOME}/cfg/dss_inst.ini | sed s/[[:space:]]//g | grep -Eo "^LOG_HOME=.*" | awk -F '=' '{ print $2 }'`
-    if [[ ! -z ${LOG_HOME} ]]
+    LOG_HOME=$(cat ${DSS_HOME}/cfg/dss_inst.ini | sed s/[[:space:]]//g | grep -Eo "^LOG_HOME=.*" | awk -F '=' '{ print $2 }')
+    if [[ ! -z "${LOG_HOME}" ]]
     then
         create_log_directory ${LOG_HOME}
         clear_dss_log=${LOG_HOME}/clear_dss.log
         touch_logfile $clear_dss_log
     else
-        if [[ ! -d ${DSS_HOME} ]]
+        if [[ ! -d "${DSS_HOME}" ]]
         then
             clear_dss_log=/dev/null
         else
@@ -118,23 +118,23 @@ function parse_vg_info()
 {
     vg_flag=0
     volume_count=0
-    volume_index=0
+    p_vg_volume_index=0
     while read line
     do
-        if [[ $line == *volume_name:* ]]; then
+        if [[ "$line" == *volume_name:* ]]; then
             if [[ "$volume_count" == "0" ]] || [[ "$vg_flag" != "2" ]]; then
                 log "[CLEARVG]Invalid vg info file!"
                 exit 1
             fi
             volume_name=${line:12}
-            VOLUME_NAME[$volume_index]=$volume_name
+            VOLUME_NAME[$p_vg_volume_index]=$volume_name
             let volume_count--
-            let volume_index++
+            let p_vg_volume_index++
             if [[ "$volume_count" == "0" ]]; then
                 let VG_COUNT++
                 vg_flag=0
             fi
-        elif [[ $line == *vg_name:* ]]; then
+        elif [[ "$line" == *vg_name:* ]]; then
             if [[ "$volume_count" != "0" ]] || [[ "$vg_flag" != "0" ]]; then
                 log "[CLEARVG]Invalid vg info file!"
                 exit 1
@@ -144,7 +144,7 @@ function parse_vg_info()
             volume_count=0
             VG_NAME[$VG_COUNT]=$vg_name
             continue
-        elif [[ $line == *volume_count:* ]]; then
+        elif [[ "$line" == *volume_count:* ]]; then
             if [[ "$volume_count" != "0" ]] || [[ "$vg_flag" != "1" ]]; then
                 log "[CLEARVG]Invalid vg info file!"
                 exit 1
@@ -155,7 +155,7 @@ function parse_vg_info()
         fi
     done <$VG_INFO_FILE
 
-    if [[ "$volume_index" == "0" ]]; then
+    if [[ "$p_vg_volume_index" == "0" ]]; then
         log "[CLEARVG]Invalid vg info file, volume count is 0!"
         exit 1
     elif [[ "$vg_flag" != "0" ]]; then
@@ -167,10 +167,10 @@ function parse_vg_info()
 function check_except_param()
 {
     except_param=$1
-    if [[ $except_param == --except_vg_name=* ]]; then
+    if [[ "$except_param" == --except_vg_name=* ]]; then
         EXCEPT=${except_param:17}
         log "[CLEARVG]except_vg_name is $EXCEPT"
-    elif [[ -z $except_param ]]; then
+    elif [[ -z "$except_param" ]]; then
         log "[CLEARVG]except_vg_name is NULL"
     else
         log "[CLEARVG]Invalid except_vg_name parameter!"
@@ -178,7 +178,7 @@ function check_except_param()
     fi
     except_flag=0
     for ((i=0; i<$VG_COUNT; i++)); do
-        if [[ ${VG_NAME[$i]} == $EXCEPT ]]; then
+        if [[ ${VG_NAME["$i"]} == "$EXCEPT" ]]; then
             if [[ "$except_flag" == "1" ]]; then
                 log "[CLEARVG]Except_vg_name match two vg, please check parameter or backup file!"
                 exit 1
@@ -187,13 +187,13 @@ function check_except_param()
             continue
         fi
     done
-    if [[ ! -z $except_param ]] && [[ "$except_flag" == "0" ]]; then
+    if [[ ! -z "$except_param" ]] && [[ "$except_flag" == "0" ]]; then
         log "[CLEARVG]Invalid except_vg_name parameter, not match vg name"
         exit 1
     fi
 }
 
-function clearVg()
+function clear_vg()
 {
     if [ $# -ne 4 ] && [ $# -ne 3 ]
     then
@@ -207,12 +207,12 @@ function clearVg()
     assert_nonempty 3 ${3}
     VG_COUNT=0
     VG_INFO_FILE=$3
-    EXCEPT=$4
+    CLEAR_VG_EXCEPT=$4
     parse_vg_info
     volume_index=0
     check_except_param $4
     for ((i=0; i<$VG_COUNT; i++)); do
-        if [[ ${VG_NAME[$i]} == $EXCEPT ]]; then
+        if [[ ${VG_NAME[$i]} == "$CLEAR_VG_EXCEPT" ]]; then
             log "[CLEARVG]except_vg_name, skip clear Vg:${VG_NAME[$i]}, volume count:${VOLUME_COUNT[$i]}"
             volume_index=$(($volume_index+${VOLUME_COUNT[$i]}))
             continue
@@ -266,7 +266,7 @@ function Main()
     get_clear_dss_log
     check_dss_config
     if [ "$CMD" == "-clearVg" ]; then
-        clearVg "$@"
+        clear_vg "$@"
         exit 0
     else
         unregister
