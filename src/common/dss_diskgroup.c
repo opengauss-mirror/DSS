@@ -360,10 +360,10 @@ status_t dss_checksum_vg_ctrl_remote(dss_vg_info_item_t *vg_item)
     return CM_SUCCESS;
 }
 
-static status_t dss_load_vg_info_and_recover_core(uint32 i, bool8 need_recovery)
+status_t dss_load_vg_info_and_recover_core(uint32 i, bool8 need_recovery)
 {
     int flags = DSS_INSTANCE_OPEN_FLAG;
-    status_t status = dss_load_vg_ctrl(&g_vgs_info->volume_group[i], DSS_TRUE);
+    status_t status = dss_load_vg_ctrl(&g_vgs_info->volume_group[i], need_recovery);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("DSS instance failed to load vg:%s ctrl!", g_vgs_info->volume_group[i].vg_name);
         return status;
@@ -393,7 +393,7 @@ static status_t dss_load_vg_info_and_recover_core(uint32 i, bool8 need_recovery)
 
 status_t dss_load_vg_info_and_recover(bool8 need_recovery)
 {
-    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+    for (uint32_t i = 0; i < g_vgs_info->group_num; i++) {
         status_t status = dss_load_vg_info_and_recover_core(i, need_recovery);
         if (status != CM_SUCCESS) {
             LOG_RUN_ERR("DSS instance failed to load vg:%s!", g_vgs_info->volume_group[i].vg_name);

@@ -86,6 +86,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_SHM_CREATE] = "Failed to create shared memory, key=0x%08x, size=%llu",
     [ERR_DSS_SHM_CHECK] = "Failed to check shared memory ctrl, key=0x%08x, reason=%s",
     [ERR_DSS_SHM_LOCK] = "Failed to lock vg shared memory, reason=%s",
+    [ERR_DSS_SHM_LOCK_TIMEOUT] = "Try to get shm lock timeout",
     [ERR_DSS_GA_INIT] = "DSS ga init error, reason %s",
     [ERR_DSS_GA_GET_ADDR] = "DSS ga get addr error, pool id %d, object id%u.",
     [ERR_DSS_SESSION_INVALID_ID] = "Invalid session %d",

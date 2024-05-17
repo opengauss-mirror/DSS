@@ -535,21 +535,31 @@ static void dss_process_message(uint32 work_idx, ruid_type ruid, mes_msg_t *msg)
     LOG_DEBUG_INF(
         "[MES] dss process message, cmd is %u, proto_version is %u.", dss_head->dss_cmd, dss_head->msg_proto_ver);
     dss_processor_t *processor = &g_dss_processors[dss_head->dss_cmd];
-
+    const char *error_message = NULL;
+    int32 error_code;
     // from here, the proc need to give the ack and release message buf
-    cm_latch_s(&g_dss_instance.switch_latch, DSS_DEFAULT_SESSIONID, CM_FALSE, LATCH_STAT(LATCH_SWITCH));
-    if (processor->is_req) {
-        ret = dss_process_remote_req_prepare(session, msg, processor);
-    } else {
-        ret = dss_process_remote_ack_prepare(session, msg, processor);
-    }
-    if (ret != CM_SUCCESS) {
+    while (CM_TRUE) {
+        cm_latch_s(&g_dss_instance.switch_latch, DSS_DEFAULT_SESSIONID, CM_FALSE, LATCH_STAT(LATCH_SWITCH));
+        if (processor->is_req) {
+            ret = dss_process_remote_req_prepare(session, msg, processor);
+        } else {
+            ret = dss_process_remote_ack_prepare(session, msg, processor);
+        }
+        if (ret != CM_SUCCESS) {
+            cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
+            return;
+        }
+        processor->proc(session, msg);
+        cm_get_error(&error_code, &error_message);
+        if (error_code == ERR_DSS_SHM_LOCK_TIMEOUT) {
+            cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
+            LOG_RUN_INF("Try again if error is shm lock timeout.");
+            cm_reset_error();
+            continue;
+        }
         cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-        return;
+        break;
     }
-    processor->proc(session, msg);
-    cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-
     LOG_DEBUG_INF("[MES] Proc msg cmd:%u, src node:%u, dst node:%u end.", (uint32)(dss_head->dss_cmd),
         (uint32)(dss_head->src_inst), (uint32)(dss_head->dst_inst));
 }

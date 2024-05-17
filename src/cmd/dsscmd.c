@@ -4291,6 +4291,81 @@ static status_t truncate_proc(void)
     dss_disconnect_ex(&conn);
     return status;
 }
+static dss_args_t cmd_disable_grab_lock_args[] = {
+    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
+        0},
+};
+
+static dss_args_set_t cmd_disable_grab_lock_args_set = {
+    cmd_disable_grab_lock_args,
+    sizeof(cmd_disable_grab_lock_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+static void disable_grab_lock_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:%s dis_grab_lock [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("[client command] if the dssserver is primary, will release cm lock to be standby and not to grab lock\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    help_param_uds();
+}
+
+static status_t disable_grab_lock_proc(void)
+{
+    dss_conn_t connection;
+    status_t status = get_connection_by_input_args(cmd_disable_grab_lock_args[DSS_ARG_IDX_0].input_args, &connection);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    status = dss_disable_grab_lock_on_server(&connection);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to disable grab lock.\n");
+    } else {
+        DSS_PRINT_INF("Succeed to disable grab lock.\n");
+    }
+    dss_disconnect_ex(&connection);
+    return status;
+}
+
+static dss_args_t cmd_enable_grab_lock_args[] = {
+    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
+        0},
+};
+
+static dss_args_set_t cmd_enable_grab_lock_args_set = {
+    cmd_enable_grab_lock_args,
+    sizeof(cmd_enable_grab_lock_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+static void enable_grab_lock_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:%s en_grab_lock [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("[client command] set dssserver to have the right to grab lock\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    help_param_uds();
+}
+
+static status_t enable_grab_lock_proc(void)
+{
+    dss_conn_t connection;
+    status_t status = get_connection_by_input_args(cmd_enable_grab_lock_args[DSS_ARG_IDX_0].input_args, &connection);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    status = dss_enable_grab_lock_on_server(&connection);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to enable grab lock.\n");
+    } else {
+        DSS_PRINT_INF("Succeed to enable grab lock.\n");
+    }
+    dss_disconnect_ex(&connection);
+    return status;
+}
 
 // clang-format off
 dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set},
@@ -4333,6 +4408,8 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set}
                                       {"showmem", showmem_help, showmem_proc, &cmd_showmem_args_set},
                                       {"fshowmem", fshowmem_help, fshowmem_proc, &cmd_fshowmem_args_set},
                                       {"truncate", truncate_help, truncate_proc, &cmd_truncate_args_set},
+                                      {"dis_grab_lock", disable_grab_lock_help, disable_grab_lock_proc, &cmd_disable_grab_lock_args_set},
+                                      {"en_grab_lock", enable_grab_lock_help, enable_grab_lock_proc, &cmd_enable_grab_lock_args_set},
 };
 
 // clang-format on

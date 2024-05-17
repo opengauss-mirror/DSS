@@ -699,7 +699,7 @@ status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_ty
 {
     CM_ASSERT(dir_path != NULL);
     status_t status = CM_ERROR;
-    while (dss_is_server() && !dss_need_exec_local()) {
+    while (dss_get_recover_status() != DSS_STATUS_RECOVERY && dss_is_server() && !dss_need_exec_local()) {
         if (dss_get_node_by_path_remote_proc != NULL) {
             status = dss_get_node_by_path_remote_proc(session, dir_path, type, output_info, is_throw_err);
             if (status == ERR_DSS_MES_ILL) {
@@ -3540,7 +3540,7 @@ status_t dss_invalidate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_i
         _exit(1);
     }
 
-    if (invalidate_other_nodes_proc) {
+    if (invalidate_other_nodes_proc != NULL) {
         // notify other node to invalid node
         bool32 invalid_ack = CM_TRUE;
         dss_invalidate_meta_msg_t invalidate_meta_msg = {vg_item->id, DSS_BLOCK_TYPE_FT, DSS_ID_TO_U64(node->id)};
@@ -3796,6 +3796,10 @@ static status_t dss_refresh_file_core(
         }
         need_retry = dss_try_revalidate_file(session, vg_item, node);
         if (need_retry) {
+            if (dss_get_recover_status() != DSS_STATUS_RECOVERY) {
+                LOG_RUN_ERR("Failed to revalidata file when instance is in recovery status.");
+                return CM_ERROR;
+            }
             dss_unlock_vg_mem_and_shm(session, vg_item);
             LOG_DEBUG_INF("Unlock vg:%s, sleep, then xlock, session id:%u", vg_item->vg_name, session->id);
             cm_sleep(DSS_READ_REMOTE_INTERVAL);

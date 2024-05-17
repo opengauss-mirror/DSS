@@ -246,7 +246,9 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
         node = dss_get_node_by_block_ctrl(block_ctrl, 0);
     }
 
-    dss_lock_shm_meta_x(session, vg_item->vg_latch);
+    if (!dss_lock_shm_meta_timed_x(session, vg_item->vg_latch, DSS_LOCK_SHM_META_TIMEOUT)) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_SHM_LOCK_TIMEOUT));
+    }
     if ((block_ctrl->fid != meta_syn->fid) ||
         (common_block->type != DSS_BLOCK_TYPE_FT && block_ctrl->file_ver != meta_syn->file_ver) ||
         (common_block->type == DSS_BLOCK_TYPE_FT && block_ctrl->file_ver >= meta_syn->file_ver) ||
@@ -287,7 +289,9 @@ status_t dss_invalidate_meta_remote(
             LOG_DEBUG_ERR("Failed to find vg id, %u.", invalidate_meta_msg->vg_id));
     }
 
-    dss_lock_shm_meta_x(session, vg_item->vg_latch);
+    if (!dss_lock_shm_meta_timed_x(session, vg_item->vg_latch, DSS_LOCK_SHM_META_TIMEOUT)) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_SHM_LOCK_TIMEOUT));
+    }
 
     dss_block_id_t block_id;
     dss_set_auid(&block_id, invalidate_meta_msg->meta_block_id);

@@ -104,6 +104,8 @@ typedef enum {
     DSS_CMD_UNLINK,
     DSS_CMD_SET_MAIN_INST,
     DSS_CMD_SWITCH_LOCK,
+    DSS_CMD_DISABLE_GRAB_LOCK,
+    DSS_CMD_ENABLE_GRAB_LOCK,
     DSS_CMD_MODIFY_END,
     DSS_CMD_QUERY_BEGIN = DSS_CMD_MODIFY_END,
     DSS_CMD_HANDSHAKE = DSS_CMD_QUERY_BEGIN,
@@ -121,7 +123,8 @@ typedef enum {
 
 static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 {
-    return ((type == DSS_CMD_GET_INST_STATUS) || (type == DSS_CMD_HANDSHAKE) || (type == DSS_CMD_STOP_SERVER));
+    return ((type == DSS_CMD_GET_INST_STATUS) || (type == DSS_CMD_HANDSHAKE) || (type == DSS_CMD_STOP_SERVER)
+    || (type == DSS_CMD_ENABLE_GRAB_LOCK));
 }
 
 #define DSS_DEFAULT_AU_SIZE SIZE_M(8)

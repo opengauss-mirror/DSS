@@ -72,13 +72,11 @@ status_t dss_signal_proc(void)
 
 static void dss_close_background_task(dss_instance_t *inst)
 {
-    if (!inst->is_maintain) {
-        uint32 bg_task_base_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
-        for (uint32 i = 0; i < DSS_BACKGROUND_TASK_NUM; i++) {
-            uint32 bg_task_id = bg_task_base_id + i;
-            if (inst->threads[bg_task_id].id != 0) {
-                cm_close_thread(&inst->threads[bg_task_id]);
-            }
+    uint32 bg_task_base_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
+    for (uint32 i = 0; i < DSS_BACKGROUND_TASK_NUM; i++) {
+        uint32 bg_task_id = bg_task_base_id + i;
+        if (inst->threads[bg_task_id].id != 0) {
+            cm_close_thread(&inst->threads[bg_task_id]);
         }
     }
 }
