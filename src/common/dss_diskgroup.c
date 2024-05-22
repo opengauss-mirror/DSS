@@ -986,7 +986,7 @@ void dss_unlock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry_p
         fclose(vglock_fp);
         LOG_DEBUG_INF("ulock vg:%s, lock file:%s.", entry_path, lock_file);
     } else {
-        dss_unlock_vg_raid(vg_item, entry_path, g_inst_cfg->params.inst_id);
+        dss_unlock_vg_raid(vg_item, entry_path, inst_cfg->params.inst_id);
     }
     return;
 }
