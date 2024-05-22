@@ -1088,8 +1088,9 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
     status_t status;
     do {
         cm_reset_error();
-
-        (void)cm_atomic_inc(&g_dss_instance.active_sessions);
+        if (session->recv_pack.head->cmd != DSS_CMD_SWITCH_LOCK) {
+            (void)cm_atomic_inc(&g_dss_instance.active_sessions);
+        }
         LOG_DEBUG_INF("session:%u inc active_sessions to:%lld for cmd:%u", session->id, g_dss_instance.active_sessions,
             (uint32)session->recv_pack.head->cmd);
         if (dss_can_cmd_type_no_open(session->recv_pack.head->cmd)) {
@@ -1098,8 +1099,9 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
             // if cur node is standby, may reset it to recovery to do recovery
             if (g_dss_instance.status != DSS_STATUS_OPEN && g_dss_instance.status != DSS_STATUS_PREPARE) {
                 LOG_RUN_INF("Req forbided by recovery for cmd:%u", (uint32)session->recv_pack.head->cmd);
-
-                (void)cm_atomic_dec(&g_dss_instance.active_sessions);
+                if (session->recv_pack.head->cmd != DSS_CMD_SWITCH_LOCK) {
+                    (void)cm_atomic_dec(&g_dss_instance.active_sessions);
+                }
                 LOG_DEBUG_INF("session:%u dec active_session to:%lld for cmd:%u", session->id,
                     g_dss_instance.active_sessions, (uint32)session->recv_pack.head->cmd);
                 cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
@@ -1109,8 +1111,9 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
         } else {
             status = g_dss_remote_handle.proc(session);
         }
-
-        (void)cm_atomic_dec(&g_dss_instance.active_sessions);
+        if (session->recv_pack.head->cmd != DSS_CMD_SWITCH_LOCK) {
+            (void)cm_atomic_dec(&g_dss_instance.active_sessions);
+        }
         LOG_DEBUG_INF("session:%u dec active_sessions to:%lld for cmd:%u", session->id, g_dss_instance.active_sessions,
             (uint32)session->recv_pack.head->cmd);
 
