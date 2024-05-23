@@ -699,6 +699,11 @@ uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try
             if (!try_lock) {
                 continue;
             }
+            if (inst->no_grab_lock) {
+                LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "[RECOVERY]No need to grab lock when inst %u is set no grab lock.", (uint32)inst_cfg->params.inst_id);
+                dss_set_master_id(DSS_INVALID_ID32);
+                return CM_ERROR;
+            }
             ret = cm_res_lock(&cm_res->mgr, DSS_CM_LOCK);
             *grab_lock = ((int)ret == CM_RES_SUCCESS);
             if (*grab_lock) {
@@ -869,8 +874,8 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
     cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
 }
 
-#define DSS_RECOVERY_INTERVAL 500
-#define DSS_SHORT_RECOVERY_INTERVAL 100
+#define DSS_RECOVER_INTERVAL 500
+#define DSS_SHORT_RECOVER_INTERVAL 100
 void dss_get_cm_lock_and_recover(thread_t *thread)
 {
     cm_set_thread_name("recovery");
@@ -884,9 +889,9 @@ void dss_get_cm_lock_and_recover(thread_t *thread)
         dss_get_cm_lock_and_recover_inner(inst);
         if (inst->status == DSS_STATUS_PREPARE) {
             LOG_RUN_WAR("[RECOVERY]Try to sleep when in prepare status.\n");
-            cm_sleep(DSS_SHORT_RECOVERY_INTERVAL);
+            cm_sleep(DSS_SHORT_RECOVER_INTERVAL);
         } else {
-            cm_sleep(DSS_RECOVERY_INTERVAL);
+            cm_sleep(DSS_RECOVER_INTERVAL);
         }
     }
 }

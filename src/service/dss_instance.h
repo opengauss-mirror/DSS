@@ -89,7 +89,8 @@ typedef struct st_dss_instance {
     int32 cluster_proto_vers[DSS_MAX_INSTANCES];
     bool8 is_maintain;
     bool8 is_cleaning;
-    uint8 reserve[2];
+    bool8 no_grab_lock;
+    bool8 is_releasing_lock;
     bool32 is_join_cluster;
     dss_session_t *handle_session;
     dss_bg_task_info_t syn_meta_task[DSS_META_SYN_BG_TASK_NUM_MAX];

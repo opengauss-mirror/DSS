@@ -192,6 +192,8 @@ DSS_DECLARE int dss_set_conn_opts(dss_conn_opt_key_e key, void *value);
 DSS_DECLARE void dss_set_default_conn_timeout(int timeout);
 // instance param
 DSS_DECLARE int dss_set_main_inst(void);
+DSS_DECLARE int dss_disable_grab_lock(void);
+DSS_DECLARE int dss_enable_grab_lock(void);
 DSS_DECLARE int dss_get_inst_status(dss_server_status_t *dss_status);
 
 DSS_DECLARE int dss_stat(const char *path, dss_stat_info_t item);

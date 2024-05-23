@@ -865,27 +865,17 @@ static status_t dss_process_stop_server(dss_session_t *session)
 }
 
 // process switch lock,just master id can do
-static status_t dss_process_switch_lock(dss_session_t *session)
+static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 switch_id)
 {
     dss_config_t *cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)(cfg->params.inst_id);
-    int32 switch_id;
-    dss_init_get(&session->recv_pack);
-    if (dss_get_int32(&session->recv_pack, &switch_id) != CM_SUCCESS) {
-        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-        return CM_ERROR;
-    }
-    cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));  // when mes process req, will latch s
-    cm_latch_x(&g_dss_instance.switch_latch, session->id, LATCH_STAT(LATCH_SWITCH));
     uint32 master_id = dss_get_master_id();
     if ((uint32)switch_id == master_id) {
-        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-        LOG_DEBUG_INF("[SWITCH] switchid is equal to current master_id, which is %u.", master_id);
+        LOG_RUN_INF("[SWITCH]switchid is equal to current master_id, which is %u.", master_id);
         return CM_SUCCESS;
     }
     if (master_id != curr_id) {
-        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-        LOG_DEBUG_ERR("[SWITCH] current id is %u, just master id %u can do switch lock.", curr_id, master_id);
+        LOG_RUN_ERR("[SWITCH]current id is %u, just master id %u can do switch lock.", curr_id, master_id);
         return CM_ERROR;
     }
     dss_wait_session_pause(&g_dss_instance);
@@ -895,15 +885,14 @@ static status_t dss_process_switch_lock(dss_session_t *session)
     // trans lock
     if (g_dss_instance.cm_res.is_valid) {
         dss_set_server_status_flag(DSS_STATUS_READONLY);
-        LOG_RUN_INF("inst %u set status flag %u when trans lock.", curr_id, DSS_STATUS_READONLY);
+        LOG_RUN_INF("[SWITCH]inst %u set status flag %u when trans lock.", curr_id, DSS_STATUS_READONLY);
         ret = cm_res_trans_lock(&g_dss_instance.cm_res.mgr, DSS_CM_LOCK, (uint32)switch_id);
         if (ret != CM_SUCCESS) {
             dss_set_session_running(&g_dss_instance);
             dss_set_server_status_flag(DSS_STATUS_READWRITE);
-            LOG_RUN_INF("inst %u set status flag %u when failed to trans lock.", curr_id, DSS_STATUS_READWRITE);
+            LOG_RUN_INF("[SWITCH]inst %u set status flag %u when failed to trans lock.", curr_id, DSS_STATUS_READWRITE);
             g_dss_instance.status = DSS_STATUS_OPEN;
-            cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-            LOG_DEBUG_ERR("[SWITCH] cm do switch lock failed from %u to %u.", curr_id, master_id);
+            LOG_RUN_ERR("[SWITCH]cm do switch lock failed from %u to %u.", curr_id, master_id);
             return ret;
         }
         dss_set_master_id((uint32)switch_id);
@@ -912,13 +901,25 @@ static status_t dss_process_switch_lock(dss_session_t *session)
     } else {
         dss_set_session_running(&g_dss_instance);
         g_dss_instance.status = DSS_STATUS_OPEN;
-        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-        LOG_DEBUG_ERR("[SWITCH] Only with cm can switch lock.");
+        LOG_RUN_ERR("[SWITCH]Only with cm can switch lock.");
         return CM_ERROR;
     }
-    LOG_RUN_INF("Old main server %u switch lock to new main server %u successfully.", curr_id, (uint32)switch_id);
-    cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
+    LOG_RUN_INF("[SWITCH]Old main server %u switch lock to new main server %u successfully.", curr_id, (uint32)switch_id);
     return CM_SUCCESS;
+}
+
+static status_t dss_process_switch_lock(dss_session_t *session)
+{
+    int32 switch_id;
+    dss_init_get(&session->recv_pack);
+    if (dss_get_int32(&session->recv_pack, &switch_id) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+    cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));  // when mes process req, will latch s
+    cm_latch_x(&g_dss_instance.switch_latch, session->id, LATCH_STAT(LATCH_SWITCH));
+    status_t ret = dss_process_switch_lock_inner(session, (uint32)switch_id);
+    // no need to unlatch, for dss_process_message will
+    return ret;
 }
 /*
     1 curr_id == master_id, just return success;
@@ -987,7 +988,95 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
     cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
     return CM_SUCCESS;
 }
+static status_t dss_process_disable_grab_lock_inner(dss_session_t *session, uint32 curr_id)
+{
+    status_t ret = CM_ERROR;
+    if (g_dss_instance.cm_res.is_valid) {
+        g_dss_instance.active_sessions--;
+        dss_wait_session_pause(&g_dss_instance);
+        g_dss_instance.active_sessions++;
+        g_dss_instance.status = DSS_STATUS_SWITCH;
+        dss_wait_background_pause(&g_dss_instance);
+        dss_set_server_status_flag(DSS_STATUS_READONLY);
+        LOG_RUN_INF("[RELEASE LOCK]inst %u set status flag %u when release lock.", curr_id, DSS_STATUS_READONLY);
+        ret = cm_res_unlock(&g_dss_instance.cm_res.mgr, DSS_CM_LOCK);
+        if (ret != CM_SUCCESS) {
+            LOG_RUN_ERR("[RELEASE LOCK] inst %u release cm lock failed, cm_error is %d.", curr_id, (int32)ret);
+            uint32 lock_owner_id = DSS_INVALID_ID32;
+            ret = cm_res_get_lock_owner(&g_dss_instance.cm_res.mgr, DSS_CM_LOCK, &lock_owner_id);
+            if (lock_owner_id == curr_id) {
+                dss_set_server_status_flag(DSS_STATUS_READWRITE);
+                LOG_RUN_INF("[RELEASE LOCK]inst %u set status flag %u when failed to unlock and lock owner is no change.", curr_id, DSS_STATUS_READWRITE);
+            } else {
+                dss_set_master_id(DSS_INVALID_ID32);
+                LOG_RUN_INF("[RELEASE LOCK]inst %u set status flag %u when failed to unlock, cm_error is %d, lock_owner_id is %u.", curr_id, DSS_STATUS_READONLY, (int32)ret, lock_owner_id);
+            }
+            dss_set_session_running(&g_dss_instance);
+            LOG_RUN_ERR("[RELEASE LOCK] cm release lock failed from %u.", curr_id);
+            return CM_ERROR;
+        }
+        dss_set_master_id(DSS_INVALID_ID32);
+        dss_set_session_running(&g_dss_instance);
+    } else {
+        LOG_RUN_ERR("[RELEASE LOCK] Only with cm can release lock.");
+        return CM_ERROR;
+    }
+    return ret;
+}
 
+static status_t dss_process_disable_grab_lock(dss_session_t *session)
+{
+    dss_config_t *cfg = dss_get_inst_cfg();
+    uint32 curr_id = (uint32)(cfg->params.inst_id);
+    uint32 master_id;
+    status_t ret;
+    DSS_RETURN_IF_ERROR(
+        dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%u if it is master to disable grab lock", curr_id));
+    if (g_dss_instance.is_maintain || g_dss_instance.inst_cfg.params.inst_cnt <= 1) {
+        LOG_RUN_ERR("[RELEASE LOCK]No need to disable grab lock when dssserver is maintain or just one inst.");
+        return CM_ERROR;
+    }
+    if (g_dss_instance.is_releasing_lock) {
+        LOG_RUN_INF("[RELEASE LOCK]One session is releasing lock, just return.");
+        return CM_ERROR;
+    }
+    while(CM_TRUE) {
+        if (!cm_latch_timed_x(&g_dss_instance.switch_latch, session->id, DSS_PROCESS_REMOTE_INTERVAL, LATCH_STAT(LATCH_SWITCH))) {
+            LOG_RUN_INF("[RELEASE LOCK] Spin switch lock timed out, just continue.");
+            continue;
+        }
+        g_dss_instance.is_releasing_lock = CM_TRUE;
+        master_id = dss_get_master_id();
+        if (master_id != curr_id) {
+            LOG_RUN_INF("[RELEASE LOCK]No need to release lock.");
+            g_dss_instance.is_releasing_lock = CM_FALSE;
+            cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
+            return CM_SUCCESS;
+        }
+        ret = dss_process_disable_grab_lock_inner(session, curr_id);
+        break;
+    }
+    g_dss_instance.status = DSS_STATUS_OPEN;
+    g_dss_instance.is_releasing_lock = CM_FALSE;
+    if (ret == CM_SUCCESS) {
+        g_dss_instance.no_grab_lock = CM_TRUE;
+        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
+        LOG_RUN_INF("[RELEASE LOCK]Curr_id %u disable grab lock successfully.", curr_id);
+        return CM_SUCCESS;
+    }
+    cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
+    return ret;
+}
+static status_t dss_process_enable_grab_lock(dss_session_t *session)
+{
+    dss_config_t *cfg = dss_get_inst_cfg();
+    uint32 curr_id = (uint32)(cfg->params.inst_id);
+    DSS_RETURN_IF_ERROR(
+        dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "set %u enable grab lock", curr_id));
+    g_dss_instance.no_grab_lock = CM_FALSE;
+    LOG_RUN_INF("Curr_id %u enable grab lock successfully.", curr_id);
+    return CM_SUCCESS;
+}
 // clang-format off
 static dss_cmd_hdl_t g_dss_cmd_handle[] = {
     // modify
@@ -1018,6 +1107,8 @@ static dss_cmd_hdl_t g_dss_cmd_handle[] = {
     { DSS_CMD_UNLINK, dss_process_unlink, NULL, CM_TRUE },
     { DSS_CMD_SET_MAIN_INST, dss_process_set_main_inst, NULL, CM_FALSE },
     { DSS_CMD_SWITCH_LOCK, dss_process_switch_lock, NULL, CM_FALSE },
+    { DSS_CMD_DISABLE_GRAB_LOCK, dss_process_disable_grab_lock, NULL, CM_FALSE },
+    { DSS_CMD_ENABLE_GRAB_LOCK, dss_process_enable_grab_lock, NULL, CM_FALSE },
     // query
     { DSS_CMD_HANDSHAKE, dss_process_handshake, NULL, CM_FALSE },
     { DSS_CMD_EXIST, dss_process_exist, NULL, CM_FALSE },

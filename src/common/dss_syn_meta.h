@@ -33,6 +33,7 @@
 extern "C" {
 #endif
 
+#define DSS_LOCK_SHM_META_TIMEOUT 200
 typedef struct st_dss_meta_syn_msg {
     uint64 ftid;
     uint64 fid;       // it's the owner's gft_node_t.fid

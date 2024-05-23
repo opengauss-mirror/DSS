@@ -443,6 +443,22 @@ int dss_set_main_inst(void)
     return (int)dss_set_main_inst_on_server(conn);
 }
 
+int dss_disable_grab_lock(void)
+{
+    dss_conn_t *conn = NULL;
+    status_t ret = dss_get_conn(&conn);
+    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when disable grab lock"));
+    return (int)dss_disable_grab_lock_on_server(conn);
+}
+
+int dss_enable_grab_lock(void)
+{
+    dss_conn_t *conn = NULL;
+    status_t ret = dss_get_conn(&conn);
+    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when enable grab lock"));
+    return (int)dss_enable_grab_lock_on_server(conn);
+}
+
 int dss_fclose(int handle)
 {
     dss_conn_t *conn = NULL;

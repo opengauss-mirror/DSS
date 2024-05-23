@@ -388,6 +388,53 @@ void dss_lock_shm_meta_x(const dss_session_t *session, dss_shared_latch_t *share
     } while (CM_TRUE);
 }
 
+bool32 dss_lock_shm_meta_timed_x(const dss_session_t *session, dss_shared_latch_t *shared_latch, uint32 wait_ticks)
+{
+    cm_panic_log(dss_is_server(), "can not op x latch in client");
+    latch_statis_t *stat = NULL;
+    uint32 count = 0;
+    uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
+    uint32 actual_ticks = 0;
+    do {
+        cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, (stat != NULL) ? &stat->x_spin : NULL);
+        if (shared_latch->latch.stat == LATCH_STATUS_IDLE) {
+            shared_latch->latch.sid = (uint16)sid;
+            shared_latch->latch.stat = LATCH_STATUS_X;
+            cm_spin_unlock(&shared_latch->latch.lock);
+            cm_latch_stat_inc(stat, count);
+            return CM_TRUE;
+        }
+        if (shared_latch->latch.stat == LATCH_STATUS_S) {
+            shared_latch->latch.stat = LATCH_STATUS_IX;
+            cm_spin_unlock(&shared_latch->latch.lock);
+            if (!cm_latch_timed_ix2x(&shared_latch->latch, sid, wait_ticks, stat)) {
+                cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, (stat != NULL) ? &stat->x_spin : NULL);
+                shared_latch->latch.stat = shared_latch->latch.shared_count > 0 ? LATCH_STATUS_S : LATCH_STATUS_IDLE;
+                cm_spin_unlock(&shared_latch->latch.lock);
+                return CM_FALSE;
+            }
+            return CM_TRUE;
+        }
+        cm_spin_unlock(&shared_latch->latch.lock);
+        if (stat != NULL) {
+            stat->misses++;
+        }
+        while (shared_latch->latch.stat != LATCH_STATUS_IDLE && shared_latch->latch.stat != LATCH_STATUS_S) {
+            if (actual_ticks >= wait_ticks) {
+                return CM_FALSE;
+            }
+            count++;
+            if (count >= GS_SPIN_COUNT) {
+                SPIN_STAT_INC(stat, x_sleeps);
+                cm_spin_sleep();
+                count = 0;
+                actual_ticks++;
+            }
+        }
+    } while (CM_TRUE);
+    return CM_FALSE;
+}
+
 void dss_lock_shm_meta_x2ix(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
     cm_panic_log(dss_is_server(), "can not op x latch in client");

@@ -151,6 +151,50 @@ status_t dss_set_main_inst_on_server(dss_conn_t *conn)
     return CM_SUCCESS;
 }
 
+status_t dss_disable_grab_lock_on_server(dss_conn_t *conn)
+{
+    int32 errcode;
+    char *errmsg = NULL;
+
+    dss_init_packet(&conn->pack, conn->pipe.options);
+    dss_init_set(&conn->pack, conn->proto_version);
+    dss_packet_t *send_pack = &conn->pack;
+    send_pack->head->cmd = DSS_CMD_DISABLE_GRAB_LOCK;
+    send_pack->head->flags = 0;
+
+    dss_packet_t *ack_pack = &conn->pack;
+    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
+
+    if (ack_pack->head->result != CM_SUCCESS) {
+        dss_cli_get_err(ack_pack, &errcode, &errmsg);
+        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+status_t dss_enable_grab_lock_on_server(dss_conn_t *conn)
+{
+    int32 errcode;
+    char *errmsg = NULL;
+
+    dss_init_packet(&conn->pack, conn->pipe.options);
+    dss_init_set(&conn->pack, conn->proto_version);
+    dss_packet_t *send_pack = &conn->pack;
+    send_pack->head->cmd = DSS_CMD_ENABLE_GRAB_LOCK;
+    send_pack->head->flags = 0;
+
+    dss_packet_t *ack_pack = &conn->pack;
+    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
+
+    if (ack_pack->head->result != CM_SUCCESS) {
+        dss_cli_get_err(ack_pack, &errcode, &errmsg);
+        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
 status_t dss_close_file_on_server(dss_conn_t *conn, dss_vg_info_item_t *vg_item, uint64 fid, ftid_t ftid)
 {
     int32 errcode;
