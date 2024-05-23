@@ -219,7 +219,7 @@ status_t dss_verify_log_file_real_path(char *path)
 {
     char real_path[CM_MAX_LOG_HOME_LEN] = {0};
     CM_RETURN_IFERR(realpath_file(path, real_path, CM_MAX_LOG_HOME_LEN));
-    if (!cm_dir_exist(path)) {
+    if (!cm_dir_exist(path) && cm_create_dir_ex(path) != CM_SUCCESS) {
         DSS_RETURN_IFERR2(CM_ERROR, CM_THROW_ERROR(ERR_INVALID_DIR, path));
     }
     if (access(path, W_OK | R_OK) != 0) {
