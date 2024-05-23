@@ -617,8 +617,7 @@ char *dss_find_block_from_disk_and_refresh_shm(dss_session_t *session, dss_vg_in
     if (!dss_is_server()) {
         return NULL;
     }
-    status = dss_load_buffer_cache(vg_item, block_id, type, &addr, out_obj_id);
-    if (status != CM_SUCCESS) {
+    if (dss_load_buffer_cache(vg_item, block_id, type, &addr, out_obj_id) != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load meta block, block_id: %s.", dss_display_metaid(block_id));
         return NULL;
     }
