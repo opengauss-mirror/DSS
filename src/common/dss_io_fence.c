@@ -74,7 +74,6 @@ status_t dss_iof_kick_one_volume(char *dev, int64 rk, int64 rk_kick, ptlist_t *r
     status_t status = CM_SUCCESS;
     iof_reg_out_t reg_info;
     bool32 is_reg = CM_FALSE;
-    int32 ret = 0;
 
     reg_info.rk = rk;
     reg_info.rk_kick = rk_kick;
@@ -84,15 +83,8 @@ status_t dss_iof_kick_one_volume(char *dev, int64 rk, int64 rk_kick, ptlist_t *r
     if (!is_reg) {
         LOG_DEBUG_INF("[FENCE][KICK] Need to register node to dev before kick other nodes, dev %s, org rk %lld.",
             reg_info.dev, reg_info.rk);
-        ret = cm_iof_register(&reg_info);
-        if (ret != CM_SUCCESS) {
-            if (ret == CM_IOF_ERR_DUP_OP) {
-                LOG_DEBUG_INF("[FENCE][KICK] The current host has been registered for dev %s.", reg_info.dev);
-            } else {
-                LOG_DEBUG_ERR("[FENCE][KICK] Register dev failed, org rk %lld, dev %s.", reg_info.rk, reg_info.dev);
-                return CM_ERROR;
-            }
-        }
+        DSS_THROW_ERROR_EX(ERR_DSS_VOLUME_FENCE_CHECK_COND, "Need to register node to dev before kick other nodes");
+        return CM_ERROR;
     }
 
     is_reg = dss_iof_is_register(dev, rk_kick, regs);
