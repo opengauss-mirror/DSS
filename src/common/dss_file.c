@@ -3771,9 +3771,10 @@ dss_fs_block_t *dss_find_fs_block(dss_session_t *session, dss_vg_info_item_t *vg
     return fs_block;
 }
 
-static status_t dss_refresh_file_core(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 fid, ftid_t ftid, int64 offset)
+static status_t dss_refresh_file_ft_core(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 fid, ftid_t ftid,
+    bool32 check_fid, gft_node_t **node_out)
 {
+    *node_out = NULL;
     gft_node_t *node = NULL;
     bool32 need_retry = CM_FALSE;
     do {
@@ -3787,7 +3788,7 @@ static status_t dss_refresh_file_core(
             DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find ftid:%s.", dss_display_metaid(ftid)));
         }
 
-        if (node->fid != fid) {
+        if (check_fid && node->fid != fid) {
             DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Fid is not match,(%llu,%llu).", node->fid, fid));
         }
 
@@ -3806,13 +3807,27 @@ static status_t dss_refresh_file_core(
             dss_lock_vg_mem_and_shm_x(session, vg_item);
         }
     } while (CM_TRUE);
+    *node_out = node;
+    return CM_SUCCESS;
+}
+
+static status_t dss_refresh_file_core(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 fid, ftid_t ftid, int64 offset)
+{
+    gft_node_t *node = NULL;
+    status_t status = dss_refresh_file_ft_core(session, vg_item, fid, ftid, CM_TRUE, &node);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to refresh file ft core by offset:%lld", offset));
+    if (node == NULL) {
+        LOG_DEBUG_ERR("Failed to refresh file ft core by offset:%lld", offset);
+        return CM_ERROR;
+    }
 
     if (node->size == 0) {
         return CM_SUCCESS;
     }
 
     dss_fs_pos_desc_t fs_pos = {0};
-    status_t status = dss_find_data_au_by_offset(session, vg_item, node, offset, &fs_pos);
+    status = dss_find_data_au_by_offset(session, vg_item, node, offset, &fs_pos);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to find fs data block by offset:%lld", offset));
 
     if (DSS_IS_FILE_INNER_INITED(node->flags) && fs_pos.is_valid && fs_pos.is_exist_aux) {
@@ -3944,14 +3959,18 @@ status_t dss_refresh_ft_block(dss_session_t *session, char *vg_name, uint32 vgid
             DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name));
     }
     dss_lock_vg_mem_and_shm_x(session, vg_item);
-    gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, blockid, CM_TRUE, CM_TRUE);
-    if (!node) {
+    gft_node_t *node = NULL;
+
+    status_t status = dss_refresh_file_ft_core(session, vg_item, DSS_INVALID_64, blockid, CM_FALSE, &node);
+    DSS_RETURN_IFERR3(status, dss_unlock_vg_mem_and_shm(session, vg_item),
+            LOG_DEBUG_ERR("Failed to refresh file ft core for ftid:%s.", dss_display_metaid(blockid)));
+    if (node == NULL) {
         DSS_RETURN_IFERR3(CM_ERROR, dss_unlock_vg_mem_and_shm(session, vg_item),
             LOG_DEBUG_ERR("Failed to find ftid,ftid:%s.", dss_display_metaid(blockid)));
     }
 
     if (node->type == GFT_PATH) {
-        status_t status = dss_refresh_dir_r(vg_item, node, CM_FALSE);
+        status = dss_refresh_dir_r(vg_item, node, CM_FALSE);
         DSS_RETURN_IFERR3(status,
             LOG_DEBUG_ERR("Failed to refesh dir vg:%s, dir name:%s, ftid:%s, pid:%llu.", vg_item->vg_name, node->name,
                 dss_display_metaid(node->id), session->cli_info.cli_pid),
