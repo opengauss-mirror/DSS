@@ -300,7 +300,7 @@ status_t dss_invalidate_meta_remote(
         gft_node_t *node = dss_get_ft_node_by_ftid_no_refresh(session, vg_item, block_id);
         if (node != NULL) {
             // just update the local mem if exist
-            dss_set_node_flag(session, vg_item, node, CM_FALSE, DSS_FT_NODE_FLAG_INVALID_FS_META);
+            dss_set_node_flag(session, vg_item, node, CM_TRUE, DSS_FT_NODE_FLAG_INVALID_FS_META);
         }
     } else {
         char *addr = dss_find_block_in_shm_no_refresh(session, vg_item, block_id, NULL);
