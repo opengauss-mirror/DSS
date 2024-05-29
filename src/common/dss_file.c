@@ -699,7 +699,12 @@ status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_ty
 {
     CM_ASSERT(dir_path != NULL);
     status_t status = CM_ERROR;
-    while (dss_get_recover_status() != DSS_STATUS_RECOVERY && dss_is_server() && !dss_need_exec_local()) {
+    while (dss_is_server() && !dss_need_exec_local()) {
+        if (dss_get_recover_status() == DSS_STATUS_RECOVERY) {
+            DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
+            LOG_RUN_INF("Check dir break by recovery");
+            return CM_ERROR;
+        }
         if (dss_get_node_by_path_remote_proc != NULL) {
             status = dss_get_node_by_path_remote_proc(session, dir_path, type, output_info, is_throw_err);
             if (status == ERR_DSS_MES_ILL) {
@@ -3797,8 +3802,9 @@ static status_t dss_refresh_file_ft_core(dss_session_t *session, dss_vg_info_ite
         }
         need_retry = dss_try_revalidate_file(session, vg_item, node);
         if (need_retry) {
-            if (dss_get_recover_status() != DSS_STATUS_RECOVERY) {
-                LOG_RUN_ERR("Failed to revalidata file when instance is in recovery status.");
+            if (dss_get_recover_status() == DSS_STATUS_RECOVERY) {
+                DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
+                LOG_RUN_INF("Try revalidate file break by recovery");
                 return CM_ERROR;
             }
             dss_unlock_vg_mem_and_shm(session, vg_item);

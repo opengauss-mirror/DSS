@@ -46,6 +46,24 @@ status_t dss_signal_proc(void);
 status_t dss_signal_proc_with_graceful_exit(void);
 #endif
 
+static inline void dss_inc_active_sessions(dss_session_t *session)
+{
+    if (session->recv_pack.head->cmd != DSS_CMD_SWITCH_LOCK) {
+        (void)cm_atomic_inc(&g_dss_instance.active_sessions);
+        LOG_DEBUG_INF("session:%u inc active_sessions to:%lld for cmd:%u", session->id, g_dss_instance.active_sessions,
+            (uint32)session->recv_pack.head->cmd);
+    }
+}
+
+static inline void dss_dec_active_sessions(dss_session_t *session)
+{
+    if (session->recv_pack.head->cmd != DSS_CMD_SWITCH_LOCK) {
+        (void)cm_atomic_dec(&g_dss_instance.active_sessions);
+        LOG_DEBUG_INF("session:%u dec active_sessions to:%lld for cmd:%u", session->id, g_dss_instance.active_sessions,
+            (uint32)session->recv_pack.head->cmd);
+    }
+}
+
 void dss_get_exec_nodeid(dss_session_t *session, uint32 *currid, uint32 *remoteid);
 void dss_wait_session_pause(dss_instance_t *inst);
 void dss_wait_background_pause(dss_instance_t *inst);

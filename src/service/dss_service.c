@@ -952,11 +952,17 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
         master_id = dss_get_master_id();
         if (master_id == curr_id) {
             session->recv_pack.head->cmd = DSS_CMD_SET_MAIN_INST;
-            LOG_RUN_INF("Main server %u is set successfully by %u.", curr_id, master_id);
+            LOG_RUN_INF("[SWITCH] Main server %u is set successfully by %u.", curr_id, master_id);
             return CM_SUCCESS;
         }
+        if (dss_get_recover_status() == DSS_STATUS_RECOVERY) {
+            session->recv_pack.head->cmd = DSS_CMD_SET_MAIN_INST;
+            DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
+            LOG_RUN_INF("[SWITCH] Set main inst break by recovery");
+            return CM_ERROR;
+        }
         if (!dss_latch_timed_x(&g_dss_instance.switch_latch, DSS_PROCESS_REMOTE_INTERVAL)) {
-            LOG_DEBUG_INF("Spin switch lock timed out, just continue.");
+            LOG_DEBUG_INF("[SWITCH] Spin switch lock timed out, just continue.");
             continue;
         }
         if (!g_dss_instance.is_maintain) {
@@ -982,9 +988,9 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
         _exit(1);
     }
     dss_set_server_status_flag(DSS_STATUS_READWRITE);
-    LOG_RUN_INF("inst %u set status flag %u when set main inst.", curr_id, DSS_STATUS_READWRITE);
+    LOG_RUN_INF("[SWITCH] inst %u set status flag %u when set main inst.", curr_id, DSS_STATUS_READWRITE);
     g_dss_instance.status = DSS_STATUS_OPEN;
-    LOG_RUN_INF("Main server %u is set successfully by %u.", curr_id, master_id);
+    LOG_RUN_INF("[SWITCH] Main server %u is set successfully by %u.", curr_id, master_id);
     cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
     return CM_SUCCESS;
 }
@@ -1179,35 +1185,22 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
     status_t status;
     do {
         cm_reset_error();
-        if (session->recv_pack.head->cmd != DSS_CMD_SWITCH_LOCK) {
-            (void)cm_atomic_inc(&g_dss_instance.active_sessions);
-        }
-        LOG_DEBUG_INF("session:%u inc active_sessions to:%lld for cmd:%u", session->id, g_dss_instance.active_sessions,
-            (uint32)session->recv_pack.head->cmd);
+        dss_inc_active_sessions(session);
         if (dss_can_cmd_type_no_open(session->recv_pack.head->cmd)) {
             status = handle->proc(session);
         } else if (!dss_need_exec_remote(handle->exec_on_active, local_req)) {
             // if cur node is standby, may reset it to recovery to do recovery
             if (g_dss_instance.status != DSS_STATUS_OPEN && g_dss_instance.status != DSS_STATUS_PREPARE) {
                 LOG_RUN_INF("Req forbided by recovery for cmd:%u", (uint32)session->recv_pack.head->cmd);
-                if (session->recv_pack.head->cmd != DSS_CMD_SWITCH_LOCK) {
-                    (void)cm_atomic_dec(&g_dss_instance.active_sessions);
-                }
-                LOG_DEBUG_INF("session:%u dec active_session to:%lld for cmd:%u", session->id,
-                    g_dss_instance.active_sessions, (uint32)session->recv_pack.head->cmd);
-                cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
+                dss_dec_active_sessions(session);
+                sleep(DSS_PROCESS_REMOTE_INTERVAL);
                 continue;
             }
             status = handle->proc(session);
         } else {
             status = g_dss_remote_handle.proc(session);
         }
-        if (session->recv_pack.head->cmd != DSS_CMD_SWITCH_LOCK) {
-            (void)cm_atomic_dec(&g_dss_instance.active_sessions);
-        }
-        LOG_DEBUG_INF("session:%u dec active_sessions to:%lld for cmd:%u", session->id, g_dss_instance.active_sessions,
-            (uint32)session->recv_pack.head->cmd);
-
+        dss_dec_active_sessions(session);
         if (status != CM_SUCCESS && cm_get_error_code() == ERR_DSS_RECOVER_CAUSE_BREAK) {
             LOG_RUN_INF("Req breaked by recovery for cmd:%u", session->recv_pack.head->cmd);
             cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
