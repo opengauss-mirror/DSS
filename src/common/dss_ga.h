@@ -129,6 +129,7 @@ void ga_destroy_global_area(void);
 int32 ga_attach_area(uint32 attach_perm);
 void ga_detach_area(void);
 
+void ga_append_into_queue_by_pool_id(ga_pool_id_e pool_id, ga_queue_t *queue, uint32 object_id);
 uint32 ga_alloc_object(ga_pool_id_e pool_id, uint32 specific_id);
 int32 ga_alloc_object_list(ga_pool_id_e pool_id, uint32 count, ga_queue_t *list);
 void ga_free_object(ga_pool_id_e pool_id, uint32 object_id);

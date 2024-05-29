@@ -314,7 +314,7 @@ static status_t dss_load_buffer_cache(
 
 void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 hash, uint64 *key,
     bool32 is_print_error_log, ga_obj_id_t *out_obj_id)
-{ 
+{
     CM_ASSERT(key != NULL);
     shm_hashmap_t *hashmap = vg_item->buffer_cache;
     if (hashmap == NULL) {
@@ -610,17 +610,18 @@ char *dss_find_block_in_shm_no_refresh_ex(
     return dss_find_block_in_bucket_ex(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
 }
 
-status_t dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *map)
+void dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *map)
 {
     shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
     shm_hashmap_bucket_t *bucket = NULL;
     dss_block_ctrl_t *block_ctrl = NULL;
     dss_common_block_t *block = NULL;
     bool32 has_next = CM_FALSE;
-    auid_t block_id_tmp = {0};
     ga_obj_id_t next_id = {0};
-    status_t status;
+    ga_queue_t obj_que[DSS_BLOCK_TYPE_MAX] = {0};
+    ga_pool_id_e obj_pool_id[DSS_BLOCK_TYPE_MAX] = {0};
     char *addr = NULL;
+
     for (uint32_t i = 0; i < map->num; i++) {
         bucket = &buckets[i];
         dss_lock_shm_meta_bucket_s(NULL, vg_item->id, &bucket->enque_lock);
@@ -630,22 +631,25 @@ status_t dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *ma
             addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
             block = DSS_GET_COMMON_BLOCK_HEAD(addr);
             block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
-            block_ctrl->type = block->type;
-            block_id_tmp = ((dss_common_block_t *)addr)->id;
-            if (block->type == DSS_BLOCK_TYPE_FT) {
-                dss_init_dss_fs_block_cache_info(&block_ctrl->fs_block_cache_info);
-            }
-            status = dss_check_block_version(vg_item, block_id_tmp, block->type, addr, NULL);
-            if (status != CM_SUCCESS) {
-                dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
-                return status;
-            }
+
+            // cache the pool info and obj info
+            ga_append_into_queue_by_pool_id(next_id.pool_id, &obj_que[block->type], next_id.obj_id);
+            obj_pool_id[block->type] = next_id.pool_id;
+
             has_next = block_ctrl->has_next;
             next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
         }
+
+        // just clean
+        bucket->first = 0;
+        bucket->has_next = CM_FALSE;
         dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
     }
-    return CM_SUCCESS;
+
+    // free all the obj as batch
+    for (uint32 i = 0; i < DSS_BLOCK_TYPE_MAX; i++) {
+        ga_free_object_list(obj_pool_id[i], &obj_que[i]);
+    }
 }
 
 void dss_init_dss_fs_block_cache_info(dss_fs_block_cache_info_t *fs_block_cache_info)

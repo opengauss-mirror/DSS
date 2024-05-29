@@ -38,6 +38,7 @@ typedef enum en_dss_block_type {
     DSS_BLOCK_TYPE_FT,
     DSS_BLOCK_TYPE_FS,
     DSS_BLOCK_TYPE_FS_AUX,
+    DSS_BLOCK_TYPE_MAX,  // should be the end
 } dss_block_type_t;
 
 typedef struct st_dss_fs_block_cache_info {
