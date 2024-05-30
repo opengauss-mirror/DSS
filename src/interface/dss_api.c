@@ -260,7 +260,7 @@ int dss_dmake(const char *dir_name)
     }
     if (sub.len >= DSS_FILE_PATH_MAX_LENGTH) {
         DSS_THROW_ERROR_EX(
-            ERR_DSS_DIR_CREATE, "Length of path(%s) is too long, maximum is (%u).", T2S(&sub), DSS_FILE_PATH_MAX_LENGTH);
+            ERR_DSS_DIR_CREATE, "Length of path(%s) is too long, maximum is %u.", T2S(&sub), DSS_FILE_PATH_MAX_LENGTH);
         return CM_ERROR;
     }
     CM_RETURN_IFERR(cm_text2str(&sub, parent_str, sizeof(parent_str)));
