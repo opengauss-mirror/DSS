@@ -254,11 +254,13 @@ int dss_dmake(const char *dir_name)
     char parent_str[DSS_FILE_PATH_MAX_LENGTH];
     char name_str[DSS_MAX_NAME_LEN];
     if (text.len >= DSS_MAX_NAME_LEN) {
-        DSS_THROW_ERROR_EX(ERR_DSS_DIR_CREATE, "Length of dir name(%s) is too long, maximum is %u.", T2S(&text), DSS_MAX_NAME_LEN);
+        DSS_THROW_ERROR_EX(
+            ERR_DSS_DIR_CREATE, "Length of dir name(%s) is too long, maximum is %u.", T2S(&text), DSS_MAX_NAME_LEN);
         return CM_ERROR;
     }
     if (sub.len >= DSS_FILE_PATH_MAX_LENGTH) {
-        DSS_THROW_ERROR_EX(ERR_DSS_DIR_CREATE, "Length of path(%s) is too long, maximum is (%u)", T2S(&sub), DSS_FILE_PATH_MAX_LENGTH);
+        DSS_THROW_ERROR_EX(
+            ERR_DSS_DIR_CREATE, "Length of path(%s) is too long, maximum is (%u)", T2S(&sub), DSS_FILE_PATH_MAX_LENGTH);
         return CM_ERROR;
     }
     CM_RETURN_IFERR(cm_text2str(&sub, parent_str, sizeof(parent_str)));
