@@ -294,7 +294,7 @@ static status_t dss_process_create_file(dss_session_t *session)
     DSS_RETURN_IF_ERROR(cm_text2str(&sub, parent_str, sizeof(parent_str)));
     DSS_RETURN_IF_ERROR(cm_text2str(&text, name_str, sizeof(name_str)));
 
-    DSS_LOG_DEBUG_OP("Begin to create file:%s in path:%s", name_str, parent_str);
+    DSS_LOG_DEBUG_OP("Begin to create file:%s in path:%s.", name_str, parent_str);
     status_t status = dss_create_file(session, (const char *)parent_str, (const char *)name_str, flag);
     if (status == CM_SUCCESS) {
         LOG_DEBUG_INF("Succeed to create file:%s in path:%s", name_str, parent_str);
@@ -880,7 +880,16 @@ static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 swi
     }
     dss_wait_session_pause(&g_dss_instance);
     g_dss_instance.status = DSS_STATUS_SWITCH;
+    dss_set_recover_status((uint32)DSS_STATUS_SWITCH);
     dss_wait_background_pause(&g_dss_instance);
+#ifdef ENABLE_DSSTEST
+    dss_set_server_status_flag(DSS_STATUS_READONLY);
+    LOG_RUN_INF("[SWITCH]inst %u set status flag %u when trans lock.", curr_id, DSS_STATUS_READONLY);
+    dss_set_master_id((uint32)switch_id);
+    dss_set_session_running(&g_dss_instance);
+    g_dss_instance.status = DSS_STATUS_OPEN;
+    dss_set_recover_status((uint32)DSS_STATUS_OPEN);
+#endif
     status_t ret = CM_SUCCESS;
     // trans lock
     if (g_dss_instance.cm_res.is_valid) {
@@ -978,10 +987,12 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
     }
     session->recv_pack.head->cmd = DSS_CMD_SET_MAIN_INST;
     g_dss_instance.status = DSS_STATUS_SWITCH;
+    dss_set_recover_status((uint32)DSS_STATUS_SWITCH);
     dss_set_master_id(curr_id);
     status = dss_refresh_meta_info(session);
     if (status != CM_SUCCESS) {
         g_dss_instance.status = DSS_STATUS_OPEN;
+        dss_set_recover_status((uint32)DSS_STATUS_OPEN);
         cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
         LOG_RUN_ERR("[DSS] ABORT INFO: dss instance %u refresh meta failed, result(%d).", curr_id, status);
         cm_fync_logfile();
@@ -990,6 +1001,7 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
     dss_set_server_status_flag(DSS_STATUS_READWRITE);
     LOG_RUN_INF("[SWITCH] inst %u set status flag %u when set main inst.", curr_id, DSS_STATUS_READWRITE);
     g_dss_instance.status = DSS_STATUS_OPEN;
+    dss_set_recover_status((uint32)DSS_STATUS_OPEN);
     LOG_RUN_INF("[SWITCH] Main server %u is set successfully by %u.", curr_id, master_id);
     cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
     return CM_SUCCESS;
