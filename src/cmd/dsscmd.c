@@ -70,6 +70,7 @@
 #define DSS_ARG_IDX_7 7
 #define DSS_ARG_IDX_8 8
 #define DSS_ARG_IDX_9 9
+#define DSS_ARG_IDX_10 10
 
 typedef enum en_dss_help_type {
     DSS_HELP_DETAIL = 0,
@@ -3344,13 +3345,27 @@ static status_t fshowmem_proc_by_fid_and_node_id(dss_vg_info_item_t *vg_item, ds
 }
 static status_t fshowmem_proc(void)
 {
+    status_t status;
+    if (cmd_fshowmem_args[DSS_ARG_IDX_10].inputed) {
+        dss_config_t inst_cfg;
+        char *home = cmd_fshowmem_args[DSS_ARG_IDX_10].input_args;
+        status = set_config_info(home, &inst_cfg);
+        if (status != CM_SUCCESS) {
+            DSS_PRINT_ERROR("Failed to set config info.\n");
+            return status;
+        }
+        status = dss_init_loggers(&inst_cfg, g_dss_admin_log, sizeof(g_dss_admin_log) / sizeof(dss_log_def_t), "dsscmd");
+        if (status != CM_SUCCESS) {
+            DSS_PRINT_ERROR("DSS init loggers failed!\n");
+            return status;
+        }
+    }
     const char *file_name = cmd_fshowmem_args[DSS_ARG_IDX_0].input_args;
     const char *path = cmd_fshowmem_args[DSS_ARG_IDX_7].input_args;
     dss_vg_info_item_t vg_item = {0};
     dss_show_param_t show_param;
     dss_init_show_param(&show_param);
     vg_item.from_type = FROM_BBOX;
-    status_t status;
     do {
         if (!cmd_fshowmem_args[DSS_ARG_IDX_1].inputed) {
             char name[DSS_MAX_NAME_LEN];
