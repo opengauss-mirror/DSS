@@ -469,7 +469,7 @@ static status_t dss_process_remote_req_prepare(dss_session_t *session, mes_msg_t
     // ready the ack connection
     dss_check_peer_by_inst(&g_dss_instance, dss_head->src_inst);
     if (dss_head->dss_cmd != DSS_CMD_REQ_BROADCAST &&
-        (!dss_need_exec_local() || dss_get_recover_status() != DSS_STATUS_OPEN)) {
+        (!dss_need_exec_local() || get_instance_status_proc() != DSS_STATUS_OPEN)) {
         LOG_RUN_ERR("Proc msg cmd:%u from remote node:%u fail, can NOT exec here.", (uint32)dss_head->dss_cmd,
             dss_head->src_inst);
         return CM_ERROR;

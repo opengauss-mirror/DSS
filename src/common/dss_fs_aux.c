@@ -693,7 +693,7 @@ status_t dss_try_find_data_au_batch(dss_session_t *session, dss_vg_info_item_t *
 {
     bool32 check_version = CM_TRUE;
     // when be primary and not in recovery, desc the find cost
-    if (dss_need_exec_local() && (dss_get_recover_status() == DSS_STATUS_OPEN)) {
+    if (dss_need_exec_local() && get_instance_status_proc() == DSS_STATUS_OPEN) {
         check_version = CM_FALSE;
     }
 
@@ -729,7 +729,7 @@ status_t dss_find_data_au_by_offset(
 
     bool32 check_version = CM_TRUE;
     // when be primary and not in recovery, desc the find cost
-    if (dss_need_exec_local() && (dss_get_recover_status() == DSS_STATUS_OPEN)) {
+    if (dss_need_exec_local() && get_instance_status_proc() == DSS_STATUS_OPEN) {
         check_version = CM_FALSE;
     }
 
@@ -863,7 +863,7 @@ status_t dss_get_gft_node_with_cache(
 
         bool32 check_version = CM_TRUE;
         // when be primary and not in recovery, desc the find cost
-        if (dss_need_exec_local() && (dss_get_recover_status() == DSS_STATUS_OPEN)) {
+        if (dss_need_exec_local() && get_instance_status_proc() == DSS_STATUS_OPEN) {
             check_version = CM_FALSE;
         }
         node = dss_get_ft_node_by_ftid(session, vg_item, ftid, check_version, CM_FALSE);
@@ -907,7 +907,7 @@ status_t dss_get_entry_block_with_cache(
 
         bool32 check_version = CM_TRUE;
         // when be primary and not in recovery, desc the find cost
-        if (dss_need_exec_local() && (dss_get_recover_status() == DSS_STATUS_OPEN)) {
+        if (dss_need_exec_local() && get_instance_status_proc() == DSS_STATUS_OPEN) {
             check_version = CM_FALSE;
         }
         entry_block = dss_find_fs_block(session, vg_item, node, node->entry, check_version, NULL, DSS_ENTRY_FS_INDEX);
@@ -942,7 +942,7 @@ status_t dss_get_second_block_with_cache(dss_session_t *session, dss_vg_info_ite
 
         bool32 check_version = CM_TRUE;
         // when be primary and not in recovery, desc the find cost
-        if (dss_need_exec_local() && (dss_get_recover_status() == DSS_STATUS_OPEN)) {
+        if (dss_need_exec_local() && get_instance_status_proc() == DSS_STATUS_OPEN) {
             check_version = CM_FALSE;
         }
         second_block = dss_find_fs_block(session, vg_item, node, block_id, check_version, NULL, (uint16)block_count);
@@ -977,7 +977,7 @@ status_t dss_get_fs_aux_with_cache(dss_session_t *session, dss_vg_info_item_t *v
 
         bool32 check_version = CM_TRUE;
         // when be primary and not in recovery, desc the find cost
-        if (dss_need_exec_local() && (dss_get_recover_status() == DSS_STATUS_OPEN)) {
+        if (dss_need_exec_local() && get_instance_status_proc() == DSS_STATUS_OPEN) {
             check_version = CM_FALSE;
         }
         fs_aux = dss_find_fs_aux(session, vg_item, node, block_id, check_version, NULL, (uint16)block_au_count);

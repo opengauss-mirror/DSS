@@ -30,6 +30,7 @@
 #include "dss_srv_proc.h"
 #include "dss_mes.h"
 #include "dss_api.h"
+#include "dss_thv.h"
 #include "dss_service.h"
 
 #ifdef __cplusplus
@@ -85,7 +86,7 @@ static status_t dss_process_remote(dss_session_t *session)
         session->recv_pack.head->cmd, remoteid, currid);
     status_t remote_result = CM_ERROR;
     while (CM_TRUE) {
-        if (dss_get_recover_status() == DSS_STATUS_RECOVERY) {
+        if (get_instance_status_proc() == DSS_STATUS_RECOVERY) {
             DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
             LOG_RUN_INF("Req break by recovery");
             return CM_ERROR;
@@ -880,7 +881,6 @@ static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 swi
     }
     dss_wait_session_pause(&g_dss_instance);
     g_dss_instance.status = DSS_STATUS_SWITCH;
-    dss_set_recover_status((uint32)DSS_STATUS_SWITCH);
     dss_wait_background_pause(&g_dss_instance);
 #ifdef ENABLE_DSSTEST
     dss_set_server_status_flag(DSS_STATUS_READONLY);
@@ -888,7 +888,6 @@ static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 swi
     dss_set_master_id((uint32)switch_id);
     dss_set_session_running(&g_dss_instance);
     g_dss_instance.status = DSS_STATUS_OPEN;
-    dss_set_recover_status((uint32)DSS_STATUS_OPEN);
 #endif
     status_t ret = CM_SUCCESS;
     // trans lock
@@ -926,7 +925,9 @@ static status_t dss_process_switch_lock(dss_session_t *session)
     }
     cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));  // when mes process req, will latch s
     cm_latch_x(&g_dss_instance.switch_latch, session->id, LATCH_STAT(LATCH_SWITCH));
+    dss_set_recover_thread_id(dss_get_current_thread_id());
     status_t ret = dss_process_switch_lock_inner(session, (uint32)switch_id);
+    dss_set_recover_thread_id(0);
     // no need to unlatch, for dss_process_message will
     return ret;
 }
@@ -964,20 +965,23 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
             LOG_RUN_INF("[SWITCH] Main server %u is set successfully by %u.", curr_id, master_id);
             return CM_SUCCESS;
         }
-        if (dss_get_recover_status() == DSS_STATUS_RECOVERY) {
+        if (get_instance_status_proc() == DSS_STATUS_RECOVERY) {
             session->recv_pack.head->cmd = DSS_CMD_SET_MAIN_INST;
             DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
             LOG_RUN_INF("[SWITCH] Set main inst break by recovery");
             return CM_ERROR;
         }
-        if (!dss_latch_timed_x(&g_dss_instance.switch_latch, DSS_PROCESS_REMOTE_INTERVAL)) {
+        if (!cm_latch_timed_x(&g_dss_instance.switch_latch, session->id, DSS_PROCESS_REMOTE_INTERVAL, LATCH_STAT(LATCH_SWITCH))) {
             LOG_DEBUG_INF("[SWITCH] Spin switch lock timed out, just continue.");
             continue;
         }
         if (!g_dss_instance.is_maintain) {
+            dss_instance_status_e old_status = g_dss_instance.status;
+            g_dss_instance.status = DSS_STATUS_SWITCH;
             status = dss_process_remote_switch_lock(session, curr_id, master_id);
             if (status != CM_SUCCESS) {
                 LOG_DEBUG_ERR("[SWITCH] Failed to switch lock to %u by %u.", curr_id, master_id);
+                g_dss_instance.status = old_status;
                 cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
                 cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
                 continue;
@@ -986,13 +990,12 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
         break;
     }
     session->recv_pack.head->cmd = DSS_CMD_SET_MAIN_INST;
-    g_dss_instance.status = DSS_STATUS_SWITCH;
-    dss_set_recover_status((uint32)DSS_STATUS_SWITCH);
+    dss_set_recover_thread_id(dss_get_current_thread_id());
+    g_dss_instance.status = DSS_STATUS_RECOVERY;
     dss_set_master_id(curr_id);
     status = dss_refresh_meta_info(session);
     if (status != CM_SUCCESS) {
         g_dss_instance.status = DSS_STATUS_OPEN;
-        dss_set_recover_status((uint32)DSS_STATUS_OPEN);
         cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
         LOG_RUN_ERR("[DSS] ABORT INFO: dss instance %u refresh meta failed, result(%d).", curr_id, status);
         cm_fync_logfile();
@@ -1001,7 +1004,7 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
     dss_set_server_status_flag(DSS_STATUS_READWRITE);
     LOG_RUN_INF("[SWITCH] inst %u set status flag %u when set main inst.", curr_id, DSS_STATUS_READWRITE);
     g_dss_instance.status = DSS_STATUS_OPEN;
-    dss_set_recover_status((uint32)DSS_STATUS_OPEN);
+    dss_set_recover_thread_id(0);
     LOG_RUN_INF("[SWITCH] Main server %u is set successfully by %u.", curr_id, master_id);
     cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
     return CM_SUCCESS;
@@ -1010,9 +1013,7 @@ static status_t dss_process_disable_grab_lock_inner(dss_session_t *session, uint
 {
     status_t ret = CM_ERROR;
     if (g_dss_instance.cm_res.is_valid) {
-        g_dss_instance.active_sessions--;
         dss_wait_session_pause(&g_dss_instance);
-        g_dss_instance.active_sessions++;
         g_dss_instance.status = DSS_STATUS_SWITCH;
         dss_wait_background_pause(&g_dss_instance);
         dss_set_server_status_flag(DSS_STATUS_READONLY);
