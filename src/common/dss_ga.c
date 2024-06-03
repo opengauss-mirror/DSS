@@ -98,6 +98,12 @@ static void ga_append_into_queue(ga_pool_t *pool, ga_queue_t *queue, uint32 obje
     queue->count++;
 }
 
+void ga_append_into_queue_by_pool_id(ga_pool_id_e pool_id, ga_queue_t *queue, uint32 object_id)
+{
+    ga_pool_t *pool = ga_get_pool(pool_id);
+    ga_append_into_queue(pool, queue, object_id);
+}
+
 static uint32 ga_remove_from_queue(ga_pool_t *pool, ga_queue_t *queue)
 {
     uint32 object_id;

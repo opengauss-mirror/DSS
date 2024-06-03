@@ -581,7 +581,7 @@ status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock)
     }
     if (is_lock) {
         dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
-    }    
+    }
     if (!DSS_VG_IS_VALID(vg_item->dss_ctrl)) {
         DSS_THROW_ERROR(ERR_DSS_VG_CHECK_NOT_INIT);
         LOG_RUN_ERR("Invalid vg %s ctrl", vg_item->vg_name);
@@ -1614,11 +1614,13 @@ status_t dss_refresh_meta_info(dss_session_t *session)
                 return status;
             }
         }
+
+        LOG_DEBUG_INF("refresh dss ctrl vg_name:%s begin.", g_vgs_info->volume_group[i].vg_name);
+        dss_lock_vg_mem_and_shm_x(session, &g_vgs_info->volume_group[i]);
         dss_init_vg_cache_node_info(&g_vgs_info->volume_group[i]);
-        status = dss_refresh_buffer_cache(&g_vgs_info->volume_group[i], g_vgs_info->volume_group[i].buffer_cache);
-        if (status != CM_SUCCESS) {
-            return status;
-        }
+        dss_refresh_buffer_cache(&g_vgs_info->volume_group[i], g_vgs_info->volume_group[i].buffer_cache);
+        dss_unlock_vg_mem_and_shm(session, &g_vgs_info->volume_group[i]);
+        LOG_DEBUG_INF("refresh dss ctrl vg_name:%s end.", g_vgs_info->volume_group[i].vg_name);
     }
     return CM_SUCCESS;
 }
@@ -1843,7 +1845,7 @@ status_t dss_read_volume_inst(
     CM_ASSERT(((uint64)buf) % DSS_DISK_UNIT_SIZE == 0);
 
     while (dss_get_recover_status() != DSS_STATUS_RECOVERY && dss_need_load_remote(size) == CM_TRUE &&
-        status != CM_SUCCESS) {
+           status != CM_SUCCESS) {
         if (size == (int32)sizeof(dss_ctrl_t)) {
             LOG_RUN_INF("Try to load dssctrl from remote.");
         }
