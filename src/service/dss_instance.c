@@ -637,6 +637,11 @@ void dss_init_cm_res(dss_instance_t *inst)
 #ifdef ENABLE_DSSTEST
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 {
+    *master_id = dss_get_master_id();
+    if (*master_id != DSS_INVALID_ID32) {
+        LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "No need to set %u as master id.", (*master_id));
+        return CM_SUCCESS;
+    }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     for (int i = 0; i < DSS_MAX_INSTANCES; i++) {
         if (inst_cfg->params.ports[i] != 0) {

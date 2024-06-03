@@ -3813,6 +3813,11 @@ static status_t dss_refresh_file_ft_core(dss_session_t *session, dss_vg_info_ite
             dss_lock_vg_mem_and_shm_x(session, vg_item);
         }
     } while (CM_TRUE);
+
+    LOG_DEBUG_INF("Apply refresh file:%s, curr size:%llu, ftid:%s by session id:%u.", node->name, node->size,
+        dss_display_metaid(ftid), session->id);
+    LOG_DEBUG_INF("Entry id: %s", dss_display_metaid(node->entry));
+
     *node_out = node;
     return CM_SUCCESS;
 }

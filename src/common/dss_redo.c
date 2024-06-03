@@ -764,7 +764,7 @@ status_t rp_redo_rename_file(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
     }
 
     status_t status = dss_update_ft_block_disk(vg_item, cur_block, data->node.id);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to update fs block:%llu to disk.", DSS_ID_TO_U64(data->node.id)));
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO] Failed to update fs block: %s to disk.", dss_display_metaid(data->node.id)));
 
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(cur_block);
     dss_add_syn_meta(vg_item, block_ctrl, cur_block->common.version);
@@ -826,12 +826,12 @@ status_t rp_redo_set_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
     }
 
     status = dss_update_fs_bitmap_block_disk(vg_item, block, DSS_FILE_SPACE_BLOCK_SIZE, CM_FALSE);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to update fs block:%llu to disk.", DSS_ID_TO_U64(data->id)));
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to update fs block: %s to disk.", dss_display_metaid(data->id)));
 
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_fs(block);
     dss_add_syn_meta(vg_item, block_ctrl, block->head.common.version);
 
-    DSS_LOG_DEBUG_OP("Succeed to replay set fs block:%llu, used_num:%hu, vg name:%s.", DSS_ID_TO_U64(data->id),
+    DSS_LOG_DEBUG_OP("[REDO] Succeed to replay set fs block: %s, used_num:%hu, vg name:%s.", dss_display_metaid(data->id),
         block->head.used_num, vg_item->vg_name);
     return CM_SUCCESS;
 }
@@ -1049,8 +1049,8 @@ static status_t rp_redo_set_file_size_inner(dss_vg_info_item_t *vg_item, dss_red
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
     }
     dss_redo_set_file_size_t *size_info = (dss_redo_set_file_size_t *)entry->data;
-    LOG_DEBUG_INF("Begin to replay set file:%llu, size:%llu, oldsize:%llu, node size:%llu,vg name:%s.",
-        DSS_ID_TO_U64(size_info->ftid), size_info->size, size_info->oldsize, node->size, vg_item->vg_name);
+    DSS_LOG_DEBUG_OP("[REDO] Begin to replay set file: %s, size:%llu, oldsize:%llu, node size:%llu,vg name:%s.",
+        dss_display_metaid(size_info->ftid), size_info->size, size_info->oldsize, node->size, vg_item->vg_name);
 
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
         node->size = set_file_size->size;
@@ -1217,11 +1217,12 @@ static status_t rp_redo_set_node_flag(dss_vg_info_item_t *vg_item, dss_redo_entr
     CM_RETURN_IFERR_EX(dss_update_ft_block_disk(vg_item, cur_block, file_flag->ftid),
         LOG_DEBUG_ERR("[REDO] Failed to update ft block:%s, vg_name:%s to disk.", dss_display_metaid(file_flag->ftid),
             vg_item->vg_name));
-    LOG_DEBUG_INF("[REDO] Success to replay set file:%s, flags:%u, old_flag:%u, vg_name:%s.",
-        dss_display_metaid(file_flag->ftid), file_flag->flags, file_flag->old_flags, vg_item->vg_name);
 
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(cur_block);
     dss_add_syn_meta(vg_item, block_ctrl, cur_block->common.version);
+
+    LOG_DEBUG_INF("[REDO] Success to replay set file:%s, flags:%u, old_flag:%u, vg_name:%s.",
+        dss_display_metaid(file_flag->ftid), file_flag->flags, file_flag->old_flags, vg_item->vg_name);
 
     return CM_SUCCESS;
 }
