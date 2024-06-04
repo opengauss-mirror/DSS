@@ -156,6 +156,7 @@ typedef struct st_dss_admin_cmd_t {
     dss_admin_help help;
     dss_admin_cmd_proc proc;
     dss_args_set_t *args_set;
+    bool log_necessary;
 } dss_admin_cmd_t;
 
 typedef struct st_dss_print_help_t {
@@ -1461,10 +1462,10 @@ static status_t ts_proc(void)
     (void)printf("+----------------+-----------+-----------------+---------------+-----------------\n");
     for (int i = 0; i < DSS_EVT_COUNT; i++) {
         if (time_stat[i].wait_count == 0) {
-            (void)printf("|%-16s|%-11d|%-17d|%-15d|%-17d\n", dss_get_stat_event[i], 0, 0, 0, 0);
+            (void)printf("|%-16s|%-11d|%-17d|%-15d|%-17d\n", dss_get_stat_event(i), 0, 0, 0, 0);
             continue;
         }
-        (void)printf("|%-16s|%-11lld|%-17lld|%-15lld|%-17lld\n", dss_get_stat_event[i], time_stat[i].wait_count,
+        (void)printf("|%-16s|%-11lld|%-17lld|%-15lld|%-17lld\n", dss_get_stat_event(i), time_stat[i].wait_count,
             time_stat[i].total_wait_time, time_stat[i].total_wait_time / time_stat[i].wait_count,
             time_stat[i].max_single_time);
     }
