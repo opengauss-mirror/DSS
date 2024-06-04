@@ -33,7 +33,6 @@ auid_t dss_invalid_auid = {.volume = 0x3ff, .au = 0x3ffffffff, .block = 0x1ffff,
 auid_t dss_set_inited_mask = {.volume = 0, .au = 0, .block = 0, .item = 0x1};
 auid_t dss_unset_inited_mask = {.volume = 0x3ff, .au = 0x3ffffffff, .block = 0x1ffff, .item = 0};
 
-#define DSS_CMD_TYPE_OFFSET(i) ((uint32)(i) - (uint32)DSS_CMD_BEGIN)
 static char *g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_MKDIR)] = "mkdir",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_RMDIR)] = "rmdir",
@@ -50,7 +49,7 @@ static char *g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_REFRESH_FILE)] = "refresh file",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_TRUNCATE_FILE)] = "truncate file",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_REFRESH_FILE_TABLE)] = "refresh file table",
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_CONSOLE)] = "console",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_FALLOCATE_FILE)] = "fallocate file",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_ADD_VOLUME)] = "add volume",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_REMOVE_VOLUME)] = "remove volume",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_REFRESH_VOLUME)] = "refresh volume",
@@ -73,7 +72,6 @@ static char *g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_INST_STATUS)] = "get inst status",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_TIME_STAT)] = "get time stat",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXEC_REMOTE)] = "exec remote",
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_FALLOCATE_FILE)] = "fallocate file",
 };
 
 char *dss_get_cmd_desc(dss_cmd_type_e cmd_type)

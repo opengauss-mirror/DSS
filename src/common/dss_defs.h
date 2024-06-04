@@ -91,7 +91,7 @@ typedef enum {
     DSS_CMD_REFRESH_FILE,
     DSS_CMD_TRUNCATE_FILE,
     DSS_CMD_REFRESH_FILE_TABLE,
-    DSS_CMD_CONSOLE,
+    DSS_CMD_FALLOCATE_FILE,
     DSS_CMD_ADD_VOLUME,
     DSS_CMD_REMOVE_VOLUME,
     DSS_CMD_REFRESH_VOLUME,
@@ -106,10 +106,10 @@ typedef enum {
     DSS_CMD_SWITCH_LOCK,
     DSS_CMD_DISABLE_GRAB_LOCK,
     DSS_CMD_ENABLE_GRAB_LOCK,
-    DSS_CMD_MODIFY_END,
+    DSS_CMD_MODIFY_END = 127,
     DSS_CMD_QUERY_BEGIN = DSS_CMD_MODIFY_END,
     DSS_CMD_HANDSHAKE = DSS_CMD_QUERY_BEGIN,
-    DSS_CMD_EXIST,  // 30
+    DSS_CMD_EXIST,  // 128
     DSS_CMD_READLINK,
     DSS_CMD_GET_FTID_BY_PATH,
     DSS_CMD_GETCFG,
@@ -117,14 +117,15 @@ typedef enum {
     DSS_CMD_GET_TIME_STAT,
     DSS_CMD_QUERY_END,
     DSS_CMD_EXEC_REMOTE = DSS_CMD_QUERY_END,
-    DSS_CMD_FALLOCATE_FILE,
     DSS_CMD_END  // must be the last item
 } dss_cmd_type_e;
 
+#define DSS_CMD_TYPE_OFFSET(cmd_id) ((uint32)(cmd_id) - (uint32)DSS_CMD_BEGIN)
+
 static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 {
-    return ((type == DSS_CMD_GET_INST_STATUS) || (type == DSS_CMD_HANDSHAKE) || (type == DSS_CMD_STOP_SERVER)
-    || (type == DSS_CMD_ENABLE_GRAB_LOCK));
+    return ((type == DSS_CMD_GET_INST_STATUS) || (type == DSS_CMD_HANDSHAKE) || (type == DSS_CMD_STOP_SERVER) ||
+            (type == DSS_CMD_ENABLE_GRAB_LOCK));
 }
 
 #define DSS_DEFAULT_AU_SIZE SIZE_M(8)
