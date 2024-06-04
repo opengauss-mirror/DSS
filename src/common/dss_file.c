@@ -3023,6 +3023,46 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
     return CM_SUCCESS;
 }
 
+static bool is_free_space_enough(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 needed_size)
+{
+    dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
+    uint64 free_size_sum = 0;
+    uint32 used_count = 0;
+    for (uint32 i = 0; used_count < dss_ctrl->core.volume_count && i < DSS_MAX_VOLUMES; ++i) {
+        if (dss_ctrl->volume.defs[i].flag != VOLUME_OCCUPY) {
+            continue;
+        }
+        ++used_count;
+        free_size_sum += dss_ctrl->core.volume_attrs[i].free;
+        if (free_size_sum >= needed_size) {
+            return true;
+        }
+    }
+
+    // If free space is not enough, check the recycled space.
+    dss_au_root_t *dss_au_root = DSS_GET_AU_ROOT(vg_item->dss_ctrl);
+    ftid_t free_root = *(ftid_t *)(&dss_au_root->free_root);
+    gft_node_t *recycle_dir = dss_get_ft_node_by_ftid(session, vg_item, free_root, CM_TRUE, CM_FALSE);
+    if (recycle_dir == NULL) {
+        return false;
+    }
+    if (dss_cmp_auid(recycle_dir->items.first, DSS_INVALID_ID64)) {
+        return false;
+    }
+    gft_node_t *recycle_item = dss_get_ft_node_by_ftid(session, vg_item, recycle_dir->items.first, CM_TRUE, CM_FALSE);
+    while (recycle_item != NULL) {
+        free_size_sum += (uint64)recycle_item->size;
+        if (free_size_sum >= needed_size) {
+            return true;
+        }
+        if (dss_cmp_auid(recycle_item->next, DSS_INVALID_ID64)) {
+            break;
+        }
+        recycle_item = dss_get_ft_node_by_ftid(session, vg_item, recycle_item->next, CM_TRUE, CM_FALSE);
+    }
+    return false;
+}
+
 status_t dss_extend_from_offset(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, dss_node_data_t *node_data)
 {
@@ -3048,6 +3088,11 @@ status_t dss_extend_from_offset(
 
     node_data2.offset = offset;
     node_data2.size = ((int64)align_size - offset);
+
+    if (!is_free_space_enough(session, vg_item, (uint64)(node_data2.size))) {
+        DSS_THROW_ERROR(ERR_DSS_NO_SPACE);
+        return CM_ERROR;
+    }
 
     bool32 finish = CM_FALSE;
     if ((uint64)node_data2.size > au_size) {
