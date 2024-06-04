@@ -29,6 +29,8 @@
 #include "cm_utils.h"
 #include "dss_malloc.h"
 #include "dss_param_verify.h"
+#include "dss_fault_injection.h"
+#include "dss_diskgroup.h"
 #include "dss_param.h"
 
 #ifdef __cplusplus
@@ -42,111 +44,134 @@ dss_config_t *dss_get_g_inst_cfg()
     return &g_inst_cfg_inner;
 }
 
-// clang-format off
 static config_item_t g_dss_params[] = {
     /* name, isdefault, attr, default_value, value, runtime_value, description, range, datatype, comment,
     id, effect, scale, verify, notify, notify_pfile, alias */
-    { "SSL_CERT_NOTIFY_TIME", CM_TRUE, CM_FALSE, "30", NULL, NULL, "-", "[7,180]",
-        "GS_TYPE_INTEGER", NULL, 0, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "DSS_CM_SO_NAME",           CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
-      "GS_TYPE_VARCHAR", NULL, 1, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
-    { "LSNR_PATH",                 CM_TRUE, CM_FALSE, "/tmp/", NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL,
-        2, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
-    { "LOG_HOME",                  CM_TRUE, CM_TRUE,  "",      NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL,
-        3, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_LOG_BACKUP_FILE_COUNT",    CM_TRUE, CM_FALSE, "20",    NULL, NULL, "-", "[0,128]",  "GS_TYPE_INTEGER", NULL,
-        4, EFFECT_REBOOT, CFG_INS, dss_verify_log_backup_file_count, dss_notify_log_backup_file_count, NULL, NULL},
-    { "_LOG_MAX_FILE_SIZE",        CM_TRUE, CM_FALSE, "256M",   NULL, NULL, "-", "[1M,4G]",     "GS_TYPE_INTEGER", NULL,
-        5, EFFECT_REBOOT, CFG_INS, dss_verify_log_file_size, dss_notify_log_file_size, NULL, NULL},
-    { "INST_ID",                   CM_TRUE, CM_FALSE, "0",     NULL, NULL, "-", "[0,64)",    "GS_TYPE_INTEGER", NULL,
-        6, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "STORAGE_MODE",              CM_TRUE, CM_FALSE, "DISK",  NULL, NULL, "-", "CLUSTER_RAID,RAID,DISK",
-        "GS_TYPE_VARCHAR", NULL, 7, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_LOG_LEVEL",                CM_TRUE, CM_FALSE, "519",    NULL, NULL, "-", "[0,4087]",  "GS_TYPE_INTEGER", NULL,
-        8, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_log_level, dss_notify_log_level, NULL, NULL},
-    { "MAX_SESSION_NUMS",          CM_TRUE, CM_FALSE, "8192",   NULL, NULL, "-", "[16,16320]",    "GS_TYPE_INTEGER",
-        NULL, 9, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "DISK_LOCK_INTERVAL",        CM_TRUE, CM_FALSE, "100",   NULL, NULL, "-", "[1,600000]", "GS_TYPE_INTEGER", NULL,
-        10, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "DLOCK_RETRY_COUNT",         CM_TRUE, CM_FALSE, "50",    NULL, NULL, "-", "[1,500000]", "GS_TYPE_INTEGER", NULL,
-        11, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_AUDIT_BACKUP_FILE_COUNT",  CM_TRUE, CM_FALSE, "20",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL,
-        12, EFFECT_REBOOT, CFG_INS, dss_verify_audit_backup_file_count, dss_notify_audit_backup_file_count, NULL, NULL},
-    { "_AUDIT_MAX_FILE_SIZE",      CM_TRUE, CM_FALSE, "256M",   NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL,
-        13, EFFECT_REBOOT, CFG_INS, dss_verify_audit_file_size, dss_notify_audit_file_size, NULL, NULL},
-    { "_LOG_FILE_PERMISSIONS",     CM_TRUE, CM_FALSE, "600",   NULL, NULL, "-", "[600-777]", "GS_TYPE_INTEGER", NULL,
-        14, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_LOG_PATH_PERMISSIONS",     CM_TRUE, CM_FALSE, "700",   NULL, NULL, "-", "[700-777]", "GS_TYPE_INTEGER", NULL,
-        15, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "SSL_PWD_CIPHERTEXT", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
-        "GS_TYPE_VARCHAR", NULL, 16, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_SHM_KEY", CM_TRUE, CM_FALSE,     "1",         NULL, NULL, "-", "[1,64]",
-      "GS_TYPE_INTEGER", NULL, 17, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
+    {"SSL_CERT_NOTIFY_TIME", CM_TRUE, ATTR_READONLY, "30", NULL, NULL, "-", "[7,180]", "GS_TYPE_INTEGER", NULL, 0,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"DSS_CM_SO_NAME", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 1, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
+    {"LSNR_PATH", CM_TRUE, ATTR_READONLY, "/tmp/", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 2, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
+    {"LOG_HOME", CM_TRUE, CM_TRUE, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 3, EFFECT_REBOOT, CFG_INS, NULL,
+        NULL, NULL, NULL},
+    {"_LOG_BACKUP_FILE_COUNT", CM_TRUE, ATTR_NONE, "20", NULL, NULL, "-", "[0,128]", "GS_TYPE_INTEGER", NULL, 4,
+        EFFECT_REBOOT, CFG_INS, dss_verify_log_backup_file_count, dss_notify_log_backup_file_count, NULL, NULL},
+    {"_LOG_MAX_FILE_SIZE", CM_TRUE, ATTR_NONE, "256M", NULL, NULL, "-", "[1M,4G]", "GS_TYPE_INTEGER", NULL, 5,
+        EFFECT_REBOOT, CFG_INS, dss_verify_log_file_size, dss_notify_log_file_size, NULL, NULL},
+    {"INST_ID", CM_TRUE, ATTR_READONLY, "0", NULL, NULL, "-", "[0,64)", "GS_TYPE_INTEGER", NULL, 6, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
+    {"STORAGE_MODE", CM_TRUE, ATTR_READONLY, "DISK", NULL, NULL, "-", "CLUSTER_RAID,RAID,DISK", "GS_TYPE_VARCHAR", NULL,
+        7, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"_LOG_LEVEL", CM_TRUE, ATTR_NONE, "519", NULL, NULL, "-", "[0,4087]", "GS_TYPE_INTEGER", NULL, 8,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_log_level, dss_notify_log_level, NULL, NULL},
+    {"MAX_SESSION_NUMS", CM_TRUE, ATTR_READONLY, "8192", NULL, NULL, "-", "[16,16320]", "GS_TYPE_INTEGER", NULL, 9,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"DISK_LOCK_INTERVAL", CM_TRUE, ATTR_READONLY, "100", NULL, NULL, "-", "[1,600000]", "GS_TYPE_INTEGER", NULL, 10,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"DLOCK_RETRY_COUNT", CM_TRUE, ATTR_READONLY, "50", NULL, NULL, "-", "[1,500000]", "GS_TYPE_INTEGER", NULL, 11,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"_AUDIT_BACKUP_FILE_COUNT", CM_TRUE, ATTR_NONE, "20", NULL, NULL, "-", "[0,128]", "GS_TYPE_INTEGER", NULL, 12,
+        EFFECT_REBOOT, CFG_INS, dss_verify_audit_backup_file_count, dss_notify_audit_backup_file_count, NULL, NULL},
+    {"_AUDIT_MAX_FILE_SIZE", CM_TRUE, ATTR_NONE, "256M", NULL, NULL, "-", "[1M,4G]", "GS_TYPE_INTEGER", NULL, 13,
+        EFFECT_REBOOT, CFG_INS, dss_verify_audit_file_size, dss_notify_audit_file_size, NULL, NULL},
+    {"_LOG_FILE_PERMISSIONS", CM_TRUE, ATTR_READONLY, "600", NULL, NULL, "-", "[600-777]", "GS_TYPE_INTEGER", NULL, 14,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"_LOG_PATH_PERMISSIONS", CM_TRUE, ATTR_READONLY, "700", NULL, NULL, "-", "[700-777]", "GS_TYPE_INTEGER", NULL, 15,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"SSL_PWD_CIPHERTEXT", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 16, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
+    {"_SHM_KEY", CM_TRUE, ATTR_READONLY, "1", NULL, NULL, "-", "[1,64]", "GS_TYPE_INTEGER", NULL, 17, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
 #ifdef OPENGAUSS
-    { "DSS_NODES_LIST",        CM_TRUE, CM_FALSE,     "0:127.0.0.1:1611", NULL, NULL, "-", "-",
-        "GS_TYPE_VARCHAR", NULL, 18,  EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
+    {"DSS_NODES_LIST", CM_TRUE, ATTR_READONLY, "0:127.0.0.1:1611", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 18,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 #else
-    { "DSS_NODES_LIST",        CM_TRUE, CM_FALSE,     "0|127.0.0.1|1611", NULL, NULL, "-", "-",
-        "GS_TYPE_VARCHAR", NULL, 18,  EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
+    {"DSS_NODES_LIST", CM_TRUE, ATTR_READONLY, "0|127.0.0.1|1611", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 18,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 #endif
-    { "INTERCONNECT_TYPE",        CM_TRUE, CM_FALSE,     "TCP",       NULL, NULL, "-", "TCP,RDMA",
-        "GS_TYPE_VARCHAR", NULL, 19, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
-    { "INTERCONNECT_CHANNEL_NUM", CM_TRUE, CM_FALSE,     "2",         NULL, NULL, "-", "[1,32]",
-      "GS_TYPE_INTEGER", NULL, 20, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
-    { "WORK_THREAD_COUNT", CM_TRUE, CM_FALSE,     "2",         NULL, NULL, "-", "[2,64]",
-        "GS_TYPE_INTEGER", NULL, 21, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
-    { "RECV_MSG_POOL_SIZE",            CM_TRUE, CM_FALSE,     "42M",       NULL, NULL, "-", "[9M,1G]",
-      "GS_TYPE_INTEGER", NULL, 22, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
-    { "MES_ELAPSED_SWITCH",       CM_TRUE, CM_FALSE,     "FALSE",     NULL, NULL, "-", "FALSE,TRUE",
-      "GS_TYPE_BOOLEAN", NULL, 23, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
-    { "_DISK_LOCK_FILE_PATH",           CM_TRUE, CM_FALSE, "/tmp", NULL, NULL, "-", "-",
-        "GS_TYPE_VARCHAR", NULL, 24, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
-    { "SSL_CA", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
-        "GS_TYPE_VARCHAR", NULL, 25, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "SSL_KEY", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
-        "GS_TYPE_VARCHAR", NULL, 26, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "SSL_CRL", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
-        "GS_TYPE_VARCHAR", NULL, 27, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "SSL_CERT", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
-        "GS_TYPE_VARCHAR", NULL, 28, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "SSL_CIPHER", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
-        "GS_TYPE_VARCHAR", NULL, 29, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "POOL_NAMES",           CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
-        "GS_TYPE_VARCHAR", NULL, 30, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
-    { "IMAGE_NAMES",           CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
-        "GS_TYPE_VARCHAR", NULL, 31, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
-    { "CEPH_CONFIG",           CM_TRUE, CM_FALSE, "/etc/ceph/ceph.conf", NULL, NULL, "-", "-",
-        "GS_TYPE_VARCHAR", NULL, 32, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
-    { "VOLUME_TYPES",           CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
-        "GS_TYPE_VARCHAR", NULL, 33, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
-    { "_AUDIT_LEVEL",           CM_TRUE, CM_FALSE, "1",    NULL, NULL, "-", "[0,255]",  "GS_TYPE_INTEGER", NULL,
-        34, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_audit_level, dss_notify_audit_level, NULL, NULL},
-    { "SSL_PERIOD_DETECTION", CM_TRUE, CM_FALSE, "7", NULL, NULL, "-", "[1,180]",
-        "GS_TYPE_INTEGER", NULL, 35, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "MES_WITH_IP",       CM_TRUE, CM_FALSE,    "FALSE",    NULL, NULL, "-", "FALSE,TRUE",
-        "GS_TYPE_BOOLEAN", NULL, 36, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "IP_WHITE_LIST_ON",       CM_TRUE, CM_FALSE,    "TRUE",    NULL, NULL, "-", "FALSE,TRUE",
-        "GS_TYPE_BOOLEAN", NULL, 37, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "IO_THREADS",       CM_TRUE, CM_FALSE, "2",   NULL, NULL, "-", "[1,8]",
-        "GS_TYPE_INTEGER", NULL, 38, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "WORK_THREADS",       CM_TRUE, CM_FALSE, "16",   NULL, NULL, "-", "[16,128]",
-        "GS_TYPE_INTEGER", NULL, 39, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_BLACKBOX_DETAIL_ON",   CM_TRUE, CM_FALSE, "FALSE",  NULL, NULL, "-", "FALSE,TRUE", "GS_TYPE_BOOLEAN", NULL,
-        40, EFFECT_IMMEDIATELY,  CFG_INS, dss_verify_blackbox_detail_on, dss_notify_blackbox_detail_on, NULL, NULL},
-    { "CLUSTER_RUN_MODE", CM_TRUE, CM_FALSE, "cluster_primary", NULL, NULL, "-", "-", 
-        "GS_TYPE_VARCHAR", NULL, 41, EFFECT_REBOOT, CFG_INS, dss_verify_cluster_run_mode, dss_notify_cluster_run_mode, NULL, NULL},
-    { "XLOG_VG_ID", CM_TRUE, CM_FALSE, "1", NULL, NULL, "-", "[1,64]",
-        "GS_TYPE_INTEGER", NULL, 42, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "MES_WAIT_TIMEOUT",  CM_TRUE, CM_FALSE, "2000",  NULL, NULL, "-", "[500,10000]", "GS_TYPE_INTEGER",
-        NULL, 43, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_mes_wait_timeout, dss_notify_mes_wait_timeout,
-        NULL, NULL},
-    { "_ENABLE_CORE_STATE_COLLECT",  CM_TRUE, CM_FALSE, "FALSE",    NULL, NULL, "-", "[FALSE,TRUE]",  "GS_TYPE_BOOLEAN", NULL,
-        44, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_enable_core_state_collect, dss_notify_enable_core_state_collect, NULL, NULL},
-    { "DELAY_CLEAN_INTERVAL",  CM_TRUE, CM_FALSE, "100",    NULL, NULL, "-", "[5,1000000]",  "GS_TYPE_INTEGER", NULL,
-        45, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_delay_clean_interval, dss_notify_delay_clean_interval, NULL, NULL},
+    {"INTERCONNECT_TYPE", CM_TRUE, ATTR_READONLY, "TCP", NULL, NULL, "-", "TCP,RDMA", "GS_TYPE_VARCHAR", NULL, 19,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"INTERCONNECT_CHANNEL_NUM", CM_TRUE, ATTR_READONLY, "2", NULL, NULL, "-", "[1,32]", "GS_TYPE_INTEGER", NULL, 20,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"WORK_THREAD_COUNT", CM_TRUE, ATTR_READONLY, "2", NULL, NULL, "-", "[2,64]", "GS_TYPE_INTEGER", NULL, 21,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"RECV_MSG_POOL_SIZE", CM_TRUE, ATTR_READONLY, "42M", NULL, NULL, "-", "[9M,1G]", "GS_TYPE_INTEGER", NULL, 22,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"MES_ELAPSED_SWITCH", CM_TRUE, ATTR_READONLY, "FALSE", NULL, NULL, "-", "FALSE,TRUE", "GS_TYPE_BOOLEAN", NULL, 23,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"_DISK_LOCK_FILE_PATH", CM_TRUE, ATTR_READONLY, "/tmp", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 24,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"SSL_CA", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 25, EFFECT_REBOOT, CFG_INS,
+        NULL, NULL, NULL, NULL},
+    {"SSL_KEY", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 26, EFFECT_REBOOT, CFG_INS,
+        NULL, NULL, NULL, NULL},
+    {"SSL_CRL", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 27, EFFECT_REBOOT, CFG_INS,
+        NULL, NULL, NULL, NULL},
+    {"SSL_CERT", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 28, EFFECT_REBOOT, CFG_INS,
+        NULL, NULL, NULL, NULL},
+    {"SSL_CIPHER", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 29, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
+    {"POOL_NAMES", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 30, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
+    {"IMAGE_NAMES", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 31, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
+    {"CEPH_CONFIG", CM_TRUE, ATTR_READONLY, "/etc/ceph/ceph.conf", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 32,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"VOLUME_TYPES", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 33, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
+    {"_AUDIT_LEVEL", CM_TRUE, ATTR_NONE, "1", NULL, NULL, "-", "[0,255]", "GS_TYPE_INTEGER", NULL, 34,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_audit_level, dss_notify_audit_level, NULL, NULL},
+    {"SSL_PERIOD_DETECTION", CM_TRUE, ATTR_READONLY, "7", NULL, NULL, "-", "[1,180]", "GS_TYPE_INTEGER", NULL, 35,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"MES_WITH_IP", CM_TRUE, ATTR_READONLY, "FALSE", NULL, NULL, "-", "FALSE,TRUE", "GS_TYPE_BOOLEAN", NULL, 36,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"IP_WHITE_LIST_ON", CM_TRUE, ATTR_READONLY, "TRUE", NULL, NULL, "-", "FALSE,TRUE", "GS_TYPE_BOOLEAN", NULL, 37,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"IO_THREADS", CM_TRUE, ATTR_READONLY, "2", NULL, NULL, "-", "[1,8]", "GS_TYPE_INTEGER", NULL, 38, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
+    {"WORK_THREADS", CM_TRUE, ATTR_READONLY, "16", NULL, NULL, "-", "[16,128]", "GS_TYPE_INTEGER", NULL, 39,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"_BLACKBOX_DETAIL_ON", CM_TRUE, ATTR_NONE, "FALSE", NULL, NULL, "-", "FALSE,TRUE", "GS_TYPE_BOOLEAN", NULL, 40,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_blackbox_detail_on, dss_notify_blackbox_detail_on, NULL, NULL},
+    {"CLUSTER_RUN_MODE", CM_TRUE, ATTR_NONE, "cluster_primary", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 41,
+        EFFECT_REBOOT, CFG_INS, dss_verify_cluster_run_mode, dss_notify_cluster_run_mode, NULL, NULL},
+    {"XLOG_VG_ID", CM_TRUE, ATTR_READONLY, "1", NULL, NULL, "-", "[1,64]", "GS_TYPE_INTEGER", NULL, 42, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
+    {"MES_WAIT_TIMEOUT", CM_TRUE, ATTR_NONE, "2000", NULL, NULL, "-", "[500,10000]", "GS_TYPE_INTEGER", NULL, 43,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_mes_wait_timeout, dss_notify_mes_wait_timeout, NULL, NULL},
+    {"_ENABLE_CORE_STATE_COLLECT", CM_TRUE, ATTR_NONE, "FALSE", NULL, NULL, "-", "[FALSE,TRUE]", "GS_TYPE_BOOLEAN",
+        NULL, 44, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_enable_core_state_collect,
+        dss_notify_enable_core_state_collect, NULL, NULL},
+    {"DELAY_CLEAN_INTERVAL", CM_TRUE, ATTR_NONE, "100", NULL, NULL, "-", "[5,1000000]", "GS_TYPE_INTEGER", NULL, 45,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_delay_clean_interval, dss_notify_delay_clean_interval, NULL, NULL},
+
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+    {"SS_FI_PACKET_LOSS_ENTRIES", CM_TRUE, ATTR_NONE, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 46,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_entity, dss_notify_fi_packet_loss_entity, NULL, NULL},
+    {"SS_FI_NET_LATENCY_ENTRIES", CM_TRUE, ATTR_NONE, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 47,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_entity, dss_notify_fi_net_latency_entity, NULL, NULL},
+    {"SS_FI_CPU_LATENCY_ENTRIES", CM_TRUE, ATTR_NONE, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 48,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_entity, dss_notify_fi_cpu_latency_entity, NULL, NULL},
+    {"SS_FI_PROCESS_FAULT_ENTRIES", CM_TRUE, ATTR_NONE, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 49,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_entity, dss_notify_fi_process_fault_entity, NULL, NULL},
+    {"SS_FI_CUSTOM_FAULT_ENTRIES", CM_TRUE, ATTR_NONE, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 50,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_entity, dss_notify_fi_custom_fault_entity, NULL, NULL},
+
+    {"SS_FI_PACKET_LOSS_PROB", CM_TRUE, ATTR_NONE, "10", NULL, NULL, "-", "[0,100]", "GS_TYPE_INTEGER", NULL, 51,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_packet_loss_value, dss_notify_fi_packet_loss_value, NULL, NULL},
+    {"SS_FI_NET_LATENCY_MS", CM_TRUE, ATTR_NONE, "10", NULL, NULL, "-", "[0,4924967295]", "GS_TYPE_INTEGER", NULL, 52,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_net_latency_value, dss_notify_fi_net_latency_value, NULL, NULL},
+    {"SS_FI_CPU_LATENCY_MS", CM_TRUE, ATTR_NONE, "10", NULL, NULL, "-", "[0,4924967295]", "GS_TYPE_INTEGER", NULL, 53,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_cpu_latency_value, dss_notify_fi_cpu_latency_value, NULL, NULL},
+    {"SS_FI_PROCESS_FAULT_PROB", CM_TRUE, ATTR_NONE, "10", NULL, NULL, "-", "[0,100]", "GS_TYPE_INTEGER", NULL, 54,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_process_fault_value, dss_notify_fi_process_fault_value, NULL, NULL},
+    {"SS_FI_CUSTOM_FAULT_PARAM", CM_TRUE, ATTR_NONE, "3000", NULL, NULL, "-", "[0,4924967295]", "GS_TYPE_INTEGER", NULL,
+        55, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_custom_fault_value, dss_notify_fi_custom_fault_value, NULL,
+        NULL},
+#endif
 };
 
-// clang-format on
 static const char *g_dss_config_file = (const char *)"dss_inst.ini";
 #define DSS_PARAM_COUNT (sizeof(g_dss_params) / sizeof(config_item_t))
 
@@ -333,8 +358,7 @@ static status_t dss_load_random_file(uchar *value, int32 value_len)
     PRTS_RETURN_IFERR(snprintf_s(file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/dss_protect/%s",
         g_inst_cfg->home, DSS_FKEY_FILENAME));
     DSS_RETURN_IF_ERROR(cs_ssl_verify_file_stat(file_name));
-    DSS_RETURN_IF_ERROR(
-        cm_open_file_ex(file_name, O_SYNC | O_RDONLY | O_BINARY, S_IRUSR, &handle));
+    DSS_RETURN_IF_ERROR(cm_open_file_ex(file_name, O_SYNC | O_RDONLY | O_BINARY, S_IRUSR, &handle));
     status_t ret = cm_read_file(handle, value, value_len, &file_size);
     cm_close_file(handle);
     DSS_RETURN_IF_ERROR(ret);
@@ -519,7 +543,8 @@ static status_t dss_load_cluster_run_mode(dss_config_t *inst_cfg)
         inst_cfg->params.cluster_run_mode = CLUSTER_PRIMARY;
         LOG_RUN_INF("The cluster_run_mode is cluster_primary.");
     } else {
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid CLUSTER_RUN_MODE"));
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid CLUSTER_RUN_MODE"));
     }
     return CM_SUCCESS;
 }
@@ -661,6 +686,84 @@ static status_t dss_load_delay_clean_interval(dss_config_t *inst_cfg)
     return dss_load_delay_clean_interval_core(value, inst_cfg);
 }
 
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+static status_t dss_load_fi_param_value(
+    dss_config_t *inst_cfg, char *cfg_name, unsigned int cfg_type, unsigned int cfg_max)
+{
+    char *cfg_value = cm_get_config_value(&inst_cfg->config, cfg_name);
+    status_t status = dss_verify_fi_value_base(cfg_value, cfg_name, cfg_max);
+    DSS_RETURN_IF_ERROR(status);
+
+    status = dss_notify_fi_value_base(cfg_value, cfg_name, cfg_type);
+    DSS_RETURN_IF_ERROR(status);
+
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_fi_all_params_value(dss_config_t *inst_cfg)
+{
+    status_t status =
+        dss_load_fi_param_value(inst_cfg, "SS_FI_PACKET_LOSS_PROB", DDES_FI_TYPE_PACKET_LOSS, DSS_FI_MAX_PROBABILTY);
+    DSS_RETURN_IF_ERROR(status);
+
+    status = dss_load_fi_param_value(inst_cfg, "SS_FI_NET_LATENCY_MS", DDES_FI_TYPE_NET_LATENCY, 0);
+    DSS_RETURN_IF_ERROR(status);
+
+    status = dss_load_fi_param_value(inst_cfg, "SS_FI_CPU_LATENCY_MS", DDES_FI_TYPE_CPU_LATENCY, 0);
+    DSS_RETURN_IF_ERROR(status);
+
+    status = dss_load_fi_param_value(
+        inst_cfg, "SS_FI_PROCESS_FAULT_PROB", DDES_FI_TYPE_PROCESS_FAULT, DSS_FI_MAX_PROBABILTY);
+    DSS_RETURN_IF_ERROR(status);
+
+    status = dss_load_fi_param_value(inst_cfg, "SS_FI_CUSTOM_FAULT_PARAM", DDES_FI_TYPE_CUSTOM_FAULT, 0);
+    DSS_RETURN_IF_ERROR(status);
+
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_fi_param_entry(dss_config_t *inst_cfg, char *cfg_name, unsigned int cfg_type)
+{
+    char *cfg_value = cm_get_config_value(&inst_cfg->config, cfg_name);
+    status_t status = ddes_fi_parse_and_set_entry_list(cfg_type, cfg_value);
+    DSS_RETURN_IFERR2(
+        status, LOG_DEBUG_ERR("[dss_fi]parse and set entry value of '%s', value:%s fail.", cfg_name, cfg_value));
+
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_fi_all_params_entry(dss_config_t *inst_cfg)
+{
+    status_t status = dss_load_fi_param_entry(inst_cfg, "SS_FI_PACKET_LOSS_ENTRIES", DDES_FI_TYPE_PACKET_LOSS);
+    DSS_RETURN_IF_ERROR(status);
+
+    status = dss_load_fi_param_entry(inst_cfg, "SS_FI_NET_LATENCY_ENTRIES", DDES_FI_TYPE_NET_LATENCY);
+    DSS_RETURN_IF_ERROR(status);
+
+    status = dss_load_fi_param_entry(inst_cfg, "SS_FI_CPU_LATENCY_ENTRIES", DDES_FI_TYPE_CPU_LATENCY);
+    DSS_RETURN_IF_ERROR(status);
+
+    status = dss_load_fi_param_entry(inst_cfg, "SS_FI_PROCESS_FAULT_ENTRIES", DDES_FI_TYPE_PROCESS_FAULT);
+    DSS_RETURN_IF_ERROR(status);
+
+    status = dss_load_fi_param_entry(inst_cfg, "SS_FI_CUSTOM_FAULT_ENTRIES", DDES_FI_TYPE_CUSTOM_FAULT);
+    DSS_RETURN_IF_ERROR(status);
+
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_fi_params(dss_config_t *inst_cfg)
+{
+    status_t status = dss_load_fi_all_params_value(inst_cfg);
+    DSS_RETURN_IF_ERROR(status);
+
+    status = dss_load_fi_all_params_entry(inst_cfg);
+    DSS_RETURN_IF_ERROR(status);
+
+    return CM_SUCCESS;
+}
+#endif
+
 status_t dss_load_config(dss_config_t *inst_cfg)
 {
     char file_name[DSS_FILE_NAME_BUFFER_SIZE];
@@ -698,6 +801,13 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_xlog_vg_id(inst_cfg));
     CM_RETURN_IFERR(dss_load_enable_core_state_collect(inst_cfg));
     CM_RETURN_IFERR(dss_load_delay_clean_interval(inst_cfg));
+
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+    if (dss_is_server()) {
+        CM_RETURN_IFERR(dss_load_fi_params(inst_cfg));
+    }
+#endif
+
     return CM_SUCCESS;
 }
 
@@ -730,7 +840,7 @@ static status_t dss_set_cfg_param_core(text_t *text, char *value, dss_def_t *def
 {
     bool32 force = CM_TRUE;
     config_item_t *item = cm_get_config_item(&g_inst_cfg->config, text, CM_TRUE);
-    if (item == NULL) {
+    if (item == NULL || item->attr != ATTR_NONE) {
         DSS_RETURN_IFERR2(CM_ERROR, CM_THROW_ERROR(ERR_INVALID_PARAM, def->name));
     }
 

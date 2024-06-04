@@ -69,7 +69,6 @@
 #define DSS_DEFAULT_VG_TYPE 't' /* show vg information in table format by default */
 static const char dss_ls_print_flag[] = {'d', '-', 'l'};
 
-// clang-format on
 dss_log_def_t g_dss_admin_log[] = {
     {LOG_DEBUG, "debug/dsscmd.dlog"},
     {LOG_OPER, "oper/dsscmd.olog"},
@@ -296,7 +295,8 @@ static status_t cmd_check_block_index_id(const char *index_str)
     }
     uint32 max_block_index_id = MAX(DSS_FILE_SPACE_BLOCK_BITMAP_COUNT, DSS_MAX_FT_BLOCK_INDEX_ID);
     if (index_id < DSS_MIN_BLOCK_INDEX_ID || index_id >= max_block_index_id) {
-        DSS_PRINT_ERROR("The value of index_id or node_id should be in [%u, %u).\n", DSS_MIN_BLOCK_INDEX_ID, max_block_index_id);
+        DSS_PRINT_ERROR(
+            "The value of index_id or node_id should be in [%u, %u).\n", DSS_MIN_BLOCK_INDEX_ID, max_block_index_id);
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -442,10 +442,6 @@ static status_t cmd_check_du_format(const char *du_format)
 static status_t cmd_check_cfg_name(const char *name)
 {
     uint32 len = strlen(name);
-    if (len == 0) {
-        DSS_PRINT_ERROR("The value of name is invalid.\n");
-        return CM_ERROR;
-    }
     for (uint32 i = 0; i < len; i++) {
         if (!isalpha((int)name[i]) && !isdigit((int)name[i]) && name[i] != '-' && name[i] != '_') {
             DSS_PRINT_ERROR("The name's letter should be [alpha|digit|-|_].\n");
@@ -458,7 +454,7 @@ static status_t cmd_check_cfg_name(const char *name)
 static status_t cmd_check_cfg_value(const char *value)
 {
     uint32 len = strlen(value);
-    if (len == 0) {
+    if (len < 0) {
         DSS_PRINT_ERROR("The value is invalid.\n");
         return CM_ERROR;
     }
@@ -699,7 +695,8 @@ double dss_convert_size(double size, const char *measure)
     return result;
 }
 
-static void cmd_print_no_path_err() {
+static void cmd_print_no_path_err()
+{
     DSS_PRINT_ERROR("Need to input arg [-p|--path] or cd to a path.\n");
 }
 
@@ -966,8 +963,8 @@ static status_t adv_proc(void)
 }
 
 static dss_args_t cmd_mkdir_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0, NULL,
+        NULL, 0},
     {'d', "dir_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -1031,8 +1028,8 @@ static status_t mkdir_proc(void)
 #define DSS_CMD_TOUCH_ARGS_UDS 1
 #define DSS_CMD_TOUCH_ARGS_FLAG 2
 static dss_args_t cmd_touch_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0, NULL,
+        NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
     {'f', "flag", CM_FALSE, CM_TRUE, cmd_check_flag, NULL, NULL, 0, NULL, NULL, 0},
@@ -1146,8 +1143,8 @@ static status_t ts_proc(void)
 #define DSS_CMD_LS_MIN_INITED_SIZE 3
 
 static dss_args_t cmd_ls_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0, NULL,
+        NULL, 0},
     {'m', "measure_type", CM_FALSE, CM_TRUE, cmd_check_measure_type, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -1163,9 +1160,11 @@ static dss_args_set_t cmd_ls_args_set = {
 static void ls_help(const char *prog_name, int print_flag)
 {
     if (g_run_interatively) {
-        (void)printf("\nUsage:%s ls [-p path] [-m measure_type] [-w min_inited_size] [-U UDS:socket_domain]\n", prog_name);
+        (void)printf(
+            "\nUsage:%s ls [-p path] [-m measure_type] [-w min_inited_size] [-U UDS:socket_domain]\n", prog_name);
     } else {
-        (void)printf("\nUsage:%s ls <-p path> [-m measure_type] [-w min_inited_size] [-U UDS:socket_domain]\n", prog_name);
+        (void)printf(
+            "\nUsage:%s ls <-p path> [-m measure_type] [-w min_inited_size] [-U UDS:socket_domain]\n", prog_name);
     }
     (void)printf("[client command]Show information of volume group and disk usage space\n");
     if (print_flag == DSS_HELP_SIMPLE) {
@@ -1405,8 +1404,8 @@ static status_t cp_proc(void)
 }
 
 static dss_args_t cmd_rm_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0, NULL,
+        NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -1515,8 +1514,8 @@ static status_t rmv_proc(void)
 }
 
 static dss_args_t cmd_rmdir_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0, NULL,
+        NULL, 0},
     {'r', "recursive", CM_FALSE, CM_FALSE, NULL, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -1844,8 +1843,8 @@ static status_t auid_proc(void)
 #define DSS_PRINT_FMT_NUM 6
 
 static dss_args_t cmd_examine_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0, NULL,
+        NULL, 0},
     {'o', "offset", CM_TRUE, CM_TRUE, cmd_check_offset, NULL, NULL, 0, NULL, NULL, 0},
     {'f', "format", CM_TRUE, CM_TRUE, cmd_check_format, NULL, NULL, 0, NULL, NULL, 0},
     {'s', "read_size", CM_FALSE, CM_TRUE, cmd_check_read_size, NULL, NULL, 0, NULL, NULL, 0},
@@ -2340,8 +2339,8 @@ static dss_args_t cmd_showmem_args[] = {
     {'i', "index_id", CM_TRUE, CM_TRUE, cmd_check_block_index_id, NULL, NULL, 0, NULL, NULL, 0},
     {'f', "fid", CM_TRUE, CM_TRUE, cmd_check_fid, NULL, NULL, 0, NULL, NULL, 0},
     {'n', "node_id", CM_TRUE, CM_TRUE, cmd_check_disk_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0, NULL,
+        NULL, 0},
     {'o', "offset", CM_TRUE, CM_TRUE, cmd_check_offset, NULL, NULL, 0, NULL, NULL, 0},
     {'z', "size", CM_TRUE, CM_TRUE, cmd_check_read_size, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
@@ -2447,8 +2446,8 @@ static void showmem_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s showmem <-g vg_name> <-s struct_name> [-U UDS:socket_domain]\n", prog_name);
     (void)printf("      %s showmem <-g vg_name> <-b block_id> <-i index_id> [-U UDS:socket_domain]\n", prog_name);
-    (void)printf("      %s showmem <-g vg_name> <-f fid> <-n node_id> [-o offset -z size] [-U UDS:socket_domain]\n",
-        prog_name);
+    (void)printf(
+        "      %s showmem <-g vg_name> <-f fid> <-n node_id> [-o offset -z size] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("      %s showmem <-p path> [-o offset -z size] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command] showmem information\n");
     if (print_flag == DSS_HELP_SIMPLE) {
@@ -2588,8 +2587,8 @@ static dss_args_t cmd_fshowmem_args[] = {
     {'i', "index_id", CM_TRUE, CM_TRUE, cmd_check_block_index_id, NULL, NULL, 0, NULL, NULL, 0},
     {'f', "fid", CM_TRUE, CM_TRUE, cmd_check_fid, NULL, NULL, 0, NULL, NULL, 0},
     {'n', "node_id", CM_TRUE, CM_TRUE, cmd_check_disk_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0, NULL,
+        NULL, 0},
     {'o', "offset", CM_TRUE, CM_TRUE, cmd_check_offset, NULL, NULL, 0, NULL, NULL, 0},
     {'z', "size", CM_TRUE, CM_TRUE, cmd_check_read_size, NULL, NULL, 0, NULL, NULL, 0},
     {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
@@ -3113,10 +3112,10 @@ static status_t fshowmem_proc(void)
 }
 
 static dss_args_t cmd_rename_args[] = {
-    {'o', "old_name", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
-    {'n', "new_name", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'o', "old_name", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
+    {'n', "new_name", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -3171,8 +3170,8 @@ static status_t rename_proc(void)
 }
 
 static dss_args_t cmd_du_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0, NULL,
+        NULL, 0},
     {'f', "format", CM_FALSE, CM_TRUE, cmd_check_du_format, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -3250,8 +3249,8 @@ static status_t du_proc(void)
 }
 
 static dss_args_t cmd_find_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0, NULL,
+        NULL, 0},
     {'n', "name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -3329,8 +3328,8 @@ static status_t find_proc(void)
 }
 
 static dss_args_t cmd_ln_args[] = {
-    {'s', "src_path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'s', "src_path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
     {'t', "target_path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
         0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
@@ -3382,8 +3381,8 @@ static status_t ln_proc(void)
 }
 
 static dss_args_t cmd_readlink_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0, NULL,
+        NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -3439,8 +3438,8 @@ static status_t readlink_proc(void)
 }
 
 static dss_args_t cmd_unlink_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0, NULL,
+        NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -3587,15 +3586,6 @@ static void setcfg_help(const char *prog_name, int print_flag)
 static status_t setcfg_proc(void)
 {
     char *name = cmd_setcfg_args[DSS_ARG_IDX_0].input_args;
-    if (cm_strcmpi(name, "_LOG_LEVEL") != 0 && cm_strcmpi(name, "_LOG_MAX_FILE_SIZE") != 0 &&
-        cm_strcmpi(name, "_LOG_BACKUP_FILE_COUNT") != 0 && cm_strcmpi(name, "_AUDIT_MAX_FILE_SIZE") != 0 &&
-        cm_strcmpi(name, "_AUDIT_BACKUP_FILE_COUNT") != 0 && cm_strcmpi(name, "_AUDIT_LEVEL") != 0 &&
-        cm_strcmpi(name, "_ENABLE_CORE_STATE_COLLECT") != 0 && cm_strcmpi(name, "DELAY_CLEAN_INTERVAL") != 0 &&
-        cm_strcmpi(name, "CLUSTER_RUN_MODE") != 0 && cm_strcmpi(name, "_BLACKBOX_DETAIL_ON") != 0 &&
-        cm_strcmpi(name, "MES_WAIT_TIMEOUT") != 0) {
-        DSS_PRINT_ERROR("Invalid name when set cfg.\n");
-        return DSS_ERROR;
-    }
     char *value = cmd_setcfg_args[DSS_ARG_IDX_1].input_args;
     char *scope =
         cmd_setcfg_args[DSS_ARG_IDX_2].input_args != NULL ? cmd_setcfg_args[DSS_ARG_IDX_2].input_args : "both";
@@ -4089,7 +4079,8 @@ static dss_args_set_t cmd_disable_grab_lock_args_set = {
 static void disable_grab_lock_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s dis_grab_lock [-U UDS:socket_domain]\n", prog_name);
-    (void)printf("[client command] if the dssserver is primary, will release cm lock to be standby and not to grab lock\n");
+    (void)printf(
+        "[client command] if the dssserver is primary, will release cm lock to be standby and not to grab lock\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
@@ -4211,7 +4202,7 @@ static void help(char *prog_name, dss_help_type help_type)
     (void)printf("Usage:%s %s/%s show help information of dsscmd\n", prog_name, HELP_SHORT, HELP_LONG);
     (void)printf("Usage:%s %s/%s show all help information of dsscmd\n", prog_name, ALL_SHORT, ALL_LONG);
     (void)printf("Usage:%s %s/%s show version information of dsscmd\n", prog_name, VERSION_SHORT, VERSION_LONG);
-    if (!g_run_interatively){
+    if (!g_run_interatively) {
         (void)printf("Usage:%s -i/--interactive run dsscmd interatively\n", prog_name);
     }
     (void)printf("commands:\n");

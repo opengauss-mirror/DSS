@@ -64,6 +64,30 @@ status_t dss_notify_blackbox_detail_on(void *se, void *item, char *value);
 status_t dss_verify_mes_wait_timeout(void *lex, void *def);
 status_t dss_notify_mes_wait_timeout(void *se, void *item, char *value);
 
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+// for fi beg
+status_t dss_verify_fi_entity(void *lex, void *def);
+status_t dss_notify_fi_packet_loss_entity(void *se, void *item, char *value);
+status_t dss_notify_fi_net_latency_entity(void *se, void *item, char *value);
+status_t dss_notify_fi_cpu_latency_entity(void *se, void *item, char *value);
+status_t dss_notify_fi_process_fault_entity(void *se, void *item, char *value);
+status_t dss_notify_fi_custom_fault_entity(void *se, void *item, char *value);
+
+status_t dss_verify_fi_value_base(char *cfg_value, char *cfg_name, unsigned int cfg_max);
+status_t dss_notify_fi_value_base(char *cfg_value, char *cfg_name, unsigned int cfg_type);
+status_t dss_verify_fi_packet_loss_value(void *lex, void *def);
+status_t dss_notify_fi_packet_loss_value(void *se, void *item, char *value);
+status_t dss_verify_fi_net_latency_value(void *lex, void *def);
+status_t dss_notify_fi_net_latency_value(void *se, void *item, char *value);
+status_t dss_verify_fi_cpu_latency_value(void *lex, void *def);
+status_t dss_notify_fi_cpu_latency_value(void *se, void *item, char *value);
+status_t dss_verify_fi_process_fault_value(void *lex, void *def);
+status_t dss_notify_fi_process_fault_value(void *se, void *item, char *value);
+status_t dss_verify_fi_custom_fault_value(void *lex, void *def);
+status_t dss_notify_fi_custom_fault_value(void *se, void *item, char *value);
+// for fi end
+#endif
+
 #ifdef __cplusplus
 }
 #endif

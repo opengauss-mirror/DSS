@@ -27,6 +27,7 @@
 #include "dss_defs.h"
 #include "dss_errno.h"
 #include "dss_param.h"
+#include "dss_fault_injection.h"
 #include "dss_param_verify.h"
 
 #ifdef __cplusplus
@@ -64,7 +65,8 @@ status_t dss_verify_enable_core_state_collect(void *lex, void *def)
     if (!cm_str_equal_ins(value, "TRUE") && !cm_str_equal_ins(value, "FALSE")) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_ENABLE_CORE_STATE_COLLECT"));
     }
-    int32 iret_snprintf = snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, "%s", value);
+    int32 iret_snprintf =
+        snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, "%s", value);
     DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
     return CM_SUCCESS;
 }
@@ -102,8 +104,8 @@ status_t dss_verify_delay_clean_interval(void *lex, void *def)
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DELAY_CLEAN_INTERVAL"));
     }
 
-    int32 iret_snprintf =
-        snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, PRINT_FMT_UINT32, delay_clean_interval);
+    int32 iret_snprintf = snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1,
+        PRINT_FMT_UINT32, delay_clean_interval);
     DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
     return CM_SUCCESS;
 }
@@ -388,7 +390,7 @@ status_t dss_verify_cluster_run_mode(void *lex, void *def)
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "CLUSTER_RUN_MODE");
         return CM_ERROR;
     }
-    
+
     int32 iret_snprintf =
         snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, "%s", value);
     DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
@@ -404,10 +406,134 @@ status_t dss_notify_cluster_run_mode(void *se, void *item, char *value)
         g_inst_cfg->params.cluster_run_mode = CLUSTER_PRIMARY;
         LOG_RUN_INF("The cluster_run_mode is cluster_primary.");
     } else {
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid CLUSTER_RUN_MODE"));
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid CLUSTER_RUN_MODE"));
     }
     return CM_SUCCESS;
 }
+
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+status_t dss_verify_fi_entity(void *lex, void *def)
+{
+    char *cfg_value = (char *)lex;
+    int32 iret_snprintf =
+        snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, "%s", cfg_value);
+    DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
+    return CM_SUCCESS;
+}
+
+status_t dss_notify_fi_packet_loss_entity(void *se, void *item, char *value)
+{
+    return ddes_fi_parse_and_set_entry_list(DDES_FI_TYPE_PACKET_LOSS, value);
+}
+
+status_t dss_notify_fi_net_latency_entity(void *se, void *item, char *value)
+{
+    return ddes_fi_parse_and_set_entry_list(DDES_FI_TYPE_NET_LATENCY, value);
+}
+
+status_t dss_notify_fi_cpu_latency_entity(void *se, void *item, char *value)
+{
+    return ddes_fi_parse_and_set_entry_list(DDES_FI_TYPE_CPU_LATENCY, value);
+}
+
+status_t dss_notify_fi_process_fault_entity(void *se, void *item, char *value)
+{
+    return ddes_fi_parse_and_set_entry_list(DDES_FI_TYPE_PROCESS_FAULT, value);
+}
+
+status_t dss_notify_fi_custom_fault_entity(void *se, void *item, char *value)
+{
+    return ddes_fi_parse_and_set_entry_list(DDES_FI_TYPE_CUSTOM_FAULT, value);
+}
+
+status_t dss_verify_fi_value_base(char *cfg_value, char *cfg_name, unsigned int cfg_max)
+{
+    uint32 value;
+    status_t status = cm_str2uint32(cfg_value, &value);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[dss_fi]invalid parameter value of '%s', value:%s.", cfg_name, cfg_value));
+    if (cfg_max > 0 && value > cfg_max) {
+        DSS_THROW_ERROR_EX(ERR_DSS_INVALID_PARAM,
+            "[dss_fi]invalid parameter value of '%s', value:%s more than value:%u.", cfg_name, cfg_value, cfg_max);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+status_t dss_notify_fi_value_base(char *cfg_value, char *cfg_name, unsigned int cfg_type)
+{
+    uint32 value;
+    CM_RETURN_IFERR(cm_str2uint32(cfg_value, (uint32 *)&value));
+
+    status_t status = ddes_fi_set_entry_value(cfg_type, value);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[dss_fi]set parameter value of '%s', value:%s fail for type:%u.", cfg_name,
+                                  cfg_value, cfg_type));
+    return CM_SUCCESS;
+}
+
+static status_t dss_verify_fi_value_ex(void *lex, void *def, char *cfg_name, unsigned int cfg_max)
+{
+    char *cfg_value = (char *)lex;
+    status_t status = dss_verify_fi_value_base(cfg_value, cfg_name, cfg_max);
+    DSS_RETURN_IF_ERROR(status);
+
+    int32 iret_snprintf =
+        snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, "%s", cfg_value);
+    DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
+
+    return CM_SUCCESS;
+}
+
+status_t dss_verify_fi_packet_loss_value(void *lex, void *def)
+{
+    return dss_verify_fi_value_ex(lex, def, "SS_FI_PACKET_LOSS_PROB", DSS_FI_MAX_PROBABILTY);
+}
+
+status_t dss_notify_fi_packet_loss_value(void *se, void *item, char *value)
+{
+    return dss_notify_fi_value_base(value, "SS_FI_PACKET_LOSS_PROB", DDES_FI_TYPE_PACKET_LOSS);
+}
+
+status_t dss_verify_fi_net_latency_value(void *lex, void *def)
+{
+    return dss_verify_fi_value_ex(lex, def, "SS_FI_NET_LATENCY_MS", 0);
+}
+
+status_t dss_notify_fi_net_latency_value(void *se, void *item, char *value)
+{
+    return dss_notify_fi_value_base(value, "SS_FI_NET_LATENCY_MS", DDES_FI_TYPE_NET_LATENCY);
+}
+
+status_t dss_verify_fi_cpu_latency_value(void *lex, void *def)
+{
+    return dss_verify_fi_value_ex(lex, def, "SS_FI_CPU_LATENCY_MS", 0);
+}
+
+status_t dss_notify_fi_cpu_latency_value(void *se, void *item, char *value)
+{
+    return dss_notify_fi_value_base(value, "SS_FI_CPU_LATENCY_MS", DDES_FI_TYPE_CPU_LATENCY);
+}
+
+status_t dss_verify_fi_process_fault_value(void *lex, void *def)
+{
+    return dss_verify_fi_value_ex(lex, def, "SS_FI_PROCESS_FAULT_PROB", DSS_FI_MAX_PROBABILTY);
+}
+
+status_t dss_notify_fi_process_fault_value(void *se, void *item, char *value)
+{
+    return dss_notify_fi_value_base(value, "SS_FI_PROCESS_FAULT_PROB", DDES_FI_TYPE_PROCESS_FAULT);
+}
+
+status_t dss_verify_fi_custom_fault_value(void *lex, void *def)
+{
+    return dss_verify_fi_value_ex(lex, def, "SS_FI_CUSTOM_FAULT_PARAM", 0);
+}
+
+status_t dss_notify_fi_custom_fault_value(void *se, void *item, char *value)
+{
+    return dss_notify_fi_value_base(value, "SS_FI_CUSTOM_FAULT_PARAM", DDES_FI_TYPE_CUSTOM_FAULT);
+}
+#endif
 
 status_t dss_verify_mes_wait_timeout(void *lex, void *def)
 {

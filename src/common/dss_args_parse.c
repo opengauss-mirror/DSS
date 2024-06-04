@@ -241,35 +241,34 @@ status_t cmd_check_au_size(const char *au_size_str)
     return CM_SUCCESS;
 }
 
-// clang-format off
 config_item_t g_dss_admin_parameters[] = {
     // name (30B)                     isdefault readonly  defaultvalue value runtime_value description range  datatype
     // comment
     // -------------                  --------- --------  ------------ ----- ------------- ----------- -----  --------
     // -----
     /* log */
-    { "LOG_HOME",                  CM_TRUE, CM_TRUE,  "",      NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL, 0,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_BACKUP_FILE_COUNT",    CM_TRUE, CM_FALSE, "20",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL, 1,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_MAX_FILE_SIZE",        CM_TRUE, CM_FALSE, "256M",  NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL, 2,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_FILE_PERMISSIONS",     CM_TRUE, CM_FALSE, "600",   NULL, NULL, "-", "[600-777]", "GS_TYPE_INTEGER", NULL, 3,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_PATH_PERMISSIONS",     CM_TRUE, CM_FALSE, "700",   NULL, NULL, "-", "[700-777]", "GS_TYPE_INTEGER", NULL, 4,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL },
-    { "_LOG_LEVEL",                CM_TRUE, CM_FALSE, "519",     NULL, NULL, "-", "[0,4087]",  "GS_TYPE_INTEGER", NULL,
-        5, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_AUDIT_BACKUP_FILE_COUNT",  CM_TRUE, CM_FALSE, "20",    NULL, NULL, "-", "[0,128]",   "GS_TYPE_INTEGER", NULL, 6,
+    {"LOG_HOME", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 0, EFFECT_REBOOT, CFG_INS,
+        NULL, NULL},
+    {"_LOG_BACKUP_FILE_COUNT", CM_TRUE, ATTR_NONE, "20", NULL, NULL, "-", "[0,128]", "GS_TYPE_INTEGER", NULL, 1,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL},
+    {"_LOG_MAX_FILE_SIZE", CM_TRUE, ATTR_NONE, "256M", NULL, NULL, "-", "[1M,4G]", "GS_TYPE_INTEGER", NULL, 2,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL},
+    {"_LOG_FILE_PERMISSIONS", CM_TRUE, ATTR_READONLY, "600", NULL, NULL, "-", "[600-777]", "GS_TYPE_INTEGER", NULL, 3,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL},
+    {"_LOG_PATH_PERMISSIONS", CM_TRUE, ATTR_READONLY, "700", NULL, NULL, "-", "[700-777]", "GS_TYPE_INTEGER", NULL, 4,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL},
+    {"_LOG_LEVEL", CM_TRUE, ATTR_NONE, "519", NULL, NULL, "-", "[0,4087]", "GS_TYPE_INTEGER", NULL, 5, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
+    {"_AUDIT_BACKUP_FILE_COUNT", CM_TRUE, ATTR_NONE, "20", NULL, NULL, "-", "[0,128]", "GS_TYPE_INTEGER", NULL, 6,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_AUDIT_MAX_FILE_SIZE",      CM_TRUE, CM_FALSE, "256M",  NULL, NULL, "-", "[1M,4G]",   "GS_TYPE_INTEGER", NULL, 7,
+    {"_AUDIT_MAX_FILE_SIZE", CM_TRUE, ATTR_NONE, "256M", NULL, NULL, "-", "[1M,4G]", "GS_TYPE_INTEGER", NULL, 7,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "LSNR_PATH",                 CM_TRUE, CM_FALSE, "/tmp/", NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL, 8,
+    {"LSNR_PATH", CM_TRUE, ATTR_READONLY, "/tmp/", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 8, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
+    {"_AUDIT_LEVEL", CM_TRUE, ATTR_NONE, "1", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 9, EFFECT_REBOOT, CFG_INS,
+        NULL, NULL, NULL, NULL},
+    {"CLUSTER_RUN_MODE", CM_TRUE, ATTR_NONE, "cluster_primary", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 10,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "_AUDIT_LEVEL",              CM_TRUE, CM_FALSE, "1",     NULL, NULL, "-", "-",         "GS_TYPE_VARCHAR", NULL, 9,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "CLUSTER_RUN_MODE",          CM_TRUE, CM_FALSE, "cluster_primary", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL,
-        10, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 static status_t dss_load_local_server_config_core(

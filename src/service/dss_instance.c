@@ -45,6 +45,7 @@
 #ifdef ENABLE_DSSTEST
 #include "dss_simulation_cm.h"
 #endif
+#include "dss_fault_injection.h"
 
 #define DSS_MAINTAIN_ENV "DSS_MAINTAIN"
 dss_instance_t g_dss_instance;
@@ -186,8 +187,8 @@ status_t dss_recover_from_instance(dss_instance_t *inst)
             status = dss_recover_from_slot(vg_item);
             if (status != CM_SUCCESS) {
                 LOG_RUN_ERR("[RECOVERY]Failed to recover from vg %s.", vg_item->vg_name);
-                return CM_ERROR; 
-            } 
+                return CM_ERROR;
+            }
         } else {
             status = dss_load_redo_ctrl(vg_item);
             if (status != CM_SUCCESS) {
@@ -301,6 +302,24 @@ dss_instance_status_e dss_get_instance_status(void)
     return g_dss_instance.status;
 }
 
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+static status_t dss_init_fi_ctx(dss_instance_t *inst)
+{
+    int32 fi_ctx_size = ddes_fi_get_context_size();
+    if (fi_ctx_size <= 0) {
+        LOG_RUN_ERR("Failed to get fi context size.");
+        return CM_ERROR;
+    }
+    inst->fi_run_ctx = malloc((uint32)fi_ctx_size);
+    if (inst->fi_run_ctx == NULL) {
+        LOG_RUN_ERR("Failed to alloc fi context.");
+        return CM_ERROR;
+    }
+    ddes_fi_set_and_init_context(inst->fi_run_ctx);
+    return CM_SUCCESS;
+}
+#endif
+
 status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
 {
     status_t status;
@@ -309,6 +328,11 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
 
     status = dss_init_zero_buf();
     DSS_RETURN_IFERR2(status, (void)printf("Dss init zero buf fail.\n"));
+
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+    status = dss_init_fi_ctx(inst);
+    DSS_RETURN_IFERR2(status, (void)printf("Dss init fi ctx fail.\n"));
+#endif
 
     dss_init_cluster_proto_ver(inst);
     inst->lock_fd = CM_INVALID_INT32;
@@ -712,7 +736,8 @@ void dss_recovery_when_standby(dss_instance_t *inst, uint32 curr_id, uint32 mast
     if (!dss_check_join_cluster()) {
         dss_set_master_id(old_master_id);
         dss_set_server_status_flag(old_status);
-        LOG_RUN_INF("[RECOVERY]inst %u reset status flag %d and master_id %u when join failed.", curr_id, old_status, old_master_id);
+        LOG_RUN_INF("[RECOVERY]inst %u reset status flag %d and master_id %u when join failed.", curr_id, old_status,
+            old_master_id);
         return;
     }
     if (inst->status == DSS_STATUS_PREPARE) {
@@ -721,7 +746,8 @@ void dss_recovery_when_standby(dss_instance_t *inst, uint32 curr_id, uint32 mast
             dss_set_master_id(old_master_id);
             dss_set_server_status_flag(old_status);
             g_dss_instance.is_join_cluster = CM_FALSE;
-            LOG_RUN_INF("[RECOVERY]inst %u reset status flag %d and master_id %u and join cluster when load failed.", curr_id, old_status, old_master_id);
+            LOG_RUN_INF("[RECOVERY]inst %u reset status flag %d and master_id %u and join cluster when load failed.",
+                curr_id, old_status, old_master_id);
             LOG_RUN_ERR("[RECOVERY]Just try again to load dss ctrl.");
             return;
         }
@@ -737,7 +763,7 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
     cm_latch_x(&g_dss_instance.switch_latch, DSS_DEFAULT_SESSIONID, LATCH_STAT(LATCH_SWITCH));
     uint32 old_master_id = dss_get_master_id();
     bool32 grab_lock = CM_FALSE;
-    uint32 master_id =  DSS_INVALID_ID32;
+    uint32 master_id = DSS_INVALID_ID32;
     status_t status = dss_get_cm_lock_owner(inst, &grab_lock, CM_TRUE, &master_id);
     if (status != CM_SUCCESS) {
         cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));

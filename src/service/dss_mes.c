@@ -33,6 +33,7 @@
 #include "dss_mes.h"
 #include "dss_syn_meta.h"
 #include "dss_thv.h"
+#include "dss_fault_injection.h"
 
 #ifndef WIN32
 static __thread char *g_thv_read_buf = NULL;
@@ -444,7 +445,7 @@ static bool32 dss_check_srv_status(mes_msg_t *msg)
         LOG_DEBUG_INF("[MES] Could not exec remote req for the dssserver is not open or msg not join cluster, src "
                       "node:%u, wait try again.",
             (uint32)(dss_head->src_inst));
-         return CM_FALSE;
+        return CM_FALSE;
     }
     return CM_TRUE;
 }
@@ -523,6 +524,9 @@ static status_t dss_process_remote_ack_prepare(dss_session_t *session, mes_msg_t
 static void dss_process_message(uint32 work_idx, ruid_type ruid, mes_msg_t *msg)
 {
     cm_reset_error();
+
+    DDES_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(
+        DSS_FI_MES_PROC_ENTER, cm_sleep(ddes_fi_get_entry_value(DDES_FI_TYPE_CUSTOM_FAULT)));
 
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 mes_sess_cnt = inst_cfg->params.channel_num + inst_cfg->params.work_thread_cnt;
@@ -613,26 +617,30 @@ static status_t dss_set_mes_buffer_pool(unsigned long long recv_msg_buf_size, me
             (uint32)(recv_msg_buf_size * DSS_FIRST_BUFFER_RATIO) / DSS_FIRST_BUFFER_LENGTH;
         profile->buffer_pool_attr[i].buf_attr[pool_idx].size = DSS_FIRST_BUFFER_LENGTH;
         LOG_RUN_INF("First buffer pool count is %u, pool size is %u.",
-            profile->buffer_pool_attr[i].buf_attr[pool_idx].count, profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
+            profile->buffer_pool_attr[i].buf_attr[pool_idx].count,
+            profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
         // 128 buffer pool
         pool_idx++;
         profile->buffer_pool_attr[i].buf_attr[pool_idx].count =
             (uint32)(recv_msg_buf_size * DSS_SECOND_BUFFER_RATIO) / DSS_SECOND_BUFFER_LENGTH;
         profile->buffer_pool_attr[i].buf_attr[pool_idx].size = DSS_SECOND_BUFFER_LENGTH;
         LOG_RUN_INF("Second buffer pool count is %u, pool size is %u.",
-            profile->buffer_pool_attr[i].buf_attr[pool_idx].count, profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
+            profile->buffer_pool_attr[i].buf_attr[pool_idx].count,
+            profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
         // 32k buffer pool
         pool_idx++;
         profile->buffer_pool_attr[i].buf_attr[pool_idx].count =
             (uint32)(recv_msg_buf_size * DSS_THIRDLY_BUFFER_RATIO) / DSS_THIRD_BUFFER_LENGTH;
         profile->buffer_pool_attr[i].buf_attr[pool_idx].size = DSS_THIRD_BUFFER_LENGTH;
-                LOG_RUN_INF("Third buffer pool count is %u, pool size is %u.",
-            profile->buffer_pool_attr[i].buf_attr[pool_idx].count, profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
+        LOG_RUN_INF("Third buffer pool count is %u, pool size is %u.",
+            profile->buffer_pool_attr[i].buf_attr[pool_idx].count,
+            profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
         pool_idx++;
         profile->buffer_pool_attr[i].buf_attr[pool_idx].count = DSS_MSG_BUFFER_QUEUE_NUM;
         profile->buffer_pool_attr[i].buf_attr[pool_idx].size = DSS_FOURTH_BUFFER_LENGTH;
-                LOG_RUN_INF("Third buffer pool count is %u, pool size is %u.",
-            profile->buffer_pool_attr[i].buf_attr[pool_idx].count, profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
+        LOG_RUN_INF("Third buffer pool count is %u, pool size is %u.",
+            profile->buffer_pool_attr[i].buf_attr[pool_idx].count,
+            profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
     }
     return CM_SUCCESS;
 }
@@ -1309,8 +1317,8 @@ static bool32 dss_packets_verify(big_packets_ctrl_t *lastctrl, big_packets_ctrl_
         return CM_FALSE;
     }
     if (ctrl->endflag == CM_TRUE && ctrl->cursize + ctrl->offset != ctrl->totalsize) {
-        LOG_RUN_ERR("[MES]size is not true, cursize is %u, offset is %u, total size is %u.",
-            ctrl->cursize, ctrl->offset, ctrl->totalsize);
+        LOG_RUN_ERR("[MES]size is not true, cursize is %u, offset is %u, total size is %u.", ctrl->cursize,
+            ctrl->offset, ctrl->totalsize);
         return CM_FALSE;
     }
 
