@@ -328,6 +328,8 @@ int dss_stat(const char *path, dss_stat_info_t item)
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "dss_stat_info_t");
         return DSS_ERROR;
     }
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     dss_conn_t *conn = NULL;
     status_t status = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("stat get conn error."));
@@ -346,7 +348,9 @@ int dss_stat(const char *path, dss_stat_info_t item)
             return DSS_ERROR;
         }
     }
-    return dss_set_stat_info(item, node);
+    ret = dss_set_stat_info(item, node);
+    dss_session_end_stat(conn->session, &begin_tv, DSS_STAT);
+    return ret;
 }
 
 int dss_lstat(const char *path, dss_stat_info_t item)
@@ -413,7 +417,10 @@ int dss_fremove(const char *file)
 
 int dss_fopen(const char *file, int flag, int *handle)
 {
+    timeval_t begin_tv;
     *handle = -1;
+
+    dss_begin_stat(&begin_tv);
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fopen get conn error"));
@@ -424,6 +431,7 @@ int dss_fopen(const char *file, int flag, int *handle)
     if (ret == CM_SUCCESS) {
         *handle += DSS_HANDLE_BASE;
     }
+    dss_session_end_stat(conn->session, &begin_tv, DSS_FOPEN);
     return (int)ret;
 }
 
@@ -558,7 +566,7 @@ int dss_pwrite(int handle, const void *buf, int size, long long offset)
     ret = dss_pwrite_file_impl(conn, HANDLE_VALUE(handle), buf, size, offset);
     dss_get_api_volume_error();
     if (ret == CM_SUCCESS) {
-        dss_end_stat(conn->session, &begin_tv, DSS_PWRITE);
+        dss_session_end_stat(conn->session, &begin_tv, DSS_PWRITE);
     }
 
     return (int)ret;
@@ -590,7 +598,7 @@ int dss_pread(int handle, void *buf, int size, long long offset, int *read_size)
     ret = dss_pread_file_impl(conn, HANDLE_VALUE(handle), buf, size, offset, read_size);
     dss_get_api_volume_error();
     if (ret == CM_SUCCESS) {
-        dss_end_stat(conn->session, &begin_tv, DSS_PREAD);
+        dss_session_end_stat(conn->session, &begin_tv, DSS_PREAD);
     }
     return (int)ret;
 }

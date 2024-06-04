@@ -761,8 +761,8 @@ static status_t dss_process_get_inst_status(dss_session_t *session)
 
 static status_t dss_process_get_time_stat(dss_session_t *session)
 {
-    uint64 size = sizeof(dss_session_stat_t) * DSS_EVT_COUNT;
-    dss_session_stat_t *time_stat = NULL;
+    uint64 size = sizeof(dss_stat_item_t) * DSS_EVT_COUNT;
+    dss_stat_item_t *time_stat = NULL;
     DSS_RETURN_IF_ERROR(dss_reserv_text_buf(&session->send_pack, size, (char **)&time_stat));
 
     errno_t errcode = memset_s(time_stat, (size_t)size, 0, (size_t)size);

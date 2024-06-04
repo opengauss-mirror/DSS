@@ -97,7 +97,7 @@ status_t dss_get_inst_status_on_server(dss_conn_t *conn, dss_server_status_t *ds
     return CM_SUCCESS;
 }
 
-status_t dss_get_time_stat_on_server(dss_conn_t * conn, dss_session_stat_t * time_stat, uint64 size)
+status_t dss_get_time_stat_on_server(dss_conn_t * conn, dss_stat_item_t * time_stat, uint64 size)
 {
     int32 errcode;
     char *errmsg = NULL;
@@ -124,7 +124,7 @@ status_t dss_get_time_stat_on_server(dss_conn_t * conn, dss_session_stat_t * tim
         return CM_ERROR;
     }
     for (uint64 i = 0; i < DSS_EVT_COUNT; i++) {
-        time_stat[i] = *(dss_session_stat_t *)(stat_info.str + i * (uint64)sizeof(dss_session_stat_t));
+        time_stat[i] = *(dss_stat_item_t *)(stat_info.str + i * (uint64)sizeof(dss_stat_item_t));
     }
     return CM_SUCCESS;
 }
