@@ -212,7 +212,7 @@ function clear_vg()
     volume_index=0
     check_except_param $4
     for ((i=0; i<$VG_COUNT; i++)); do
-        if [[ ${VG_NAME[$i]} == "$CLEAR_VG_EXCEPT" ]]; then
+        if [[ ${VG_NAME["$i"]} == "$CLEAR_VG_EXCEPT" ]]; then
             log "[CLEARVG]except_vg_name, skip clear Vg:${VG_NAME[$i]}, volume count:${VOLUME_COUNT[$i]}"
             volume_index=$(($volume_index+${VOLUME_COUNT[$i]}))
             continue
