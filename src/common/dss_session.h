@@ -133,9 +133,9 @@ static inline char *dss_init_sendinfo_buf(char *input)
     return (input + sizeof(dss_packet_head_t) + sizeof(int32));
 }
 
-static inline void dss_session_end_stat(dss_session_t *session, timeval *begin_tv, dss_wait_event_e event)
+static inline void dss_session_end_stat(dss_session_t *session, timeval_t *begin_tv, dss_wait_event_e event)
 {
-    if (session ！= NULL) {
+    if (session != NULL) {
         dss_end_stat_base(&session->dss_session_stat[event], begin_tv);
     }
 }

@@ -258,7 +258,7 @@ int dss_dmake(const char *dir_name)
         return CM_ERROR;
     }
     if (sub.len >= DSS_FILE_PATH_MAX_LENGTH) {
-        DSS_THROW_ERROR_EX(ERR_DSS_DIR_CREATE, "Length of path(%s) is too long, maximum is (%s)", T2S(&sub), DSS_FILE_PATH_MAX_LENGTH);
+        DSS_THROW_ERROR_EX(ERR_DSS_DIR_CREATE, "Length of path(%s) is too long, maximum is (%u)", T2S(&sub), DSS_FILE_PATH_MAX_LENGTH);
         return CM_ERROR;
     }
     CM_RETURN_IFERR(cm_text2str(&sub, parent_str, sizeof(parent_str)));
@@ -348,7 +348,7 @@ int dss_stat(const char *path, dss_stat_info_t item)
             return DSS_ERROR;
         }
     }
-    ret = dss_set_stat_info(item, node);
+    int ret = dss_set_stat_info(item, node);
     dss_session_end_stat(conn->session, &begin_tv, DSS_STAT);
     return ret;
 }
