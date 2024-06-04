@@ -247,18 +247,18 @@ int dss_dmake(const char *dir_name)
     text_t sub;
     cm_str2text((char *)dir_name, &text);
     if (!cm_fetch_rtext(&text, '/', '\0', &sub)) {
-        LOG_DEBUG_ERR("not a complete absolute path name(%s %s)", T2S(&sub), T2S(&text));
+        DSS_THROW_ERROR_EX(ERR_DSS_DIR_CREATE, "Not a complete absolute path name(%s %s)", T2S(&sub), T2S(&text));
         return CM_ERROR;
     }
 
     char parent_str[DSS_FILE_PATH_MAX_LENGTH];
     char name_str[DSS_MAX_NAME_LEN];
     if (text.len >= DSS_MAX_NAME_LEN) {
-        LOG_DEBUG_ERR("The length of dir name is more then the max length, name is (%s)", T2S(&text));
+        DSS_THROW_ERROR_EX(ERR_DSS_DIR_CREATE, "Length of dir name(%s) is too long, maximum is %u.", T2S(&text), DSS_MAX_NAME_LEN);
         return CM_ERROR;
     }
     if (sub.len >= DSS_FILE_PATH_MAX_LENGTH) {
-        LOG_DEBUG_ERR("The length of path is more then the max length, path is (%s)", T2S(&sub));
+        DSS_THROW_ERROR_EX(ERR_DSS_DIR_CREATE, "Length of path(%s) is too long, maximum is (%s)", T2S(&sub), DSS_FILE_PATH_MAX_LENGTH);
         return CM_ERROR;
     }
     CM_RETURN_IFERR(cm_text2str(&sub, parent_str, sizeof(parent_str)));
