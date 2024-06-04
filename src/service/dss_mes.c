@@ -166,7 +166,11 @@ int32 dss_process_broadcast_ack(dss_notify_ack_msg_t *ack, dss_recv_msg_t *recv_
         case BCAST_ACK_INVALIDATE_META:
         case BCAST_ACK_META_SYN:
             ret = ack->result;
-            recv_msg_output->cmd_ack = ack->cmd_ack;
+            // recv_msg_output->cmd_ack init-ed with the deault, if some node not the same with the default, let's cover
+            // the default value
+            if (ret == CM_SUCCESS && recv_msg_output->default_ack != ack->cmd_ack) {
+                recv_msg_output->cmd_ack = ack->cmd_ack;
+            }
             break;
         default:
             LOG_DEBUG_ERR("invalid broadcast ack type");
@@ -767,7 +771,7 @@ status_t dss_notify_expect_bool_ack(dss_vg_info_item_t *vg_item, dss_bcast_req_c
     if (g_dss_instance.is_maintain) {
         return CM_SUCCESS;
     }
-    dss_recv_msg_t recv_msg = {CM_TRUE, *cmd_ack, DSS_PROTO_VERSION, 0, 0, CM_FALSE};
+    dss_recv_msg_t recv_msg = {CM_TRUE, *cmd_ack, DSS_PROTO_VERSION, 0, 0, CM_FALSE, *cmd_ack};
     recv_msg.broadcast_proto_ver = dss_get_broadcast_proto_ver(0);
     dss_notify_req_msg_t req;
     status_t ret;
@@ -813,9 +817,10 @@ status_t dss_notify_data_expect_bool_ack(
     if (g_dss_instance.is_maintain) {
         return CM_SUCCESS;
     }
-    dss_recv_msg_t recv_msg = {CM_TRUE, CM_TRUE, DSS_PROTO_VERSION, 0, 0, CM_FALSE};
+    dss_recv_msg_t recv_msg = {CM_TRUE, CM_TRUE, DSS_PROTO_VERSION, 0, 0, CM_FALSE, CM_TRUE};
     if (cmd_ack) {
         recv_msg.cmd_ack = *cmd_ack;
+        recv_msg.default_ack = *cmd_ack;
     } else {
         recv_msg.ignore_ack = CM_TRUE;
     }
