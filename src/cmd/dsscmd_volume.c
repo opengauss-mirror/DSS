@@ -46,16 +46,12 @@ static void dss_set_ctrl_checksum(dss_ctrl_t *ctrl)
 // NOTE:only called by create vg, no need to record redo log
 static status_t vg_initialize_resource(dss_vg_info_item_t *vg_item, gft_node_t *parent_node)
 {
-    gft_node_t *node;
-    /* create `.recycle` directory */
-    node =
+    status_t status = 
         dss_alloc_ft_node_when_create_vg(vg_item, parent_node, DSS_RECYLE_DIR_NAME, GFT_PATH, DSS_FT_NODE_FLAG_SYSTEM);
-    CM_ASSERT(node != NULL);
-    if (node == NULL) {
-        LOG_DEBUG_ERR("Failed to allocate file table node.");
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to allocate .recycle file when create vg %s.", vg_item->vg_name);
         return CM_ERROR;
     }
-
     dss_au_root_t *dss_au_root = DSS_GET_AU_ROOT(vg_item->dss_ctrl);
     dss_au_root->free_root = *(uint64 *)(&parent_node->items.first);
     return dss_update_core_ctrl_disk(vg_item);
