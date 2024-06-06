@@ -2144,35 +2144,11 @@ void dss_free_ft_node(
     dss_free_ft_node_inner(session, vg_item, parent_node, node, real_del);
 }
 
-bool32 dss_oamap_blockid_compare(void *key1, void *key2)
-{
-    CM_ASSERT(key1 != NULL);
-    CM_ASSERT(key2 != NULL);
-
-    dss_block_id_t *blockid1 = (dss_block_id_t *)key1;
-    dss_block_id_t *blockid2 = (dss_block_id_t *)key2;
-
-    if (blockid1->volume == blockid2->volume && blockid1->au == blockid2->au && blockid1->block == blockid2->block) {
-        return CM_TRUE;
-    } else {
-        return CM_FALSE;
-    }
-}
-
 gft_node_t *dss_find_ft_node_core(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, bool32 skip_del)
 {
     bool32 check_version = dss_is_server();
     ftid_t id = parent_node->items.first;
-
-    cm_oamap_t map;
-    if (dss_is_server()) {
-        int32 ret = cm_oamap_init(&map, DSS_FILE_HASH_SIZE, dss_oamap_blockid_compare);
-        if (ret != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Initialize the hash map failed, hash size:%u.", DSS_FILE_HASH_SIZE);
-            return NULL;
-        }
-    }
 
     for (uint32 i = 0; i < parent_node->items.count; i++) {
         if (dss_cmp_blockid(id, CM_INVALID_ID64)) {
@@ -2183,9 +2159,6 @@ gft_node_t *dss_find_ft_node_core(
         }
         gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, id, check_version, CM_FALSE);
         if (node == NULL) {
-            if (dss_is_server()) {
-                cm_oamap_destroy(&map);
-            }
             LOG_DEBUG_ERR(
                 "Can not get node:%s, File name %s type:%u.", dss_display_metaid(id), name, parent_node->type);
             return NULL;
@@ -2197,36 +2170,10 @@ gft_node_t *dss_find_ft_node_core(
             continue;
         }
         if (strcmp(node->name, name) == 0) {
-            if (dss_is_server()) {
-                cm_oamap_destroy(&map);
-            }
             return node;
         }
 
         id = node->next;
-        if (!dss_is_server()) {
-            continue;
-        }
-
-        dss_block_id_t blockid = id;
-        blockid.item = 0;
-        uint32 hash = cm_hash_int64(*(int64 *)&blockid);
-        void *res = cm_oamap_lookup(&map, hash, &blockid);
-        if (res) {
-            check_version = CM_FALSE;  // Have checked, no need checked again.
-            continue;
-        }
-        check_version = CM_TRUE;
-        int32 ret = cm_oamap_insert(&map, hash, &node->next, &node->next);
-        if (ret != CM_SUCCESS) {
-            cm_oamap_destroy(&map);
-            LOG_DEBUG_ERR("Insert the hash map failed, blockid:%s.", dss_display_metaid(node->next));
-            return NULL;
-        }
-    }
-
-    if (dss_is_server()) {
-        cm_oamap_destroy(&map);
     }
     return NULL;
 }
