@@ -610,46 +610,100 @@ char *dss_find_block_in_shm_no_refresh_ex(
     return dss_find_block_in_bucket_ex(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
 }
 
-void dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *map)
+static status_t dss_refresh_buffer_cache_inner(
+    dss_vg_info_item_t *vg_item, shm_hashmap_bucket_t *bucket, ga_queue_t *obj_que, ga_pool_id_e *obj_pool_id)
 {
-    shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
-    shm_hashmap_bucket_t *bucket = NULL;
-    dss_block_ctrl_t *block_ctrl = NULL;
-    dss_common_block_t *block = NULL;
     bool32 has_next = CM_FALSE;
     ga_obj_id_t next_id = {0};
-    ga_queue_t obj_que[DSS_BLOCK_TYPE_MAX] = {0};
-    ga_pool_id_e obj_pool_id[DSS_BLOCK_TYPE_MAX] = {0};
+
+    dss_block_ctrl_t *block_ctrl = NULL;
+    dss_block_ctrl_t *block_ctrl_prev = NULL;
+    dss_common_block_t *block = NULL;
     char *addr = NULL;
 
-    for (uint32_t i = 0; i < map->num; i++) {
-        bucket = &buckets[i];
-        dss_lock_shm_meta_bucket_s(NULL, vg_item->id, &bucket->enque_lock);
-        next_id = *(ga_obj_id_t *)&bucket->first;
-        has_next = bucket->has_next;
-        while (has_next) {
+    ga_obj_id_t id_curr = {0};
+    dss_block_ctrl_t *block_ctrl_curr = NULL;
+    bool32 need_remove = CM_FALSE;
+
+    dss_lock_shm_meta_bucket_s(NULL, vg_item->id, &bucket->enque_lock);
+    next_id = *(ga_obj_id_t *)&bucket->first;
+    has_next = bucket->has_next;
+    while (has_next) {
+        if (addr == NULL) {
             addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
             block = DSS_GET_COMMON_BLOCK_HEAD(addr);
             block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
+        }
 
+        // no recycle mem for ft block because api cache the addr
+        if (block->type == DSS_BLOCK_TYPE_FT) {
+            dss_init_dss_fs_block_cache_info(&block_ctrl->fs_block_cache_info);
+            status_t status =
+                dss_check_block_version(vg_item, ((dss_common_block_t *)addr)->id, block->type, addr, NULL);
+            if (status != CM_SUCCESS) {
+                dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+                return status;
+            }
+
+            // next may NOT be ft, need remove from the link and need the prev point info
+            block_ctrl_prev = block_ctrl;
+            need_remove = CM_FALSE;
+        } else {
             // cache the pool info and obj info
             ga_append_into_queue_by_pool_id(next_id.pool_id, &obj_que[block->type], next_id.obj_id);
             obj_pool_id[block->type] = next_id.pool_id;
 
-            has_next = block_ctrl->has_next;
-            next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
+            // need remove from the link, and need cur point info
+            id_curr = next_id;
+            block_ctrl_curr = block_ctrl;
+            need_remove = CM_TRUE;
         }
 
-        // just clean
-        bucket->first = 0;
-        bucket->has_next = CM_FALSE;
-        dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+        has_next = block_ctrl->has_next;
+        next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
+
+        if (has_next) {
+            addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
+            block = DSS_GET_COMMON_BLOCK_HEAD(addr);
+            block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
+        } else {
+            addr = NULL;
+            block = NULL;
+            block_ctrl = NULL;
+        }
+
+        if (need_remove) {
+            SHM_HASH_BUCKET_REMOVE(bucket, *(sh_mem_p *)&id_curr, block_ctrl_curr, block_ctrl_prev, block_ctrl);
+        }
+    }
+    dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+
+    return CM_SUCCESS;
+}
+
+status_t dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *map)
+{
+    shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
+    shm_hashmap_bucket_t *bucket = NULL;
+
+    ga_queue_t obj_que[DSS_BLOCK_TYPE_MAX] = {0};
+    ga_pool_id_e obj_pool_id[DSS_BLOCK_TYPE_MAX] = {0};
+
+    for (uint32_t i = 0; i < map->num; i++) {
+        bucket = &buckets[i];
+        status_t status = dss_refresh_buffer_cache_inner(vg_item, bucket, obj_que, obj_pool_id);
+        if (status != CM_SUCCESS) {
+            return status;
+        }
     }
 
     // free all the obj as batch
     for (uint32 i = 0; i < DSS_BLOCK_TYPE_MAX; i++) {
-        ga_free_object_list(obj_pool_id[i], &obj_que[i]);
+        if (obj_que[i].count > 0) {
+            ga_free_object_list(obj_pool_id[i], &obj_que[i]);
+        }
     }
+    return CM_SUCCESS;
 }
 
 void dss_init_dss_fs_block_cache_info(dss_fs_block_cache_info_t *fs_block_cache_info)

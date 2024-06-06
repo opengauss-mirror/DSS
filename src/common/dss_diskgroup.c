@@ -1615,12 +1615,15 @@ status_t dss_refresh_meta_info(dss_session_t *session)
             }
         }
 
-        LOG_DEBUG_INF("refresh dss ctrl vg_name:%s begin.", g_vgs_info->volume_group[i].vg_name);
+        LOG_DEBUG_INF("refresh meta info for vg_name:%s begin.", g_vgs_info->volume_group[i].vg_name);
         dss_lock_vg_mem_and_shm_x(session, &g_vgs_info->volume_group[i]);
         dss_init_vg_cache_node_info(&g_vgs_info->volume_group[i]);
-        dss_refresh_buffer_cache(&g_vgs_info->volume_group[i], g_vgs_info->volume_group[i].buffer_cache);
+        status = dss_refresh_buffer_cache(&g_vgs_info->volume_group[i], g_vgs_info->volume_group[i].buffer_cache);
         dss_unlock_vg_mem_and_shm(session, &g_vgs_info->volume_group[i]);
-        LOG_DEBUG_INF("refresh dss ctrl vg_name:%s end.", g_vgs_info->volume_group[i].vg_name);
+        if (status != CM_SUCCESS) {
+            return status;
+        }
+        LOG_DEBUG_INF("refresh meta info for vg_name:%s end.", g_vgs_info->volume_group[i].vg_name);
     }
     return CM_SUCCESS;
 }

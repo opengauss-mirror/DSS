@@ -50,7 +50,7 @@ char *dss_find_block_in_shm_no_refresh(
 char *dss_find_block_in_shm_no_refresh_ex(
     dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id, ga_obj_id_t *out_obj_id);
 
-void dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *map);
+status_t dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *map);
 status_t dss_get_block_from_disk(
     dss_vg_info_item_t *vg_item, dss_block_id_t block_id, char *buf, int64_t offset, int32 size, bool32 calc_checksum);
 status_t dss_check_block_version(
