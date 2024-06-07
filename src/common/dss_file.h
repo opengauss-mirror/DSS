@@ -83,7 +83,7 @@ void dss_check_ft_node_free(gft_node_t *node);
 void dss_check_ft_node_parent(gft_node_t *node, ftid_t parent_id);
 gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node,
     const char *name, gft_item_type_t type, int32 flag);
-gft_node_t *dss_alloc_ft_node_when_create_vg(
+status_t dss_alloc_ft_node_when_create_vg(
     dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, gft_item_type_t type, uint32 flags);
 
 status_t dss_format_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_t auid);

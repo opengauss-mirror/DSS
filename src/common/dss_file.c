@@ -1877,7 +1877,7 @@ void dss_ft_node_link_list(dss_session_t *session, dss_vg_info_item_t *vg_item, 
  * because there is no block buffer for use, you can't call dss_find_block_in_mem
  * or ga_alloc_object_list, redo log etc. You must flush buffer to disk manually.
  */
-gft_node_t *dss_alloc_ft_node_when_create_vg(
+status_t dss_alloc_ft_node_when_create_vg(
     dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, gft_item_type_t type, uint32 flags)
 {
     CM_ASSERT(vg_item != NULL);
@@ -1895,17 +1895,18 @@ gft_node_t *dss_alloc_ft_node_when_create_vg(
     if (gft->free_list.count == 0) {
         status = dss_alloc_ft_au(NULL, vg_item, &id);
         if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("[FT][ALLOC] Failed to allocate au when allocating file table node.");
-            return NULL;
+            LOG_RUN_ERR("[FT][ALLOC] Failed to allocate au when allocating file table node.");
+            return status;
         }
-        DSS_LOG_DEBUG_OP(
+        LOG_RUN_INF(
             "[FT][ALLOC] Succeed to allocate au:%s when allocating file table node.", dss_display_metaid(id));
     }
 
     id = gft->free_list.first;
     char *buf = (char *)cm_malloc_align(DSS_DISK_UNIT_SIZE, DSS_BLOCK_SIZE);
     if (buf == NULL) {
-        return NULL;
+        LOG_RUN_ERR("[FT][ALLOC] Failed to allocate buf.");
+        return CM_ERROR;
     }
 
     /* read ft block from disk, because there's no cache in hands */
@@ -1913,19 +1914,17 @@ gft_node_t *dss_alloc_ft_node_when_create_vg(
     block_id.item = 0;
     int64 offset = dss_get_block_offset(vg_item, DSS_BLOCK_SIZE, block_id.block, block_id.au);
     if (dss_get_block_from_disk(vg_item, block_id, buf, offset, DSS_BLOCK_SIZE, CM_TRUE) != CM_SUCCESS) {
-        free(buf);
-        LOG_DEBUG_ERR("[FT][ALLOC] Failed to load ft block %s.", dss_display_metaid(block_id));
-        return NULL;
+        DSS_FREE_POINT(buf);
+        LOG_RUN_ERR("[FT][ALLOC] Failed to load ft block %s.", dss_display_metaid(block_id));
+        return CM_ERROR;
     }
     gft_node_t *node = (gft_node_t *)(buf + sizeof(dss_ft_block_t) + sizeof(gft_node_t) * id.item);
-
     gft->free_list.first = node->next;
     bool32 cmp = dss_cmp_auid(gft->free_list.first, CM_INVALID_ID64);
     if (cmp) {
         gft->free_list.last = gft->free_list.first;
     }
     gft->free_list.count--;
-
     node->type = type;
     node->parent = parent_node->id;
     if (type == GFT_PATH) {
@@ -1940,21 +1939,21 @@ gft_node_t *dss_alloc_ft_node_when_create_vg(
         cm_panic(0);
     }
     dss_init_alloc_ft_node(gft, node, flags, parent_node);
-
     parent_node->items.first = node->id;
     parent_node->items.last = node->id;
     parent_node->items.count = 1;
     ((dss_ft_block_t *)buf)->common.flags = DSS_BLOCK_FLAG_USED;
-
     do {
         /* flush ft block to disk manually */
         status = dss_update_ft_block_disk(vg_item, (dss_ft_block_t *)buf, id);
         DSS_BREAK_IF_ERROR(status);
         status = dss_update_ft_root(vg_item);  // parent_node must be root directory like `+data`
     } while (0);
-
-    free(buf);
-    return (status == CM_SUCCESS) ? node : NULL;
+    if (status == CM_SUCCESS) {
+        LOG_RUN_INF("Succeed to create recycle file, node id is %s.", dss_display_metaid(node->id));
+    }
+    DSS_FREE_POINT(buf);
+    return status;
 }
 
 status_t dss_init_ft_node_entry(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node)
