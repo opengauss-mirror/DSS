@@ -2209,6 +2209,9 @@ gft_node_t *dss_find_ft_node(
 
 status_t dss_refresh_root_ft(dss_vg_info_item_t *vg_item, bool32 check_version, bool32 active_refresh)
 {
+    if (!dss_is_server()) {
+        return CM_SUCCESS;
+    }
     if (!DSS_STANDBY_CLUSTER && dss_is_readwrite() && !active_refresh) {
         DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
@@ -2217,7 +2220,7 @@ status_t dss_refresh_root_ft(dss_vg_info_item_t *vg_item, bool32 check_version, 
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
     char *root = dss_ctrl->root;
     dss_root_ft_block_t *ft_block = (dss_root_ft_block_t *)(root);
-    if (check_version && dss_is_server()) {
+    if (check_version) {
         uint64 version = ft_block->ft_block.common.version;
         uint64 disk_version;
         status_t status = dss_get_root_version(vg_item, &disk_version);
