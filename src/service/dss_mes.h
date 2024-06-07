@@ -122,6 +122,7 @@ typedef struct st_dss_recv_msg {
     uint64 version_not_match_inst;
     uint64 succ_inst;
     bool32 ignore_ack;
+    bool32 default_ack;
 } dss_recv_msg_t;
 
 typedef struct st_dss_message_head {
