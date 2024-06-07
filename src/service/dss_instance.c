@@ -373,9 +373,9 @@ static void dss_init_cluster_proto_ver(dss_instance_t *inst)
     }
 }
 
-bool32 dss_is_open_status(void)
+dss_instance_status_e dss_get_instance_status(void)
 {
-    return (g_dss_instance.status == DSS_STATUS_OPEN);
+    return g_dss_instance.status;
 }
 
 status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
@@ -390,7 +390,7 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
     dss_init_cluster_proto_ver(inst);
     inst->lock_fd = CM_INVALID_INT32;
     dss_set_server_flag();
-    regist_is_open_status_proc(dss_is_open_status);
+    regist_get_instance_status_proc(dss_get_instance_status);
     g_dss_instance_status = &inst->status;
     status = dss_set_cfg_dir(dss_args.dss_home, &inst->inst_cfg);
     DSS_RETURN_IFERR2(status, (void)printf("Environment variant DSS_HOME not found!\n"));
@@ -761,7 +761,6 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
     dss_instance_status_e old_status = inst->status;
 
     inst->status = DSS_STATUS_RECOVERY;
-    dss_set_recover_status((uint32)DSS_STATUS_RECOVERY);
     CM_MFENCE;
 
     if (old_status == DSS_STATUS_PREPARE) {
@@ -808,7 +807,6 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
     // when primary, no need to check result
     g_dss_instance.is_join_cluster = CM_TRUE;
     inst->status = DSS_STATUS_OPEN;
-    dss_set_recover_status((uint32)DSS_STATUS_OPEN);
 }
 
 void dss_recovery_when_standby(dss_instance_t *inst, uint32 curr_id, uint32 master_id)
@@ -875,7 +873,9 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
         return;
     }
     /*1、grab lock success 2、set main,other switch lock 3、restart, lock no transfer*/
+    dss_set_recover_thread_id(dss_get_current_thread_id());
     dss_recovery_when_primary(inst, curr_id, grab_lock);
+    dss_set_recover_thread_id(0);
     cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
 }
 
@@ -884,12 +884,7 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
 void dss_get_cm_lock_and_recover(thread_t *thread)
 {
     cm_set_thread_name("recovery");
-
-    dss_set_recover_thread_id(dss_get_current_thread_id());
-
     dss_instance_t *inst = (dss_instance_t *)thread->argument;
-
-
     while (!thread->closed) {
         dss_get_cm_lock_and_recover_inner(inst);
         if (inst->status == DSS_STATUS_PREPARE) {

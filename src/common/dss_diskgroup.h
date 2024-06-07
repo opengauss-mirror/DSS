@@ -196,15 +196,15 @@ bool32 dss_is_readwrite(void);
 bool32 dss_is_readonly(void);
 void dss_set_server_flag(void);
 bool32 dss_need_exec_local(void);
-typedef bool32 (*dss_is_open_status_proc_t)(void);
-extern dss_is_open_status_proc_t is_open_status_proc;
-void regist_is_open_status_proc(dss_is_open_status_proc_t proc);
+
+typedef dss_instance_status_e (*dss_get_instance_status_proc_t)(void);
+extern dss_get_instance_status_proc_t get_instance_status_proc;
+void regist_get_instance_status_proc(dss_get_instance_status_proc_t proc);
+
 int32 dss_get_server_status_flag(void);
 void dss_set_server_status_flag(int32 dss_status);
 void dss_set_recover_thread_id(uint32 thread_id);
 uint32 dss_get_recover_thread_id(void);
-void dss_set_recover_status(uint32 status);
-uint32 dss_get_recover_status(void);
 
 status_t dss_init_volume(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume);
 status_t dss_check_write_volume(dss_vg_info_item_t *vg_item, uint32 volumeid, int64 offset, void *buf, uint32 size);

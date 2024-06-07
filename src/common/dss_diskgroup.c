@@ -69,7 +69,6 @@ static uint32 g_master_instance_id = DSS_INVALID_ID32;
 static const char *const g_dss_lock_vg_file = "dss_vg.lck";
 static int32 g_dss_lock_vg_fd = CM_INVALID_INT32;
 static uint32 g_dss_recover_thread_id = 0;
-static uint32 g_dss_recover_status = 0;
 
 // CAUTION: dss_admin manager command just like dss_create_vg,cannot call it,
 bool32 dss_is_server(void)
@@ -122,23 +121,11 @@ uint32 dss_get_recover_thread_id(void)
     return g_dss_recover_thread_id;
 }
 
-void dss_set_recover_status(uint32 status)
+dss_get_instance_status_proc_t get_instance_status_proc = NULL;
+void regist_get_instance_status_proc(dss_get_instance_status_proc_t proc)
 {
-    LOG_RUN_INF("set instance status %u", status);
-    g_dss_recover_status = status;
+    get_instance_status_proc = proc;
 }
-
-uint32 dss_get_recover_status(void)
-{
-    return g_dss_recover_status;
-}
-
-dss_is_open_status_proc_t is_open_status_proc = NULL;
-void regist_is_open_status_proc(dss_is_open_status_proc_t proc)
-{
-    is_open_status_proc = proc;
-}
-
 void dss_checksum_vg_ctrl(dss_vg_info_item_t *vg_item);
 
 void vg_destroy_env(dss_vg_info_item_t *vg_item)
@@ -1846,9 +1833,8 @@ status_t dss_read_volume_inst(
     CM_ASSERT(offset % DSS_DISK_UNIT_SIZE == 0);
     CM_ASSERT(size % DSS_DISK_UNIT_SIZE == 0);
     CM_ASSERT(((uint64)buf) % DSS_DISK_UNIT_SIZE == 0);
-
-    while (dss_get_recover_status() != DSS_STATUS_RECOVERY && dss_need_load_remote(size) == CM_TRUE &&
-           status != CM_SUCCESS) {
+    while (get_instance_status_proc != NULL && get_instance_status_proc() != DSS_STATUS_RECOVERY && dss_need_load_remote(size) == CM_TRUE &&
+        status != CM_SUCCESS) {
         if (size == (int32)sizeof(dss_ctrl_t)) {
             LOG_RUN_INF("Try to load dssctrl from remote.");
         }
@@ -1877,8 +1863,7 @@ status_t dss_read_volume_inst(
     if (dss_is_server()) {
         uint32 recover_thread_id = dss_get_recover_thread_id();
         uint32 curr_thread_id = dss_get_current_thread_id();
-        uint32 recover_status = dss_get_recover_status();
-        if (recover_status != DSS_STATUS_OPEN && recover_thread_id != curr_thread_id) {
+        if (get_instance_status_proc() == DSS_STATUS_RECOVERY && recover_thread_id != curr_thread_id) {
             DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
             LOG_RUN_INF("Read volume inst break by recovery");
             return CM_ERROR;

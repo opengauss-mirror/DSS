@@ -700,7 +700,7 @@ status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_ty
     CM_ASSERT(dir_path != NULL);
     status_t status = CM_ERROR;
     while (dss_is_server() && !dss_need_exec_local()) {
-        if (dss_get_recover_status() == DSS_STATUS_RECOVERY) {
+        if (get_instance_status_proc() == DSS_STATUS_RECOVERY) {
             DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
             LOG_RUN_INF("Check dir break by recovery");
             return CM_ERROR;
@@ -3797,7 +3797,7 @@ static status_t dss_refresh_file_ft_core(dss_session_t *session, dss_vg_info_ite
         }
         need_retry = dss_try_revalidate_file(session, vg_item, node);
         if (need_retry) {
-            if (dss_get_recover_status() == DSS_STATUS_RECOVERY) {
+            if (get_instance_status_proc() == DSS_STATUS_RECOVERY) {
                 DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
                 LOG_RUN_INF("Try revalidate file break by recovery");
                 return CM_ERROR;
@@ -4226,7 +4226,7 @@ static status_t dss_clean_node_tree(dss_session_t *session, dss_vg_info_item_t *
     if (dss_is_last_tree_node(parent_node) || ((parent_node->flags & DSS_FT_NODE_FLAG_SYSTEM) != 0)) {
         return CM_SUCCESS;
     }
-    if (!is_open_status_proc()) {
+    if (get_instance_status_proc() != DSS_STATUS_OPEN) {
         LOG_DEBUG_INF("[DELAY_CLEAN]Instance status is not open, exit the clean, wait next time.");
         return CM_SUCCESS;
     }
@@ -4262,7 +4262,7 @@ static status_t dss_clean_node_tree(dss_session_t *session, dss_vg_info_item_t *
             continue;
         }
         node = dss_get_next_node(session, vg_item, node);
-    } while (node != NULL && is_open_status_proc());
+    } while (node != NULL && get_instance_status_proc() == DSS_STATUS_OPEN);
     return CM_SUCCESS;
 }
 
