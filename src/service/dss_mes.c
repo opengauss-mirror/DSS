@@ -83,6 +83,28 @@ static inline mes_priority_t dss_get_cmd_pro_id(dss_mes_command_t cmd)
     return g_dss_processors[cmd].prio_id;
 }
 
+typedef void (*dss_remote_ack_proc)(dss_session_t *session, dss_remote_exec_succ_ack_t *remote_ack);
+typedef struct st_dss_remote_ack_hdl {
+    dss_remote_ack_proc proc;
+} dss_remote_ack_hdl_t;
+void dss_process_remote_ack_for_get_ftid_by_path(dss_session_t *session, dss_remote_exec_succ_ack_t *remote_ack)
+{
+    dss_find_node_t *ft_node = (dss_find_node_t *)(remote_ack->body_buf + sizeof(uint32));
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(ft_node->vg_name);
+    (void)dss_get_ft_node_by_ftid(session, vg_item, ft_node->ftid, CM_TRUE, CM_FALSE);
+}
+static dss_remote_ack_hdl_t g_dss_remote_ack_handle[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_FTID_BY_PATH)] = {dss_process_remote_ack_for_get_ftid_by_path},
+};
+
+static dss_remote_ack_hdl_t *dss_get_remote_ack_handle(int32 cmd)
+{
+    if (cmd >= DSS_CMD_BEGIN && cmd < DSS_CMD_END) {
+        return &g_dss_remote_ack_handle[DSS_CMD_TYPE_OFFSET(cmd)];
+    }
+    return NULL;
+}
+
 static void dss_init_mes_head(dss_message_head_t *head, uint32 cmd, uint32 flags, uint16 src_inst, uint16 dst_inst,
     uint32 size, uint32 version, ruid_type ruid)
 {
@@ -1014,6 +1036,10 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
         dss_remote_exec_succ_ack_t *succ_ack = (dss_remote_exec_succ_ack_t *)msg.buffer;
         LOG_DEBUG_INF("[MES] dss server receive msg from remote node, cmd:%u, ack to cli data size:%u.",
             session->recv_pack.head->cmd, body_size);
+        dss_remote_ack_hdl_t *handle = dss_get_remote_ack_handle(session->recv_pack.head->cmd);
+        if (handle != NULL) {
+            handle->proc(session, succ_ack);
+        }
         // do not parse the format
         ret = dss_put_data(&session->send_pack, succ_ack->body_buf, body_size);
     }
