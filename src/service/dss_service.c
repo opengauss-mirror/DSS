@@ -59,19 +59,23 @@ static uint32 dss_get_master_proto_ver(void)
     return master_proto_ver;
 }
 
-#define DSS_PROCESS_GET_MASTER_ID 50
-void dss_get_exec_nodeid(dss_session_t *session, uint32 *currid, uint32 *remoteid)
+status_t dss_get_exec_nodeid(dss_session_t *session, uint32 *currid, uint32 *remoteid)
 {
     dss_config_t *cfg = dss_get_inst_cfg();
     *currid = (uint32)(cfg->params.inst_id);
     *remoteid = dss_get_master_id();
     while (*remoteid == DSS_INVALID_ID32) {
-        cm_sleep(DSS_PROCESS_GET_MASTER_ID);
+        if (get_instance_status_proc() == DSS_STATUS_RECOVERY) {
+            DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
+            LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Master id is invalid.");
+            return CM_ERROR;
+        }
         *remoteid = dss_get_master_id();
+        cm_sleep(DSS_PROCESS_GET_MASTER_ID);
     }
     LOG_DEBUG_INF("Start processing remote requests(%d), remote node(%u),current node(%u).",
         (session->recv_pack.head == NULL) ? -1 : session->recv_pack.head->cmd, *remoteid, *currid);
-    return;
+    return CM_SUCCESS;
 }
 
 #define DSS_PROCESS_REMOTE_INTERVAL 50
@@ -80,7 +84,7 @@ static status_t dss_process_remote(dss_session_t *session)
     uint32 remoteid = DSS_INVALID_ID32;
     uint32 currid = DSS_INVALID_ID32;
     status_t ret = CM_ERROR;
-    dss_get_exec_nodeid(session, &currid, &remoteid);
+    DSS_RETURN_IF_ERROR(dss_get_exec_nodeid(session, &currid, &remoteid));
 
     LOG_DEBUG_INF("Start processing remote requests(%d), remote node(%u),current node(%u).",
         session->recv_pack.head->cmd, remoteid, currid);
@@ -101,7 +105,12 @@ static status_t dss_process_remote(dss_session_t *session)
                 return ret;
             }
             cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
-            dss_get_exec_nodeid(session, &currid, &remoteid);
+            DSS_RETURN_IF_ERROR(dss_get_exec_nodeid(session, &currid, &remoteid));
+            if (currid == remoteid) {
+                DSS_THROW_ERROR(ERR_DSS_MASTER_CHANGE);
+                LOG_RUN_INF("Req break if currid is equal to remoteid, just try again.");
+                return CM_ERROR;
+            }
             continue;
         }
         break;
@@ -942,13 +951,24 @@ static status_t dss_process_switch_lock(dss_session_t *session)
 */
 static status_t dss_process_remote_switch_lock(dss_session_t *session, uint32 curr_id, uint32 master_id)
 {
+    if (g_dss_instance.is_maintain) {
+        LOG_RUN_INF("maintain is no need to switch lock by other node.");
+        return CM_SUCCESS;
+    }
+    dss_instance_status_e old_status = g_dss_instance.status;
+    g_dss_instance.status = DSS_STATUS_SWITCH;
     uint32 current_proto_ver = dss_get_master_proto_ver();
     dss_init_set(&session->recv_pack, current_proto_ver);
     session->recv_pack.head->cmd = DSS_CMD_SWITCH_LOCK;
     session->recv_pack.head->flags = 0;
     LOG_DEBUG_INF("[SWITCH] Try to switch lock to %u by %u.", curr_id, master_id);
     (void)dss_put_int32(&session->recv_pack, curr_id);
-    return dss_process_remote(session);
+    status_t status = dss_process_remote(session);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[SWITCH] Failed to switch lock to %u by %u.", curr_id, master_id);
+        g_dss_instance.status = old_status;
+    }
+    return status;
 }
 
 static status_t dss_process_set_main_inst(dss_session_t *session)
@@ -973,20 +993,19 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
             return CM_ERROR;
         }
         if (!cm_latch_timed_x(&g_dss_instance.switch_latch, session->id, DSS_PROCESS_REMOTE_INTERVAL, LATCH_STAT(LATCH_SWITCH))) {
-            LOG_DEBUG_INF("[SWITCH] Spin switch lock timed out, just continue.");
+            LOG_RUN_INF("[SWITCH] Spin switch lock timed out, just continue.");
             continue;
         }
-        if (!g_dss_instance.is_maintain) {
-            dss_instance_status_e old_status = g_dss_instance.status;
-            g_dss_instance.status = DSS_STATUS_SWITCH;
-            status = dss_process_remote_switch_lock(session, curr_id, master_id);
-            if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("[SWITCH] Failed to switch lock to %u by %u.", curr_id, master_id);
-                g_dss_instance.status = old_status;
-                cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-                cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
-                continue;
+        status = dss_process_remote_switch_lock(session, curr_id, master_id);
+        if (status != CM_SUCCESS) {
+            cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
+            if (cm_get_error_code() == ERR_DSS_RECOVER_CAUSE_BREAK) {
+                session->recv_pack.head->cmd = DSS_CMD_SET_MAIN_INST;
+                LOG_RUN_INF("[SWITCH] Try set main break because master id is invalid.");
+                return CM_ERROR;
             }
+            cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
+            continue;
         }
         break;
     }
@@ -1209,8 +1228,9 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
             status = g_dss_remote_handle.proc(session);
         }
         dss_dec_active_sessions(session);
-        if (status != CM_SUCCESS && cm_get_error_code() == ERR_DSS_RECOVER_CAUSE_BREAK) {
-            LOG_RUN_INF("Req breaked by recovery for cmd:%u", session->recv_pack.head->cmd);
+        if (status != CM_SUCCESS && 
+            (cm_get_error_code() == ERR_DSS_RECOVER_CAUSE_BREAK || cm_get_error_code() == ERR_DSS_MASTER_CHANGE)) {
+            LOG_RUN_INF("Req breaked by error %d for cmd:%u", cm_get_error_code(), session->recv_pack.head->cmd);
             cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
             continue;
         }

@@ -45,7 +45,7 @@ typedef struct st_dss_cmd_hdl {
 status_t dss_signal_proc(void);
 status_t dss_signal_proc_with_graceful_exit(void);
 #endif
-
+#define DSS_PROCESS_GET_MASTER_ID 50
 static inline void dss_inc_active_sessions(dss_session_t *session)
 {
     if (session->recv_pack.head->cmd != DSS_CMD_SWITCH_LOCK &&
@@ -66,7 +66,7 @@ static inline void dss_dec_active_sessions(dss_session_t *session)
     }
 }
 
-void dss_get_exec_nodeid(dss_session_t *session, uint32 *currid, uint32 *remoteid);
+status_t dss_get_exec_nodeid(dss_session_t *session, uint32 *currid, uint32 *remoteid);
 void dss_wait_session_pause(dss_instance_t *inst);
 void dss_wait_background_pause(dss_instance_t *inst);
 void dss_set_session_running(dss_instance_t *inst);

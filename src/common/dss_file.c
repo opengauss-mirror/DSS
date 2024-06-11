@@ -3730,7 +3730,6 @@ bool32 dss_try_revalidate_file(dss_session_t *session, dss_vg_info_item_t *vg_it
         if (status != CM_SUCCESS) {
             LOG_RUN_ERR("Fail to apply refresh file:%s, curr size:%llu, ftid:%llu, entry id:%llu by session id:%u.",
                 node->name, node->size, DSS_ID_TO_U64(node->id), DSS_ID_TO_U64(node->entry), session->id);
-            cm_reset_error();
             return CM_TRUE;
         }
     }
@@ -3796,6 +3795,11 @@ static status_t dss_refresh_file_ft_core(dss_session_t *session, dss_vg_info_ite
         }
         need_retry = dss_try_revalidate_file(session, vg_item, node);
         if (need_retry) {
+            if (cm_get_error_code() == ERR_DSS_RECOVER_CAUSE_BREAK) {
+                LOG_RUN_INF("Try revalidate file break because recovery.");
+                return CM_ERROR;
+            }
+            cm_reset_error();
             if (get_instance_status_proc() == DSS_STATUS_RECOVERY) {
                 DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
                 LOG_RUN_INF("Try revalidate file break by recovery");

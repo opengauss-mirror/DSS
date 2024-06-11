@@ -94,6 +94,7 @@ uint32 dss_get_master_id()
 void dss_set_master_id(uint32 id)
 {
     g_master_instance_id = id;
+    LOG_RUN_INF("set master id is %u.", id);
 }
 
 void dss_set_server_flag(void)
