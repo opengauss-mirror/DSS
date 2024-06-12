@@ -912,7 +912,8 @@ static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 swi
         LOG_RUN_ERR("[SWITCH]Only with cm can switch lock.");
         return CM_ERROR;
     }
-    LOG_RUN_INF("[SWITCH]Old main server %u switch lock to new main server %u successfully.", curr_id, (uint32)switch_id);
+    LOG_RUN_INF(
+        "[SWITCH]Old main server %u switch lock to new main server %u successfully.", curr_id, (uint32)switch_id);
     return CM_SUCCESS;
 }
 
@@ -1025,10 +1026,14 @@ static status_t dss_process_disable_grab_lock_inner(dss_session_t *session, uint
             ret = cm_res_get_lock_owner(&g_dss_instance.cm_res.mgr, DSS_CM_LOCK, &lock_owner_id);
             if (lock_owner_id == curr_id) {
                 dss_set_server_status_flag(DSS_STATUS_READWRITE);
-                LOG_RUN_INF("[RELEASE LOCK]inst %u set status flag %u when failed to unlock and lock owner is no change.", curr_id, DSS_STATUS_READWRITE);
+                LOG_RUN_INF(
+                    "[RELEASE LOCK]inst %u set status flag %u when failed to unlock and lock owner is no change.",
+                    curr_id, DSS_STATUS_READWRITE);
             } else {
                 dss_set_master_id(DSS_INVALID_ID32);
-                LOG_RUN_INF("[RELEASE LOCK]inst %u set status flag %u when failed to unlock, cm_error is %d, lock_owner_id is %u.", curr_id, DSS_STATUS_READONLY, (int32)ret, lock_owner_id);
+                LOG_RUN_INF("[RELEASE LOCK]inst %u set status flag %u when failed to unlock, cm_error is %d, "
+                            "lock_owner_id is %u.",
+                    curr_id, DSS_STATUS_READONLY, (int32)ret, lock_owner_id);
             }
             dss_set_session_running(&g_dss_instance);
             LOG_RUN_ERR("[RELEASE LOCK] cm release lock failed from %u.", curr_id);
@@ -1049,8 +1054,8 @@ static status_t dss_process_disable_grab_lock(dss_session_t *session)
     uint32 curr_id = (uint32)(cfg->params.inst_id);
     uint32 master_id;
     status_t ret;
-    DSS_RETURN_IF_ERROR(
-        dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%u if it is master to disable grab lock", curr_id));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+        session->audit_info.resource, DSS_AUDIT_MODIFY, "%u if it is master to disable grab lock", curr_id));
     if (g_dss_instance.is_maintain || g_dss_instance.inst_cfg.params.inst_cnt <= 1) {
         LOG_RUN_ERR("[RELEASE LOCK]No need to disable grab lock when dssserver is maintain or just one inst.");
         return CM_ERROR;
@@ -1059,8 +1064,9 @@ static status_t dss_process_disable_grab_lock(dss_session_t *session)
         LOG_RUN_INF("[RELEASE LOCK]One session is releasing lock, just return.");
         return CM_ERROR;
     }
-    while(CM_TRUE) {
-        if (!cm_latch_timed_x(&g_dss_instance.switch_latch, session->id, DSS_PROCESS_REMOTE_INTERVAL, LATCH_STAT(LATCH_SWITCH))) {
+    while (CM_TRUE) {
+        if (!cm_latch_timed_x(
+                &g_dss_instance.switch_latch, session->id, DSS_PROCESS_REMOTE_INTERVAL, LATCH_STAT(LATCH_SWITCH))) {
             LOG_RUN_INF("[RELEASE LOCK] Spin switch lock timed out, just continue.");
             continue;
         }
@@ -1096,71 +1102,63 @@ static status_t dss_process_enable_grab_lock(dss_session_t *session)
     LOG_RUN_INF("Curr_id %u enable grab lock successfully.", curr_id);
     return CM_SUCCESS;
 }
-// clang-format off
-static dss_cmd_hdl_t g_dss_cmd_handle[] = {
+
+static dss_cmd_hdl_t g_dss_cmd_handle[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     // modify
-    { DSS_CMD_MKDIR, dss_process_mkdir, NULL, CM_TRUE },
-    { DSS_CMD_RMDIR, dss_process_rmdir, NULL, CM_TRUE },
-    { DSS_CMD_OPEN_DIR, dss_process_open_dir, NULL, CM_FALSE },
-    { DSS_CMD_CLOSE_DIR, dss_process_close_dir, NULL, CM_FALSE },
-    { DSS_CMD_OPEN_FILE, dss_process_open_file, NULL, CM_FALSE },
-    { DSS_CMD_CLOSE_FILE, dss_process_close_file, NULL, CM_FALSE },
-    { DSS_CMD_CREATE_FILE, dss_process_create_file, NULL, CM_TRUE },
-    { DSS_CMD_DELETE_FILE, dss_process_delete_file, NULL, CM_TRUE },
-    { DSS_CMD_EXTEND_FILE, dss_process_extending_file, NULL, CM_TRUE },
-    { DSS_CMD_ATTACH_FILE, NULL, NULL, CM_FALSE },
-    { DSS_CMD_DETACH_FILE, NULL, NULL, CM_FALSE },
-    { DSS_CMD_RENAME_FILE, dss_process_rename, NULL, CM_TRUE },
-    { DSS_CMD_REFRESH_FILE, dss_process_refresh_file, NULL, CM_FALSE },
-    { DSS_CMD_TRUNCATE_FILE, dss_process_truncate_file, NULL, CM_TRUE },
-    { DSS_CMD_REFRESH_FILE_TABLE, dss_process_refresh_file_table, NULL, CM_FALSE },
-    { DSS_CMD_CONSOLE, NULL, NULL, CM_FALSE },
-    { DSS_CMD_ADD_VOLUME, dss_process_add_volume, NULL, CM_TRUE },
-    { DSS_CMD_REMOVE_VOLUME, dss_process_remove_volume, NULL, CM_TRUE },
-    { DSS_CMD_REFRESH_VOLUME, dss_process_refresh_volume, NULL, CM_FALSE },
-    { DSS_CMD_LOAD_CTRL, dss_process_loadctrl, NULL, CM_FALSE },
-    { DSS_CMD_UPDATE_WRITTEN_SIZE, dss_process_update_file_written_size, NULL, CM_TRUE },
-    { DSS_CMD_STOP_SERVER, dss_process_stop_server, NULL, CM_FALSE },
-    { DSS_CMD_SETCFG, dss_process_setcfg, NULL, CM_FALSE },
-    { DSS_CMD_SYMLINK, dss_process_symlink, NULL, CM_TRUE },
-    { DSS_CMD_UNLINK, dss_process_unlink, NULL, CM_TRUE },
-    { DSS_CMD_SET_MAIN_INST, dss_process_set_main_inst, NULL, CM_FALSE },
-    { DSS_CMD_SWITCH_LOCK, dss_process_switch_lock, NULL, CM_FALSE },
-    { DSS_CMD_DISABLE_GRAB_LOCK, dss_process_disable_grab_lock, NULL, CM_FALSE },
-    { DSS_CMD_ENABLE_GRAB_LOCK, dss_process_enable_grab_lock, NULL, CM_FALSE },
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_MKDIR)] = {DSS_CMD_MKDIR, dss_process_mkdir, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_RMDIR)] = {DSS_CMD_RMDIR, dss_process_rmdir, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_OPEN_DIR)] = {DSS_CMD_OPEN_DIR, dss_process_open_dir, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_CLOSE_DIR)] = {DSS_CMD_CLOSE_DIR, dss_process_close_dir, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_OPEN_FILE)] = {DSS_CMD_OPEN_FILE, dss_process_open_file, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_CLOSE_FILE)] = {DSS_CMD_CLOSE_FILE, dss_process_close_file, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_CREATE_FILE)] = {DSS_CMD_CREATE_FILE, dss_process_create_file, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_DELETE_FILE)] = {DSS_CMD_DELETE_FILE, dss_process_delete_file, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXTEND_FILE)] = {DSS_CMD_EXTEND_FILE, dss_process_extending_file, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ATTACH_FILE)] = {DSS_CMD_ATTACH_FILE, NULL, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_DETACH_FILE)] = {DSS_CMD_DETACH_FILE, NULL, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_RENAME_FILE)] = {DSS_CMD_RENAME_FILE, dss_process_rename, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_REFRESH_FILE)] = {DSS_CMD_REFRESH_FILE, dss_process_refresh_file, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_TRUNCATE_FILE)] = {DSS_CMD_TRUNCATE_FILE, dss_process_truncate_file, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_REFRESH_FILE_TABLE)] = {DSS_CMD_REFRESH_FILE_TABLE, dss_process_refresh_file_table,
+        NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_FALLOCATE_FILE)] = {DSS_CMD_FALLOCATE_FILE, dss_process_fallocate_file, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ADD_VOLUME)] = {DSS_CMD_ADD_VOLUME, dss_process_add_volume, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_REMOVE_VOLUME)] = {DSS_CMD_REMOVE_VOLUME, dss_process_remove_volume, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_REFRESH_VOLUME)] = {DSS_CMD_REFRESH_VOLUME, dss_process_refresh_volume, NULL,
+        CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_LOAD_CTRL)] = {DSS_CMD_LOAD_CTRL, dss_process_loadctrl, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_UPDATE_WRITTEN_SIZE)] = {DSS_CMD_UPDATE_WRITTEN_SIZE,
+        dss_process_update_file_written_size, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_STOP_SERVER)] = {DSS_CMD_STOP_SERVER, dss_process_stop_server, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SETCFG)] = {DSS_CMD_SETCFG, dss_process_setcfg, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SYMLINK)] = {DSS_CMD_SYMLINK, dss_process_symlink, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_UNLINK)] = {DSS_CMD_UNLINK, dss_process_unlink, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SET_MAIN_INST)] = {DSS_CMD_SET_MAIN_INST, dss_process_set_main_inst, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SWITCH_LOCK)] = {DSS_CMD_SWITCH_LOCK, dss_process_switch_lock, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_DISABLE_GRAB_LOCK)] = {DSS_CMD_DISABLE_GRAB_LOCK, dss_process_disable_grab_lock, NULL,
+        CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ENABLE_GRAB_LOCK)] = {DSS_CMD_ENABLE_GRAB_LOCK, dss_process_enable_grab_lock, NULL,
+        CM_FALSE},
     // query
-    { DSS_CMD_HANDSHAKE, dss_process_handshake, NULL, CM_FALSE },
-    { DSS_CMD_EXIST, dss_process_exist, NULL, CM_FALSE },
-    { DSS_CMD_READLINK, dss_process_readlink, NULL, CM_FALSE },
-    { DSS_CMD_GET_FTID_BY_PATH, dss_process_get_ftid_by_path, NULL, CM_FALSE },
-    { DSS_CMD_GETCFG, dss_process_getcfg, NULL, CM_FALSE },
-    { DSS_CMD_GET_INST_STATUS, dss_process_get_inst_status, NULL, CM_FALSE },
-    { DSS_CMD_GET_TIME_STAT, dss_process_get_time_stat, NULL, CM_FALSE },
-    { DSS_CMD_FALLOCATE_FILE, dss_process_fallocate_file, NULL, CM_TRUE },
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_HANDSHAKE)] = {DSS_CMD_HANDSHAKE, dss_process_handshake, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST)] = {DSS_CMD_EXIST, dss_process_exist, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_READLINK)] = {DSS_CMD_READLINK, dss_process_readlink, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_FTID_BY_PATH)] = {DSS_CMD_GET_FTID_BY_PATH, dss_process_get_ftid_by_path, NULL,
+        CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GETCFG)] = {DSS_CMD_GETCFG, dss_process_getcfg, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_INST_STATUS)] = {DSS_CMD_GET_INST_STATUS, dss_process_get_inst_status, NULL,
+        CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_TIME_STAT)] = {DSS_CMD_GET_TIME_STAT, dss_process_get_time_stat, NULL, CM_FALSE},
 };
 
-dss_cmd_hdl_t g_dss_remote_handle = { DSS_CMD_EXEC_REMOTE, dss_process_remote, NULL, CM_FALSE };
-// clang-format on
+dss_cmd_hdl_t g_dss_remote_handle = {DSS_CMD_EXEC_REMOTE, dss_process_remote, NULL, CM_FALSE};
+
 static dss_cmd_hdl_t *dss_get_cmd_handle(int32 cmd, bool32 local_req)
 {
-    int32 mid_pos = 0;
-    int32 begin_pos = 0;
-    int32 end_pos = ARRAY_NUM(g_dss_cmd_handle) - 1;
-    dss_cmd_hdl_t *handle = NULL;
-    while (end_pos >= begin_pos) {
-        /* mid_pos is the average of begin_pos and end_pos */
-        mid_pos = (begin_pos + end_pos) / 2;
-        if (cmd == g_dss_cmd_handle[mid_pos].cmd) {
-            handle = &g_dss_cmd_handle[mid_pos];
-            break;
-        } else if (cmd < g_dss_cmd_handle[mid_pos].cmd) {
-            end_pos = mid_pos - 1;
-        } else {
-            begin_pos = mid_pos + 1;
-        }
+    if (cmd >= DSS_CMD_BEGIN && cmd < DSS_CMD_END) {
+        return &g_dss_cmd_handle[DSS_CMD_TYPE_OFFSET(cmd)];
     }
-
-    return handle;
+    return NULL;
 }
 
 static status_t dss_check_proto_version(dss_session_t *session)
@@ -1220,7 +1218,7 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
             continue;
         }
         break;
-    } while(CM_TRUE);
+    } while (CM_TRUE);
 
     session->audit_info.action = dss_get_cmd_desc(session->recv_pack.head->cmd);
 
