@@ -327,6 +327,7 @@ static inline void dss_latch_node_init(gft_node_t *node)
 static inline void dss_latch_s_node(dss_session_t *session, gft_node_t *node, latch_statis_t *stat)
 {
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_node(node);
+    DSS_ASSERT_LOG(block_ctrl != NULL, "block_ctrl is NULL when latch s node because node is root block");
     dss_latch_s2(&block_ctrl->latch, DSS_SESSIONID_IN_LOCK(session->id), CM_FALSE, stat);
 }
 

@@ -150,6 +150,7 @@ bool32 dss_syn_buffer_cache(dss_vg_info_item_t *vg_item)
             (void)cm_atomic_inc((atomic_t *)&block_ctrl->bg_task_ref_cnt);
         } else {
             onwer_block_ctrl = dss_get_block_ctrl_by_node((gft_node_t *)block_ctrl->node);
+            DSS_ASSERT_LOG(onwer_block_ctrl != NULL, "owner block ctrl is NULL because it is root block");
             (void)cm_atomic_inc((atomic_t *)&onwer_block_ctrl->bg_task_ref_cnt);
         }
 
