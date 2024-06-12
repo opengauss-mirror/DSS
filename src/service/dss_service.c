@@ -1144,7 +1144,7 @@ static dss_cmd_hdl_t g_dss_cmd_handle[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST)] = {DSS_CMD_EXIST, dss_process_exist, NULL, CM_FALSE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_READLINK)] = {DSS_CMD_READLINK, dss_process_readlink, NULL, CM_FALSE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_FTID_BY_PATH)] = {DSS_CMD_GET_FTID_BY_PATH, dss_process_get_ftid_by_path, NULL,
-        CM_FALSE},
+        CM_TRUE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GETCFG)] = {DSS_CMD_GETCFG, dss_process_getcfg, NULL, CM_FALSE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_INST_STATUS)] = {DSS_CMD_GET_INST_STATUS, dss_process_get_inst_status, NULL,
         CM_FALSE},
@@ -1153,7 +1153,7 @@ static dss_cmd_hdl_t g_dss_cmd_handle[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
 
 dss_cmd_hdl_t g_dss_remote_handle = {DSS_CMD_EXEC_REMOTE, dss_process_remote, NULL, CM_FALSE};
 
-static dss_cmd_hdl_t *dss_get_cmd_handle(int32 cmd, bool32 local_req)
+static dss_cmd_hdl_t *dss_get_cmd_handle(int32 cmd)
 {
     if (cmd >= DSS_CMD_BEGIN && cmd < DSS_CMD_END) {
         return &g_dss_cmd_handle[DSS_CMD_TYPE_OFFSET(cmd)];
@@ -1183,10 +1183,7 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
         "Receive command:%d, server status is %d.", session->recv_pack.head->cmd, (int32)g_dss_instance.status);
     // remote req need process for proto_version
     session->proto_version = dss_get_version(&session->recv_pack);
-    dss_cmd_hdl_t *handle = NULL;
-    if (session->recv_pack.head->cmd < DSS_CMD_END) {
-        handle = dss_get_cmd_handle(session->recv_pack.head->cmd, local_req);
-    }
+    dss_cmd_hdl_t *handle = dss_get_cmd_handle(session->recv_pack.head->cmd);
 
     if ((handle == NULL) || (handle->proc == NULL)) {
         LOG_DEBUG_ERR("the req cmd: %d is not valid.", session->recv_pack.head->cmd);
