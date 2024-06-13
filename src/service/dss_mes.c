@@ -97,7 +97,7 @@ static dss_remote_ack_hdl_t g_dss_remote_ack_handle[DSS_CMD_TYPE_OFFSET(DSS_CMD_
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_FTID_BY_PATH)] = {dss_process_remote_ack_for_get_ftid_by_path},
 };
 
-static dss_remote_ack_hdl_t *dss_get_remote_ack_handle(int32 cmd)
+static inline dss_remote_ack_hdl_t *dss_get_remote_ack_handle(int32 cmd)
 {
     if (cmd >= DSS_CMD_BEGIN && cmd < DSS_CMD_END) {
         return &g_dss_remote_ack_handle[DSS_CMD_TYPE_OFFSET(cmd)];

@@ -2152,7 +2152,7 @@ gft_node_t *dss_find_ft_node_core(
     for (uint32 i = 0; i < parent_node->items.count; i++) {
         if (dss_cmp_blockid(id, CM_INVALID_ID64)) {
             // may be find uncommitted node when standby
-            LOG_DEBUG_INF("Get invalid id in parent name:%s, %s, count:%u, when find node name:%s, index:%u.",
+            LOG_DEBUG_ERR("Get invalid id in parent name:%s, %s, count:%u, when find node name:%s, index:%u.",
                 parent_node->name, dss_display_metaid(parent_node->id), parent_node->items.count, name, i);
             return NULL;
         }
@@ -2162,7 +2162,6 @@ gft_node_t *dss_find_ft_node_core(
                 "Can not get node:%s, File name %s type:%u.", dss_display_metaid(id), name, parent_node->type);
             return NULL;
         }
-        LOG_DEBUG_INF("Current node name:%s, %s", node->name, dss_display_metaid(id));
         if (skip_del && (node->flags & DSS_FT_NODE_FLAG_DEL)) {
             id = node->next;
             LOG_DEBUG_INF("Skip del the node, next node:%s", dss_display_metaid(id));
@@ -2196,8 +2195,10 @@ gft_node_t *dss_find_ft_node(
         LOG_DEBUG_INF("File name %s, its parent's sub item count:%u.", name, parent_node->items.count);
         return NULL;
     }
-
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     gft_node_t *node = dss_find_ft_node_core(session, vg_item, parent_node, name, skip_del);
+    dss_session_end_stat(session, &begin_tv, DSS_FIND_FT_ON_SERVER);
     if (node != NULL) {
         return node;
     }

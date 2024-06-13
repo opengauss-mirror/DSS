@@ -37,6 +37,7 @@ const char *g_dss_stat_events[DSS_EVT_COUNT] = {
     [DSS_PWRITE_DISK] = "DSS Pwrite Disk",
     [DSS_FOPEN] = "DSS File Open",
     [DSS_STAT] = "DSS Stat",
+    [DSS_FIND_FT_ON_SERVER] = "Find File Node On Server",
 };
 
 const char *dss_get_stat_event(dss_wait_event_e event)
