@@ -231,7 +231,7 @@ void ga_destroy_global_area(void)
     (void)cm_del_shm(SHM_TYPE_FIXED, (uint32)SHM_ID_APP_GA);
 }
 
-static status_t ga_attach_pool(uint32 area_type, ga_pool_id_e id, uint32 attach_perm)
+static status_t ga_attach_pool(ga_pool_id_e id, uint32 attach_perm)
 {
     uint32 i, object_offset;
     char *area_addr;
@@ -279,7 +279,7 @@ status_t ga_attach_area(uint32 attach_perm)
     }
 
     for (i = 0; i < GA_APP_POOL_COUNT; i++) {
-        if (ga_attach_pool(GA_APP_AREA, (ga_pool_id_e)i, attach_perm) != CM_SUCCESS) {
+        if (ga_attach_pool((ga_pool_id_e)i, attach_perm) != CM_SUCCESS) {
             return CM_ERROR;
         }
     }
