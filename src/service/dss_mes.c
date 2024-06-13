@@ -1063,7 +1063,7 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
         return CM_ERROR;
     }
 
-    dss_get_exec_nodeid(session, &currid, &remoteid);
+    DSS_RETURN_IF_ERROR(dss_get_exec_nodeid(session, &currid, &remoteid));
     LOG_DEBUG_INF("[MES] Exec cmd:%u on remote node:%u begin.", (uint32)cmd, remoteid);
     do {
         uint32 proto_ver = dss_get_remote_proto_ver(remoteid);
@@ -1307,7 +1307,7 @@ static status_t dss_init_readvlm_remote_params(
     securec_check_ret(errcode);
     errcode = memcpy_s(req->vg_name, DSS_MAX_NAME_LEN, entry, DSS_MAX_NAME_LEN);
     securec_check_ret(errcode);
-    dss_get_exec_nodeid(session, currid, remoteid);
+    DSS_RETURN_IF_ERROR(dss_get_exec_nodeid(session, currid, remoteid));
     if (*currid == *remoteid) {
         LOG_DEBUG_ERR("read from current node %u no need to send message.", *currid);
         return CM_ERROR;
