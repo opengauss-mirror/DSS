@@ -436,7 +436,7 @@ typedef struct st_dss_check_dir_output_t {
 #define DSS_GET_FT_BLOCK_FROM_AU(au, block_id) ((dss_ft_block_t *)((char *)(au) + DSS_BLOCK_SIZE * (block_id)))
 #define DSS_GET_FT_BLOCK_NUM_IN_AU(dss_ctrl) ((dss_get_vg_au_size(dss_ctrl)) / DSS_BLOCK_SIZE)
 #define DSS_GET_FS_BLOCK_NUM_IN_AU(dss_ctrl) ((dss_get_vg_au_size(dss_ctrl)) / DSS_FILE_SPACE_BLOCK_SIZE)
-
+#define DSS_FILE_SPACE_BLOCK_BITMAP_COUNT (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(auid_t)
 typedef enum en_dss_block_flag {
     DSS_BLOCK_FLAG_RESERVE,
     DSS_BLOCK_FLAG_FREE,

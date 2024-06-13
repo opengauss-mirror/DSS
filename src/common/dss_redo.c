@@ -1308,7 +1308,6 @@ status_t rb_redo_set_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_
         NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
     if (block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
-        return CM_ERROR;
     }
 
     block->bitmap[data->index] = dss_invalid_auid;

@@ -391,7 +391,6 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
     inst->lock_fd = CM_INVALID_INT32;
     dss_set_server_flag();
     regist_get_instance_status_proc(dss_get_instance_status);
-    g_dss_instance_status = &inst->status;
     status = dss_set_cfg_dir(dss_args.dss_home, &inst->inst_cfg);
     DSS_RETURN_IFERR2(status, (void)printf("Environment variant DSS_HOME not found!\n"));
     status = dss_load_config(&inst->inst_cfg);
@@ -723,33 +722,10 @@ uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try
     return master_id;
 }
 
-bool32 dss_check_whether_recovery(dss_instance_t *inst, uint32 curr_id)
-{
-    uint32 lock_ownerid = dss_get_cm_lock_owner(inst, NULL, CM_FALSE);
-    if (lock_ownerid != curr_id) {
-        if (dss_is_readonly()) {
-            LOG_RUN_INF("inst %u is no need to do recovery for it has switched lock.", curr_id);
-            return CM_FALSE;
-        }
-        LOG_RUN_ERR("only masterid %u can be readwrite.", lock_ownerid);
-        cm_fync_logfile();
-        CM_ASSERT(0);
-    }
-    if (dss_is_readwrite()) {
-        LOG_RUN_INF("inst %u is no need to do recovery for it is to be set main.", curr_id);
-        return CM_FALSE;
-    }
-    return CM_TRUE;
-}
-
 void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab_lock)
 {
     bool32 first_start = CM_FALSE;
     if (!grab_lock) {
-        bool32 need_recovery = dss_check_whether_recovery(inst, curr_id);
-        if (!need_recovery) {
-            return;
-        }
         first_start = (inst->status == DSS_STATUS_PREPARE);
     }
     if (first_start) {

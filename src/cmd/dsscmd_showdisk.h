@@ -53,7 +53,6 @@ static inline void dss_init_show_param(dss_show_param_t *show_param)
 }
 
 #define DSS_MIN_BLOCK_INDEX_ID 0
-#define DSS_MAX_FS_BLOCK_INDEX_ID (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_t)) / sizeof(dss_block_id_t)
 #define DSS_MAX_FT_BLOCK_INDEX_ID (DSS_BLOCK_SIZE - sizeof(dss_ft_block_t)) / sizeof(gft_node_t)
 
 status_t dss_printf_core_ctrl(dss_vg_info_item_t *vg_item, dss_volume_t *volume);
