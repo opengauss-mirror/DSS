@@ -41,6 +41,7 @@ typedef enum en_dss_wait_event {
     DSS_PWRITE_DISK,
     DSS_FOPEN,
     DSS_STAT,
+    DSS_FIND_FT_ON_SERVER,
     DSS_EVT_COUNT,
 } dss_wait_event_e;
 
