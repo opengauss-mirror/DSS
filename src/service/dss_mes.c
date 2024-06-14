@@ -597,14 +597,11 @@ static status_t dss_register_proc(void)
     return CM_SUCCESS;
 }
 
+// buf_attr[pool_idx].count except not smaller than DSS_MSG_BUFFER_QUEUE_NUM
 #define DSS_MES_PRIO_CNT 2
 static status_t dss_set_mes_buffer_pool(unsigned long long recv_msg_buf_size, mes_profile_t *profile)
 {
     unsigned long long fourth_pool_total_size = DSS_FOURTH_BUFFER_LENGTH * DSS_MSG_BUFFER_QUEUE_NUM;
-    if (recv_msg_buf_size < fourth_pool_total_size) {
-        LOG_RUN_ERR("recv_msg_buf_size should be greater than fourth pool size");
-        return CM_ERROR;
-    }
     recv_msg_buf_size = recv_msg_buf_size - fourth_pool_total_size;
     uint32 pool_idx;
     for (uint32 i = 0; i < profile->priority_cnt; i++) {

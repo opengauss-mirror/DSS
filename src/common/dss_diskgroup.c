@@ -1864,7 +1864,8 @@ status_t dss_read_volume_inst(
     if (dss_is_server()) {
         uint32 recover_thread_id = dss_get_recover_thread_id();
         uint32 curr_thread_id = dss_get_current_thread_id();
-        if (get_instance_status_proc() == DSS_STATUS_RECOVERY && recover_thread_id != curr_thread_id) {
+        if (get_instance_status_proc() == DSS_STATUS_RECOVERY && recover_thread_id != curr_thread_id &&
+            vg_item->status == DSS_VG_STATUS_OPEN) {
             DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
             LOG_RUN_INF("Read volume inst break by recovery");
             return CM_ERROR;

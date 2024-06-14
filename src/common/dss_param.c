@@ -85,7 +85,7 @@ static config_item_t g_dss_params[] = {
       "GS_TYPE_INTEGER", NULL, 20, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
     { "WORK_THREAD_COUNT", CM_TRUE, CM_FALSE,     "2",         NULL, NULL, "-", "[2,64]",
         "GS_TYPE_INTEGER", NULL, 21, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
-    { "RECV_MSG_POOL_SIZE",            CM_TRUE, CM_FALSE,     "42M",       NULL, NULL, "-", "[1M,1G]",
+    { "RECV_MSG_POOL_SIZE",            CM_TRUE, CM_FALSE,     "42M",       NULL, NULL, "-", "[9M,1G]",
       "GS_TYPE_INTEGER", NULL, 22, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
     { "MES_ELAPSED_SWITCH",       CM_TRUE, CM_FALSE,     "FALSE",     NULL, NULL, "-", "FALSE,TRUE",
       "GS_TYPE_BOOLEAN", NULL, 23, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},

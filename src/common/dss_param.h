@@ -45,7 +45,7 @@ extern "C" {
 #define DSS_MES_MAX_WAIT_TIMEOUT 10000  // 10s
 #define DSS_MES_MIN_WAIT_TIMEOUT 500  // 500ms
 
-#define DSS_MIN_RECV_MSG_BUFF_SIZE (uint64) SIZE_M(1)
+#define DSS_MIN_RECV_MSG_BUFF_SIZE (uint64) SIZE_M(9)
 #define DSS_MAX_RECV_MSG_BUFF_SIZE (uint64) SIZE_G(1)
 
 typedef enum en_dss_mode {
