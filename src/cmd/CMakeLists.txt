@@ -1,6 +1,8 @@
 ## include
 include_directories(${DSS_CEPH_PATH})
 include_directories(${DSS_COMMON_PATH})
+include_directories(${DSS_LOG_PATH})
+include_directories(${DSS_PARAMS_PATH})
 include_directories(${DSS_COMMON_API_PATH})
 include_directories(${DSS_INTERFACE_PATH})
 
@@ -15,6 +17,8 @@ include_directories(${DSS_OPENSSL_PATH})
 include_directories(${DSS_CBB_PATH})
 
 aux_source_directory(${DSS_COMMON_PATH} COMMON_SRC)
+aux_source_directory(${DSS_LOG_PATH} LOG_SRC)
+aux_source_directory(${DSS_PARAMS_PATH} PARAMS_SRC)
 aux_source_directory(${DSS_COMMON_API_PATH} COMMON_API_SRC)
 aux_source_directory(${DSS_CMD_PATH} CMD_SRC)
 aux_source_directory(${DSS_CEPH_PATH} CEPH_SRC)
@@ -23,6 +27,8 @@ link_directories(${LIBRARY_OUTPUT_PATH} ${CBB_LIB_PATH})
 
 set(COMMON_ALL_SRC
         ${COMMON_SRC}
+        ${LOG_SRC}
+        ${PARAMS_SRC}
         ${COMMON_API_SRC}
         ${CMD_SRC}
         ${CEPH_SRC}
