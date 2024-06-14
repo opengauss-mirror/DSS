@@ -45,7 +45,7 @@ extern "C" {
 #define DSS_FILE_NAME_BUFFER_SIZE (uint32)256
 #define DSS_FILE_PATH_MAX_LENGTH (SIZE_K(1) + 1)
 #define DSS_FKEY_FILENAME "server.key.rand"
-
+#define DSS_MAX_AUDIT_PATH_LENGTH (SIZE_K(2) + 512)
 /* invalid id */
 #define DSS_INVALID_INT8 ((int8)(-1))
 #define DSS_INVALID_ID8 (uint8)0xFF
@@ -236,7 +236,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define CM_MAX_UDS_FILE_PERMISSIONS (uint16)777
 #define CM_DEF_UDS_FILE_PERMISSIONS (uint16)600
 
-#define DSS_MAX_PACKET_SIZE (uint32) SIZE_K(1)
+#define DSS_MAX_PACKET_SIZE (uint32)2136 /* sizeof(dss_packet_head_t) + CM_ALIGN4(DSS_FILE_PATH_MAX_LENGTH + 1) */
 #define DSS_MAX_PACKET_DATA_SIZE (((DSS_MAX_PACKET_SIZE) - sizeof(dss_packet_head_t)) - sizeof(uint32))
 
 #define DSS_PARAM_BUFFER_SIZE (uint32)1024
@@ -505,7 +505,7 @@ typedef struct st_dss_kernel_instance {
 
 typedef struct st_dss_audit_info {
     char *action;
-    char resource[DSS_FILE_PATH_MAX_LENGTH];
+    char resource[DSS_MAX_AUDIT_PATH_LENGTH];
 } dss_audit_info_t;
 
 extern dss_kernel_instance_t g_dss_kernel_instance;

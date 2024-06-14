@@ -233,7 +233,7 @@ static status_t dss_set_audit_resource(char *resource, uint32 audit_type, const 
     va_list args;
     va_start(args, format);
     int32 ret =
-        vsnprintf_s(resource, (size_t)DSS_FILE_PATH_MAX_LENGTH, (size_t)(DSS_FILE_PATH_MAX_LENGTH - 1), format, args);
+        vsnprintf_s(resource, (size_t)DSS_MAX_AUDIT_PATH_LENGTH, (size_t)(DSS_MAX_AUDIT_PATH_LENGTH - 1), format, args);
     DSS_SECUREC_SS_RETURN_IF_ERROR(ret, CM_ERROR);
     va_end(args);
     return CM_SUCCESS;
@@ -1220,7 +1220,7 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
             if (g_dss_instance.status != DSS_STATUS_OPEN && g_dss_instance.status != DSS_STATUS_PREPARE) {
                 LOG_RUN_INF("Req forbided by recovery for cmd:%u", (uint32)session->recv_pack.head->cmd);
                 dss_dec_active_sessions(session);
-                sleep(DSS_PROCESS_REMOTE_INTERVAL);
+                cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
                 continue;
             }
             status = handle->proc(session);
