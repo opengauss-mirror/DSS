@@ -3755,8 +3755,7 @@ status_t dss_truncate_inner(dss_session_t *session, uint64 fid, ftid_t ftid, int
     dss_init_dss_fs_block_cache_info(&block_ctrl->fs_block_cache_info);
 
     // need to truncate to smaller
-    status = dss_invalidate_fs_meta(session, vg_item, node);
-    if (status != CM_SUCCESS) {
+    if (dss_invalidate_fs_meta(session, vg_item, node) != CM_SUCCESS) {
         LOG_RUN_ERR("[DSS] Invalid file:%s in vg:%s fail.", node->name, vg_item->vg_name);
         dss_unlock_vg_mem_and_shm(session, vg_item);
         return CM_ERROR;
@@ -3783,8 +3782,7 @@ status_t dss_truncate_inner(dss_session_t *session, uint64 fid, ftid_t ftid, int
 
     /* Perform truncating file space blocks. */
     gft_node_t *trunc_ftn;
-    status = dss_init_trunc_ftn(session, vg_item, node, &trunc_ftn, align_length);
-    if (status != CM_SUCCESS) {
+    if (dss_init_trunc_ftn(session, vg_item, node, &trunc_ftn, align_length) != CM_SUCCESS) {
         dss_validate_fs_meta(session, vg_item, node);
         dss_unlock_vg_mem_and_shm(session, vg_item);
         return CM_ERROR;
@@ -3806,8 +3804,7 @@ status_t dss_truncate_inner(dss_session_t *session, uint64 fid, ftid_t ftid, int
     dss_build_truncated_ftn(session, vg_item, entry_block, dst_entry_fsb, block_count, au_trunc_idx);
     dss_truncate_set_sizes(session, vg_item, node, trunc_ftn, length);
 
-    status = dss_truncate_small_init_tail(session, vg_item, node);
-    if (status != CM_SUCCESS) {
+    if (dss_truncate_small_init_tail(session, vg_item, node) != CM_SUCCESS) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
         LOG_RUN_ERR("[DSS] ABORT INFO:truncate small init tail failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
@@ -3816,8 +3813,7 @@ status_t dss_truncate_inner(dss_session_t *session, uint64 fid, ftid_t ftid, int
     }
 
     /* Truncating file space block completed. */
-    status = dss_process_redo_log(session, vg_item);
-    if (status != CM_SUCCESS) {
+    if (dss_process_redo_log(session, vg_item) != CM_SUCCESS) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
