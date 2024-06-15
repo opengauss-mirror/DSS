@@ -655,12 +655,8 @@ status_t dss_init_vol_handle_sync(dss_conn_t *conn)
 status_t dss_set_session_id(dss_conn_t *conn, uint32 sid)
 {
     dss_env_t *dss_env = dss_get_env();
-    uint32 max_cfg_sess = dss_env->inst_cfg.params.cfg_session_num;
-    if (dss_env->inst_cfg.params.inst_cnt > 1) {
-        max_cfg_sess += dss_env->inst_cfg.params.channel_num + dss_env->inst_cfg.params.work_thread_cnt;
-    }
 
-    if (sid >= max_cfg_sess) {
+    if (sid >= dss_get_max_total_session_cnt()) {
         LOG_DEBUG_ERR("sid error");
         return ERR_DSS_SESSION_INVALID_ID;
     }

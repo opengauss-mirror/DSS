@@ -171,6 +171,7 @@ void dss_lock_shm_meta_bucket_x(dss_shared_latch_t *shared_latch);
 void dss_unlock_shm_meta_bucket(dss_session_t *session, dss_shared_latch_t *shared_latch);
 void dss_clean_session_latch(dss_session_t *session, bool32 is_daemon);
 uint32 dss_get_udssession_startid(void);
+uint32 dss_get_max_total_session_cnt(void);
 uint32 dss_get_delay_clean_task_idx(void);
 bool32 dss_lock_shm_meta_timed_x(const dss_session_t *session, dss_shared_latch_t *shared_latch, uint32 wait_ticks);
 typedef uint32 (*dss_get_bg_task_idx_func_t)(uint32 idx);
