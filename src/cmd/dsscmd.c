@@ -80,7 +80,6 @@ typedef enum en_dss_help_type {
 // cmd format : cmd subcmd [-f val]
 #define CMD_ARGS_AT_LEAST 2
 #define CMD_COMMAND_INJECTION_COUNT 22
-#define DSS_MAX_PATH_SIZE 1003
 #define DSS_DEFAULT_MEASURE "B"
 #define DSS_SUBSTR_UDS_PATH "UDS:"
 #define DSS_DEFAULT_VG_TYPE 't' /* show vg information in table format by default */
@@ -1510,11 +1509,6 @@ static status_t ls_get_parameter(
     const char **path, const char **measure, char *server_locator, uint32 *show_min_inited_size)
 {
     *path = cmd_ls_args[DSS_CMD_LS_PATH_IDX].input_args;
-    if (strlen(*path) > DSS_MAX_PATH_SIZE) {
-        DSS_PRINT_ERROR("The path length exceeds the maximum %d\n", DSS_MAX_PATH_SIZE);
-        return CM_ERROR;
-    }
-
     *measure = cmd_ls_args[DSS_CMD_LS_MEASURE_IDX].input_args != NULL ? cmd_ls_args[DSS_CMD_LS_MEASURE_IDX].input_args :
                                                                         DSS_DEFAULT_MEASURE;
     status_t status = get_server_locator(cmd_ls_args[DSS_CMD_LS_UDS_IDX].input_args, server_locator);
@@ -4465,7 +4459,7 @@ static status_t dss_cmd_append_oper_log(char *log_buf, void *buf, uint32 *offset
     uint32 len = (uint32)strlen(buf);
     errno_t errcode = memcpy_s(log_buf + *offset, CM_MAX_LOG_CONTENT_LENGTH - *offset, buf, len);
     if (errcode != EOK) {
-        DSS_PRINT_ERROR("Copying buf to log_buf failed.\n");
+        LOG_RUN_ERR("Copying buf to log_buf failed.\n");
         return CM_ERROR;
     }
     *offset += len;

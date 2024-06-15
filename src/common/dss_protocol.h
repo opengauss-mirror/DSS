@@ -136,8 +136,9 @@ static inline status_t dss_put_str(dss_packet_t *pack, const char *str)
     CM_ASSERT(str != NULL);
     size = (uint32)strlen(str);
     addr = DSS_WRITE_ADDR(pack);
-    if (size >= DSS_REMAIN_SIZE(pack)) {
-        CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, size, DSS_REMAIN_SIZE(pack) - 1);
+    uint32 estimated_size = pack->head->size + CM_ALIGN4(size + 1);
+    if (estimated_size > pack->buf_size) {
+        CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, estimated_size, pack->buf_size);
         return CM_ERROR;
     }
     if (size != 0) {
@@ -145,7 +146,7 @@ static inline status_t dss_put_str(dss_packet_t *pack, const char *str)
         DSS_SECUREC_RETURN_IF_ERROR(errcode, CM_ERROR);
     }
     DSS_WRITE_ADDR(pack)[size] = '\0';
-    pack->head->size += CM_ALIGN4(size + 1);
+    pack->head->size = estimated_size;
 
     return CM_SUCCESS;
 }
