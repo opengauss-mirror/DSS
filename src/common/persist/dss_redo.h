@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/dss_redo.h
+ *    src/common/persist/dss_redo.h
  *
  * -------------------------------------------------------------------------
  */
@@ -34,6 +34,9 @@ extern "C" {
 #endif
 
 #define DSS_LOG_OFFSET OFFSET_OF(dss_ctrl_t, log_buf)
+
+#pragma pack(8)
+
 typedef enum en_dss_redo_type {
     // dss_ctrl
     DSS_RT_UPDATE_CORE_CTRL = 0,  // start with 0, step 1, type id as index of handler array
@@ -231,6 +234,7 @@ typedef struct st_dss_redo_batch {
     char reverse[4];
     char data[0];
 } dss_redo_batch_t;
+#pragma pack()
 
 // todo: deleteredo log begin in disk
 static inline uint64 dss_get_redo_log_v0_start(dss_ctrl_t *dss_ctrl, uint32 vg_id)

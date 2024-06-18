@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/dss_block_ctrl.h
+ *    src/common/persist/dss_block_ctrl.h
  *
  * -------------------------------------------------------------------------
  */
@@ -41,6 +41,7 @@ typedef enum en_dss_block_type {
     DSS_BLOCK_TYPE_MAX,  // should be the end
 } dss_block_type_t;
 
+#pragma pack(8)
 typedef struct st_dss_fs_block_cache_info {
     char *entry_block_addr;
     char *fs_block_addr;
@@ -86,6 +87,7 @@ typedef struct st_dss_block_ctrl_task_desc_t {
     latch_t latch;
     bilist_t bilist;
 } dss_block_ctrl_task_desc_t;
+#pragma pack()
 
 #ifdef __cplusplus
 }

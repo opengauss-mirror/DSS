@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/dss_redo.c
+ *    src/common/persist/dss_redo.c
  *
  * -------------------------------------------------------------------------
  */
