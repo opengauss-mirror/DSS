@@ -194,7 +194,9 @@ status_t dss_fallocate_impl(dss_conn_t *conn, int handle, int mode, long long in
         }                                                                          \
     } while (0)
 
-#define DSS_UNLOCK_VG_META_S(vg_item, session) dss_unlock_shm_meta_with_stack((session), (vg_item)->vg_latch)
+#define DSS_UNLOCK_VG_META_S(vg_item, session) \
+    (void)dss_unlock_shm_meta_s_with_stack((session), (vg_item)->vg_latch, CM_FALSE)
+
 #ifdef __cplusplus
 }
 #endif

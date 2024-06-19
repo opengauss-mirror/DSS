@@ -293,10 +293,10 @@ void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_it
 
 void dss_unlock_vg_mem_and_shm(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-    if (dss_is_server() || session == NULL) {
+    if (dss_is_server()) {
         dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);
     } else {
-        dss_unlock_shm_meta_with_stack(NULL, vg_item->vg_latch);
+        (void)dss_unlock_shm_meta_s_with_stack(session, vg_item->vg_latch, CM_FALSE);
     }
     dss_unlock_vg_mem(vg_item);
 }
@@ -1898,8 +1898,7 @@ status_t dss_alloc_ft_node_when_create_vg(
             LOG_RUN_ERR("[FT][ALLOC] Failed to allocate au when allocating file table node.");
             return status;
         }
-        LOG_RUN_INF(
-            "[FT][ALLOC] Succeed to allocate au:%s when allocating file table node.", dss_display_metaid(id));
+        LOG_RUN_INF("[FT][ALLOC] Succeed to allocate au:%s when allocating file table node.", dss_display_metaid(id));
     }
 
     id = gft->free_list.first;
@@ -2897,7 +2896,7 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
             redo.old_value = old_id;
             redo.value = second_block->head.common.id;
             redo.old_used_num = old_used_num;
-            redo.used_num = entry_block->head.used_num;    
+            redo.used_num = entry_block->head.used_num;
             dss_put_log(session, vg_item, DSS_RT_SET_FILE_FS_BLOCK, &redo, sizeof(redo));
         } else {
             need_get_second = CM_TRUE;
@@ -3973,7 +3972,7 @@ status_t dss_refresh_ft_block(dss_session_t *session, char *vg_name, uint32 vgid
 
     status_t status = dss_refresh_file_ft_core(session, vg_item, DSS_INVALID_64, blockid, CM_FALSE, &node);
     DSS_RETURN_IFERR3(status, dss_unlock_vg_mem_and_shm(session, vg_item),
-            LOG_DEBUG_ERR("Failed to refresh file ft core for ftid:%s.", dss_display_metaid(blockid)));
+        LOG_DEBUG_ERR("Failed to refresh file ft core for ftid:%s.", dss_display_metaid(blockid)));
     if (node == NULL) {
         DSS_RETURN_IFERR3(CM_ERROR, dss_unlock_vg_mem_and_shm(session, vg_item),
             LOG_DEBUG_ERR("Failed to find ftid,ftid:%s.", dss_display_metaid(blockid)));

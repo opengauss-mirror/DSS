@@ -543,22 +543,14 @@ bool32 dss_unlock_shm_meta_s_with_stack(dss_session_t *session, dss_shared_latch
     return CM_TRUE;
 }
 
-void dss_unlock_shm_meta_with_stack(dss_session_t *session, dss_shared_latch_t *shared_latch)
-{
-    if (shared_latch->latch.stat == LATCH_STATUS_S || shared_latch->latch.stat == LATCH_STATUS_IX) {
-        (void)dss_unlock_shm_meta_s_with_stack(session, shared_latch, CM_FALSE);
-        return;
-    }
-    dss_unlock_shm_meta_x(session, shared_latch);
-}
-
 void dss_unlock_shm_meta_bucket(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
-    if (dss_is_server() || session == NULL) {
+    if (dss_is_server()) {
         dss_unlock_shm_meta_without_stack(session, shared_latch);
         return;
+    } else {
+        (void)dss_unlock_shm_meta_s_with_stack(session, shared_latch, CM_FALSE);
     }
-    dss_unlock_shm_meta_with_stack(session, shared_latch);
 }
 
 static void dss_clean_latch_s_without_bak(dss_session_t *session, dss_shared_latch_t *shared_latch)
