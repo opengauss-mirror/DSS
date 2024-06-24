@@ -1535,7 +1535,7 @@ static void dss_read_write_check_need_updt_fs_aux(
     gft_node_t *node = context->node;
 
     // try to avoid too much update for fs_aux info
-    if (DSS_IS_FILE_INNER_INITED(node->flags) && !param->is_read && !need_updt_fs_aux && fs_pos->fs_aux != NULL &&
+    if (DSS_IS_FILE_INNER_INITED(node->flags) && !param->is_read && !(*need_updt_fs_aux) && fs_pos->fs_aux != NULL &&
         (uint64)(rw_ctx->offset + real_size) > node->min_inited_size) {
         dss_api_check_need_updt_fs_aux(context, rw_ctx, fs_pos, real_size, need_updt_fs_aux);
     }
