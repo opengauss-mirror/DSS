@@ -445,6 +445,19 @@ int dss_get_inst_status(dss_server_status_t *dss_status)
     return (int)dss_get_inst_status_on_server(conn, dss_status);
 }
 
+int dss_is_maintain(unsigned int *is_maintain)
+{
+    if (is_maintain == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "expected is_maintain not a null pointer");
+        return CM_ERROR;
+    }
+    dss_server_status_t dss_status = {0};
+    status_t ret = dss_get_inst_status(&dss_status);
+    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get error when get inst status"));
+    *is_maintain = dss_status.is_maintain;
+    return CM_SUCCESS;
+}
+
 int dss_set_main_inst(void)
 {
     dss_conn_t *conn = NULL;

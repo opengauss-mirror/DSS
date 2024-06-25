@@ -109,6 +109,7 @@ typedef struct st_dss_server_status_t {
     char server_status[DSS_MAX_STATUS_LEN];
     unsigned int local_instance_id;
     unsigned int master_id;
+    unsigned int is_maintain;
 } dss_server_status_t;
 
 typedef struct st_dss_stat {
@@ -195,6 +196,7 @@ DSS_DECLARE int dss_set_main_inst(void);
 DSS_DECLARE int dss_disable_grab_lock(void);
 DSS_DECLARE int dss_enable_grab_lock(void);
 DSS_DECLARE int dss_get_inst_status(dss_server_status_t *dss_status);
+DSS_DECLARE int dss_is_maintain(unsigned int *is_maintain);
 
 DSS_DECLARE int dss_stat(const char *path, dss_stat_info_t item);
 DSS_DECLARE int dss_lstat(const char *path, dss_stat_info_t item);
