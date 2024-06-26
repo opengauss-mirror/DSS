@@ -44,6 +44,19 @@ ga_pool_t g_app_pools[GA_APP_POOL_COUNT] = {
     {"fs aux",     NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                 /* fs aux */
 };
 
+ga_pool_t g_app_pools_initial[GA_APP_POOL_COUNT] = {
+    {"ctrl",   NULL, NULL, NULL, NULL, {NULL}, {1, GA_INSTANCE_POOL_SIZE, 0}, 0, 0}, /* ctrl pool */
+    {"sesseion",   NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                 /* inst pool */
+    {"meta 8k",      NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                  /* 8k pool */
+    {"meta 16k",     NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                 /* 16k pool */
+    {"fs aux",     NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                 /* fs aux */
+};
+
+void ga_reset_app_pools()
+{
+    (void)memcpy_s(g_app_pools, sizeof(g_app_pools), g_app_pools_initial, sizeof(g_app_pools_initial));
+}
+
 // clang-format on
 static inline ga_pool_t *ga_get_pool(uint32 id)
 {

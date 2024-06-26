@@ -52,6 +52,7 @@
 #include "dsscmd_du.h"
 #include "dsscmd_find.h"
 #include "dsscmd_encrypt.h"
+#include "dsscmd_interactive.h"
 #ifndef WIN32
 #include "config.h"
 #endif
@@ -60,25 +61,7 @@
 #define DEF_DSS_VERSION "Windows does not support this feature because it is built using vs."
 #endif
 
-#define DSS_ARG_IDX_0 0
-#define DSS_ARG_IDX_1 1
-#define DSS_ARG_IDX_2 2
-#define DSS_ARG_IDX_3 3
-#define DSS_ARG_IDX_4 4
-#define DSS_ARG_IDX_5 5
-#define DSS_ARG_IDX_6 6
-#define DSS_ARG_IDX_7 7
-#define DSS_ARG_IDX_8 8
-#define DSS_ARG_IDX_9 9
-#define DSS_ARG_IDX_10 10
-
-typedef enum en_dss_help_type {
-    DSS_HELP_DETAIL = 0,
-    DSS_HELP_SIMPLE,
-} dss_help_type;
-
 // cmd format : cmd subcmd [-f val]
-#define CMD_ARGS_AT_LEAST 2
 #define CMD_COMMAND_INJECTION_COUNT 22
 #define DSS_DEFAULT_MEASURE "B"
 #define DSS_SUBSTR_UDS_PATH "UDS:"
@@ -148,7 +131,6 @@ typedef struct st_dss_args_set_t {
     cmd_parse_check_t args_check;
 } dss_args_set_t;
 
-typedef void (*dss_admin_help)(const char *prog_name, int print_flag);
 typedef status_t (*dss_admin_cmd_proc)(void);
 typedef struct st_dss_admin_cmd_t {
     char cmd[CM_MAX_NAME_LEN];
@@ -368,7 +350,7 @@ static status_t cmd_check_convert_uds_home(const char *input_args, void **conver
 void cmd_clean_check_convert(char *convert_result, int convert_size)
 {
     if (convert_result != NULL) {
-        free(convert_result);
+        CM_FREE_PTR(convert_result);
     }
 }
 
@@ -739,7 +721,7 @@ static status_t cmd_parse_long_name_args(int argc, char **argv, int *argc_idx, d
 static status_t cmd_parse_args(int argc, char **argv, dss_args_set_t *args_set)
 {
     if (argc < CMD_ARGS_AT_LEAST || (args_set->args_size == 0 && argc > CMD_ARGS_AT_LEAST)) {
-        DSS_PRINT_ERROR("args num %d error.\n", argc);
+        DSS_PRINT_ERROR("args num %d error.\n", g_run_interatively ? argc - 1 : argc);
         return CM_ERROR;
     }
     // allow the cmd needs no args
@@ -842,7 +824,7 @@ static status_t cv_proc(void)
     return CM_SUCCESS;
 }
 
-static status_t dss_uds_get_connection(const char *server_locator, dss_conn_t *conn)
+status_t dss_uds_get_connection(const char *server_locator, dss_conn_t *conn)
 {
     status_t status;
     if (strlen(server_locator) <= strlen(DSS_SUBSTR_UDS_PATH)) {
@@ -1017,6 +999,10 @@ double dss_convert_size(double size, const char *measure)
     return result;
 }
 
+static void cmd_print_no_path_err() {
+    DSS_PRINT_ERROR("Need to input arg [-p|--path] or cd to a path.\n");
+}
+
 static void lsvg_printf_vlm_info(vg_vlm_space_info_t *vg_vlm_info, const char *measure, bool32 detail)
 {
     if (detail) {
@@ -1134,7 +1120,7 @@ static status_t lsvg_info(dss_conn_t *connection, const char *measure, bool32 de
     return CM_SUCCESS;
 }
 
-static status_t get_server_locator(char *input_args, char *server_locator)
+status_t get_server_locator(char *input_args, char *server_locator)
 {
     if (input_args != NULL) {
         errno_t errcode = strcpy_s(server_locator, DSS_MAX_PATH_BUFFER_SIZE, input_args);
@@ -1324,7 +1310,8 @@ static status_t adv_proc(void)
 }
 
 static dss_args_t cmd_mkdir_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'d', "dir_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -1337,12 +1324,20 @@ static dss_args_set_t cmd_mkdir_args_set = {
 
 static void mkdir_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s mkdir <-p path> <-d dir_name> [-U UDS:socket_domain]\n", prog_name);
+    if (g_run_interatively) {
+        (void)printf("\nUsage:%s mkdir <-d dir_name> [-p path] [-U UDS:socket_domain]\n", prog_name);
+    } else {
+        (void)printf("\nUsage:%s mkdir <-p path> <-d dir_name> [-U UDS:socket_domain]\n", prog_name);
+    }
     (void)printf("[client command]make dir\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
-    (void)printf("-p/--path <path>, <required>, the name need to add dir\n");
+    if (g_run_interatively) {
+        (void)printf("-p/--path <path>, [optional], the name need to add dir\n");
+    } else {
+        (void)printf("-p/--path <path>, <required>, the name need to add dir\n");
+    }
     (void)printf("-d/--dir_name <dir_name>, <required>, the dir name need to be added to path\n");
     help_param_uds();
 }
@@ -1350,6 +1345,17 @@ static void mkdir_help(const char *prog_name, int print_flag)
 static status_t mkdir_proc(void)
 {
     const char *path = cmd_mkdir_args[DSS_ARG_IDX_0].input_args;
+    if (cmd_mkdir_args[DSS_ARG_IDX_0].convert_result != NULL) {
+        path = cmd_mkdir_args[DSS_ARG_IDX_0].convert_result;
+    }
+    if (path == NULL) {
+        if (g_cur_path[0] == '\0') {
+            cmd_print_no_path_err();
+            return CM_ERROR;
+        }
+        path = g_cur_path;
+    }
+
     const char *dir_name = cmd_mkdir_args[DSS_ARG_IDX_1].input_args;
     dss_conn_t connection;
     status_t status = get_connection_by_input_args(cmd_mkdir_args[DSS_ARG_IDX_2].input_args, &connection);
@@ -1372,7 +1378,8 @@ static status_t mkdir_proc(void)
 #define DSS_CMD_TOUCH_ARGS_UDS 1
 #define DSS_CMD_TOUCH_ARGS_FLAG 2
 static dss_args_t cmd_touch_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
     {'f', "flag", CM_FALSE, CM_TRUE, cmd_check_flag, NULL, NULL, 0, NULL, NULL, 0}
@@ -1390,7 +1397,11 @@ static void touch_help(const char *prog_name, int print_flag)
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
-    (void)printf("-p/--path <path>, <required>, file need to touch, path must begin with '+'\n");
+    if (g_run_interatively) {
+        (void)printf("-p/--path <path>, <required>, file need to touch\n");
+    } else {
+        (void)printf("-p/--path <path>, <required>, file need to touch, path must begin with '+'\n");
+    }
     (void)printf("-f/--flag <flag>, [optional], file flag need to set\n");
     help_param_uds();
 }
@@ -1398,6 +1409,10 @@ static void touch_help(const char *prog_name, int print_flag)
 static status_t touch_proc(void)
 {
     const char *path = cmd_touch_args[DSS_CMD_TOUCH_ARGS_PATH].input_args;
+    if (cmd_touch_args[DSS_CMD_TOUCH_ARGS_PATH].convert_result != NULL) {
+        path = cmd_touch_args[DSS_CMD_TOUCH_ARGS_PATH].convert_result;
+    }
+
     dss_conn_t connection;
     status_t status = get_connection_by_input_args(cmd_touch_args[DSS_CMD_TOUCH_ARGS_UDS].input_args, &connection);
     if (status != CM_SUCCESS) {
@@ -1480,7 +1495,8 @@ static status_t ts_proc(void)
 #define DSS_CMD_LS_MIN_INITED_SIZE 3
 
 static dss_args_t cmd_ls_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'m', "measure_type", CM_FALSE, CM_TRUE, cmd_check_measure_type, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -1495,12 +1511,20 @@ static dss_args_set_t cmd_ls_args_set = {
 
 static void ls_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s ls <-p path> [-m measure_type] [-w min_inited_size] [-U UDS:socket_domain]\n", prog_name);
+    if (g_run_interatively) {
+        (void)printf("\nUsage:%s ls [-p path] [-m measure_type] [-w min_inited_size] [-U UDS:socket_domain]\n", prog_name);
+    } else {
+        (void)printf("\nUsage:%s ls <-p path> [-m measure_type] [-w min_inited_size] [-U UDS:socket_domain]\n", prog_name);
+    }
     (void)printf("[client command]Show information of volume group and disk usage space\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
-    (void)printf("-p/--path <path>, <required>, show information for it\n");
+    if (g_run_interatively) {
+        (void)printf("-p/--path <path>, [optional], show information for it\n");
+    } else {
+        (void)printf("-p/--path <path>, <required>, show information for it\n");
+    }
     (void)printf("-m/--measure_type <measure_type>, [optional], B show size by Byte, K show size by kB ,"
                  "M show size by MB ,G show size by GB,  T show size by TB, default show size by Byte\n");
     (void)printf("-w/ --min_inited_size <min_inited_size>, [optional], "
@@ -1512,6 +1536,17 @@ static status_t ls_get_parameter(
     const char **path, const char **measure, char *server_locator, uint32 *show_min_inited_size)
 {
     *path = cmd_ls_args[DSS_CMD_LS_PATH_IDX].input_args;
+    if (cmd_ls_args[DSS_CMD_LS_PATH_IDX].convert_result != NULL) {
+        *path = cmd_ls_args[DSS_CMD_LS_PATH_IDX].convert_result;
+    }
+    if (*path == NULL) {
+        if (g_cur_path[0] == '\0') {
+            cmd_print_no_path_err();
+            return CM_ERROR;
+        }
+        *path = g_cur_path;
+    }
+
     *measure = cmd_ls_args[DSS_CMD_LS_MEASURE_IDX].input_args != NULL ? cmd_ls_args[DSS_CMD_LS_MEASURE_IDX].input_args :
                                                                         DSS_DEFAULT_MEASURE;
     status_t status = get_server_locator(cmd_ls_args[DSS_CMD_LS_UDS_IDX].input_args, server_locator);
@@ -1728,7 +1763,8 @@ static status_t cp_proc(void)
 }
 
 static dss_args_t cmd_rm_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -1745,13 +1781,21 @@ static void rm_help(const char *prog_name, int print_flag)
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
-    (void)printf("-p/--path <path>, <required>, device path, must begin with '+'\n");
+    if (g_run_interatively) {
+        (void)printf("-p/--path <path>, <required>, device path\n");
+    } else {
+        (void)printf("-p/--path <path>, <required>, device path, must begin with '+'\n");
+    }
     help_param_uds();
 }
 
 static status_t rm_proc(void)
 {
     const char *path = cmd_rm_args[DSS_ARG_IDX_0].input_args;
+    if (cmd_rm_args[DSS_ARG_IDX_0].convert_result != NULL) {
+        path = cmd_rm_args[DSS_ARG_IDX_0].convert_result;
+    }
+
     dss_conn_t connection;
     status_t status = get_connection_by_input_args(cmd_rm_args[DSS_ARG_IDX_1].input_args, &connection);
     if (status != CM_SUCCESS) {
@@ -1831,7 +1875,8 @@ static status_t rmv_proc(void)
 }
 
 static dss_args_t cmd_rmdir_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'r', "recursive", CM_FALSE, CM_FALSE, NULL, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -1857,6 +1902,10 @@ static void rmdir_help(const char *prog_name, int print_flag)
 static status_t rmdir_proc(void)
 {
     const char *path = cmd_rmdir_args[DSS_ARG_IDX_0].input_args;
+    if (cmd_rmdir_args[DSS_ARG_IDX_0].convert_result != NULL) {
+        path = cmd_rmdir_args[DSS_ARG_IDX_0].convert_result;
+    }
+
     bool32 recursive = cmd_rmdir_args[DSS_ARG_IDX_1].inputed ? CM_TRUE : CM_FALSE;
     dss_conn_t connection;
     status_t status = get_connection_by_input_args(cmd_rmdir_args[DSS_ARG_IDX_2].input_args, &connection);
@@ -2155,7 +2204,8 @@ static status_t auid_proc(void)
 #define DSS_PRINT_FMT_NUM 6
 
 static dss_args_t cmd_examine_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'o', "offset", CM_TRUE, CM_TRUE, cmd_check_offset, NULL, NULL, 0, NULL, NULL, 0},
     {'f', "format", CM_TRUE, CM_TRUE, cmd_check_format, NULL, NULL, 0, NULL, NULL, 0},
     {'s', "read_size", CM_FALSE, CM_TRUE, cmd_check_read_size, NULL, NULL, 0, NULL, NULL, 0},
@@ -2179,7 +2229,11 @@ static void examine_help(const char *prog_name, int print_flag)
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
-    (void)printf("-p/--path <path>, <required>, device path, must begin with '+'\n");
+    if (g_run_interatively) {
+        (void)printf("-p/--path <path>, <required>, device path\n");
+    } else {
+        (void)printf("-p/--path <path>, <required>, device path, must begin with '+'\n");
+    }
     (void)printf("-o/--offset <offset>, <required>, the offset of the file need to examine\n");
     (void)printf("-f/--format <format>, <required>, value is[c|h|u|l|s|x]\n"
                  "c char, h unsigned short, u unsigned int, l unsigned long, s string, x hex.\n");
@@ -2254,6 +2308,10 @@ static status_t print_buf(const char *o_buf, uint32 buf_size, char format, int64
 static status_t get_examine_parameter(char **path, int64 *offset, char *fmt)
 {
     *path = cmd_examine_args[DSS_ARG_IDX_0].input_args;
+    if (cmd_examine_args[DSS_ARG_IDX_0].convert_result != NULL) {
+        *path = cmd_examine_args[DSS_ARG_IDX_0].convert_result;
+    }
+
     status_t status = cm_str2bigint(cmd_examine_args[DSS_ARG_IDX_1].input_args, offset);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Invalid offset.\n");
@@ -2652,7 +2710,8 @@ static dss_args_t cmd_showmem_args[] = {
     {'i', "index_id", CM_TRUE, CM_TRUE, cmd_check_block_index_id, NULL, NULL, 0, NULL, NULL, 0},
     {'f', "fid", CM_TRUE, CM_TRUE, cmd_check_fid, NULL, NULL, 0, NULL, NULL, 0},
     {'n', "node_id", CM_TRUE, CM_TRUE, cmd_check_disk_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'o', "offset", CM_TRUE, CM_TRUE, cmd_check_offset, NULL, NULL, 0, NULL, NULL, 0},
     {'z', "size", CM_TRUE, CM_TRUE, cmd_check_read_size, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
@@ -2799,6 +2858,10 @@ static status_t showmem_proc_by_path(dss_session_t *session, dss_vg_info_item_t 
 {
     status_t status;
     const char *path = cmd_showmem_args[DSS_ARG_IDX_6].input_args;
+    if (cmd_showmem_args[DSS_ARG_IDX_6].convert_result != NULL) {
+        path = cmd_showmem_args[DSS_ARG_IDX_6].convert_result;
+    }
+
     errno_t errcode = strcpy_s(show_param->path, sizeof(show_param->path), path);
     if (errcode != EOK) {
         DSS_PRINT_ERROR("Failed to strcpy.\n");
@@ -2845,6 +2908,10 @@ static status_t showmem_proc(void)
 {
     const char *vg_name = cmd_showmem_args[DSS_ARG_IDX_0].input_args;
     const char *path = cmd_showmem_args[DSS_ARG_IDX_6].input_args;
+    if (cmd_showmem_args[DSS_ARG_IDX_6].convert_result != NULL) {
+        path = cmd_showmem_args[DSS_ARG_IDX_6].convert_result;
+    }
+
     dss_vg_info_item_t *vg_item = NULL;
     dss_conn_t conn;
     status_t status = get_connection_by_input_args(cmd_showmem_args[DSS_ARG_IDX_9].input_args, &conn);
@@ -2891,7 +2958,8 @@ static dss_args_t cmd_fshowmem_args[] = {
     {'i', "index_id", CM_TRUE, CM_TRUE, cmd_check_block_index_id, NULL, NULL, 0, NULL, NULL, 0},
     {'f', "fid", CM_TRUE, CM_TRUE, cmd_check_fid, NULL, NULL, 0, NULL, NULL, 0},
     {'n', "node_id", CM_TRUE, CM_TRUE, cmd_check_disk_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'o', "offset", CM_TRUE, CM_TRUE, cmd_check_offset, NULL, NULL, 0, NULL, NULL, 0},
     {'z', "size", CM_TRUE, CM_TRUE, cmd_check_read_size, NULL, NULL, 0, NULL, NULL, 0},
     {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
@@ -3309,6 +3377,10 @@ static status_t fshowmem_proc_by_path(dss_vg_info_item_t *vg_item, dss_show_para
 {
     status_t status;
     const char *path = cmd_fshowmem_args[DSS_ARG_IDX_7].input_args;
+    if (cmd_fshowmem_args[DSS_ARG_IDX_7].convert_result != NULL) {
+        path = cmd_fshowmem_args[DSS_ARG_IDX_7].convert_result;
+    }
+
     errno_t errcode = strcpy_s(show_param->path, sizeof(show_param->path), path);
     if (errcode != EOK) {
         DSS_PRINT_ERROR("Failed to strcpy.\n");
@@ -3364,6 +3436,10 @@ static status_t fshowmem_proc(void)
     }
     const char *file_name = cmd_fshowmem_args[DSS_ARG_IDX_0].input_args;
     const char *path = cmd_fshowmem_args[DSS_ARG_IDX_7].input_args;
+    if (cmd_fshowmem_args[DSS_ARG_IDX_7].convert_result != NULL) {
+        path = cmd_fshowmem_args[DSS_ARG_IDX_7].convert_result;
+    }
+
     dss_vg_info_item_t vg_item = {0};
     dss_show_param_t show_param;
     dss_init_show_param(&show_param);
@@ -3407,8 +3483,10 @@ static status_t fshowmem_proc(void)
 }
 
 static dss_args_t cmd_rename_args[] = {
-    {'o', "old_name", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
-    {'n', "new_name", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'o', "old_name", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
+    {'n', "new_name", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -3421,7 +3499,11 @@ static dss_args_set_t cmd_rename_args_set = {
 static void rename_help(const char *prog_name, int print_flag)
 {
     (void)printf("\nUsage:%s rename <-o old_name> <-n new_name> [-U UDS:socket_domain]\n", prog_name);
-    (void)printf("[client command] rename file, all file name must begin with '+'\n");
+    if (g_run_interatively) {
+        (void)printf("[client command] rename file\n");
+    } else {
+        (void)printf("[client command] rename file, all file name must begin with '+'\n");
+    }
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
@@ -3433,7 +3515,15 @@ static void rename_help(const char *prog_name, int print_flag)
 static status_t rename_proc(void)
 {
     const char *old_name = cmd_rename_args[DSS_ARG_IDX_0].input_args;
+    if (cmd_rename_args[DSS_ARG_IDX_0].convert_result != NULL) {
+        old_name = cmd_rename_args[DSS_ARG_IDX_0].convert_result;
+    }
+
     const char *new_name = cmd_rename_args[DSS_ARG_IDX_1].input_args;
+    if (cmd_rename_args[DSS_ARG_IDX_1].convert_result != NULL) {
+        new_name = cmd_rename_args[DSS_ARG_IDX_1].convert_result;
+    }
+
     dss_conn_t connection;
     status_t status = get_connection_by_input_args(cmd_rename_args[DSS_ARG_IDX_2].input_args, &connection);
     if (status != CM_SUCCESS) {
@@ -3451,7 +3541,8 @@ static status_t rename_proc(void)
 }
 
 static dss_args_t cmd_du_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'f', "format", CM_FALSE, CM_TRUE, cmd_check_du_format, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -3464,12 +3555,20 @@ static dss_args_set_t cmd_du_args_set = {
 
 static void du_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s du <-p path> [-f format] [-U UDS:socket_domain]\n", prog_name);
+    if (g_run_interatively) {
+        (void)printf("\nUsage:%s du [-p path] [-f format] [-U UDS:socket_domain]\n", prog_name);
+    } else {
+        (void)printf("\nUsage:%s du <-p path> [-f format] [-U UDS:socket_domain]\n", prog_name);
+    }
     (void)printf("[client command] show disk usage of the file/dir with optional params\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
-    (void)printf("-p/--path <path>, <required>, the old file name\n");
+    if (g_run_interatively) {
+        (void)printf("-p/--path <path>, [optional], the file/dir need to show disk usage\n");
+    } else {
+        (void)printf("-p/--path <path>, <required>, the file/dir need to show disk usage\n");
+    }
     (void)printf("-f/--format [format], [optional], the format to show, default value is Bs\n");
     (void)printf("support 3 types of format, do not need any separators between params\n");
     (void)printf("        [BKMGT] B: Byte, K: kB ,M: MB , G: GB, T: TB\n");
@@ -3481,6 +3580,17 @@ static void du_help(const char *prog_name, int print_flag)
 static status_t du_proc(void)
 {
     const char *path = cmd_du_args[DSS_ARG_IDX_0].input_args;
+    if (cmd_du_args[DSS_ARG_IDX_0].convert_result != NULL) {
+        path = cmd_du_args[DSS_ARG_IDX_0].convert_result;
+    }
+    if (path == NULL) {
+        if (g_cur_path[0] == '\0') {
+            cmd_print_no_path_err();
+            return CM_ERROR;
+        }
+        path = g_cur_path;
+    }
+
     const char *input_param = cmd_du_args[DSS_ARG_IDX_1].input_args;
     dss_conn_t connection;
 
@@ -3512,7 +3622,8 @@ static status_t du_proc(void)
 }
 
 static dss_args_t cmd_find_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'n', "name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -3525,12 +3636,20 @@ static dss_args_set_t cmd_find_args_set = {
 
 static void find_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s find <-p path> <-n name> [-U UDS:socket_domain]\n", prog_name);
+    if (g_run_interatively) {
+        (void)printf("\nUsage:%s find <-n name> [-p path] [-U UDS:socket_domain]\n", prog_name);
+    } else {
+        (void)printf("\nUsage:%s find <-p path> <-n name> [-U UDS:socket_domain]\n", prog_name);
+    }
     (void)printf("[client command]find files by name from path recursively\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
-    (void)printf("-p/--path <path>, <required>, the path to find from\n");
+    if (g_run_interatively) {
+        (void)printf("-p/--path <path>, [optional], the path to find from\n");
+    } else {
+        (void)printf("-p/--path <path>, <required>, the path to find from\n");
+    }
     (void)printf("-n/--name <name>, <required>, the name to find, support unix style wildcards "
                  "(man 7 glob for detail)\n");
     help_param_uds();
@@ -3539,6 +3658,17 @@ static void find_help(const char *prog_name, int print_flag)
 static status_t find_proc(void)
 {
     char *path = cmd_find_args[DSS_ARG_IDX_0].input_args;
+    if (cmd_find_args[DSS_ARG_IDX_0].convert_result != NULL) {
+        path = cmd_find_args[DSS_ARG_IDX_0].convert_result;
+    }
+    if (path == NULL) {
+        if (g_cur_path[0] == '\0') {
+            cmd_print_no_path_err();
+            return CM_ERROR;
+        }
+        path = g_cur_path;
+    }
+
     char *name = cmd_find_args[DSS_ARG_IDX_1].input_args;
     char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
     status_t status = get_server_locator(cmd_find_args[DSS_ARG_IDX_2].input_args, server_locator);
@@ -3580,8 +3710,10 @@ static status_t find_proc(void)
 }
 
 static dss_args_t cmd_ln_args[] = {
-    {'s', "src_path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
-    {'t', "target_path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'s', "src_path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
+    {'t', "target_path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -3606,7 +3738,14 @@ static void ln_help(const char *prog_name, int print_flag)
 static status_t ln_proc(void)
 {
     char *oldpath = cmd_ln_args[DSS_ARG_IDX_0].input_args;
+    if (cmd_ln_args[DSS_ARG_IDX_0].convert_result != NULL) {
+        oldpath = cmd_ln_args[DSS_ARG_IDX_0].convert_result;
+    }
     char *newpath = cmd_ln_args[DSS_ARG_IDX_1].input_args;
+    if (cmd_ln_args[DSS_ARG_IDX_1].convert_result != NULL) {
+        newpath = cmd_ln_args[DSS_ARG_IDX_1].convert_result;
+    }
+
     dss_conn_t connection;
     status_t status = get_connection_by_input_args(cmd_ln_args[DSS_ARG_IDX_2].input_args, &connection);
     if (status != CM_SUCCESS) {
@@ -3624,7 +3763,8 @@ static status_t ln_proc(void)
 }
 
 static dss_args_t cmd_readlink_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -3648,6 +3788,10 @@ static void readlink_help(const char *prog_name, int print_flag)
 static status_t readlink_proc(void)
 {
     char *link_path = cmd_readlink_args[DSS_ARG_IDX_0].input_args;
+    if (cmd_readlink_args[DSS_ARG_IDX_0].convert_result != NULL) {
+        link_path = cmd_readlink_args[DSS_ARG_IDX_0].convert_result;
+    }
+
     dss_conn_t connection;
     status_t status = get_connection_by_input_args(cmd_readlink_args[DSS_ARG_IDX_1].input_args, &connection);
     if (status != CM_SUCCESS) {
@@ -3680,7 +3824,8 @@ static status_t readlink_proc(void)
 }
 
 static dss_args_t cmd_unlink_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
 };
@@ -3704,6 +3849,10 @@ static void unlink_help(const char *prog_name, int print_flag)
 static status_t unlink_proc(void)
 {
     char *link = cmd_unlink_args[DSS_ARG_IDX_0].input_args;
+    if (cmd_unlink_args[DSS_ARG_IDX_0].convert_result != NULL) {
+        link = cmd_unlink_args[DSS_ARG_IDX_0].convert_result;
+    }
+
     dss_conn_t connection;
     status_t status = get_connection_by_input_args(cmd_unlink_args[DSS_ARG_IDX_1].input_args, &connection);
     if (status != CM_SUCCESS) {
@@ -4247,7 +4396,8 @@ static status_t rollback_proc(void)
 #define DSS_CMD_TRUNCATE_ARGS_UDS 2
 
 static dss_args_t cmd_truncate_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
+        0, NULL, NULL, 0},
     {'l', "length", CM_TRUE, CM_TRUE, cmd_check_length, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -4266,7 +4416,11 @@ static void truncate_help(const char *prog_name, int print_flag)
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
-    (void)printf("-p/--path <path>, <required>, file need to truncate, path must begin with '+'\n");
+    if (g_run_interatively) {
+        (void)printf("-p/--path <path>, <required>, file need to truncate\n");
+    } else {
+        (void)printf("-p/--path <path>, <required>, file need to truncate, path must begin with '+'\n");
+    }
     (void)printf("-l/--length <length>, <required>, length need to truncate\n");
     help_param_uds();
 }
@@ -4274,6 +4428,10 @@ static void truncate_help(const char *prog_name, int print_flag)
 static status_t truncate_proc(void)
 {
     const char *path = cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_PATH].input_args;
+    if (cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_PATH].convert_result != NULL) {
+        path = cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_PATH].convert_result;
+    }
+
     int64 length;
     status_t status = cm_str2bigint(cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_LENGTH].input_args, &length);
     if (status != CM_SUCCESS) {
@@ -4432,17 +4590,27 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set,
                                         &cmd_enable_grab_lock_args_set, true},
 };
 
+void clean_cmd()
+{
+    dss_free_vg_info();
+    ga_reset_app_pools();
+}
+
 // clang-format on
 static void help(char *prog_name, dss_help_type help_type)
 {
-    (void)printf("Usage:dsscmd [command] [OPTIONS]\n\n");
-    (void)printf("Usage:%s -h/--help show help information of dsscmd\n", prog_name);
-    (void)printf("Usage:%s -a/--all show all help information of dsscmd\n", prog_name);
-    (void)printf("Usage:%s -v/--version show version information of dsscmd\n", prog_name);
+    (void)printf("Usage:%s [command] [OPTIONS]\n\n", prog_name);
+    (void)printf("Usage:%s %s/%s show help information of dsscmd\n", prog_name, HELP_SHORT, HELP_LONG);
+    (void)printf("Usage:%s %s/%s show all help information of dsscmd\n", prog_name, ALL_SHORT, ALL_LONG);
+    (void)printf("Usage:%s %s/%s show version information of dsscmd\n", prog_name, VERSION_SHORT, VERSION_LONG);
+    if (!g_run_interatively){
+        (void)printf("Usage:%s -i/--interactive run dsscmd interatively\n", prog_name);
+    }
     (void)printf("commands:\n");
     for (uint32 i = 0; i < sizeof(g_dss_admin_cmd) / sizeof(g_dss_admin_cmd[0]); ++i) {
         g_dss_admin_cmd[i].help(prog_name, help_type);
     }
+    cmd_print_interactive_help(prog_name, help_type);
     (void)printf("\n\n");
 }
 
@@ -4518,48 +4686,60 @@ static bool32 get_cmd_idx(int argc, char **argv, uint32_t *idx)
     return CM_FALSE;
 }
 
-void execute_help_cmd(int argc, char **argv, uint32_t *idx)
+int32 execute_help_cmd(int argc, char **argv, uint32_t *idx, bool8 *go_ahead)
 {
     if (argc < CMD_ARGS_AT_LEAST) {
-        (void)printf("dsscmd: no operation specified.\n");
-        (void)printf("dsscmd: Try \"dsscmd -h/--help\" for help information.\n");
-        (void)printf("dsscmd: Try \"dsscmd -a/--all\" for detailed help information.\n");
-        exit(EXIT_FAILURE);
+        if (!g_run_interatively) {
+            (void)printf("dsscmd: no operation specified.\n");
+            (void)printf("dsscmd: Try \"dsscmd -h/--help\" for help information.\n");
+            (void)printf("dsscmd: Try \"dsscmd -a/--all\" for detailed help information.\n");
+        }
+        *go_ahead = CM_FALSE;
+        return EXIT_FAILURE;
     }
-    if (cm_str_equal(argv[1], "-v") || cm_str_equal(argv[1], "--version")) {
+
+    if (cm_str_equal(argv[1], VERSION_SHORT) || cm_str_equal(argv[1], VERSION_LONG)) {
         (void)printf("dsscmd %s\n", (char *)DEF_DSS_VERSION);
-        exit(EXIT_SUCCESS);
+        *go_ahead = CM_FALSE;
+        return EXIT_SUCCESS;
     }
-    if (cm_str_equal(argv[1], "-a") || cm_str_equal(argv[1], "--all")) {
+    if (cm_str_equal(argv[1], ALL_SHORT) || cm_str_equal(argv[1], ALL_LONG)) {
         help(argv[0], DSS_HELP_DETAIL);
-        exit(EXIT_SUCCESS);
+        *go_ahead = CM_FALSE;
+        return EXIT_SUCCESS;
     }
-    if (cm_str_equal(argv[1], "-h") || cm_str_equal(argv[1], "--help")) {
+    if (cm_str_equal(argv[1], HELP_SHORT) || cm_str_equal(argv[1], HELP_LONG)) {
         help(argv[0], DSS_HELP_SIMPLE);
-        exit(EXIT_SUCCESS);
+        *go_ahead = CM_FALSE;
+        return EXIT_SUCCESS;
+    }
+    if (!g_run_interatively && (cm_str_equal(argv[1], "-i") || cm_str_equal(argv[1], "--interactive"))) {
+        g_run_interatively = CM_TRUE;
+        *go_ahead = CM_TRUE;
+        return EXIT_SUCCESS;
     }
     if (!get_cmd_idx(argc, argv, idx)) {
         (void)printf("cmd:%s can not find.\n", argv[DSS_ARG_IDX_1]);
         help(argv[0], DSS_HELP_SIMPLE);
-        exit(EXIT_FAILURE);
+        *go_ahead = CM_FALSE;
+        return EXIT_FAILURE;
     }
     if (argc > DSS_ARG_IDX_2 &&
         (strcmp(argv[DSS_ARG_IDX_2], "-h") == 0 || strcmp(argv[DSS_ARG_IDX_2], "--help") == 0)) {
         g_dss_admin_cmd[*idx].help(argv[0], DSS_HELP_DETAIL);
-        exit(EXIT_SUCCESS);
+        *go_ahead = CM_FALSE;
+        return EXIT_SUCCESS;
     }
+
+    *go_ahead = CM_TRUE;
+    return EXIT_SUCCESS;
 }
 
-static status_t execute_cmd(int argc, char **argv, uint32 idx)
+status_t execute_cmd(int argc, char **argv, uint32 idx)
 {
     status_t status = execute_one_cmd(argc, argv, idx);
     dss_cmd_oper_log(argc, argv, status);
     return status;
-}
-
-static void clean_cmd()
-{
-    dss_free_vg_info();
 }
 
 static bool32 is_log_necessary(int argc, char **argv)
@@ -4569,6 +4749,15 @@ static bool32 is_log_necessary(int argc, char **argv)
         return true;
     }
     return false;
+}
+
+void dss_cmd_set_path_optional()
+{
+    // set cmd arg path optional
+    cmd_mkdir_args[0].required = CM_FALSE;
+    cmd_ls_args[0].required = CM_FALSE;
+    cmd_du_args[0].required = CM_FALSE;
+    cmd_find_args[0].required = CM_FALSE;
 }
 
 int main(int argc, char **argv)
@@ -4587,7 +4776,14 @@ int main(int argc, char **argv)
     }
 #endif
     uint32 idx;
-    execute_help_cmd(argc, argv, &idx);
+    int32 help_ret;
+    bool8 go_ahead;
+
+    help_ret = execute_help_cmd(argc, argv, &idx, &go_ahead);
+    if (!go_ahead) {
+        exit(help_ret);
+    }
+
     dss_config_t inst_cfg;
     if (dss_set_cfg_dir(NULL, &inst_cfg) != CM_SUCCESS) {
         (void)printf("Environment variant DSS_HOME not found!\n");
@@ -4610,6 +4806,12 @@ int main(int argc, char **argv)
         (void)printf("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code()));
         return ret;
     }
+
+    if (g_run_interatively) {
+        dss_cmd_run_interactively();
+        return CM_SUCCESS;
+    }
+
     cm_reset_error();
     ret = execute_cmd(argc, argv, idx);
     clean_cmd();
