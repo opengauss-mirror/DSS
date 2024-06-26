@@ -1465,7 +1465,7 @@ void dss_init_bitmap_block(dss_ctrl_t *dss_ctrl, char *block, uint32_t block_id,
     fs_block->common.flags = DSS_BLOCK_FLAG_FREE;
     fs_block->common.version = 0;
     fs_block->used_num = 0;
-    fs_block->total_num = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(uint64);
+    fs_block->total_num = DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
     fs_block->index = DSS_FS_INDEX_INIT;
     fs_block->common.id.au = auid.au;
     fs_block->common.id.volume = auid.volume;
@@ -2638,7 +2638,7 @@ status_t dss_get_fs_block_info_by_offset(
     DSS_ASSERT_LOG(au_size != 0, "The au size cannot be zero.");
 
     // two level bitmap, ~2k block ids per entry FSB
-    uint64 au_count = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(auid_t);  // 2043 2nd FSBs
+    uint64 au_count = DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;  // 2043 2nd FSBs
     uint64 block_len = au_count * au_size;  // [4G, 128G] per 2nd-level FSB, with AU range [2MB, 64MB]
     int64 temp = (offset / (int64)block_len);
     if (temp > (int64)au_count) {  // Total [8T, 256T] per file, to be verified
@@ -2695,7 +2695,7 @@ status_t dss_extend_batch_inner(dss_session_t *session, dss_vg_info_item_t *vg_i
     if (batch_count == 0) {
         return CM_SUCCESS;
     }
-    CM_ASSERT(batch_count <= ((DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(auid_t)));
+    CM_ASSERT(batch_count <= DSS_FILE_SPACE_BLOCK_BITMAP_COUNT);
 
     uint32 block_count = 0;
     uint32 block_au_count = 0;
@@ -2809,8 +2809,7 @@ status_t dss_extend_batch(
     int64 file_size = node_data->offset + node_data->size;
     uint64 align_size = CM_CALC_ALIGN((uint64)file_size, au_size);
 
-    uint64 au_count =
-        (DSS_FILE_SPACE_BLOCK_SIZE - (uint64)sizeof(dss_fs_block_header)) / (uint64)sizeof(auid_t);  // 2043 2nd FSBs
+    uint64 au_count = DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;  // 2041 2nd FSBs
     uint64 block_len = au_count * au_size;  // [4G, 128G] per 2nd_level FSB, with AU range [2MB, 64MB]
 
     bool32 cur_finish;
@@ -3173,7 +3172,7 @@ static void dss_transfer_remaining_au(dss_session_t *session, dss_fs_block_t *sr
     dss_fs_block_t *dst_first_sfsb, dss_fs_block_t *dst_second_sfsb, uint32 src_au_idx, uint32 dst_au_idx,
     dss_vg_info_item_t *vg_item)
 {
-    uint32 au_idx_limit = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(auid_t);
+    uint32 au_idx_limit = DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
     auid_t auid = src_partial_sfsb->bitmap[src_au_idx];
     dss_fs_block_t *dst_sfsb = dst_first_sfsb;
     CM_ASSERT(dst_au_idx <= au_idx_limit);
@@ -3240,7 +3239,7 @@ static void dss_transfer_remaining_au(dss_session_t *session, dss_fs_block_t *sr
 static void dss_transfer_second_level_fsb(dss_session_t *session, dss_vg_info_item_t *vg_item,
     dss_fs_block_t *src_entry_fsb, dss_fs_block_t *dst_entry_fsb, uint32 curr_src_idx, int32 *dst_sfsb_idx)
 {
-    uint32 au_idx_limit = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(auid_t);
+    uint32 au_idx_limit = DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
 
     while (!dss_cmp_blockid(src_entry_fsb->bitmap[curr_src_idx], DSS_INVALID_64) && curr_src_idx < au_idx_limit) {
         dss_block_id_t dst_old_id = dst_entry_fsb->bitmap[*dst_sfsb_idx];
@@ -3301,7 +3300,7 @@ static void dss_build_truncated_ftn(dss_session_t *session, dss_vg_info_item_t *
 {
     int32 dst_sfsb_idx = 0;
     uint32 curr_src_idx = src_partial_sfsb_idx + 1;  // src 2nd idx indicates FSB containing fraction of AUs to trunc
-    uint32 au_idx_limit = (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(auid_t);
+    uint32 au_idx_limit = DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
 
     cm_assert(!dss_cmp_blockid(dst_entry_fsb->bitmap[0], DSS_INVALID_64));
     dss_block_id_t cache_first_sfsb = dst_entry_fsb->bitmap[0];  // cache 1st sfsb for partial txfer

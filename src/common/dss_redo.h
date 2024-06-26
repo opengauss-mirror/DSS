@@ -171,7 +171,7 @@ typedef struct st_dss_redo_set_fs_block_batch_t {
     uint16 used_num;
     uint16 old_used_num;
     uint16 reserve;
-    dss_block_id_t id_set[(DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(auid_t)];
+    dss_block_id_t id_set[DSS_FILE_SPACE_BLOCK_BITMAP_COUNT];
 } dss_redo_set_fs_block_batch_t;
 typedef struct st_dss_redo_set_file_size_t {
     ftid_t ftid;

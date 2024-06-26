@@ -487,7 +487,7 @@ status_t dss_print_fsb_by_id_detail_part(
 {
     dss_block_id_t *node = NULL;
     char *tab = dss_get_print_tab(g_print_level - 1);
-    uint32 size = (DSS_FILE_SPACE_BLOCK_SIZE - (uint32)sizeof(dss_fs_block_t)) / (uint32)sizeof(dss_block_id_t);
+    uint32 size = DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
     uint32 start_first_fs_index = show_param->start_first_fs_index;
     uint32 end_first_fs_index = show_param->end_first_fs_index;
     uint32 start_second_fs_index = show_param->start_second_fs_index;
@@ -550,7 +550,7 @@ status_t dss_print_fsb_by_id_detail(
     (void)printf("%sfile_space_block = {\n", tab);
     printf_fs_block(file_space_block);
     (void)printf("%s}\n\n", tab);
-    uint32 size = (DSS_FILE_SPACE_BLOCK_SIZE - (uint32)sizeof(dss_fs_block_t)) / (uint32)sizeof(dss_block_id_t);
+    uint32 size = DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
     dss_block_id_t *node = NULL;
     g_print_level++;
     if (show_param->start_first_fs_index == CM_INVALID_ID32) {
@@ -775,7 +775,7 @@ static status_t dss_print_fsb_by_id(char *block, uint64 node_id)
     printf_fs_block(file_space_block);
     (void)printf("}\n\n");
 
-    uint32 size = (DSS_FILE_SPACE_BLOCK_SIZE - (uint32)sizeof(dss_fs_block_t)) / (uint32)sizeof(dss_block_id_t);
+    uint32 size = DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
     dss_block_id_t *node = NULL;
 
     if (node_id == DSS_DEFAULT_NODE_ID) {

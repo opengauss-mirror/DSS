@@ -303,7 +303,7 @@ static void dss_check_file_written_size(
     if (is_read && ((tmp_total_size + start_offset) > context->node->written_size)) {
         // no data to read
         if (start_offset >= context->node->written_size) {
-            LOG_DEBUG_INF("Node:%s has node data to read.", dss_display_metaid(context->node->id));
+            LOG_DEBUG_INF("Node:%s has no data to read.", dss_display_metaid(context->node->id));
             *total_size = 0;
             // no enough data to read
         } else {

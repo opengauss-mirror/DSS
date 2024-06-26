@@ -961,7 +961,7 @@ static status_t dss_process_remote_switch_lock(dss_session_t *session, uint32 cu
     dss_init_set(&session->recv_pack, current_proto_ver);
     session->recv_pack.head->cmd = DSS_CMD_SWITCH_LOCK;
     session->recv_pack.head->flags = 0;
-    LOG_DEBUG_INF("[SWITCH] Try to switch lock to %u by %u.", curr_id, master_id);
+    LOG_RUN_INF("[SWITCH] Try to switch lock to %u by %u.", curr_id, master_id);
     (void)dss_put_int32(&session->recv_pack, curr_id);
     status_t status = dss_process_remote(session);
     if (status != CM_SUCCESS) {

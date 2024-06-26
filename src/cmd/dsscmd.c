@@ -419,7 +419,7 @@ static status_t cmd_check_block_index_id(const char *index_str)
         DSS_PRINT_ERROR("The value of index_id  or node_id is invalid.\n");
         return CM_ERROR;
     }
-    uint32 max_block_index_id = MAX(DSS_MAX_FS_BLOCK_INDEX_ID, DSS_MAX_FT_BLOCK_INDEX_ID);
+    uint32 max_block_index_id = MAX(DSS_FILE_SPACE_BLOCK_BITMAP_COUNT, DSS_MAX_FT_BLOCK_INDEX_ID);
     if (index_id < DSS_MIN_BLOCK_INDEX_ID || index_id >= max_block_index_id) {
         DSS_PRINT_ERROR("The value of index_id or node_id should be in [%u, %u).\n", DSS_MIN_BLOCK_INDEX_ID, max_block_index_id);
         return CM_ERROR;
@@ -1624,7 +1624,7 @@ static status_t ls_proc_core(dss_conn_t *conn, const char *path, const char *mea
         status = dss_ls_print_file(conn, path, measure, show_min_inited_size);
         DSS_UNLOCK_VG_META_S(vg_item, conn->session);
         if (status == CM_SUCCESS) {
-            DSS_PRINT_INF("Succeed to ls file info.\n");
+            DSS_PRINT_INF("Succeed to ls file info %s.\n", path);
             return status;
         }
     } else if (type == GFT_LINK || type == GFT_LINK_TO_FILE || type == GFT_LINK_TO_PATH) {
@@ -1632,7 +1632,7 @@ static status_t ls_proc_core(dss_conn_t *conn, const char *path, const char *mea
         status = dss_ls_try_print_link(conn, path, measure, show_min_inited_size);
         DSS_UNLOCK_VG_META_S(vg_item, conn->session);
         if (status == CM_SUCCESS) {
-            DSS_PRINT_INF("Succeed to ls link info.\n");
+            DSS_PRINT_INF("Succeed to ls link info %s.\n", path);
             return status;
         }
     }
@@ -1650,7 +1650,7 @@ static status_t ls_proc_core(dss_conn_t *conn, const char *path, const char *mea
         }
     }
     (void)dss_close_dir_impl(conn, dir);
-    DSS_PRINT_INF("Succeed to ls dir info.\n");
+    DSS_PRINT_INF("Succeed to ls dir info %s.\n", path);
     return CM_SUCCESS;
 }
 
