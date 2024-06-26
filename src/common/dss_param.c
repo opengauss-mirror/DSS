@@ -89,7 +89,7 @@ static config_item_t g_dss_params[] = {
       "GS_TYPE_INTEGER", NULL, 22, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
     { "MES_ELAPSED_SWITCH",       CM_TRUE, CM_FALSE,     "FALSE",     NULL, NULL, "-", "FALSE,TRUE",
       "GS_TYPE_BOOLEAN", NULL, 23, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
-    { "DISK_LOCK_FILE_PATH",           CM_TRUE, CM_FALSE, "/tmp", NULL, NULL, "-", "-",
+    { "_DISK_LOCK_FILE_PATH",           CM_TRUE, CM_FALSE, "/tmp", NULL, NULL, "-", "-",
         "GS_TYPE_VARCHAR", NULL, 24, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL },
     { "SSL_CA", CM_TRUE, CM_FALSE, "", NULL, NULL, "-", "-",
         "GS_TYPE_VARCHAR", NULL, 25, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
@@ -177,6 +177,22 @@ static status_t dss_load_session_cfg(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
+static status_t dss_load_disk_lock_file_path(dss_config_t *inst_cfg)
+{
+    int32 ret;
+    char *value = cm_get_config_value(&inst_cfg->config, "_DISK_LOCK_FILE_PATH");
+    status_t status = dss_verify_lock_file_path(value);
+    DSS_RETURN_IFERR2(
+        status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid _DISK_LOCK_FILE_PATH"));
+    ret = snprintf_s(inst_cfg->params.disk_lock_file_path, DSS_UNIX_PATH_MAX, DSS_UNIX_PATH_MAX - 1, "%s", value);
+    if (ret == -1) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid _DISK_LOCK_FILE_PATH"));
+    }
+
+    return CM_SUCCESS;
+}
+
 static status_t dss_load_storage_mode(dss_config_t *inst_cfg)
 {
     char *value = cm_get_config_value(&inst_cfg->config, "STORAGE_MODE");
@@ -187,6 +203,7 @@ static status_t dss_load_storage_mode(dss_config_t *inst_cfg)
         inst_cfg->params.dss_mode = DSS_MODE_RAID;
     } else if (cm_str_equal_ins(value, "DISK")) {
         inst_cfg->params.dss_mode = DSS_MODE_DISK;
+        CM_RETURN_IFERR(dss_load_disk_lock_file_path(inst_cfg));
     } else {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, value));
     }
@@ -478,22 +495,6 @@ static status_t dss_load_path(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
-static status_t dss_load_disk_lock_file_path(dss_config_t *inst_cfg)
-{
-    int32 ret;
-    char *value = cm_get_config_value(&inst_cfg->config, "DISK_LOCK_FILE_PATH");
-    status_t status = dss_verify_lock_file_path(value);
-    DSS_RETURN_IFERR2(
-        status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid DISK_LOCK_FILE_PATH"));
-    ret = snprintf_s(inst_cfg->params.disk_lock_file_path, DSS_UNIX_PATH_MAX, DSS_UNIX_PATH_MAX - 1, "%s", value);
-    if (ret == -1) {
-        DSS_RETURN_IFERR2(
-            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid DISK_LOCK_FILE_PATH"));
-    }
-
-    return CM_SUCCESS;
-}
-
 static status_t dss_load_cluster_run_mode(dss_config_t *inst_cfg)
 {
     char *value = cm_get_config_value(&inst_cfg->config, "CLUSTER_RUN_MODE");
@@ -653,7 +654,6 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load config"));
 
     CM_RETURN_IFERR(dss_load_path(inst_cfg));
-    CM_RETURN_IFERR(dss_load_disk_lock_file_path(inst_cfg));
     CM_RETURN_IFERR(dss_load_instance_id(inst_cfg));
     CM_RETURN_IFERR(dss_load_storage_mode(inst_cfg));
     CM_RETURN_IFERR(dss_load_session_cfg(inst_cfg));
