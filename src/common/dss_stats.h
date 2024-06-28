@@ -73,7 +73,7 @@ static inline void dss_end_stat_base(dss_stat_item_t *stat_item, timeval_t *begi
     (void)cm_atomic_inc(&stat_item->wait_count);
 }
 
-static inline void dss_end_end_stat_ex(dss_stat_ctx_t *stat_ctx, dss_stat_item_t *stat_item, timeval_t *begin_tv)
+static inline void dss_end_stat_ex(dss_stat_ctx_t *stat_ctx, dss_stat_item_t *stat_item, timeval_t *begin_tv)
 {
     if(stat_ctx->enable_stat) {
         dss_end_stat_base(stat_item, begin_tv);
@@ -86,7 +86,7 @@ static inline void dss_set_stat(dss_stat_ctx_t *stat_ctx, dss_wait_event_e event
     stat_ctx->wait_event = event;
 }
 
-static inline void dss_unset_stat(dss_stat_ctx_t *stat_ctx, dss_wait_event_e event)
+static inline void dss_unset_stat(dss_stat_ctx_t *stat_ctx)
 {
     stat_ctx->enable_stat = CM_FALSE;
 }
