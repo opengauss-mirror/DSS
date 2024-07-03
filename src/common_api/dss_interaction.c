@@ -33,6 +33,9 @@ void dss_cli_get_err(dss_packet_t *pack, int32 *errcode, char **errmsg)
     dss_init_get(pack);
     (void)dss_get_int32(pack, errcode);
     (void)dss_get_str(pack, errmsg);
+    if (*errcode == ERR_DSS_MES_ILL) {
+        
+    }
 }
 
 int32 dss_get_pack_err(dss_conn_t *conn, dss_packet_t *pack)

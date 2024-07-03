@@ -2331,11 +2331,11 @@ gft_node_t *dss_get_ft_node_by_ftid_from_disk_and_refresh_shm(
         if (!dss_is_server() || dss_is_ft_block_valid(node, ft_block)) {
             return node;
         }
-        LOG_DEBUG_INF("block:%llu fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu",
+        LOG_DEBUG_INF("block:%llu, fid:%llu, file ver:%llu is not same as node:%llu, fid:%llu, file ver:%llu",
             DSS_ID_TO_U64(block_id), dss_get_ft_block_fid(ft_block), dss_get_ft_block_file_ver(ft_block),
             DSS_ID_TO_U64(node->id), node->fid, node->file_ver);
         dss_set_ft_block_file_ver(node, ft_block);
-        LOG_DEBUG_INF("block:%llu fid:%llu, file ver:%llu setted with node:%llu, fid:%llu, file ver:%llu",
+        LOG_DEBUG_INF("block:%llu, fid:%llu, file ver:%llu setted with node:%llu, fid:%llu, file ver:%llu",
             DSS_ID_TO_U64(block_id), dss_get_ft_block_fid(ft_block), dss_get_ft_block_file_ver(ft_block),
             DSS_ID_TO_U64(node->id), node->fid, node->file_ver);
         return node;
@@ -2484,7 +2484,8 @@ status_t dss_update_ft_root(dss_vg_info_item_t *vg_item)
     block->ft_block.common.version++;
     block->ft_block.common.checksum = dss_get_checksum(block, DSS_BLOCK_SIZE);
     CM_ASSERT(vg_item->volume_handle[0].handle != DSS_INVALID_HANDLE);
-    DSS_LOG_DEBUG_OP("Update node table root, version:%llu, checksum:%u.", block->ft_block.common.version, block->ft_block.common.checksum);
+    DSS_LOG_DEBUG_OP("Update node table root, version:%llu, checksum:%u.", block->ft_block.common.version,
+        block->ft_block.common.checksum);
     status = dss_write_volume_inst(
         vg_item, &vg_item->volume_handle[0], (int64)DSS_CTRL_ROOT_OFFSET, dss_ctrl->root, DSS_BLOCK_SIZE);
     if (status == CM_SUCCESS) {
@@ -2910,7 +2911,8 @@ status_t dss_extend_batch_inner(dss_session_t *session, dss_vg_info_item_t *vg_i
             DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("%s :%s.", err_msg, vg_item->dss_ctrl->vg_info.vg_name));
         }
     } else {
-        status = dss_extend_fs_aux_batch(session, vg_item, batch_first, node, block_au_count, batch_count, second_block);
+        status =
+            dss_extend_fs_aux_batch(session, vg_item, batch_first, node, block_au_count, batch_count, second_block);
         if (status != CM_SUCCESS) {
             dss_rollback_mem_update(session, vg_item);
             char *err_msg = "Failed to alloc file space aux meta block, vg name";
@@ -2942,7 +2944,7 @@ status_t dss_extend_batch_inner(dss_session_t *session, dss_vg_info_item_t *vg_i
 
     status = dss_process_redo_log(session, vg_item);
     if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("[DSS] ABORT INFO:redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
+        LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
         _exit(1);
@@ -2979,7 +2981,7 @@ status_t dss_extend_batch(
     for (; align_beg < align_size;) {
         cur_finish = CM_FALSE;
         status = dss_extend_batch_inner(session, vg_item, node, align_beg, align_end, &cur_finish);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to alloc au, vg name:%s.", vg_item->dss_ctrl->vg_info.vg_name));
+        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to alloc au, vg name %s.", vg_item->dss_ctrl->vg_info.vg_name));
         if (!cur_finish) {
             return CM_SUCCESS;
         }
@@ -3035,7 +3037,7 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
             status = dss_alloc_fs_block(session, vg_item, (char **)&second_block, &info);
             if (!second_block) {
                 dss_rollback_mem_update(session, vg_item);
-                char *err_msg = "Failed to alloc file space meta block,vg name";
+                char *err_msg = "Failed to alloc file space meta block, vg name";
                 DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("%s : %s.", err_msg, vg_item->dss_ctrl->vg_info.vg_name));
             }
             second_block_id = second_block->head.common.id;
@@ -3062,7 +3064,7 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
     if (need_get_second) {
         second_block = dss_find_fs_block(session, vg_item, node, second_block_id, CM_TRUE, NULL, block_count);
         DSS_RETURN_IF_FALSE3((second_block != NULL), dss_rollback_mem_update(session, vg_item),
-            LOG_DEBUG_ERR("Failed to alloc au,vg name %s.", vg_item->dss_ctrl->vg_info.vg_name));
+            LOG_DEBUG_ERR("Failed to alloc au, vg name %s.", vg_item->dss_ctrl->vg_info.vg_name));
     }
 
     auid_t auid = second_block->bitmap[block_au_count];
@@ -3085,7 +3087,7 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
         if (status != CM_SUCCESS) {
             dss_rollback_mem_update(session, vg_item);
             char *err_msg = "Failed to alloc file space aux meta block, vg name";
-            DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("%s :%s.", err_msg, vg_item->dss_ctrl->vg_info.vg_name));
+            DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("%s : %s.", err_msg, vg_item->dss_ctrl->vg_info.vg_name));
         }
 
         second_block->bitmap[block_au_count] = auid;
@@ -3334,8 +3336,9 @@ static void dss_init_truncate_fs_block_batch_redo(dss_fs_block_t *src_fsb, dss_f
     redo->dst_old_used_num = dst_fsb->head.used_num;
     redo->src_old_used_num = src_fsb->head.used_num;
 }
-static void dss_transfer_remaining_au_inner(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_fs_block_t *src_partial_sfsb,
-    dss_fs_block_t *dst_sfsb, uint32 *src_au_idx, uint32 *dst_au_idx, dss_redo_truncate_fs_block_batch_t *redo, auid_t *auid)
+static void dss_transfer_remaining_au_inner(dss_session_t *session, dss_vg_info_item_t *vg_item,
+    dss_fs_block_t *src_partial_sfsb, dss_fs_block_t *dst_sfsb, uint32 *src_au_idx, uint32 *dst_au_idx,
+    dss_redo_truncate_fs_block_batch_t *redo, auid_t *auid)
 {
     uint16 count = 0;
     uint32 au_idx_limit = (uint32)(DSS_FILE_SPACE_BLOCK_BITMAP_COUNT);
@@ -3372,16 +3375,16 @@ static void dss_transfer_remaining_au(dss_session_t *session, dss_fs_block_t *sr
     dss_fs_block_t *dst_sfsb = dst_first_sfsb;
     CM_ASSERT(dst_au_idx <= au_idx_limit);
     LOG_DEBUG_INF(
-        "Begin to transfer the partial FSB, src_partial_sfsb: %s, src_au_idx:%u, %u AUs to xfer, src_used num: %hu,"
+        "Begin to transfer the partial FSB, src_partial_sfsb: %s, src_au_idx:%u, %u AUs to xfer, src_used_num: %hu,"
         "dst_entry_fsb: %s, dst_au_idx:%u, au_idx_limit:%u, dst_used num:%hu.",
         dss_display_metaid(src_partial_sfsb->head.common.id), src_au_idx, ((au_idx_limit - src_au_idx) + 1),
         src_partial_sfsb->head.used_num, dss_display_metaid(dst_sfsb->head.common.id), dst_au_idx, au_idx_limit,
         dst_sfsb->head.used_num);
+    // after whole FSB transfer, dst SFSB's remaning space might < src SFSB's AUs that need transfer
+    // dst_second_sfsb should've been prepped in caller dss_build_truncated_ftn
     dss_redo_truncate_fs_block_batch_t redo;
     dss_transfer_remaining_au_inner(
         session, vg_item, src_partial_sfsb, dst_sfsb, &src_au_idx, &dst_au_idx, &redo, &auid);
-    // after whole FSB transfer, dst SFSB's remaning space might < src SFSB's AUs that need transfer
-    // dst_second_sfsb should've been prepped in caller dss_build_truncated_ftn
     if (dst_au_idx == au_idx_limit && !dss_cmp_auid(auid, DSS_INVALID_ID64)) {
         CM_ASSERT(dst_second_sfsb != NULL);
         dst_sfsb = dst_second_sfsb;
@@ -3400,12 +3403,13 @@ static void dss_transfer_second_level_fsb(dss_session_t *session, dss_vg_info_it
     uint16 count = 0;
     dss_redo_truncate_fs_block_batch_t redo;
     LOG_DEBUG_INF(
-        "Begin to transfer the complete FSB, src_entry_fsb: %s, src_au_idx:%u, %u AUs to xfer, src_used num: %hu,"
+        "Begin to transfer the complete FSB, src_entry_fsb: %s, src_au_idx:%u, %u AUs to xfer, src_used_num: %hu,"
         "dst_entry_fsb: %s, dst_au_idx:%u, au_idx_limit:%u, dst_used num:%hu.",
         dss_display_metaid(src_entry_fsb->head.common.id), curr_src_idx, ((au_idx_limit - curr_src_idx) + 1),
         src_entry_fsb->head.used_num, dss_display_metaid(dst_entry_fsb->head.common.id), *dst_sfsb_idx, au_idx_limit,
         dst_entry_fsb->head.used_num);
-    dss_init_truncate_fs_block_batch_redo(src_entry_fsb, dst_entry_fsb, (uint16)curr_src_idx, (uint16)(*dst_sfsb_idx), &redo);
+    dss_init_truncate_fs_block_batch_redo(
+        src_entry_fsb, dst_entry_fsb, (uint16)curr_src_idx, (uint16)(*dst_sfsb_idx), &redo);
     while (!dss_cmp_blockid(src_entry_fsb->bitmap[curr_src_idx], DSS_INVALID_64) && curr_src_idx < au_idx_limit) {
         redo.id_set[count] = src_entry_fsb->bitmap[curr_src_idx];
         dss_block_id_t dst_old_id = dst_entry_fsb->bitmap[*dst_sfsb_idx];
@@ -3471,8 +3475,7 @@ static void dss_build_truncated_ftn(dss_session_t *session, dss_vg_info_item_t *
         dss_block_id_t dst_sfsb_id = dst_entry_fsb->bitmap[dst_sfsb_idx < 0 ? 0 : dst_sfsb_idx];
         dst_sfsb_id = dss_cmp_blockid(dst_sfsb_id, DSS_INVALID_64) ? cache_first_sfsb : dst_sfsb_id;
         (void)dss_get_second_block(vg_item, dst_sfsb_id, &dst_sfsb);
-        DSS_ASSERT_LOG(dst_sfsb != NULL, "Null pointer: dst_sfsb, dst_sfsb_id=%s.",
-            dss_display_metaid(dst_sfsb_id));
+        DSS_ASSERT_LOG(dst_sfsb != NULL, "Null pointer: dst_sfsb, dst_sfsb_id=%s.", dss_display_metaid(dst_sfsb_id));
         uint32 dst_au_idx = 0;
         while (dst_au_idx < au_idx_limit && !dss_cmp_auid(dst_sfsb->bitmap[dst_au_idx], DSS_INVALID_64)) {
             dst_au_idx++;

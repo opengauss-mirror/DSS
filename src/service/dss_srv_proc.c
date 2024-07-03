@@ -389,8 +389,8 @@ static status_t dss_make_dir_file_core(dss_session_t *session, const char *paren
     }
     out_node = dss_alloc_ft_node(session, *vg_item, out_node, dir_name, type, flag);  // actual FTN creation
     bool32 result = (bool32)(out_node != NULL);
-    DSS_RETURN_IF_FALSE3(result, dss_rollback_mem_update(session, *vg_item),
-        LOG_DEBUG_ERR("Failed to alloc ft node %s.", dir_name));
+    DSS_RETURN_IF_FALSE3(
+        result, dss_rollback_mem_update(session, *vg_item), LOG_DEBUG_ERR("Failed to alloc ft node %s.", dir_name));
 
     status = dss_process_redo_log(session, *vg_item);
     if (status != CM_SUCCESS) {

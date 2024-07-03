@@ -37,12 +37,14 @@
 #include "dss_redo.h"
 #include "dss_service.h"
 #include "dss_instance.h"
-#include "dss_simulation_cm.h"
 #include "dss_reactor.h"
 #include "dss_service.h"
 #include "dss_zero.h"
 #include "cm_utils.h"
 #include "dss_thv.h"
+#ifdef ENABLE_DSSTEST
+#include "dss_simulation_cm.h"
+#endif
 
 #define DSS_MAINTAIN_ENV "DSS_MAINTAIN"
 dss_instance_t g_dss_instance;
@@ -536,6 +538,7 @@ static void dss_check_peer_by_simulation_cm(dss_instance_t *inst)
         return;
     }
     dss_check_peer_by_cm(inst);
+    return;
 }
 #endif
 
@@ -563,20 +566,22 @@ void dss_init_cm_res(dss_instance_t *inst)
 #ifdef ENABLE_DSSTEST
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 {
-    *master_id = dss_get_master_id();
-    if (*master_id != DSS_INVALID_ID32) {
-        LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "No need to set %u as master id.", (*master_id));
-        return CM_SUCCESS;
-    }
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    for (int i = 0; i < DSS_MAX_INSTANCES; i++) {
-        if (inst_cfg->params.ports[i] != 0) {
-            *master_id = i;
-            LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "Set min id %u as master id.", i);
-            break;
+    if (g_simulation_cm.simulation) {
+        int ret = cm_res_get_lock_owner(&cm_res->mgr, DSS_CM_LOCK, master_id);
+        if (ret != CM_SUCCESS) {
+            return ret;
         }
+    } else {
+        dss_config_t *inst_cfg = dss_get_inst_cfg();
+        for (int i = 0; i < DSS_MAX_INSTANCES; i++) {
+            if (inst_cfg->params.ports[i] != 0) {
+                *master_id = i;
+                LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "Set min id %u as master id.", i);
+                break;
+            }
+        }
+        LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "master_id is %u when get cm lock.", *master_id);
     }
-    LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "master_id is %u when get cm lock.", *master_id);
     return CM_SUCCESS;
 }
 #else
@@ -584,13 +589,13 @@ status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 {
     int ret = cm_res_get_lock_owner(&cm_res->mgr, DSS_CM_LOCK, master_id);
     if (ret == CM_RES_TIMEOUT) {
-        LOG_RUN_INF("Try to get lock owner failed, cm error : %d.", ret);
+        LOG_RUN_ERR("Try to get lock owner failed, cm error : %d.", ret);
         return CM_ERROR;
     } else if (ret == CM_RES_SUCCESS) {
         return CM_SUCCESS;
     } else {
         *master_id = CM_INVALID_ID32;
-        LOG_RUN_INF("Try to get lock owner failed, cm error : %d.", ret);
+        LOG_RUN_ERR("Try to get lock owner failed, cm error : %d.", ret);
     }
     return CM_SUCCESS;
 }
@@ -602,7 +607,8 @@ status_t dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 t
     *master_id = DSS_INVALID_ID32;
     if (inst->is_maintain || inst->inst_cfg.params.inst_cnt <= 1) {
         *grab_lock = CM_TRUE;
-        LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "[RECOVERY]Set curr_id %u to be primary when dssserver is maintain or just one inst.",
+        LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5,
+            "[RECOVERY]Set curr_id %u to be primary when dssserver is maintain or just one inst.",
             (uint32)inst_cfg->params.inst_id);
         *master_id = (uint32)inst_cfg->params.inst_id;
         return CM_SUCCESS;
@@ -727,7 +733,7 @@ void dss_recovery_when_standby(dss_instance_t *inst, uint32 curr_id, uint32 mast
 }
 /*
     1、old_master_id == master_id, just return;
-    2、old_master_id ！= master_id, just indicates that the master has been reselected.so to juge whether recover.
+    2、old_master_id ！= master_id, just indicates that the master has been reselected.so to judge whether recover.
 */
 void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
 {

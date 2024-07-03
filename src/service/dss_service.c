@@ -877,8 +877,8 @@ static status_t dss_process_stop_server(dss_session_t *session)
 // process switch lock,just master id can do
 static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 switch_id)
 {
-    dss_config_t *cfg = dss_get_inst_cfg();
-    uint32 curr_id = (uint32)(cfg->params.inst_id);
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    uint32 curr_id = (uint32)(inst_cfg->params.inst_id);
     uint32 master_id = dss_get_master_id();
     if ((uint32)switch_id == master_id) {
         LOG_RUN_INF("[SWITCH]switchid is equal to current master_id, which is %u.", master_id);
@@ -951,10 +951,6 @@ static status_t dss_process_switch_lock(dss_session_t *session)
 */
 static status_t dss_process_remote_switch_lock(dss_session_t *session, uint32 curr_id, uint32 master_id)
 {
-    if (g_dss_instance.is_maintain) {
-        LOG_RUN_INF("maintain is no need to switch lock by other node.");
-        return CM_SUCCESS;
-    }
     dss_instance_status_e old_status = g_dss_instance.status;
     g_dss_instance.status = DSS_STATUS_SWITCH;
     uint32 current_proto_ver = dss_get_master_proto_ver();
@@ -992,7 +988,8 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
             LOG_RUN_INF("[SWITCH] Set main inst break by recovery");
             return CM_ERROR;
         }
-        if (!cm_latch_timed_x(&g_dss_instance.switch_latch, session->id, DSS_PROCESS_REMOTE_INTERVAL, LATCH_STAT(LATCH_SWITCH))) {
+        if (!cm_latch_timed_x(
+            &g_dss_instance.switch_latch, session->id, DSS_PROCESS_REMOTE_INTERVAL, LATCH_STAT(LATCH_SWITCH))) {
             LOG_RUN_INF("[SWITCH] Spin switch lock timed out, just continue.");
             continue;
         }
@@ -1017,7 +1014,7 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
     if (status != CM_SUCCESS) {
         g_dss_instance.status = DSS_STATUS_OPEN;
         cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-        LOG_RUN_ERR("[DSS] ABORT INFO: dss instance %u refresh meta failed, result(%d).", curr_id, status);
+        LOG_RUN_ERR("[DSS][SWITCH] ABORT INFO: dss instance %u refresh meta failed, result(%d).", curr_id, status);
         cm_fync_logfile();
         _exit(1);
     }
@@ -1040,7 +1037,7 @@ static status_t dss_process_disable_grab_lock_inner(dss_session_t *session, uint
         LOG_RUN_INF("[RELEASE LOCK]inst %u set status flag %u when release lock.", curr_id, DSS_STATUS_READONLY);
         ret = cm_res_unlock(&g_dss_instance.cm_res.mgr, DSS_CM_LOCK);
         if (ret != CM_SUCCESS) {
-            LOG_RUN_ERR("[RELEASE LOCK] inst %u release cm lock failed, cm_error is %d.", curr_id, (int32)ret);
+            LOG_RUN_ERR("[RELEASE LOCK] inst %u release cm lock failed, cm error is %d.", curr_id, (int32)ret);
             uint32 lock_owner_id = DSS_INVALID_ID32;
             ret = cm_res_get_lock_owner(&g_dss_instance.cm_res.mgr, DSS_CM_LOCK, &lock_owner_id);
             if (lock_owner_id == curr_id) {
@@ -1050,7 +1047,7 @@ static status_t dss_process_disable_grab_lock_inner(dss_session_t *session, uint
                     curr_id, DSS_STATUS_READWRITE);
             } else {
                 dss_set_master_id(DSS_INVALID_ID32);
-                LOG_RUN_INF("[RELEASE LOCK]inst %u set status flag %u when failed to unlock, cm_error is %d, "
+                LOG_RUN_INF("[RELEASE LOCK]inst %u set status flag %u when failed to unlock, cm error is %d, "
                             "lock_owner_id is %u.",
                     curr_id, DSS_STATUS_READONLY, (int32)ret, lock_owner_id);
             }
@@ -1086,7 +1083,7 @@ static status_t dss_process_disable_grab_lock(dss_session_t *session)
     while (CM_TRUE) {
         if (!cm_latch_timed_x(
                 &g_dss_instance.switch_latch, session->id, DSS_PROCESS_REMOTE_INTERVAL, LATCH_STAT(LATCH_SWITCH))) {
-            LOG_RUN_INF("[RELEASE LOCK] Spin switch lock timed out, just continue.");
+            LOG_RUN_INF("[RELEASE LOCK]Spin switch lock timed out, just continue.");
             continue;
         }
         g_dss_instance.is_releasing_lock = CM_TRUE;

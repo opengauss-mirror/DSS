@@ -227,9 +227,9 @@ typedef struct st_get_ft_block_ack {
 #define DSS_MES_MSG_HEAD_SIZE (sizeof(dss_message_head_t))
 uint32 dss_get_broadcast_proto_ver(uint64 succ_inst);
 status_t dss_notify_sync(char *buffer, uint32 size, dss_recv_msg_t *recv_msg);
-status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result);
 status_t dss_notify_sync_ex(char *buffer, uint32 size, dss_recv_msg_t *recv_msg);
 
+status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result);
 status_t dss_notify_expect_bool_ack(dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *cmd_ack);
 status_t dss_notify_data_expect_bool_ack(
     dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, char *data, uint32 size, bool32 *cmd_ack);

@@ -391,10 +391,10 @@ status_t dss_load_vg_info_and_recover(bool8 need_recovery)
     return CM_SUCCESS;
 }
 
-void dss_free_shm_hashmap_memory(uint32 num)
+void dss_free_shm_hashmap_memory(dss_share_vg_info_t *share_vg_info, uint32 num)
 {
     for (uint32 i = 0; i <= num; i++) {
-        (void)cm_del_shm(SHM_TYPE_HASH, i);
+        shm_hashmap_destroy(&share_vg_info->vg[i].buffer_cache, i);
     }
 }
 
@@ -440,7 +440,7 @@ status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **inf
             shm_hashmap_init(&share_vg_info->vg[i].buffer_cache, DSS_BLOCK_HASH_SIZE, i, cm_oamap_uint64_compare);
         if (ret != CM_SUCCESS) {
             if (i != 0) {
-                dss_free_shm_hashmap_memory(i - 1);
+                dss_free_shm_hashmap_memory(share_vg_info, i - 1);
             }
             DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
             LOG_RUN_ERR("DSS instance failed to initialize buffer cache, %d!", ret);
@@ -452,7 +452,7 @@ status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **inf
         status = dss_alloc_vg_item_redo_log_buf(&g_vgs_info->volume_group[i]);
         if (status != CM_SUCCESS) {
             if (i != 0) {
-                dss_free_shm_hashmap_memory(i - 1);
+                dss_free_shm_hashmap_memory(share_vg_info, i - 1);
             }
             DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
             return CM_ERROR;

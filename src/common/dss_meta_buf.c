@@ -182,8 +182,8 @@ status_t dss_get_block_from_disk(
     return CM_SUCCESS;
 }
 
-status_t dss_check_block_version(
-    dss_vg_info_item_t *vg_item, dss_block_id_t block_id, dss_block_type_t type, char *addr, bool32 *is_changed, bool32 force_refresh)
+status_t dss_check_block_version(dss_vg_info_item_t *vg_item, dss_block_id_t block_id, dss_block_type_t type,
+    char *addr, bool32 *is_changed, bool32 force_refresh)
 {
 #ifndef WIN32
     char buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_DISK_UNIT_SIZE)));
@@ -207,8 +207,9 @@ status_t dss_check_block_version(
     }
     uint64 disk_version = ((dss_common_block_t *)buf)->version;
     if (dss_compare_version(disk_version, version) || force_refresh) {
-        DSS_LOG_DEBUG_OP("dss_check_block_version, version:%llu, disk_version:%llu, blockid: %s, type:%u, force_refresh:%u.", version,
-            disk_version, dss_display_metaid(block_id), type, (uint32)force_refresh);
+        DSS_LOG_DEBUG_OP(
+            "dss_check_block_version, version:%llu, disk_version:%llu, block_id: %s, type:%u, force_refresh:%u.",
+            version, disk_version, dss_display_metaid(block_id), type, (uint32)force_refresh);
         // if size == DSS_DISK_UNIT_SIZE, the buf has been changed all, not need load again
         if (size == DSS_DISK_UNIT_SIZE) {
             securec_check_ret(memcpy_s(addr, DSS_DISK_UNIT_SIZE, buf, DSS_DISK_UNIT_SIZE));
