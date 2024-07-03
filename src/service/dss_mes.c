@@ -134,7 +134,7 @@ static dss_bcast_ack_cmd_t dss_get_bcast_ack_cmd(dss_bcast_req_cmd_t bcast_op)
     }
     return BCAST_ACK_END;
 }
-
+// warning: if add new broadcast req, please consider the impact of expired broadcast messages on the standby server
 static void dss_proc_broadcast_req_inner(dss_session_t *session, dss_notify_req_msg_t *req)
 {
     status_t status = CM_ERROR;
@@ -154,8 +154,12 @@ static void dss_proc_broadcast_req_inner(dss_session_t *session, dss_notify_req_
             status = dss_meta_syn_remote(session, (dss_meta_syn_t *)req_ex->data, req_ex->data_size, &cmd_ack);
             return;
         default:
-            LOG_DEBUG_ERR("invalid broadcast req type");
+            LOG_RUN_ERR("invalid broadcast req type");
             return;
+    }
+    if (cm_get_error_code() == ERR_DSS_SHM_LOCK_TIMEOUT) {
+        LOG_RUN_ERR("broadcast is breaked by shm lock timeout.");
+        return;
     }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     dss_params_t *param = &inst_cfg->params;
@@ -224,6 +228,10 @@ static void dss_ack_version_not_match(dss_session_t *session, dss_message_head_t
 
 void dss_proc_broadcast_req(dss_session_t *session, mes_msg_t *msg)
 {
+    if (dss_need_exec_local()) {
+        LOG_RUN_INF("No need to solve broadcast msg when the current node is master.");
+        return;
+    }
     if (msg->size < OFFSET_OF(dss_notify_req_msg_t, type)) {
         LOG_DEBUG_ERR("invalid message req size");
         return;
