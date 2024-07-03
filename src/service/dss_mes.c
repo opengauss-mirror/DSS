@@ -1000,8 +1000,7 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
             session->proto_version = new_proto_ver;
             if (session->proto_version != dss_get_version(&session->recv_pack)) {
                 LOG_RUN_INF("[CHECK_PROTO]The client protocol version need be changed, old protocol version is %u, new "
-                            "protocol "
-                            "version is %u",
+                            "protocol version is %u",
                     dss_get_version(&session->recv_pack), session->proto_version);
                 DSS_THROW_ERROR(
                     ERR_DSS_VERSION_NOT_MATCH, dss_get_version(&session->recv_pack), session->proto_version);
@@ -1552,7 +1551,7 @@ status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_pat
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("Try get node by path remote failed."));
     DSS_RETURN_IF_ERROR(remote_result);
     if (dss_cmp_blockid(ack.node_id, DSS_INVALID_64)) {
-        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft block id ack msg error.");
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft node id ack msg error.");
         return CM_ERROR;
     }
     if (!dss_read_remote_checksum(ack.block, DSS_BLOCK_SIZE)) {

@@ -4326,8 +4326,8 @@ static status_t dss_check_delay_node(
     if (broadcast_check_file_open_proc != NULL) {
         // broadcast to check file open
         status = broadcast_check_file_open_proc(vg_item, DSS_ID_TO_U64(node->id), &is_open);
-        DSS_RETURN_IFERR2(status, LOG_RUN_WAR("[DELAY_CLEAN]Failed check broadcast, name %s ftid:%llu.", node->name,
-                                      DSS_ID_TO_U64(node->id)));
+        DSS_RETURN_IFERR2(status,
+            LOG_RUN_WAR("[DELAY_CLEAN]Failed check broadcast, name %s ftid:%llu.", node->name, DSS_ID_TO_U64(node->id)));
         if (is_open) {
             LOG_DEBUG_INF(
                 "[DELAY_CLEAN]File %s ftid:%s is delay node, but have opened other instance, check next time.",
@@ -4337,8 +4337,8 @@ static status_t dss_check_delay_node(
     }
 
     status = dss_clean_delay_node(session, vg_item, parent_node, node);
-    DSS_RETURN_IFERR2(status, LOG_RUN_WAR("[DELAY_CLEAN]Failed to clean delay node, name %s ftid:%llu.", node->name,
-                                  DSS_ID_TO_U64(node->id)));
+    DSS_RETURN_IFERR2(status,
+        LOG_RUN_WAR("[DELAY_CLEAN]Failed to clean delay node,name %s ftid:%llu.", node->name, DSS_ID_TO_U64(node->id)));
     return CM_SUCCESS;
 }
 
