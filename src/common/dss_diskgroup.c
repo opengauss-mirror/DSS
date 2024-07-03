@@ -1904,7 +1904,7 @@ status_t dss_read_volume_inst(
         }
         status = remote_read_proc(vg_item->vg_name, volume, offset, buf, size);
         if (status != CM_SUCCESS) {
-            if (status == DSS_READ4STANDBY_ERR) {
+            if (status == DSS_READ4STANDBY_ERR || get_instance_status_proc() == DSS_STATUS_PREPARE) {
                 LOG_RUN_ERR("Failed to load disk(%s) data from the active node, result:%d", volume->name_p, status);
                 return CM_ERROR;
             }
