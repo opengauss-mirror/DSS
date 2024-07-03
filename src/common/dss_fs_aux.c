@@ -1066,7 +1066,7 @@ static status_t rp_updt_fs_aux_root_base(
     return CM_SUCCESS;
 }
 
-static status_t rb_reload_fs_aux_root(dss_vg_info_item_t *vg_item)
+status_t rb_reload_fs_aux_root(dss_vg_info_item_t *vg_item)
 {
     bool32 remote = CM_FALSE;
     status_t status = dss_load_vg_ctrl_part(

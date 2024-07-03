@@ -54,7 +54,9 @@ status_t dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *ma
 status_t dss_get_block_from_disk(
     dss_vg_info_item_t *vg_item, dss_block_id_t block_id, char *buf, int64_t offset, int32 size, bool32 calc_checksum);
 status_t dss_check_block_version(
-    dss_vg_info_item_t *vg_item, dss_block_id_t blockid, dss_block_type_t type, char *addr, bool32 *is_changed);
+    dss_vg_info_item_t *vg_item, dss_block_id_t blockid, dss_block_type_t type, char *addr, bool32 *is_changed, bool32 force_refresh);
+char *dss_find_block_from_disk_and_refresh_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
+    dss_block_type_t type, ga_obj_id_t *out_obj_id);
 status_t dss_refresh_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
     dss_block_type_t type, char *buf, char **shm_buf);
 static inline int64 dss_get_block_offset(dss_vg_info_item_t *vg_item, uint64 block_size, uint64 blockid, uint64 auid)

@@ -484,36 +484,26 @@ typedef struct st_dss_log_def_t {
     char log_filename[DSS_MAX_NAME_LEN];
 } dss_log_def_t;
 
-#define DB_INC_LSN cm_atomic_inc(&(g_dss_kernel_instance.lsn))
-
-#define DSS_INSTANCE_LOG_BUFFER_SIZE SIZE_M(8)
-#define DSS_LOG_BUF_SLOT_COUNT 16
-#define DSS_INSTANCE_LOG_SPLIT_SIZE ((DSS_INSTANCE_LOG_BUFFER_SIZE) / (DSS_LOG_BUF_SLOT_COUNT))  // 512KB
-#define DSS_INVALID_SLOT (int32)(-1)
+#define DSS_INSTANCE_LOG_BUFFER_SIZE_V0 SIZE_M(8)
+#define DSS_LOG_BUF_SLOT_COUNT_V0 16
+#define DSS_INSTANCE_LOG_SPLIT_SIZE_V0 ((DSS_INSTANCE_LOG_BUFFER_SIZE_V0) / (DSS_LOG_BUF_SLOT_COUNT_V0))
+#define DSS_INSTANCE_LOG_SPLIT_SIZE ((DSS_INSTANCE_LOG_BUFFER_SIZE_V0) / (DSS_MAX_VOLUME_GROUP_NUM) / (DSS_DISK_UNIT_SIZE) * (DSS_DISK_UNIT_SIZE))  // 126KB
+#define DSS_VG_LOG_SPLIT_SIZE SIZE_K(64)
+#define DSS_VG_LOG_BUFFER_SIZE SIZE_M(64)
 
 typedef struct st_dss_log_file_ctrl {
     spinlock_t lock;
-    char *log_buf;  // gloabal log_buf
-    int8 used_slot;
-    volatile uint8 slots[DSS_LOG_BUF_SLOT_COUNT];
+    char *log_buf;  // global log_buf
+    bool8 used;
+    uint32 index;
+    uint64 offset;
+    uint64 lsn;
 } dss_log_file_ctrl_t;
-
-typedef struct st_dss_kernel_instance {
-    dss_log_file_ctrl_t log_ctrl;
-    atomic_t lsn;
-} dss_kernel_instance_t;
 
 typedef struct st_dss_audit_info {
     char *action;
     char resource[DSS_MAX_AUDIT_PATH_LENGTH];
 } dss_audit_info_t;
-
-extern dss_kernel_instance_t g_dss_kernel_instance;
-
-static inline dss_log_file_ctrl_t *dss_get_kernel_instance_log_ctrl()
-{
-    return &(g_dss_kernel_instance.log_ctrl);
-}
 
 #define DSS_FREE_POINT(pointer)  \
     {                            \
@@ -522,16 +512,6 @@ static inline dss_log_file_ctrl_t *dss_get_kernel_instance_log_ctrl()
             (pointer) = NULL;    \
         }                        \
     }
-
-static inline uint64 cm_get_curr_lsn()
-{
-    return ((uint64)cm_atomic_get(&(g_dss_kernel_instance.lsn)));
-}
-
-static inline atomic_t cm_inc_lsn()
-{
-    return cm_atomic_inc(&(g_dss_kernel_instance.lsn));
-}
 
 static inline int64 cm_scn_delta(void)
 {
@@ -581,12 +561,12 @@ static inline struct tm *dss_localtime(const time_t *timep, struct tm *result)
 #endif
 }
 
-static inline uint64 dss_get_log_offset(uint64 au_size)
+static inline uint32 dss_get_log_size(uint64 au_size)
 {
-    if (au_size < DSS_INSTANCE_LOG_BUFFER_SIZE) {
-        uint64 m = DSS_INSTANCE_LOG_BUFFER_SIZE / au_size;
-        uint64 n = DSS_INSTANCE_LOG_BUFFER_SIZE % au_size;
-        return (n == 0) ? DSS_INSTANCE_LOG_BUFFER_SIZE : (m + 1) * au_size;
+    if (au_size < DSS_VG_LOG_BUFFER_SIZE && au_size > 0) {
+        uint64 m = DSS_VG_LOG_BUFFER_SIZE / au_size;
+        uint64 n = DSS_VG_LOG_BUFFER_SIZE % au_size;
+        return (n == 0) ? DSS_VG_LOG_BUFFER_SIZE : (m + 1) * au_size;
     }
     return au_size;
 }

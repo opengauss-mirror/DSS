@@ -182,7 +182,7 @@ status_t dss_get_block_from_disk(
 }
 
 status_t dss_check_block_version(
-    dss_vg_info_item_t *vg_item, dss_block_id_t block_id, dss_block_type_t type, char *addr, bool32 *is_changed)
+    dss_vg_info_item_t *vg_item, dss_block_id_t block_id, dss_block_type_t type, char *addr, bool32 *is_changed, bool32 force_refresh)
 {
 #ifndef WIN32
     char buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_DISK_UNIT_SIZE)));
@@ -205,14 +205,18 @@ status_t dss_check_block_version(
         return status;
     }
     uint64 disk_version = ((dss_common_block_t *)buf)->version;
-    if (dss_compare_version(disk_version, version)) {
-        DSS_LOG_DEBUG_OP("dss_check_block_version, version:%llu, disk_version:%llu, blockid: %s, type:%u.", version,
-            disk_version, dss_display_metaid(block_id), type);
+    if (dss_compare_version(disk_version, version) || force_refresh) {
+        DSS_LOG_DEBUG_OP("dss_check_block_version, version:%llu, disk_version:%llu, blockid: %s, type:%u, force_refresh:%u.", version,
+            disk_version, dss_display_metaid(block_id), type, (uint32)force_refresh);
         // if size == DSS_DISK_UNIT_SIZE, the buf has been changed all, not need load again
         if (size == DSS_DISK_UNIT_SIZE) {
             securec_check_ret(memcpy_s(addr, DSS_DISK_UNIT_SIZE, buf, DSS_DISK_UNIT_SIZE));
         } else {
-            status = dss_get_block_from_disk(vg_item, block_id, addr, offset, (int32)size, CM_TRUE);
+            if (force_refresh && version == 0) {
+                status = dss_get_block_from_disk(vg_item, block_id, addr, offset, (int32)size, CM_FALSE);
+            } else {
+                status = dss_get_block_from_disk(vg_item, block_id, addr, offset, (int32)size, CM_TRUE);
+            }
             if (status != CM_SUCCESS) {
                 LOG_DEBUG_ERR("Failed to get block: %s from disk, addr:%p, offset:%lld, size:%u.",
                     dss_display_metaid(block_id), addr, offset, size);
@@ -249,7 +253,7 @@ static status_t dss_load_buffer_cache(
         block_id_tmp = ((dss_common_block_t *)addr)->id;
         if ((block_ctrl->hash == hash) && (dss_buffer_cache_key_compare(&block_id_tmp, &block_id) == CM_TRUE)) {
             dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
-            status_t status = dss_check_block_version(vg_item, block_id, type, addr, NULL);
+            status_t status = dss_check_block_version(vg_item, block_id, type, addr, NULL, CM_FALSE);
             if (status != CM_SUCCESS) {
                 return status;
             }
@@ -576,7 +580,7 @@ char *dss_find_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item,
     }
     if (addr != NULL) {
         if (check_version && (DSS_STANDBY_CLUSTER || !dss_is_readwrite() || active_refresh)) {
-            status = dss_check_block_version(vg_item, block_id, type, addr, NULL);
+            status = dss_check_block_version(vg_item, block_id, type, addr, NULL, CM_FALSE);
             if (status != CM_SUCCESS) {
                 return NULL;
             }
@@ -587,6 +591,32 @@ char *dss_find_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item,
         return addr;
     }
 
+    status = dss_load_buffer_cache(vg_item, block_id, type, &addr, out_obj_id);
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to load meta block, block_id: %s.", dss_display_metaid(block_id));
+        return NULL;
+    }
+    return addr;
+}
+
+char *dss_find_block_from_disk_and_refresh_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
+    dss_block_type_t type, ga_obj_id_t *out_obj_id)
+{
+    status_t status;
+    char *addr = NULL;
+    uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
+    addr = dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
+    if (addr != NULL) {
+            status = dss_check_block_version(vg_item, block_id, type, addr, NULL, CM_TRUE);
+            if (status != CM_SUCCESS) {
+                return NULL;
+            }
+        return addr;
+    }
+
+    if (!dss_is_server()) {
+        return NULL;
+    }
     status = dss_load_buffer_cache(vg_item, block_id, type, &addr, out_obj_id);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load meta block, block_id: %s.", dss_display_metaid(block_id));
@@ -639,7 +669,7 @@ static status_t dss_refresh_buffer_cache_inner(
         if (block->type == DSS_BLOCK_TYPE_FT) {
             dss_init_dss_fs_block_cache_info(&block_ctrl->fs_block_cache_info);
             status_t status =
-                dss_check_block_version(vg_item, ((dss_common_block_t *)addr)->id, block->type, addr, NULL);
+                dss_check_block_version(vg_item, ((dss_common_block_t *)addr)->id, block->type, addr, NULL, CM_FALSE);
             if (status != CM_SUCCESS) {
                 dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
                 return status;

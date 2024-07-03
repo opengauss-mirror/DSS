@@ -397,6 +397,23 @@ void dss_free_shm_hashmap_memory(uint32 num)
         (void)cm_del_shm(SHM_TYPE_HASH, i);
     }
 }
+
+status_t dss_alloc_vg_item_redo_log_buf(dss_vg_info_item_t *vg_item)
+{
+    LOG_RUN_INF("Begin to alloc redo log buf of vg %s.", vg_item->vg_name);
+    char *log_buf = (char *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_VG_LOG_SPLIT_SIZE);
+    if (log_buf == NULL) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_VG_LOG_SPLIT_SIZE, "global log buffer"));
+    }
+    errno_t rc = memset_s(log_buf, DSS_DISK_UNIT_SIZE, 0, DSS_DISK_UNIT_SIZE);
+    if (rc != EOK) {
+        DSS_RETURN_IFERR3(CM_ERROR, LOG_RUN_ERR("Memset failed."), DSS_FREE_POINT(log_buf));
+    }
+    vg_item->log_file_ctrl.log_buf = log_buf;
+    return CM_SUCCESS;
+}
+
 status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **info)
 {
     bool32 is_server = dss_is_server();
@@ -432,6 +449,14 @@ status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **inf
         }
         cm_bilist_init(&g_vgs_info->volume_group[i].open_file_list);
         cm_bilist_init(&g_vgs_info->volume_group[i].syn_meta_desc.bilist);
+        status = dss_alloc_vg_item_redo_log_buf(&g_vgs_info->volume_group[i]);
+        if (status != CM_SUCCESS) {
+            if (i != 0) {
+                dss_free_shm_hashmap_memory(i - 1);
+            }
+            DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
+            return CM_ERROR;
+        }
     }
     if (info) {
         *info = g_vgs_info;
@@ -1097,6 +1122,23 @@ status_t dss_update_volume_ctrl(dss_vg_info_item_t *vg_item)
     return status;
 }
 
+status_t dss_update_redo_ctrl(dss_vg_info_item_t *vg_item, uint32 index, uint64 offset, uint64 lsn)
+{
+    status_t status;
+    dss_redo_ctrl_t *redo_ctrl = &vg_item->dss_ctrl->redo_ctrl;
+    redo_ctrl->redo_index = index;
+    redo_ctrl->offset = offset;
+    redo_ctrl->lsn = lsn;
+    redo_ctrl->version++;
+    redo_ctrl->checksum = dss_get_checksum(redo_ctrl, DSS_DISK_UNIT_SIZE);
+    status = dss_write_ctrl_to_disk(vg_item, (int64)DSS_CTRL_REDO_OFFSET, redo_ctrl, DSS_DISK_UNIT_SIZE);
+    if (status == CM_SUCCESS) {
+        // write to backup area
+        status = dss_write_ctrl_to_disk(vg_item, (int64)DSS_CTRL_BAK_REDO_OFFSET, redo_ctrl, DSS_DISK_UNIT_SIZE);
+    }
+    return status;
+}
+
 status_t dss_update_volume_id_info(dss_vg_info_item_t *vg_item, uint32 id)
 {
     DSS_RETURN_IF_ERROR(dss_update_core_ctrl_disk(vg_item));
@@ -1500,65 +1542,86 @@ status_t dss_remove_volume(dss_session_t *session, const char *vg_name, const ch
     LOG_RUN_INF("Succeed to delete volume:%s in vg:%s.", volume_name, vg_name);
     return status;
 }
+static status_t dss_refresh_core_ctrl(dss_vg_info_item_t *vg_item)
+{
+    uint64 disk_core_version;
+    status_t status = dss_get_core_version(vg_item, &disk_core_version);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to get core version");
+        return status;
+    }
+    LOG_RUN_INF("Try to load core ctrl, disk version:%llu, mem version:%llu for vg:%s.",
+        disk_core_version, vg_item->dss_ctrl->core.version, vg_item->vg_name);
+    if (dss_compare_version(disk_core_version, vg_item->dss_ctrl->core.version)) {
+        status = dss_load_core_ctrl(vg_item, &vg_item->dss_ctrl->core);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to load core ctrl data from disk.");
+            return status;
+        }
+    }
+    LOG_RUN_INF("End to load core ctrl, disk version:%llu, mem version:%llu for vg:%s.",
+        disk_core_version, vg_item->dss_ctrl->core.version, vg_item->vg_name);
+    return CM_SUCCESS;
+}
+static status_t dss_refresh_volume_ctrl(dss_vg_info_item_t *vg_item)
+{
+    uint64 disk_volume_version;
+    status_t status = dss_get_volume_version(vg_item, &disk_volume_version);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to get volume version");
+        return status;
+    }
+    LOG_RUN_INF("Try to load volume ctrl, disk version:%llu, mem version:%llu for vg:%s.",
+        disk_volume_version, vg_item->dss_ctrl->volume.version, vg_item->vg_name);
+    if (dss_compare_version(disk_volume_version, vg_item->dss_ctrl->volume.version)) {
+        status = dss_check_volume(vg_item, CM_INVALID_ID32);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to load volume ctrl data from disk.");
+            return status;
+        }
+    }
+    LOG_RUN_INF("End to load volume ctrl, disk version:%llu, mem version:%llu for vg:%s.",
+        disk_volume_version, vg_item->dss_ctrl->volume.version, vg_item->vg_name);
+    return CM_SUCCESS;
+}
 
 status_t dss_load_ctrl_core(dss_vg_info_item_t *vg_item, uint32 index)
 {
-    status_t status;
+    status_t status = CM_ERROR;
     bool32 remote = CM_FALSE;
-    if (index == DSS_VG_INFO_CORE_CTRL) {
-        uint64 disk_core_version;
-        status = dss_get_core_version(vg_item, &disk_core_version);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to get core version");
-            return status;
-        }
-        LOG_DEBUG_INF("Try to load core ctrl:%u  disk version:%llu, mem version:%llu for vg:%s.", index,
-            disk_core_version, vg_item->dss_ctrl->core.version, vg_item->vg_name);
-        if (dss_compare_version(disk_core_version, vg_item->dss_ctrl->core.version)) {
-            status = dss_load_core_ctrl(vg_item, &vg_item->dss_ctrl->core);
+    switch (index) {
+        case DSS_VG_INFO_CORE_CTRL:
+            status = dss_refresh_core_ctrl(vg_item);
+            break;
+        case DSS_VG_INFO_VG_HEADER:
+            status = dss_load_vg_ctrl_part(
+                vg_item, (int64)DSS_CTRL_VG_DATA_OFFSET, vg_item->dss_ctrl->vg_data, (int32)DSS_VG_DATA_SIZE, &remote);
             if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("Failed to load core ctrl data from disk.");
-                return status;
+                LOG_RUN_ERR("Failed to load vg data from disk.");
             }
-        }
-        LOG_DEBUG_INF("End to load core ctrl:%u  disk version:%llu, mem version:%llu for vg:%s.", index,
-            disk_core_version, vg_item->dss_ctrl->core.version, vg_item->vg_name);
-    } else if (index == DSS_VG_INFO_VG_HEADER) {
-        status = dss_load_vg_ctrl_part(
-            vg_item, (int64)DSS_CTRL_VG_DATA_OFFSET, vg_item->dss_ctrl->vg_data, DSS_VG_DATA_SIZE, &remote);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to load vg data from disk.");
-            return status;
-        }
-    } else if (index == DSS_VG_INFO_VOLUME_CTRL) {
-        uint64 disk_volume_version;
-        status = dss_get_volume_version(vg_item, &disk_volume_version);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to get volume version");
-            return status;
-        }
-        LOG_DEBUG_INF("Try to load volume ctrl:%u  disk version:%llu, mem version:%llu for vg:%s.", index,
-            disk_volume_version, vg_item->dss_ctrl->volume.version, vg_item->vg_name);
-        if (dss_compare_version(disk_volume_version, vg_item->dss_ctrl->volume.version)) {
-            status = dss_check_volume(vg_item, CM_INVALID_ID32);
+            break;
+        case DSS_VG_INFO_VOLUME_CTRL:
+            status = dss_refresh_volume_ctrl(vg_item);
+            break;
+        case DSS_VG_INFO_ROOT_FT_BLOCK:
+        case DSS_VG_INFO_GFT_NODE:
+            status = dss_refresh_root_ft(vg_item, CM_TRUE, CM_TRUE);
             if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("Failed to load volume ctrl data from disk.");
-                return status;
+                LOG_RUN_ERR("Failed to load ft ctrl data from disk.");
             }
-        }
-        LOG_DEBUG_INF("End to load volume ctrl:%u  disk version:%llu, mem version:%llu for vg:%s.", index,
-            disk_volume_version, vg_item->dss_ctrl->volume.version, vg_item->vg_name);
-    } else if (index == DSS_VG_INFO_ROOT_FT_BLOCK || index == DSS_VG_INFO_GFT_NODE) {
-        status = dss_refresh_root_ft(vg_item, CM_TRUE, CM_TRUE);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to load ft ctrl data from disk.");
-            return status;
-        }
-    } else {
-        LOG_DEBUG_ERR("the format of index is wrong.");
-        return CM_ERROR;
+            break;
+        case DSS_VG_INFO_REDO_CTRL:
+            status = dss_load_vg_ctrl_part(
+                vg_item, (int64)DSS_CTRL_REDO_OFFSET, vg_item->dss_ctrl->redo_ctrl_data, (int32)DSS_DISK_UNIT_SIZE, &remote);
+            if (status != CM_SUCCESS) {
+                LOG_RUN_ERR("Failed to load vg data from disk.");
+            }
+            break;
+        default:
+            LOG_RUN_ERR("the format of index %u is wrong.", index);
+            break;
     }
-    return CM_SUCCESS;
+    return status;
 }
 
 status_t dss_load_ctrl(dss_session_t *session, const char *vg_name, uint32 index)
@@ -1595,7 +1658,7 @@ status_t dss_refresh_meta_info(dss_session_t *session)
 {
     status_t status;
     for (uint32_t i = 0; i < g_vgs_info->group_num; i++) {
-        for (uint32_t j = DSS_VG_INFO_CORE_CTRL; j < DSS_VG_INFO_GFT_NODE; j++) {
+        for (uint32_t j = DSS_VG_INFO_CORE_CTRL; j < DSS_VG_INFO_TYPE_END; j++) {
             LOG_RUN_INF("refresh dss ctrl vg_name:%s, type %u.", g_vgs_info->volume_group[i].vg_name, j);
             status = dss_load_ctrl(session, g_vgs_info->volume_group[i].vg_name, j);
             if (status != CM_SUCCESS) {
@@ -1857,14 +1920,14 @@ status_t dss_read_volume_inst(
                 continue;
             }
         }
-
         return status;
     }
 
     if (dss_is_server()) {
         uint32 recover_thread_id = dss_get_recover_thread_id();
         uint32 curr_thread_id = dss_get_current_thread_id();
-        if (get_instance_status_proc() == DSS_STATUS_RECOVERY && recover_thread_id != curr_thread_id &&
+        uint32 recover_status = get_instance_status_proc();
+        if (recover_status != DSS_STATUS_OPEN && recover_thread_id != curr_thread_id &&
             vg_item->status == DSS_VG_STATUS_OPEN) {
             DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
             LOG_RUN_INF("Read volume inst break by recovery");

@@ -55,7 +55,7 @@ int dss_init_session(uint32 max_session_num)
         g_dss_session_ctrl.sessions[i].id = i;
         g_dss_session_ctrl.sessions[i].is_used = CM_FALSE;
         g_dss_session_ctrl.sessions[i].is_closed = CM_TRUE;
-        g_dss_session_ctrl.sessions[i].log_split = DSS_INVALID_SLOT;
+        g_dss_session_ctrl.sessions[i].put_log = CM_FALSE;
     }
     g_dss_session_ctrl.total = max_session_num;
     g_dss_session_ctrl.is_inited = CM_TRUE;
@@ -156,9 +156,7 @@ void dss_destroy_session(dss_session_t *session)
     g_dss_session_ctrl.sessions[id].cli_info.start_time = 0;
     g_dss_session_ctrl.sessions[id].client_version = DSS_PROTO_VERSION;
     g_dss_session_ctrl.sessions[id].proto_version = DSS_PROTO_VERSION;
-    if (g_dss_session_ctrl.sessions[id].log_split != DSS_INVALID_SLOT) {
-        dss_free_log_slot(&g_dss_session_ctrl.sessions[id]);
-    }
+    g_dss_session_ctrl.sessions[id].put_log = CM_FALSE;
     cm_spin_unlock(&g_dss_session_ctrl.sessions[id].lock);
     cm_spin_unlock(&g_dss_session_ctrl.lock);
 }

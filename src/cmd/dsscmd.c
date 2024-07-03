@@ -213,7 +213,7 @@ static status_t cmd_check_length(const char *input_length)
         return CM_ERROR;
     }
     if ((int64)length < 0) {
-        DSS_PRINT_ERROR("The value of length mush not be a negative number.\n");
+        DSS_PRINT_ERROR("The value of length must not be a negative number.\n");
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -4420,7 +4420,7 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set,
                                       {"dis_grab_lock", disable_grab_lock_help, disable_grab_lock_proc,
                                         &cmd_disable_grab_lock_args_set, true},
                                       {"en_grab_lock", enable_grab_lock_help, enable_grab_lock_proc,
-                                        &cmd_enable_grab_lock_args_set, true}
+                                        &cmd_enable_grab_lock_args_set, true},
 };
 
 // clang-format on

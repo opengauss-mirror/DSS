@@ -1641,7 +1641,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         dss_vg_info_item_t *first_vg_item = dss_get_first_vg_item();
         if (strcmp(first_vg_item->vg_name, vg_item->vg_name) == 0 && auid.volume == 0) {
             if (g_log_offset == DSS_INVALID_64) {
-                uint64 log_offset = dss_get_log_offset(au_size);
+                uint32 log_offset = dss_get_log_size(au_size);
                 g_log_offset = au_size + log_offset;
             }
             if (vol_offset < g_log_offset) {

@@ -127,80 +127,6 @@ static status_t dss_init_thread(dss_instance_t *inst)
     return CM_SUCCESS;
 }
 
-status_t dss_load_log_buffer_sort_and_recover_direct(dss_redo_batch_t *batch, dss_redo_batch_t *tmp_batch)
-{
-    bool32 remote = CM_FALSE;
-    dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[0];
-    int64 offset = (int64)dss_get_vg_au_size(vg_item->dss_ctrl);
-    uint32 load_size = CM_CALC_ALIGN(tmp_batch->size + sizeof(dss_redo_batch_t), DSS_DISK_UNIT_SIZE);
-    LOG_RUN_INF("Begin to load recovery log buf direct whose size is %u.", load_size);
-    status_t status = dss_load_vg_ctrl_part(vg_item, offset, batch, (int32)load_size, &remote);
-    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to load recovery log buf."));
-    return dss_recover_when_instance_start(batch, CM_TRUE);
-}
-
-status_t dss_load_log_buffer(dss_redo_batch_t *batch)
-{
-    dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[0];
-    int64 base_offset = (int64)dss_get_vg_au_size(vg_item->dss_ctrl);
-    int64 offset = 0;
-    dss_redo_batch_t *tmp_batch = NULL;
-    uint32 data_size;
-    status_t status;
-    bool32 remote = CM_FALSE;
-    char *tmp_log_buf = (char *)cm_malloc_align(DSS_DISK_UNIT_SIZE, DSS_INSTANCE_LOG_SPLIT_SIZE);
-    if (tmp_log_buf == NULL) {
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_DISK_UNIT_SIZE, "log_buf"));
-    }
-    for (uint8 i = 0; i < DSS_LOG_BUF_SLOT_COUNT; i++) {
-        offset = base_offset + i * DSS_INSTANCE_LOG_SPLIT_SIZE;
-        LOG_RUN_INF("begin to load log buf, offset:%lld, size:%u.", offset, DSS_DISK_UNIT_SIZE);
-        status = dss_load_vg_ctrl_part(vg_item, offset, tmp_log_buf, DSS_DISK_UNIT_SIZE, &remote);
-        DSS_BREAK_IFERR2(status, LOG_RUN_ERR("Failed to load log_buf from first vg ctrl when recover."));
-        tmp_batch = (dss_redo_batch_t *)tmp_log_buf;
-        if (tmp_batch->size == 0) {
-            LOG_RUN_INF("size of log slot %u is 0, ignore.", i);
-            continue;
-        }
-        LOG_RUN_INF("There are redo logs, size:%u, log_slot is %u.", tmp_batch->size, i);
-        if (i == 0 && tmp_batch->in_recovery == CM_TRUE) {
-            status = dss_load_log_buffer_sort_and_recover_direct(batch, tmp_batch);
-            if (status != CM_SUCCESS) {
-                LOG_RUN_ERR("Failed to load redo log.");
-            }
-            break;
-        }
-        uint32 load_size = CM_CALC_ALIGN(tmp_batch->size + sizeof(dss_redo_batch_t), DSS_DISK_UNIT_SIZE);
-        if (load_size > DSS_INSTANCE_LOG_SPLIT_SIZE) {
-            // invalid log ,ignored it.
-            LOG_RUN_INF("Redo log slot %u is invalid, ignored it. size is %u, which is greater than %u", i, load_size,
-                DSS_INSTANCE_LOG_SPLIT_SIZE);
-            (void)dss_reset_log_slot_head(i);
-            continue;
-        }
-        if (load_size > DSS_DISK_UNIT_SIZE) {
-            status = dss_load_vg_ctrl_part(vg_item, offset, tmp_batch, (int32)load_size, &remote);
-            DSS_BREAK_IFERR2(status, LOG_RUN_ERR("Failed to load redo log."));
-        }
-        if (!dss_check_redo_log_available(tmp_batch, vg_item, i)) {
-            LOG_RUN_INF("Reset log when find uncompleted redo data, log slot is %u.", i);
-            continue;
-        }
-        data_size = tmp_batch->size - DSS_REDO_BATCH_HEAD_SIZE;
-        errno_t rc = memcpy_s(
-            (char *)batch + batch->size, DSS_INSTANCE_LOG_BUFFER_SIZE - batch->size, tmp_batch->data, data_size);
-        if (rc != EOK) {
-            LOG_RUN_ERR("Failed to memcpy when recover.");
-            status = CM_ERROR;
-            break;
-        }
-        batch->size += data_size;
-        batch->count += tmp_batch->count;
-    }
-    DSS_FREE_POINT(tmp_log_buf);
-    return status;
-}
-
 status_t dss_check_vg_ctrl_valid(dss_vg_info_item_t *vg_item)
 {
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
@@ -210,61 +136,73 @@ status_t dss_check_vg_ctrl_valid(dss_vg_info_item_t *vg_item)
     return CM_SUCCESS;
 }
 
-status_t dss_alloc_instance_log_buf(dss_instance_t *inst)
+status_t dss_recover_from_offset(dss_vg_info_item_t *vg_item)
 {
-    LOG_RUN_INF("Begin to get instance log buf.");
-    char *log_buf = (char *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_INSTANCE_LOG_BUFFER_SIZE);
-    if (log_buf == NULL) {
-        DSS_RETURN_IFERR2(
-            CM_ERROR, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_INSTANCE_LOG_BUFFER_SIZE, "global log buffer"));
+    bool8 need_recovery = CM_FALSE;
+    /* 1、load offset batch 2、check batch valid 3、if batch valid, used 4、if batch invalid,just end */
+    LOG_RUN_INF("[RECOVERY]Try to load log buf to recover");
+    if (dss_load_log_buffer_from_offset(vg_item, &need_recovery) != CM_SUCCESS) {
+        return CM_ERROR;
     }
-    errno_t rc = memset_s(log_buf, sizeof(dss_redo_batch_t), 0, sizeof(dss_redo_batch_t));
-    if (rc != EOK) {
-        DSS_RETURN_IFERR3(CM_ERROR, LOG_RUN_ERR("Memset failed."), DSS_FREE_POINT(log_buf));
+    if (need_recovery) {
+        char *log_buf = vg_item->log_file_ctrl.log_buf;
+        status_t status = dss_recover_from_offset_inner(vg_item, log_buf);
+        if (status != CM_SUCCESS) {
+            return CM_ERROR;
+        }
     }
-    inst->kernel_instance->log_ctrl.log_buf = log_buf;
+    return CM_SUCCESS;
+}
+
+status_t dss_recover_from_slot(dss_vg_info_item_t *vg_item)
+{
+    bool8 need_recovery = CM_FALSE;
+    if (dss_load_log_buffer_from_slot(vg_item, &need_recovery) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+    if (need_recovery) {
+        char *log_buf = vg_item->log_file_ctrl.log_buf;
+        status_t status = dss_recover_from_slot_inner(vg_item, log_buf);
+        if (status != CM_SUCCESS) {
+            return CM_ERROR;
+        }
+        return status;
+    }
     return CM_SUCCESS;
 }
 
 status_t dss_recover_from_instance(dss_instance_t *inst)
 {
-    char *log_buf = inst->kernel_instance->log_ctrl.log_buf;
-    dss_redo_batch_t *batch = (dss_redo_batch_t *)log_buf;
-    batch->size = sizeof(dss_redo_batch_t);
-    batch->count = 0;
-    dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[0];
-    if (dss_check_vg_ctrl_valid(vg_item) != CM_SUCCESS) {
-        DSS_FREE_POINT(batch);
-        inst->kernel_instance->log_ctrl.log_buf = NULL;
-        return CM_ERROR;
-    }
-    LOG_RUN_INF("Try to load log buf head judge in use, sort and recover");
-    if (dss_load_log_buffer(batch) != CM_SUCCESS) {
-        DSS_FREE_POINT(batch);
-        inst->kernel_instance->log_ctrl.log_buf = NULL;
-        return CM_ERROR;
-    }
-    if (batch->size == 0 || batch->size == sizeof(dss_redo_batch_t)) {
-        LOG_RUN_INF("No redo log need recover or log has been recovered and cleaned");
-        return CM_SUCCESS;
-    }
-    LOG_RUN_INF(
-        "Flush assemble log, whose size is %u, maybe greater than %u in recovery", batch->size, DSS_LOG_BUFFER_SIZE);
-    batch->in_recovery = CM_TRUE;
-    if (dss_flush_log(0, vg_item, log_buf) != CM_SUCCESS) {
-        LOG_RUN_ERR("Flush log failed.");
-        DSS_FREE_POINT(batch);
-        inst->kernel_instance->log_ctrl.log_buf = NULL;
-        return CM_ERROR;
-    }
-
-    status_t status = dss_recover_when_instance_start(batch, CM_FALSE);
-    if (status != CM_SUCCESS) {
-        DSS_FREE_POINT(batch);
-        inst->kernel_instance->log_ctrl.log_buf = NULL;
+    status_t status;
+    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+        dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[i];
+        if (dss_check_vg_ctrl_valid(vg_item) != CM_SUCCESS) {
+            LOG_RUN_ERR("[RECOVERY]Failed to check valid of vg %s.", vg_item->vg_name);
+            return CM_ERROR;
+        }
+        uint32 software_version = dss_get_software_version(&vg_item->dss_ctrl->vg_info);
+        if (software_version < DSS_SOFTWARE_VERSION_2) {
+            status = dss_recover_from_slot(vg_item);
+            if (status != CM_SUCCESS) {
+                LOG_RUN_ERR("[RECOVERY]Failed to recover from vg %s.", vg_item->vg_name);
+                return CM_ERROR; 
+            } 
+        } else {
+            status = dss_load_redo_ctrl(vg_item);
+            if (status != CM_SUCCESS) {
+                LOG_RUN_ERR("[RECOVERY]Failed to load redo ctrl of vg %s.", vg_item->vg_name);
+                return CM_ERROR;
+            }
+            status = dss_recover_from_offset(vg_item);
+            if (status != CM_SUCCESS) {
+                LOG_RUN_ERR("[RECOVERY]Failed to recover from vg %s.", vg_item->vg_name);
+                return CM_ERROR;
+            }
+        }
     }
     return status;
 }
+
 bool32 dss_config_cm()
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
@@ -276,15 +214,6 @@ bool32 dss_config_cm()
     return CM_TRUE;
 }
 
-/*
-   1、when create first vg, init global log buffer;
-   2、when dss_server start up, init memory log buf;
-*/
-status_t dss_get_instance_log_buf(dss_instance_t *inst)
-{
-    return dss_alloc_instance_log_buf(inst);
-}
-
 static status_t dss_init_inst_handle_session(dss_instance_t *inst)
 {
     status_t status = dss_create_session(NULL, &inst->handle_session);
@@ -294,9 +223,6 @@ static status_t dss_init_inst_handle_session(dss_instance_t *inst)
 
 static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
 {
-    errno_t errcode = memset_s(&g_dss_kernel_instance, sizeof(g_dss_kernel_instance), 0, sizeof(g_dss_kernel_instance));
-    securec_check_ret(errcode);
-    inst->kernel_instance = &g_dss_kernel_instance;
     g_dss_share_vg_info = (dss_share_vg_info_t *)ga_object_addr(GA_INSTANCE_POOL, objectid);
     if (g_dss_share_vg_info == NULL) {
         DSS_RETURN_IFERR2(
@@ -312,8 +238,6 @@ static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to initialize thread."));
     status = dss_startup_mes();
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to startup mes"));
-    status = dss_get_instance_log_buf(inst);
-    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to get log buf"));
     status = dss_start_lsnr(inst);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to start lsnr!"));
     status = dss_create_reactors();
@@ -516,10 +440,16 @@ status_t dss_init_cm(dss_instance_t *inst)
     return CM_SUCCESS;
 }
 
-void dss_free_log_ctrl(dss_instance_t *inst)
+void dss_free_log_ctrl()
 {
-    if (inst->kernel_instance != NULL && inst->kernel_instance->log_ctrl.log_buf != NULL) {
-        DSS_FREE_POINT(inst->kernel_instance->log_ctrl.log_buf);
+    if (g_vgs_info == NULL) {
+        return;
+    }
+    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+        dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[i];
+        if (vg_item != NULL && vg_item->log_file_ctrl.log_buf != NULL) {
+            DSS_FREE_POINT(vg_item->log_file_ctrl.log_buf);
+        }
     }
 }
 
@@ -674,7 +604,7 @@ uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     if (inst->is_maintain || inst->inst_cfg.params.inst_cnt <= 1) {
         *grab_lock = CM_TRUE;
-        LOG_RUN_INF("[RECOVERY]Set curr_id %u to be primary when dssserver is maintain or just one inst.",
+        LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "[RECOVERY]Set curr_id %u to be primary when dssserver is maintain or just one inst.",
             (uint32)inst_cfg->params.inst_id);
         return (uint32)inst_cfg->params.inst_id;
     }
@@ -735,7 +665,6 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
     }
 
     dss_instance_status_e old_status = inst->status;
-
     inst->status = DSS_STATUS_RECOVERY;
     CM_MFENCE;
 
@@ -752,7 +681,6 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
         dss_wait_session_pause(inst);
     }
     dss_wait_background_pause(inst);
-
     status_t ret = dss_recover_from_instance(inst);
     if (ret != CM_SUCCESS) {
         LOG_RUN_ERR("[RECOVERY]ABORT INFO: Recover failed when get cm lock.");

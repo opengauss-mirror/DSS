@@ -164,7 +164,7 @@ status_t dss_get_vg_non_entry_info(
 
     bool32 remote = CM_FALSE;
     status_t status = CM_ERROR;
-    bool32 recover_redo = CM_FALSE;
+    bool8 recover_redo = CM_FALSE;
     do {
         status = dss_load_vg_ctrl_part(vg_item, 0, vg_item->dss_ctrl, (int32)sizeof(dss_ctrl_t), &remote);
         if (status != CM_SUCCESS) {
@@ -176,7 +176,6 @@ status_t dss_get_vg_non_entry_info(
             DSS_THROW_ERROR(ERR_DSS_VG_CHECK_NOT_INIT);
             break;
         }
-        
         if (check_redo) {
             status = dss_check_recover_redo_log(vg_item, &recover_redo);
             if (status != CM_SUCCESS) {

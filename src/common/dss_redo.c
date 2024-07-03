@@ -38,127 +38,92 @@ bool32 is_first_vg(const char *vg_name)
     return (strcmp(g_vgs_info->volume_group[0].vg_name, vg_name) == 0);
 }
 
-status_t dss_set_log_buf_for_first_vg(const char *vg_name, dss_vg_info_item_t *vg_item, dss_volume_t *volume)
+status_t dss_set_log_buf(const char *vg_name, dss_vg_info_item_t *vg_item)
 {
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
     uint64 au_size = dss_get_vg_au_size(dss_ctrl);
-    LOG_DEBUG_INF("[REDO][INIT] Before init log slot.au_size:%llu, hwm:%llu, free:%llu", au_size,
+    LOG_DEBUG_INF("[REDO][INIT] Before init redo log. au_size:%llu, hwm:%llu, free:%llu", au_size,
         dss_ctrl->core.volume_attrs[0].hwm, dss_ctrl->core.volume_attrs[0].free);
-    uint64 log_offset = dss_get_log_offset(au_size);
-    if (dss_ctrl->core.volume_attrs[0].free < log_offset) {
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("[REDO][INIT] The first vg has no enough space for global log."));
+    uint32 log_size = dss_get_log_size(au_size);
+    if (dss_ctrl->core.volume_attrs[0].free < log_size) {
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("[REDO][INIT]The vg %s has no enough space for redo log.", vg_name));
     }
-    dss_ctrl->core.volume_attrs[0].hwm = dss_ctrl->core.volume_attrs[0].hwm + log_offset;
-    dss_ctrl->core.volume_attrs[0].free = dss_ctrl->core.volume_attrs[0].free - log_offset;
+    auid_t auid;
+    auid.au = dss_get_au_id(vg_item, dss_ctrl->core.volume_attrs[0].hwm);
+    auid.volume = dss_ctrl->core.volume_attrs[0].id;
+    auid.block = 0;
+    auid.item = 0;
+    dss_ctrl->redo_ctrl.redo_index = 0;
+    dss_ctrl->redo_ctrl.count = 0;
+    dss_ctrl->redo_ctrl.redo_start_au[dss_ctrl->redo_ctrl.count] = auid;
+    dss_ctrl->redo_ctrl.redo_size[dss_ctrl->redo_ctrl.count] = log_size;
+    dss_ctrl->redo_ctrl.count++;
+    dss_ctrl->core.volume_attrs[0].hwm = dss_ctrl->core.volume_attrs[0].hwm + log_size;
+    dss_ctrl->core.volume_attrs[0].free = dss_ctrl->core.volume_attrs[0].free - log_size;
     DSS_RETURN_IF_ERROR(dss_update_core_ctrl_disk(vg_item));
-    DSS_LOG_DEBUG_OP("[REDO][INIT] Begin to init log slot.au_size:%llu, hwm:%llu, free:%llu", au_size,
+    DSS_RETURN_IF_ERROR(dss_update_redo_ctrl(vg_item, 0, 0, 0));
+    LOG_RUN_INF("[REDO][INIT] Begin to init log slot.au_size:%llu, hwm:%llu, free:%llu", au_size,
         dss_ctrl->core.volume_attrs[0].hwm, dss_ctrl->core.volume_attrs[0].free);
-#ifndef WIN32
-    char log_buf_head[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_DISK_UNIT_SIZE)));
-#else
-    char log_buf_head[DSS_DISK_UNIT_SIZE];
-#endif
-    errno_t rc = memset_s(log_buf_head, DSS_DISK_UNIT_SIZE, 0, DSS_DISK_UNIT_SIZE);
-    DSS_SECUREC_RETURN_IF_ERROR2(rc, LOG_DEBUG_ERR("[REDO][INIT] Init log buf head failed."), CM_ERROR);
-    int64 offset;
-    for (uint32 i = 0; i < DSS_LOG_BUF_SLOT_COUNT; i++) {
-        offset = (int64)au_size + i * DSS_INSTANCE_LOG_SPLIT_SIZE;
-        LOG_DEBUG_INF(
-            "[REDO][INIT] Init log slot %u .offset:%lld. log split size:%u", i, offset, DSS_INSTANCE_LOG_SPLIT_SIZE);
-        DSS_RETURN_IFERR2(dss_write_volume(volume, offset, log_buf_head, DSS_DISK_UNIT_SIZE),
-            LOG_DEBUG_ERR("[REDO][INIT] Init log slot %u failed.", i));
+    char *log_buf = (char *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_VG_LOG_BUFFER_SIZE);
+    if (log_buf == NULL) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_VG_LOG_BUFFER_SIZE, "log buffer"));
     }
+    errno_t rc = memset_s(log_buf, DSS_VG_LOG_BUFFER_SIZE, 0, DSS_VG_LOG_BUFFER_SIZE);
+    if (rc != EOK) {
+        LOG_RUN_ERR("[REDO][INIT] Init log buf head failed.");
+        DSS_FREE_POINT(log_buf);
+        return CM_ERROR;
+    }
+    uint64 offset = dss_get_vg_au_size(dss_ctrl) * auid.au;
+    DSS_RETURN_IFERR3(dss_write_volume(&vg_item->volume_handle[0], (int64)offset, log_buf, (int32)DSS_VG_LOG_BUFFER_SIZE),
+        DSS_FREE_POINT(log_buf), LOG_RUN_ERR("[REDO][INIT] Init log buf head from offset %llu failed.", offset));
+    DSS_LOG_DEBUG_OP("[REDO][INIT] Succeed to init redo log.au_size:%llu, log_size is %u, hwm:%llu, free:%llu, redo_start_au: %s", au_size, log_size,
+        dss_ctrl->core.volume_attrs[0].hwm, dss_ctrl->core.volume_attrs[0].free, dss_display_metaid(auid));
+    DSS_FREE_POINT(log_buf);
     return CM_SUCCESS;
 }
 
-status_t dss_set_log_buf(const char *vg_name, dss_vg_info_item_t *vg_item, dss_volume_t *volume)
+status_t dss_reset_log_slot_head(uint32 vg_id, char *log_buf)
 {
-    if (!is_first_vg(vg_name)) {
-        return CM_SUCCESS;
-    }
-    return dss_set_log_buf_for_first_vg(vg_name, vg_item, volume);
-}
-
-uint8_t dss_allocate_log_slot_for_session()
-{
-    dss_log_file_ctrl_t *log_ctrl = dss_get_kernel_instance_log_ctrl();
-    for (;;) {
-        if (log_ctrl->used_slot == DSS_LOG_BUF_SLOT_COUNT) {
-            cm_spin_sleep();
-            continue;
-        }
-        cm_spin_lock(&log_ctrl->lock, NULL);
-        for (uint8_t i = 0; i < DSS_LOG_BUF_SLOT_COUNT; i++) {
-            if (log_ctrl->slots[i] == 0) {
-                log_ctrl->slots[i] = 1;
-                log_ctrl->used_slot++;
-                cm_spin_unlock(&log_ctrl->lock);
-                return i;
-            }
-        }
-        cm_spin_unlock(&log_ctrl->lock);
-    }
-}
-
-void dss_free_log_slot(dss_session_t *session)
-{
-    CM_ASSERT(session->log_split < DSS_LOG_BUF_SLOT_COUNT);
-    if (session->log_split == DSS_INVALID_SLOT) {
-        return;
-    }
-    dss_log_file_ctrl_t *log_ctrl = dss_get_kernel_instance_log_ctrl();
-    cm_spin_lock(&log_ctrl->lock, NULL);
-    log_ctrl->slots[session->log_split] = 0;
-    log_ctrl->used_slot--;
-    CM_ASSERT(log_ctrl->used_slot >= 0);
-    cm_spin_unlock(&log_ctrl->lock);
-    LOG_DEBUG_INF("[REDO][FREE] Free log slot %d from session %u", session->log_split, session->id);
-    session->log_split = DSS_INVALID_SLOT;
-}
-
-status_t dss_reset_log_slot_head(int32_t slot)
-{
-    CM_ASSERT(slot < DSS_LOG_BUF_SLOT_COUNT);
-    dss_log_file_ctrl_t *log_ctrl = dss_get_kernel_instance_log_ctrl();
-    char *log_buf = (char *)(log_ctrl->log_buf + slot * DSS_INSTANCE_LOG_SPLIT_SIZE);
+    CM_ASSERT(vg_id < DSS_MAX_VOLUME_GROUP_NUM);
+    dss_vg_info_item_t *first_vg_item = dss_get_first_vg_item();
+    uint64 redo_start = dss_get_redo_log_v0_start(first_vg_item->dss_ctrl, vg_id);
     errno_t errcode = memset_s(log_buf, DSS_DISK_UNIT_SIZE, 0, DSS_DISK_UNIT_SIZE);
     securec_check_ret(errcode);
-    status_t status;
-    dss_vg_info_item_t *vg_item = dss_get_first_vg_item();
-    if (vg_item->volume_handle[0].handle == DSS_INVALID_HANDLE) {
-        status = dss_open_volume(vg_item->entry_path, NULL, DSS_INSTANCE_OPEN_FLAG, &vg_item->volume_handle[0]);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO][RESET] Failed to open volume %s.", vg_item->entry_path));
+    status_t status = dss_write_redolog_to_disk(first_vg_item, 0, (int64)redo_start, log_buf, DSS_DISK_UNIT_SIZE);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[REDO][RESET]Failed to reset redo log, offset is %lld, size is %u.", redo_start, DSS_DISK_UNIT_SIZE);
+        return status;
     }
-    uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
-    int64 offset = au_size + slot * DSS_INSTANCE_LOG_SPLIT_SIZE;
-    CM_ASSERT(offset % DSS_DISK_UNIT_SIZE == 0);
-    status = dss_write_volume(&vg_item->volume_handle[0], offset, log_buf, DSS_DISK_UNIT_SIZE);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO][RESET] Failed to write log head, slot: %d, offset:%lld, size:%u.",
-                                  slot, offset, DSS_DISK_UNIT_SIZE));
-    LOG_DEBUG_INF("[REDO][RESET] Reset head of log slot %d.", slot);
+    LOG_DEBUG_INF("[REDO][RESET] Reset head of redo log, first vg is %s, actural vg id is %u, offset is %lld, size is %u.",
+        first_vg_item->vg_name, vg_id, redo_start, DSS_DISK_UNIT_SIZE);
     return status;
 }
 
-char *dss_get_log_buf_from_instance(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_type_t type)
+char *dss_get_log_buf_from_vg(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_type_t type)
 {
     char *log_buf = NULL;
     dss_redo_batch_t *batch = NULL;
-    dss_log_file_ctrl_t *log_ctrl = dss_get_kernel_instance_log_ctrl();
-    if (session->log_split == DSS_INVALID_SLOT) {
-        DSS_LOG_DEBUG_OP("[REDO][ALLOC] Try to allocate log slot for session %u, used_slot is %d, first type is %d\n",
-            session->id, log_ctrl->used_slot, (int32)type);
-        session->log_split = dss_allocate_log_slot_for_session();
-        LOG_DEBUG_INF("[REDO][ALLOC] End to allocate log slot %d for session %u.\n", session->log_split, session->id);
-        batch = (dss_redo_batch_t *)(log_ctrl->log_buf + session->log_split * DSS_INSTANCE_LOG_SPLIT_SIZE);
+    dss_log_file_ctrl_t *log_file_ctrl = &vg_item->log_file_ctrl;
+    while (session->put_log == CM_FALSE) {
+        LOG_DEBUG_INF("[REDO][ALLOC]Try to allocate redo for session %u, first type is %d\n", session->id,
+            (int32)type);
+        cm_spin_lock(&log_file_ctrl->lock, NULL);
+        if (log_file_ctrl->used) {
+            cm_spin_unlock(&log_file_ctrl->lock);
+            cm_spin_sleep();
+            continue;
+        }
+        log_file_ctrl->used = CM_TRUE;
+        session->put_log = CM_TRUE;
+        log_file_ctrl->lsn = dss_inc_redo_log_lsn(vg_item);
+        cm_spin_unlock(&log_file_ctrl->lock);
+        LOG_DEBUG_INF("[REDO][ALLOC]End to allocate log of vg %s for session %u.\n", vg_item->vg_name, session->id);
+        batch = (dss_redo_batch_t *)(log_file_ctrl->log_buf);
+        batch->lsn = log_file_ctrl->lsn;
         batch->size = 0;
     }
-    log_buf = (char *)(log_ctrl->log_buf + session->log_split * DSS_INSTANCE_LOG_SPLIT_SIZE);
-    return log_buf;
-}
-
-char *dss_get_total_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_type_t type)
-{
-    char *log_buf = dss_get_log_buf_from_instance(session, vg_item, type);
+    log_buf = (char *)(log_file_ctrl->log_buf);
     return log_buf;
 }
 
@@ -172,48 +137,125 @@ void dss_put_log(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_t
     if (session == NULL || vg_item->status == DSS_VG_STATUS_RECOVERY || vg_item->status == DSS_VG_STATUS_ROLLBACK) {
         return;
     }
-    log_buf = dss_get_total_log_buf(session, vg_item, type);
+    log_buf = dss_get_log_buf_from_vg(session, vg_item, type);
     batch = (dss_redo_batch_t *)(log_buf);
     if (batch->size == 0) {
         batch->size = sizeof(dss_redo_batch_t);
         batch->count = 0;
     }
-
+    LOG_DEBUG_INF("[REDO]prepare to put log, size is %u, type is %d.", size, type);
     entry = (dss_redo_entry_t *)(log_buf + batch->size);
     entry->size = (size + sizeof(dss_redo_entry_t));
     entry->type = type;
-    entry->vg_id = vg_item->id;
-    session->curr_lsn = (uint64)cm_inc_lsn();
-    entry->lsn = session->curr_lsn;
-    CM_ASSERT(DSS_INSTANCE_LOG_SPLIT_SIZE == DSS_LOG_BUFFER_SIZE);
     put_addr = log_buf + batch->size + sizeof(dss_redo_entry_t);
+    // check wraparound
     if (size != 0) {
-        if (memcpy_s(put_addr, (DSS_LOG_BUFFER_SIZE - batch->size) - sizeof(dss_redo_entry_t), data, size) != EOK) {
+        if (memcpy_s(put_addr, (DSS_VG_LOG_SPLIT_SIZE - batch->size) - sizeof(dss_redo_entry_t), data, size) != EOK) {
             cm_panic(0);
         }
     }
     batch->size += entry->size;
     batch->count++;
+    LOG_DEBUG_INF("[REDO]after put log, batch size is %u, count is %d.", batch->size, batch->count);
     // 'dss_redo_batch_t' will be putted at batch tail also
-    CM_ASSERT(batch->size + sizeof(dss_redo_batch_t) + DSS_DISK_UNIT_SIZE <= DSS_LOG_BUFFER_SIZE);
+    CM_ASSERT(batch->size + sizeof(dss_redo_batch_t) + DSS_DISK_UNIT_SIZE <= DSS_VG_LOG_SPLIT_SIZE);
 }
 
-status_t dss_write_redolog_to_disk(dss_vg_info_item_t *item, int64 offset, char *buf, uint32 size)
+status_t dss_write_redolog_to_disk(dss_vg_info_item_t *vg_item, uint32 volume_id, int64 offset, char *buf, uint32 size)
 {
-    return dss_write_ctrl_to_disk(item, offset, buf, size);
+    CM_ASSERT(vg_item != NULL);
+    CM_ASSERT(buf != NULL);
+    status_t status;
+    if (vg_item->volume_handle[volume_id].handle != DSS_INVALID_HANDLE) {
+        return dss_write_volume_inst(vg_item, &vg_item->volume_handle[volume_id], offset, buf, size);
+    }
+    status = dss_open_volume(vg_item->dss_ctrl->volume.defs[volume_id].name, NULL, DSS_INSTANCE_OPEN_FLAG, &vg_item->volume_handle[volume_id]);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    status = dss_write_volume_inst(vg_item, &vg_item->volume_handle[volume_id], offset, buf, size);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to read write file, offset:%lld, size:%u.", offset, size);
+        return status;
+    }
+    return CM_SUCCESS;
 }
 
-status_t dss_flush_log_inner(int32_t log_split, char *log_buf, uint32 flush_size)
+status_t dss_flush_log_v0_inner(dss_vg_info_item_t *vg_item, char *log_buf, uint32 flush_size)
 {
-    dss_vg_info_item_t *vg_item = dss_get_first_vg_item();
-    dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
-    uint64 au_size = dss_get_vg_au_size(dss_ctrl);
-    int64 offset = au_size + log_split * DSS_INSTANCE_LOG_SPLIT_SIZE;
-    status_t status = dss_write_redolog_to_disk(vg_item, offset, log_buf, flush_size);
+    dss_vg_info_item_t *first_vg_item = dss_get_first_vg_item();
+    uint64 redo_start = dss_get_redo_log_v0_start(first_vg_item->dss_ctrl, vg_item->id);
+    if (flush_size > DSS_INSTANCE_LOG_SPLIT_SIZE) {
+        LOG_RUN_ERR("redo log size %u is bigger than %u", flush_size, (uint32)DSS_INSTANCE_LOG_SPLIT_SIZE);
+        return CM_ERROR;
+    }
+    status_t status = dss_write_redolog_to_disk(first_vg_item, 0, redo_start, log_buf, flush_size);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to flush redo log, offset is %lld, size is %u.", redo_start, flush_size);
+        return status;
+    }
     return status;
 }
 
-status_t dss_flush_log(int32_t log_split, dss_vg_info_item_t *vg_item, char *log_buf)
+status_t dss_flush_log_inner(dss_vg_info_item_t *vg_item, char *log_buf, uint32 flush_size)
+{
+    dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
+    dss_redo_ctrl_t *redo_ctrl = &dss_ctrl->redo_ctrl;
+    uint32 redo_index = redo_ctrl->redo_index;
+    auid_t redo_au = redo_ctrl->redo_start_au[redo_index];
+    uint64 redo_size = (uint64)redo_ctrl->redo_size[redo_index];
+    uint32 count = redo_ctrl->count;
+    CM_ASSERT(flush_size < DSS_VG_LOG_SPLIT_SIZE);
+    uint64 log_start = dss_get_vg_au_size(dss_ctrl) * redo_au.au;
+    uint64 offset = redo_ctrl->offset;
+    uint64 log_offset = log_start + offset;
+    dss_log_file_ctrl_t *log_ctrl = &vg_item->log_file_ctrl;
+    status_t status;
+    // redo_au0 | redo_au1 | redo_au2 |...|redo_aun
+    if (offset + flush_size > redo_size) {
+        uint64 flush_size_2 = (flush_size + offset) % redo_size;
+        uint64 flush_size_1 = flush_size - flush_size_2;
+        auid_t redo_au_next;
+        if (redo_index == count - 1) {
+            redo_au_next = redo_ctrl->redo_start_au[0];
+            log_ctrl->index = 0;
+        } else {
+            redo_au_next = redo_ctrl->redo_start_au[redo_index + 1];
+            log_ctrl->index = redo_index + 1;
+        }
+        uint64 log_start_next = dss_get_vg_au_size(dss_ctrl) * redo_au_next.au;
+        LOG_DEBUG_INF("Begin to flush redo log, offset is %lld, size is %llu.", offset, flush_size_1);
+        status = dss_write_redolog_to_disk(vg_item, redo_au.volume, (int64)log_offset, log_buf, (uint32)flush_size_1);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to flush redo log, offset is %lld, size is %u.", log_offset, (uint32)flush_size_1);
+            return status;
+        }
+        LOG_DEBUG_INF("Begin to flush redo log, offset is %d, size is %llu.", 0, flush_size_2);
+        status = dss_write_redolog_to_disk(vg_item, redo_au_next.volume, (int64)log_start_next, log_buf + flush_size_1, (uint32)flush_size_2);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to flush redo log, offset is %d, size is %u.", 0, (uint32)flush_size_2);
+            return status;
+        }
+        log_ctrl->offset = flush_size_2;
+        return status;
+    }
+    LOG_DEBUG_INF("Begin to flush redo log, offset is %lld, size is %u.", offset, flush_size);
+    status = dss_write_redolog_to_disk(vg_item, redo_au.volume, (int64)log_offset, log_buf, flush_size);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to flush redo log, offset is %llu, size is %u.", log_offset, flush_size);
+        return status;
+    }
+    if (offset + flush_size == redo_size) {
+        log_ctrl->index = (redo_index == count - 1) ? 0 : redo_index + 1;
+        log_ctrl->offset = 0;
+    } else {
+        log_ctrl->index = redo_index;
+        log_ctrl->offset = offset + flush_size;
+    }
+    return status;
+}
+
+status_t dss_flush_log(dss_vg_info_item_t *vg_item, char *log_buf)
 {
     errno_t errcode = 0;
     dss_redo_batch_t *batch = (dss_redo_batch_t *)(log_buf);
@@ -222,15 +264,21 @@ status_t dss_flush_log(int32_t log_split, dss_vg_info_item_t *vg_item, char *log
     if (batch->size == sizeof(dss_redo_batch_t) || vg_item->status == DSS_VG_STATUS_RECOVERY) {
         return CM_SUCCESS;
     }
-
     data_size = batch->size - sizeof(dss_redo_batch_t);
     batch->hash_code = cm_hash_bytes((uint8 *)log_buf + sizeof(dss_redo_batch_t), data_size, INFINITE_HASH_RANGE);
     batch->time = cm_now();
     flush_size = CM_CALC_ALIGN(batch->size + sizeof(dss_redo_batch_t), DSS_DISK_UNIT_SIZE);  // align with 512
-    // tail                                                                                         // tail
-    errcode = memcpy_s(log_buf + batch->size, DSS_LOG_BUFFER_SIZE - batch->size, batch, sizeof(dss_redo_batch_t));
+    // batch_head|entry1|entry2|reserve|batch_tail   --align with 512
+    uint64 tail = (uint64)(flush_size - sizeof(dss_redo_batch_t));
+    errcode = memcpy_s(log_buf + tail, sizeof(dss_redo_batch_t), batch, sizeof(dss_redo_batch_t));
     securec_check_ret(errcode);
-    status_t status = dss_flush_log_inner(log_split, log_buf, flush_size);
+    uint32 software_version = dss_get_software_version(&vg_item->dss_ctrl->vg_info);
+    LOG_DEBUG_INF("[REDO] Before flush log, batch size is %u, count is %d, flush size is %u.", batch->size,
+        batch->count, flush_size);
+    if (software_version < DSS_SOFTWARE_VERSION_2) {
+        return dss_flush_log_v0_inner(vg_item, log_buf, flush_size);
+    }
+    status_t status = dss_flush_log_inner(vg_item, log_buf, flush_size);
     return status;
 }
 
@@ -631,8 +679,6 @@ static status_t rp_redo_alloc_fs_block(dss_vg_info_item_t *vg_item, dss_redo_ent
         block->head.common.flags = DSS_BLOCK_FLAG_USED;
         *root = data->root;
     }
-
-    vg_item->dss_ctrl->core.version++;
     status = dss_update_core_ctrl_disk(vg_item);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO] Failed to update vg core:%s to disk.", vg_item->vg_name));
 
@@ -850,7 +896,6 @@ status_t rb_redo_set_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
         NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
     if (block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
-        return CM_ERROR;
     }
 
     block->bitmap[data->index] = data->old_value;
@@ -1309,10 +1354,230 @@ status_t rb_redo_set_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_
     if (block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
     }
-
-    block->bitmap[data->index] = dss_invalid_auid;
+    if (data->old_used_num > 0) {
+        block->bitmap[data->old_used_num - 1] = dss_invalid_auid;
+    }
     block->head.used_num = data->old_used_num;
+    return CM_SUCCESS;
+}
+status_t rp_redo_set_fs_aux_block_batch_in_recovery(
+    dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry, dss_fs_block_t *second_block, gft_node_t *node)
+{
+    dss_redo_set_fs_aux_block_batch_t *data = (dss_redo_set_fs_aux_block_batch_t *)entry->data;
+    status_t status = dss_check_refresh_core(vg_item);
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[REDO][FS AUX]Failed to refresh vg core:%s.", vg_item->vg_name));
+    dss_fs_aux_root_t *root = DSS_GET_FS_AUX_ROOT(vg_item->dss_ctrl);
+    uint16 batch_count = data->batch_count;
+    uint16 block_au_count = data->old_used_num;
+    uint16 index;
+    dss_block_id_t block_id;
+    dss_fs_aux_t *fs_aux = NULL;
+    auid_t auid;
+    auid_t batch_first = data->first_batch_au;
+    for (uint32 i = 0, j = block_au_count; i < batch_count; i++, j++) {
+        auid = batch_first;
+        index = (uint16)j;
+        block_id = data->id_set[i];
+        fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
+            NULL, vg_item, block_id, DSS_BLOCK_TYPE_FS_AUX, CM_TRUE, NULL, CM_FALSE);
+        if (fs_aux == NULL) {
+            LOG_RUN_ERR("[REDO][FS AUX]Failed to find fs aux %s.", dss_display_metaid(block_id));
+            return CM_ERROR;
+        }
+        dss_init_fs_aux_head(fs_aux, node->id, index);
+        dss_set_blockid(&fs_aux->head.data_id, DSS_BLOCK_ID_SET_UNINITED(auid));
+        fs_aux->head.ftid = node->id;
+        LOG_RUN_INF("[REDO][FS AUX]Init fs aux, fs aux id:%s, data_id:%s.", dss_display_metaid(fs_aux->head.common.id),
+            dss_display_metaid(fs_aux->head.data_id));
+        dss_set_blockid(&auid, DSS_BLOCK_ID_SET_AUX(fs_aux->head.common.id));
+        dss_updt_fs_aux_file_ver(node, fs_aux);
+        second_block->bitmap[j] = auid;
+        LOG_RUN_INF("[REDO][FS AUX]second block %s, bitmap %u, fs_aux %s, au %s.",
+            dss_display_metaid(second_block->head.common.id), j, dss_display_metaid(fs_aux->head.common.id), dss_display_metaid(batch_first));
+        status = dss_update_fs_aux_bitmap2disk(vg_item, fs_aux, DSS_FS_AUX_SIZE, CM_FALSE);
+        DSS_RETURN_IFERR2(
+            status, LOG_RUN_ERR("[REDO][FS AUX]Failed to update fs aux bitmap fs_aux:%s to disk, vg name:%s.", 
+                dss_display_metaid(block_id), vg_item->vg_name));
+        LOG_RUN_INF("[REDO][FS AUX]Succeed to replay alloc fs aux:%s, vg name:%s.", dss_display_metaid(block_id),
+            vg_item->vg_name);
+        batch_first.au++;
+    }
+    root->free = data->new_free_list;
+    second_block->head.used_num += (uint16)batch_count;
+    return CM_SUCCESS;
+}
 
+status_t rp_redo_set_fs_aux_block_batch_inner(
+    dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry, dss_fs_block_t *second_block, gft_node_t *node)
+{
+    status_t status;
+    dss_redo_set_fs_aux_block_batch_t *data = (dss_redo_set_fs_aux_block_batch_t *)entry->data;
+    uint16 batch_count = data->batch_count;
+    dss_block_id_t block_id;
+    dss_fs_aux_t *fs_aux = NULL;
+    for (uint32 i = 0; i < batch_count; i++) {
+        block_id = data->id_set[i];
+        fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
+            NULL, vg_item, block_id, DSS_BLOCK_TYPE_FS_AUX, CM_FALSE, NULL, CM_FALSE);
+        if (fs_aux == NULL) {
+            LOG_RUN_ERR("[REDO][FS AUX]Failed to find fs aux %s.", dss_display_metaid(block_id));
+            return CM_ERROR;
+        }
+    status = dss_update_fs_aux_bitmap2disk(vg_item, fs_aux, DSS_FS_AUX_SIZE, CM_FALSE);
+    DSS_RETURN_IFERR2(
+        status, LOG_RUN_ERR("[REDO][FS AUX]Failed to update fs aux bitmap fs_aux:%s to disk, vg name:%s.", 
+                dss_display_metaid(block_id), vg_item->vg_name));
+    LOG_DEBUG_INF("[REDO][FS AUX]Succeed to replay alloc fs aux:%s, vg name:%s.",
+        dss_display_metaid(block_id), vg_item->vg_name);
+    }
+    return CM_SUCCESS;
+}
+
+status_t rp_redo_set_fs_aux_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+{
+    CM_ASSERT(vg_item != NULL);
+    CM_ASSERT(entry != NULL);
+
+    status_t status;
+    dss_redo_set_fs_aux_block_batch_t *data = (dss_redo_set_fs_aux_block_batch_t *)entry->data;
+    bool32 check_version = CM_FALSE;
+    if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
+        check_version = CM_TRUE;
+    }
+    dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
+        NULL, vg_item, data->fs_block_id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
+    if (block == NULL) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
+    }
+    gft_node_t *node = dss_get_ft_node_by_ftid(NULL, vg_item, data->node_id, check_version, CM_FALSE);
+    if (node == NULL) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node"));
+    }
+    if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
+        status = rp_redo_set_fs_aux_block_batch_in_recovery(vg_item, entry, block, node);
+    } else {
+        status = rp_redo_set_fs_aux_block_batch_inner(vg_item, entry, block, node);
+    }
+    DSS_RETURN_IF_ERROR(status);
+    status = dss_update_core_ctrl_disk(vg_item);
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[REDO][FS AUX]Failed to update vg core:%s to disk.", vg_item->vg_name));
+    status = dss_update_fs_bitmap_block_disk(vg_item, block, DSS_FILE_SPACE_BLOCK_SIZE, CM_FALSE);
+    DSS_RETURN_IFERR2(status,
+        LOG_RUN_ERR("[REDO][FS AUX]Failed to update fs batch block:%llu to disk.", DSS_ID_TO_U64(data->fs_block_id)));
+    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_fs(block);
+    dss_add_syn_meta(vg_item, block_ctrl, block->head.common.version);
+    DSS_LOG_DEBUG_OP("Succeed to replay set fs batch block:%llu, used_num:%hu, vg name:%s.", DSS_ID_TO_U64(data->fs_block_id),
+        block->head.used_num, vg_item->vg_name);
+    return CM_SUCCESS;
+}
+
+status_t rb_redo_set_fs_aux_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+{
+    CM_ASSERT(vg_item != NULL);
+    CM_ASSERT(entry != NULL);
+
+    dss_redo_set_fs_aux_block_batch_t *data = (dss_redo_set_fs_aux_block_batch_t *)entry->data;
+    dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_from_disk_and_refresh_shm(
+        NULL, vg_item, data->fs_block_id, DSS_BLOCK_TYPE_FS, NULL);
+    if (block == NULL) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
+    }
+    gft_node_t *node = dss_get_ft_node_by_ftid_from_disk_and_refresh_shm(NULL, vg_item, data->node_id);
+    if (node == NULL) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
+    }
+    dss_fs_aux_t *fs_aux = NULL;
+    dss_block_id_t block_id;
+    uint16 batch_count = data->batch_count;
+    for (uint32 i = 0; i < batch_count; i++) {
+        block_id = data->id_set[i];
+        LOG_RUN_INF("[REDO][FS AUX]begin to rollback fs aux %s in shm.", dss_display_metaid(block_id));
+        fs_aux = (dss_fs_aux_t *)dss_find_block_from_disk_and_refresh_shm(
+            NULL, vg_item, block_id, DSS_BLOCK_TYPE_FS_AUX, NULL);
+            CM_ASSERT(fs_aux != NULL);
+        (void)memset_s(&fs_aux->bitmap[0], fs_aux->head.bitmap_num, 0xFF, fs_aux->head.bitmap_num);
+        LOG_RUN_INF("[REDO][FS AUX]end to rollback fs aux %s in shm.", dss_display_metaid(block_id));
+    }
+    LOG_RUN_INF("[REDO][FS AUX]begin to rollback block %s in shm.", dss_display_metaid(data->fs_block_id));
+    block->bitmap[data->old_used_num] = dss_invalid_auid;
+    block->head.used_num = data->old_used_num;
+    status_t status = rb_reload_fs_aux_root(vg_item);
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[REDO][FS AUX]Failed to update fs aux root fs aux id disk."));
+    return CM_SUCCESS;
+}
+status_t rp_redo_truncate_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+{
+    CM_ASSERT(vg_item != NULL);
+    CM_ASSERT(entry != NULL);
+
+    status_t status;
+    dss_redo_truncate_fs_block_batch_t *redo = (dss_redo_truncate_fs_block_batch_t *)entry->data;
+
+    bool32 check_version = CM_FALSE;
+
+    if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
+        check_version = CM_TRUE;
+    }
+
+    dss_fs_block_t *src_block = (dss_fs_block_t *)dss_find_block_in_shm(
+        NULL, vg_item, redo->src_id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
+    if (src_block == NULL) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
+    }
+    dss_fs_block_t *dst_block = (dss_fs_block_t *)dss_find_block_in_shm(
+        NULL, vg_item, redo->dst_id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
+    if (dst_block == NULL) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
+    }
+    uint16 src_begin = redo->src_begin;
+    uint16 dst_begin = redo->dst_begin;
+    if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
+        MEMS_RETURN_IFERR(memcpy_s(&dst_block->bitmap[dst_begin], sizeof(dss_block_id_t) * redo->count,
+            &redo->id_set[0], sizeof(dss_block_id_t) * redo->count));
+        for (uint16 i = 0; i < redo->count; i++) {
+            dss_set_blockid(&src_block->bitmap[src_begin], DSS_INVALID_ID64);
+            dst_begin++;
+            src_begin++;
+        }
+        src_block->head.used_num = (uint16_t)(redo->src_old_used_num -  redo->count);
+        dst_block->head.used_num = redo->dst_old_used_num + redo->count;
+    }
+
+    status = dss_update_fs_bitmap_block_disk(vg_item, src_block, DSS_FILE_SPACE_BLOCK_SIZE, CM_FALSE);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to update fs batch block:%llu to disk.", DSS_ID_TO_U64(redo->src_id)));
+    status = dss_update_fs_bitmap_block_disk(vg_item, dst_block, DSS_FILE_SPACE_BLOCK_SIZE, CM_FALSE);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to update fs batch block:%llu to disk.", DSS_ID_TO_U64(redo->dst_id)));
+
+    dss_block_ctrl_t *src_block_ctrl = dss_get_block_ctrl_by_fs(src_block);
+    dss_add_syn_meta(vg_item, src_block_ctrl, src_block->head.common.version);
+    dss_block_ctrl_t *dst_block_ctrl = dss_get_block_ctrl_by_fs(dst_block);
+    dss_add_syn_meta(vg_item, dst_block_ctrl, dst_block->head.common.version);
+
+    DSS_LOG_DEBUG_OP("Succeed to replay truncate fs batch block:%llu to block:%llu, count:%hu, vg name:%s.", DSS_ID_TO_U64(redo->src_id),
+        DSS_ID_TO_U64(redo->dst_id), redo->count, vg_item->vg_name);
+    return CM_SUCCESS;
+}
+
+status_t rb_redo_truncate_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+{
+    CM_ASSERT(vg_item != NULL);
+    CM_ASSERT(entry != NULL);
+
+    dss_redo_truncate_fs_block_batch_t *redo = (dss_redo_truncate_fs_block_batch_t *)entry->data;
+    dss_fs_block_t *src_block = (dss_fs_block_t *)dss_find_block_from_disk_and_refresh_shm(
+        NULL, vg_item, redo->src_id, DSS_BLOCK_TYPE_FS, NULL);
+    if (src_block == NULL) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
+    }
+    dss_fs_block_t *dst_block = (dss_fs_block_t *)dss_find_block_from_disk_and_refresh_shm(
+        NULL, vg_item, redo->dst_id, DSS_BLOCK_TYPE_FS, NULL);
+    if (dst_block == NULL) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
+    }
+    DSS_ASSERT_LOG(src_block->head.used_num == redo->src_old_used_num, "src block used num is %u, except is %u.",
+        src_block->head.used_num, redo->src_old_used_num);
+    DSS_ASSERT_LOG(dst_block->head.used_num == redo->dst_old_used_num, "dst block used num is %u, except is %u.",
+        dst_block->head.used_num, redo->dst_old_used_num);
     return CM_SUCCESS;
 }
 
@@ -1349,21 +1614,18 @@ static dss_redo_handler_t g_dss_handlers[] = {
     {DSS_RT_FREE_FS_AUX, rp_redo_free_fs_aux, rb_redo_free_fs_aux},
     {DSS_RT_INIT_FS_AUX, rp_redo_init_fs_aux, rb_redo_init_fs_aux},
     {DSS_RT_SET_FS_BLOCK_BATCH, rp_redo_set_fs_block_batch, rb_redo_set_fs_block_batch},
+    {DSS_RT_SET_FS_AUX_BLOCK_BATCH, rp_redo_set_fs_aux_block_batch, rb_redo_set_fs_aux_block_batch},
+    {DSS_RT_TRUNCATE_FS_BLOCK_BATCH, rp_redo_truncate_fs_block_batch, rb_redo_truncate_fs_block_batch},
 };
 
 static status_t dss_replay(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     DSS_LOG_DEBUG_OP("[REDO][REPLAY] Replay redo, type:%u.", entry->type);
     dss_redo_handler_t *handler = &g_dss_handlers[entry->type];
-    dss_vg_info_item_t *actual_vg_item = vg_item;
-    if (vg_item->id != entry->vg_id) {
-        // load vg_item
-        actual_vg_item = &g_vgs_info->volume_group[entry->vg_id];
-    }
-    if (DSS_STANDBY_CLUSTER_XLOG_VG(actual_vg_item->id)) {
+    if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
         return CM_SUCCESS;
     }
-    return handler->replay(actual_vg_item, entry);
+    return handler->replay(vg_item, entry);
 }
 
 // apply log to update meta
@@ -1393,7 +1655,7 @@ static status_t dss_recover_core_ctrlinfo(dss_vg_info_item_t *vg_item)
     uint32 checksum;
     bool32 remote = CM_FALSE;
     status = dss_load_vg_ctrl_part(
-        vg_item, (int64)DSS_CTRL_CORE_OFFSET, &vg_item->dss_ctrl->core, (int32)DSS_CORE_CTRL_SIZE, &remote);
+    vg_item, (int64)DSS_CTRL_CORE_OFFSET, &vg_item->dss_ctrl->core, (int32)DSS_CORE_CTRL_SIZE, &remote);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Load dss ctrl core failed."));
     checksum = dss_get_checksum(&vg_item->dss_ctrl->core, DSS_CORE_CTRL_SIZE);
     if (checksum != vg_item->dss_ctrl->core.checksum) {
@@ -1469,6 +1731,32 @@ static status_t dss_recover_root_ft_ctrlinfo(dss_vg_info_item_t *vg_item)
     } else {
         status = dss_write_ctrl_to_disk(vg_item, (int64)DSS_CTRL_BAK_ROOT_OFFSET, block, DSS_BLOCK_SIZE);
         DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Write dss ctrl bak root failed."));
+    }
+    return status;
+}
+static status_t dss_recover_redo_ctrlinfo(dss_vg_info_item_t *vg_item)
+{
+    status_t status;
+    uint32 checksum;
+    bool32 remote = CM_FALSE;
+    status = dss_load_vg_ctrl_part(
+        vg_item, (int64)DSS_CTRL_REDO_OFFSET, &vg_item->dss_ctrl->redo_ctrl, (int32)DSS_DISK_UNIT_SIZE, &remote);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Load dss redo ctrl failed."));
+    checksum = dss_get_checksum(&vg_item->dss_ctrl->redo_ctrl, DSS_DISK_UNIT_SIZE);
+    if (checksum != vg_item->dss_ctrl->redo_ctrl.checksum) {
+        LOG_RUN_INF("Try recover dss redo ctrl.");
+        status = dss_load_vg_ctrl_part(
+            vg_item, (int64)DSS_CTRL_BAK_REDO_OFFSET, &vg_item->dss_ctrl->redo_ctrl, (int32)DSS_DISK_UNIT_SIZE, &remote);
+        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Load dss redo ctrl bak failed."));
+        checksum = dss_get_checksum(&vg_item->dss_ctrl->redo_ctrl, DSS_DISK_UNIT_SIZE);
+        dss_check_checksum(checksum, vg_item->dss_ctrl->redo_ctrl.checksum);
+        status =
+            dss_write_ctrl_to_disk(vg_item, (int64)DSS_CTRL_REDO_OFFSET, &vg_item->dss_ctrl->redo_ctrl, DSS_DISK_UNIT_SIZE);
+        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Write dss redo ctrl failed."));
+    } else {
+        status = dss_write_ctrl_to_disk(
+            vg_item, (int64)DSS_CTRL_BAK_REDO_OFFSET, &vg_item->dss_ctrl->redo_ctrl, DSS_DISK_UNIT_SIZE);
+        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Write dss redo ctrl bak failed."));
     }
     return status;
 }
@@ -1572,101 +1860,197 @@ status_t dss_recover_ctrlinfo(dss_vg_info_item_t *vg_item)
     DSS_RETURN_IF_ERROR(dss_recover_core_ctrlinfo(vg_item));
     DSS_RETURN_IF_ERROR(dss_recover_volume_ctrlinfo(vg_item));
     DSS_RETURN_IF_ERROR(dss_recover_root_ft_ctrlinfo(vg_item));
+    uint32 software_version = dss_get_software_version(&vg_item->dss_ctrl->vg_info);
+    if (software_version >= DSS_SOFTWARE_VERSION_2) {
+        DSS_RETURN_IF_ERROR(dss_recover_redo_ctrlinfo(vg_item));
+    }
     return dss_recover_modify_info(vg_item);
 }
 
-void dss_reset_all_log_slot()
+bool32 dss_check_redo_batch_complete(dss_redo_batch_t *batch, dss_redo_batch_t *tail)
 {
-    for (int32_t i = 0; i < DSS_LOG_BUF_SLOT_COUNT; i++) {
-        (void)dss_reset_log_slot_head(i);
+    if (batch->size <= DSS_REDO_BATCH_HEAD_SIZE || batch->size > DSS_VG_LOG_SPLIT_SIZE) {
+        LOG_RUN_INF("[RECOVERY]Invalid size %u of redo log.", batch->size);
+        return CM_FALSE;
     }
-}
-
-// Reserve the batch head for verification at both the head and the tail
-bool32 dss_check_redo_log_available(dss_redo_batch_t *batch, dss_vg_info_item_t *vg_item, uint8 slot)
-{
-    dss_redo_batch_t *tail = NULL;
-    uint32 data_size, hash_code;
-
-    tail = (dss_redo_batch_t *)((char *)batch + batch->size);
-    bool32 is_complete = CM_TRUE;
-    do {
-        if (batch->size <= DSS_REDO_BATCH_HEAD_SIZE) {
-            LOG_RUN_INF("Invalid size %u of log slot %u.", batch->size, slot);
-            is_complete = CM_FALSE;
-            break;
-        }
-        if (batch->size != tail->size) {
-            LOG_RUN_INF("Batch head data size is not the same with tail, batch head is %u, batch tail is %u.",
-                batch->size, tail->size);
-            is_complete = CM_FALSE;
-            break;
-        }
-        if (batch->time != tail->time) {
-            LOG_RUN_INF("Batch head time is not the same with tail, batch head is %lld, batch tail is %lld.",
-                batch->time, tail->time);
-            is_complete = CM_FALSE;
-            break;
-        }
-        data_size = batch->size - DSS_REDO_BATCH_HEAD_SIZE;
-        hash_code = cm_hash_bytes((uint8 *)batch->data, data_size, INFINITE_HASH_RANGE);
-        if (batch->hash_code != hash_code) {
-            LOG_RUN_INF("Batch head hash code is not the same with data, batch head is %u, data is %u.",
-                batch->hash_code, hash_code);
-            is_complete = CM_FALSE;
-            break;
-        }
-        if (batch->hash_code != tail->hash_code) {
-            LOG_RUN_INF("Batch head hash code is not the same with tail, batch head is %u, batch tail is %u.",
-                batch->hash_code, tail->hash_code);
-            is_complete = CM_FALSE;
-            break;
-        }
-    } while (0);
-    if (!is_complete) {
-        if (slot == DSS_LOG_BUF_SLOT_COUNT) {
-            dss_reset_all_log_slot();
-        } else {
-            (void)dss_reset_log_slot_head(slot);
-        }
+    if (batch->size != tail->size) {
+        LOG_RUN_INF("[RECOVERY]Batch head data size is not the same with tail, batch head is %u, batch tail is %u.", batch->size, tail->size);
+        return CM_FALSE;
+    }
+    if (batch->time != tail->time) {
+        LOG_RUN_INF("[RECOVERY]Batch head time is not the same with tail, batch head is %lld, batch tail is %lld.",
+            batch->time, tail->time);
+        return CM_FALSE;
+    }
+    uint32 data_size = batch->size - DSS_REDO_BATCH_HEAD_SIZE;
+    uint32 hash_code = cm_hash_bytes((uint8 *)batch->data, data_size, INFINITE_HASH_RANGE);
+    if (batch->hash_code != hash_code) {
+        LOG_RUN_INF("[RECOVERY]Batch head hash code is not the same with data, batch head is %u, data is %u.",
+            batch->hash_code, hash_code);
+        return CM_FALSE;
+    }
+    if (batch->hash_code != tail->hash_code) {
+        LOG_RUN_INF("[RECOVERY]Batch head hash code is not the same with tail, batch head is %u, batch tail is %u.",
+            batch->hash_code, tail->hash_code);
         return CM_FALSE;
     }
     return CM_TRUE;
 }
 
-status_t dss_check_recover_redo_log(dss_vg_info_item_t *vg_item, bool32 *recover_redo)
+status_t dss_read_redolog_from_disk(dss_vg_info_item_t *vg_item, uint32 volume_id, int64 offset, char *buf, int32 size)
 {
-#ifndef WIN32
-    char buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_ALIGN_SIZE)));
-#else
-    char buf[DSS_DISK_UNIT_SIZE];
-#endif
-
-    int64 offset = 0;
-    bool32 remote = CM_FALSE;
-    *recover_redo = CM_FALSE;
-    dss_redo_batch_t *batch = (dss_redo_batch_t *)buf;
-    int64 base_offset = (int64)dss_get_vg_au_size(vg_item->dss_ctrl);
-
-    for (uint8 i = 0; i < DSS_LOG_BUF_SLOT_COUNT; i++) {
-        offset = base_offset + i * DSS_INSTANCE_LOG_SPLIT_SIZE;
-        if (dss_load_vg_ctrl_part(vg_item, offset, batch, DSS_DISK_UNIT_SIZE, &remote) != CM_SUCCESS) {
-            LOG_RUN_ERR("Failed to load log_buf from first vg ctrl when check redo log.");
-            return CM_ERROR;
-        }
-        if (batch->size != 0) {
-            *recover_redo = CM_TRUE;
-            break;
-        }
+    CM_ASSERT(vg_item != NULL);
+    CM_ASSERT(buf != NULL);
+    status_t status;
+    bool32 remote_chksum = CM_FALSE;
+    if (vg_item->volume_handle[volume_id].handle != DSS_INVALID_HANDLE) {
+        return dss_read_volume_inst(vg_item, &vg_item->volume_handle[volume_id], offset, buf, size, &remote_chksum);
+    }
+    status = dss_open_volume(vg_item->dss_ctrl->volume.defs[volume_id].name, NULL, DSS_INSTANCE_OPEN_FLAG, &vg_item->volume_handle[volume_id]);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    status = dss_read_volume_inst(vg_item, &vg_item->volume_handle[volume_id], offset, buf, size, &remote_chksum);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to read redo file, offset:%lld, size:%d.", offset, size);
+        return status;
     }
     return CM_SUCCESS;
 }
 
-static int32 lsn_compare(const void *pa, const void *pb)
+status_t dss_load_log_buffer_from_slot(dss_vg_info_item_t *vg_item, bool8 *need_recovery)
 {
-    const dss_sort_handle_t *a = (const dss_sort_handle_t *)pa;
-    const dss_sort_handle_t *b = (const dss_sort_handle_t *)pb;
-    return (int32)(a->lsn - b->lsn);
+    dss_vg_info_item_t *first_vg_item = dss_get_first_vg_item();
+    LOG_RUN_INF("[RECOVERY]Try to load log buf from first vg %s.", first_vg_item->vg_name);
+    uint64 redo_start = dss_get_redo_log_v0_start(first_vg_item->dss_ctrl, vg_item->id);
+    char *log_buf = vg_item->log_file_ctrl.log_buf;
+    status_t status = dss_read_redolog_from_disk(first_vg_item, 0, (int64)redo_start, log_buf, (int32)DSS_DISK_UNIT_SIZE);
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[RECOVERY]Failed to load log_buf from vg:%s when recover.", vg_item->vg_name));
+    dss_redo_batch_t *batch = (dss_redo_batch_t *)log_buf;
+    if (batch->size == 0) {
+        LOG_RUN_INF("[RECOVERY]size of redo log is 0, vg id is %u, ignore.", vg_item->id);
+        return CM_SUCCESS;
+    }
+    uint64 load_size = (uint64)(CM_CALC_ALIGN(batch->size + sizeof(dss_redo_batch_t), DSS_DISK_UNIT_SIZE));
+    if (load_size > DSS_INSTANCE_LOG_SPLIT_SIZE) {
+        // invalid log ,ignored it.
+        LOG_RUN_INF("[RECOVERY]Redo log slot from vg:%s is invalid, ignored it. size is %llu, which is greater than %u", vg_item->vg_name, load_size,
+            DSS_INSTANCE_LOG_SPLIT_SIZE);
+        (void)dss_reset_log_slot_head(vg_item->id, log_buf);
+        return CM_SUCCESS;
+    }
+    if (load_size > DSS_DISK_UNIT_SIZE) {
+        status = dss_read_redolog_from_disk(first_vg_item, 0, redo_start, log_buf, load_size);
+        DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[RECOVERY]Failed to load log_buf from vg:%s when recover.", vg_item->vg_name));
+    }
+    dss_redo_batch_t *tail = (dss_redo_batch_t *)((char *)batch + load_size - sizeof(dss_redo_batch_t));
+    if (!dss_check_redo_batch_complete(batch, tail)) {
+        LOG_RUN_INF("[RECOVERY]No complete redo log.");
+        (void)dss_reset_log_slot_head(vg_item->id, log_buf);
+        return CM_SUCCESS;
+    }
+    *need_recovery = CM_TRUE;
+    return status;
+}
+
+status_t dss_load_log_buffer_from_offset(dss_vg_info_item_t *vg_item, bool8 *need_recovery)
+{
+    dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
+    dss_redo_ctrl_t *redo_ctrl = &dss_ctrl->redo_ctrl;
+    uint32 redo_index = redo_ctrl->redo_index;
+    auid_t redo_au = redo_ctrl->redo_start_au[redo_index];
+    uint64 redo_size = (uint64)redo_ctrl->redo_size[redo_index];
+    uint32 count = redo_ctrl->count;
+    uint64 log_start = dss_get_vg_au_size(dss_ctrl) * redo_au.au;
+    uint64 offset = redo_ctrl->offset;
+    uint64 log_offset = log_start + offset;
+    dss_log_file_ctrl_t *log_ctrl = &vg_item->log_file_ctrl;
+    char *log_buf = log_ctrl->log_buf;
+    status_t status;
+    LOG_RUN_INF("[RECOVERY]begin to load log buf, offset:%lld, size:%u.", offset, DSS_DISK_UNIT_SIZE);
+    status = dss_read_redolog_from_disk(vg_item, redo_au.volume, (int64)log_offset, log_buf, (int32)DSS_DISK_UNIT_SIZE);
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[RECOVERY]Failed to load log_buf from vg:%s when recover.", vg_item->vg_name));
+    dss_redo_batch_t *batch = (dss_redo_batch_t *)log_buf;
+    if (batch->size == 0) {
+        LOG_RUN_INF("[RECOVERY]No redo log need to recover.");
+        return CM_SUCCESS;
+    }
+    uint64 load_size = (uint64)(CM_CALC_ALIGN(batch->size + sizeof(dss_redo_batch_t), DSS_DISK_UNIT_SIZE));
+    if (load_size > DSS_VG_LOG_SPLIT_SIZE) {
+        // invalid log ,ignored it.
+        LOG_RUN_INF("[RECOVERY]Redo log from offset %llu is invalid, ignored it. size is %llu, which is greater than %u", log_offset, load_size,
+            DSS_VG_LOG_SPLIT_SIZE);
+        return CM_SUCCESS;
+    }
+    log_ctrl->index = redo_index;
+    log_ctrl->offset = offset + load_size;
+    if (load_size > DSS_DISK_UNIT_SIZE) {
+        if (offset + load_size > redo_size) {
+            uint64 load_size_2 = (load_size + offset) % redo_size;
+            uint64 load_size_1 = load_size - load_size_2;
+            status = dss_read_redolog_from_disk(vg_item, redo_au.volume, (int64)log_offset, log_buf, (int32)load_size_1);
+            DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[RECOVERY]Failed to load redo log."));
+            auid_t redo_au_next;
+            if (redo_index == count - 1) {
+                redo_au_next = redo_ctrl->redo_start_au[0];
+                log_ctrl->index = 0;
+            } else {
+                redo_au_next = redo_ctrl->redo_start_au[redo_index + 1];
+                log_ctrl->index = redo_index + 1;
+            }
+            uint64 log_start_next = dss_get_vg_au_size(dss_ctrl) * redo_au_next.au;
+            status = dss_read_redolog_from_disk(vg_item, redo_au_next.volume, log_start_next, log_buf + load_size_1, (int32)load_size_2);
+            DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[RECOVERY]Failed to load redo log."));
+        } else {
+            status = dss_read_redolog_from_disk(vg_item, redo_au.volume, (int64)log_offset, log_buf, (int32)load_size);
+            DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[RECOVERY]Failed to load redo log."));
+            if (offset + load_size == redo_size) {
+                log_ctrl->index = (redo_index == count - 1) ? 0 : redo_index + 1;
+                log_ctrl->offset = 0;
+            }
+        }
+    }
+    // batch_head|entry1|entry2|reserve|batch_tail
+    dss_redo_batch_t *tail = (dss_redo_batch_t *)((char *)batch + load_size - sizeof(dss_redo_batch_t));
+    if (!dss_check_redo_batch_complete(batch, tail)) {
+        LOG_RUN_INF("[RECOVERY]No complete redo log.");
+        return CM_SUCCESS;
+    }
+    if (batch->lsn <= redo_ctrl->lsn) {
+        LOG_RUN_INF("[RECOVERY]history redo batch lsn %llu is less than current lsn %llu.", batch->lsn, redo_ctrl->lsn);
+        return CM_SUCCESS;
+    }
+    if (redo_ctrl->lsn + 1 != batch->lsn) {
+        LOG_RUN_INF("[RECOVERY]history redo batch lsn %llu is not one more than current lsn %llu.", batch->lsn, redo_ctrl->lsn);
+        return CM_SUCCESS;
+    }
+    log_ctrl->lsn = batch->lsn;
+    *need_recovery = CM_TRUE;
+    return CM_SUCCESS;
+}
+
+status_t dss_check_recover_redo_log(dss_vg_info_item_t *vg_item, bool8 *recover_redo)
+{
+    char *log_buf = NULL;
+    if (!dss_is_server()) {
+        log_buf = (char *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_VG_LOG_SPLIT_SIZE);
+        if (log_buf == NULL) {
+            DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_VG_LOG_SPLIT_SIZE, "log buffer"));
+        }
+        vg_item->log_file_ctrl.log_buf = log_buf;
+    }
+    uint32 software_version = dss_get_software_version(&vg_item->dss_ctrl->vg_info);
+    status_t status;
+    if (software_version < DSS_SOFTWARE_VERSION_2) {
+        status = dss_load_log_buffer_from_slot(vg_item, recover_redo);
+    } else {
+        status = dss_load_log_buffer_from_offset(vg_item, recover_redo);
+    }
+    if (!dss_is_server()) {
+        DSS_FREE_POINT(log_buf);
+    }
+    return status;
 }
 
 void dss_set_vg_status_recovery()
@@ -1683,74 +2067,60 @@ void dss_set_vg_status_open()
     }
 }
 
-status_t dss_recover_when_instance_start(dss_redo_batch_t *batch, bool32 need_check)
+status_t dss_recover_from_slot_inner(dss_vg_info_item_t *vg_item, char *log_buf)
 {
-    LOG_RUN_INF("Begin to check assembled redo when instance start.");
-    if (need_check) {
-        if (!dss_check_redo_log_available(batch, NULL, DSS_LOG_BUF_SLOT_COUNT)) {
-            LOG_RUN_INF("The redo log is not complete, ignore.");
-            return CM_SUCCESS;
-        }
-    }
-
-    dss_redo_entry_t *entry = NULL;
-    dss_sort_handle_t *sort_handle = (dss_sort_handle_t *)cm_malloc(batch->count * (uint32)(sizeof(dss_sort_handle_t)));
-    if (sort_handle == NULL) {
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("[REDO] Malloc sort handle failed when recover."));
-    }
-    uint64 offset = 0;
-    for (uint32 i = 0; i < batch->count; i++) {
-        entry = (dss_redo_entry_t *)(batch->data + offset);
-        sort_handle[i].offset = offset;
-        sort_handle[i].lsn = entry->lsn;
-        offset += entry->size;
-    }
-    qsort(sort_handle, batch->count, sizeof(dss_sort_handle_t), lsn_compare);
-
-    dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[0];
-    dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
-    int64 au_size = (int64)dss_get_vg_au_size(dss_ctrl);
-    LOG_RUN_INF("Set vg status recovery.");
+    LOG_RUN_INF("[RECOVERY]Set vg status recovery.");
     dss_set_vg_status_recovery();
-    LOG_RUN_INF("Begin recovering by sort.");
-    for (uint32 i = batch->sort_offset; i < batch->count; i++) {
-        entry = (dss_redo_entry_t *)(batch->data + sort_handle[i].offset);
-        LOG_RUN_INF("Start to replay redo log, entry type %u, vg_id %u.", entry->type, entry->vg_id);
-        status_t status = dss_replay(vg_item, entry);
-        DSS_RETURN_IFERR3(status, DSS_FREE_POINT(sort_handle),
-            LOG_RUN_ERR("Failed to replay redo log, entry type %u, vg_id %u.", entry->type, entry->vg_id));
-        batch->sort_offset = i;
-        status = dss_write_volume_inst(vg_item, &vg_item->volume_handle[0], au_size, batch, DSS_DISK_UNIT_SIZE);
-        DSS_RETURN_IFERR3(
-            status, DSS_FREE_POINT(sort_handle), LOG_RUN_ERR("Failed to flush redo log head when recovery."));
+    LOG_RUN_INF("[RECOVERY]Begin recovering.");
+    status_t status = dss_apply_log(vg_item, log_buf);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[RECOVERY]Failed to do recovery.");
+        return status;
     }
-    DSS_FREE_POINT(sort_handle);
-    dss_reset_all_log_slot();
+    (void)dss_reset_log_slot_head(vg_item->id, log_buf);
     dss_set_vg_status_open();
-    LOG_RUN_INF("Complete recovering by sort.");
+    LOG_RUN_INF("[RECOVERY]Succeed to recovery.");
+    return CM_SUCCESS;
+}
+status_t dss_recover_from_offset_inner(dss_vg_info_item_t *vg_item, char *log_buf)
+{
+    LOG_RUN_INF("[RECOVERY]Set vg status recovery.");
+    dss_set_vg_status_recovery();
+    LOG_RUN_INF("[RECOVERY]Begin recovering.");
+    status_t status = dss_apply_log(vg_item, log_buf);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[RECOVERY]Failed to do recovery.");
+        return status;
+    }
+    status = dss_update_redo_info(vg_item, log_buf);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[RECOVERY]Failed to update redo info.");
+        return CM_ERROR;
+    }
+    dss_set_vg_status_open();
+    LOG_RUN_INF("[RECOVERY]Succeed to recovery.");
     return CM_SUCCESS;
 }
 
-char *dss_get_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item)
+status_t dss_update_redo_info(dss_vg_info_item_t *vg_item, char *log_buf)
 {
-    if (session->log_split == DSS_INVALID_SLOT) {
-        return NULL;
+    uint32 software_version = dss_get_software_version(&vg_item->dss_ctrl->vg_info);
+    if (software_version < DSS_SOFTWARE_VERSION_2) {
+        return dss_reset_log_slot_head(vg_item->id, log_buf);
     }
-    dss_log_file_ctrl_t *log_ctrl = dss_get_kernel_instance_log_ctrl();
-    char *log_buf = (char *)(log_ctrl->log_buf + session->log_split * DSS_LOG_BUFFER_SIZE);
-    return log_buf;
+    dss_log_file_ctrl_t *log_ctrl = &vg_item->log_file_ctrl;
+    status_t status = dss_update_redo_ctrl(vg_item, log_ctrl->index, log_ctrl->offset, log_ctrl->lsn);
+    DSS_RETURN_IFERR2(status,
+        LOG_DEBUG_ERR("Failed to update redo info, index:%u, offset:%llu, lsn:%llu.", log_ctrl->index, log_ctrl->offset, log_ctrl->lsn));
+    LOG_DEBUG_INF("Succeed to update redo info, index:%u, offset:%llu, lsn:%llu.", log_ctrl->index, log_ctrl->offset, log_ctrl->lsn);
+    return status;
 }
 
-void dss_reset_log_buf(dss_session_t *session, dss_vg_info_item_t *vg_item)
+status_t dss_process_redo_log_inner(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-    (void)dss_reset_log_slot_head(session->log_split);
-    dss_free_log_slot(session);
-}
-
-status_t dss_process_redo_log(dss_session_t *session, dss_vg_info_item_t *vg_item)
-{
-    char *log_buf = dss_get_log_buf(session, vg_item);
-    if (log_buf == NULL) {
+    char *log_buf = vg_item->log_file_ctrl.log_buf;
+    if (log_buf == NULL || session == NULL || !session->put_log) {
+        LOG_RUN_ERR("No redo log buf to process.");
         return CM_SUCCESS;
     }
     dss_redo_batch_t *batch = (dss_redo_batch_t *)log_buf;
@@ -1758,32 +2128,41 @@ status_t dss_process_redo_log(dss_session_t *session, dss_vg_info_item_t *vg_ite
         return CM_SUCCESS;
     }
 
-    if (batch->size == sizeof(dss_redo_batch_t) || vg_item->status == DSS_VG_STATUS_RECOVERY || session == NULL) {
+    if (batch->size == sizeof(dss_redo_batch_t) || vg_item->status == DSS_VG_STATUS_RECOVERY) {
         return CM_SUCCESS;
     }
-
-    status_t status = dss_flush_log(session->log_split, vg_item, log_buf);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO][REFLUSH] Failed to flush log,errcode:%d.", cm_get_error_code()));
-
+    status_t status = dss_flush_log(vg_item, log_buf);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO][REFLUSH]Failed to flush log,errcode:%d.", cm_get_error_code()));
     status = dss_apply_log(vg_item, log_buf);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("[REDO] Failed to apply log,errcode:%d.", cm_get_error_code());
         return status;
     }
-    dss_reset_log_buf(session, vg_item);
-    return CM_SUCCESS;
+    return dss_update_redo_info(vg_item, log_buf);
+}
+
+status_t dss_process_redo_log(dss_session_t *session, dss_vg_info_item_t *vg_item)
+{
+    status_t status = dss_process_redo_log_inner(session, vg_item);
+    if (status == CM_SUCCESS) {
+        dss_log_file_ctrl_t *log_file_ctrl = &vg_item->log_file_ctrl;
+        char *log_buf = vg_item->log_file_ctrl.log_buf;
+        cm_spin_lock(&log_file_ctrl->lock, NULL);
+        log_file_ctrl->used = CM_FALSE;
+        session->put_log = CM_FALSE;
+        errno_t errcode = memset_s(log_buf, DSS_DISK_UNIT_SIZE, 0, DSS_DISK_UNIT_SIZE);
+        securec_check_ret(errcode);
+        cm_spin_unlock(&log_file_ctrl->lock);
+        LOG_DEBUG_INF("[REDO][RESET]Succeed to reset redo for session %u.\n", session->id);
+    }
+    return status;
 }
 
 static status_t dss_rollback(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     DSS_LOG_DEBUG_OP("[REDO][ROLLBACK] rollback redo, type:%u.", entry->type);
     dss_redo_handler_t *handler = &g_dss_handlers[entry->type];
-    dss_vg_info_item_t *actual_vg_item = vg_item;
-    if (vg_item->id != entry->vg_id) {
-        // load vg_item
-        actual_vg_item = &g_vgs_info->volume_group[entry->vg_id];
-    }
-    return handler->rollback(actual_vg_item, entry);
+    return handler->rollback(vg_item, entry);
 }
 
 status_t dss_rollback_log(dss_vg_info_item_t *vg_item, char *log_buf)
@@ -1801,10 +2180,8 @@ status_t dss_rollback_log(dss_vg_info_item_t *vg_item, char *log_buf)
         entry = (dss_redo_entry_t *)(batch->data + offset);
         undo_offset[log_num] = offset;
         log_num++;
-
         offset += entry->size;
     }
-
     for (int32 i = log_num; i > 0; i--) {
         entry = (dss_redo_entry_t *)(batch->data + undo_offset[i - 1]);
         status = dss_rollback(vg_item, entry);
@@ -1813,23 +2190,20 @@ status_t dss_rollback_log(dss_vg_info_item_t *vg_item, char *log_buf)
             return status;
         }
     }
-
     return CM_SUCCESS;
 }
 
-void dss_rollback_mem_update(int32_t log_split, dss_vg_info_item_t *vg_item)
+void dss_rollback_mem_update(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-    char *log_buf = NULL;
-    if (log_split == DSS_INVALID_SLOT) {
+    if (!session->put_log) {
+        LOG_RUN_INF("No redo log need to recover.");
         return;
     }
-    dss_log_file_ctrl_t *log_ctrl = dss_get_kernel_instance_log_ctrl();
-    log_buf = (char *)(log_ctrl->log_buf + log_split * DSS_INSTANCE_LOG_SPLIT_SIZE);
+    char *log_buf = vg_item->log_file_ctrl.log_buf;
     dss_redo_batch_t *batch = (dss_redo_batch_t *)log_buf;
     if (batch->size == 0) {
         return;
     }
-
     if (batch->size == sizeof(dss_redo_batch_t)) {
         return;
     }
@@ -1838,7 +2212,13 @@ void dss_rollback_mem_update(int32_t log_split, dss_vg_info_item_t *vg_item)
     vg_item->status = DSS_VG_STATUS_ROLLBACK;
     status = dss_rollback_log(vg_item, log_buf);
     CM_ASSERT(status == CM_SUCCESS);
-    (void)dss_reset_log_slot_head(log_split);
+    dss_log_file_ctrl_t *log_file_ctrl = &vg_item->log_file_ctrl;
+    cm_spin_lock(&log_file_ctrl->lock, NULL);
+    log_file_ctrl->used = CM_FALSE;
+    session->put_log = CM_FALSE;
+    (void)memset_s(log_buf, DSS_DISK_UNIT_SIZE, 0, DSS_DISK_UNIT_SIZE);
+    cm_spin_unlock(&log_file_ctrl->lock);
+    LOG_DEBUG_INF("[REDO][RESET]Succeed to reset redo for session %u when rollback.\n", session->id);
     vg_item->status = DSS_VG_STATUS_OPEN;
     return;
 }
