@@ -1207,7 +1207,7 @@ status_t dss_latch_context_by_handle(
         return CM_ERROR;
     }
 
-    CM_ASSERT(handle == (int32)file_cxt->id);
+    DSS_ASSERT_LOG(handle == (int32)file_cxt->id, "handle %d not equal to file id %u", handle, file_ctx->id);
 
     if (file_cxt->node == NULL) {
         dss_unlatch(&file_cxt->latch);
@@ -2697,6 +2697,7 @@ status_t get_au_size_impl(dss_conn_t *conn, int handle, long long *au_size)
     CM_RETURN_IFERR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
 
     *au_size = context->vg_item->dss_ctrl->core.au_size;
+    dss_unlatch(&context->latch);
     return CM_SUCCESS;
 }
 
