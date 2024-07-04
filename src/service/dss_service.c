@@ -1247,21 +1247,10 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
 
 void dss_process_cmd_wait_be_open(dss_session_t *session)
 {
-    date_t time_start = g_timer()->now;
-    date_t time_now = 0;
-
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    uint32 max_time = inst_cfg->params.master_lock_timeout;
     while (g_dss_instance.status != DSS_STATUS_OPEN) {
         DSS_GET_CM_LOCK_LONG_SLEEP;
         LOG_RUN_INF("The status %d of instance %lld is not open, just wait.\n", (int32)g_dss_instance.status,
             dss_get_inst_cfg()->params.inst_id);
-        time_now = g_timer()->now;
-        if (time_now - time_start > max_time * MICROSECS_PER_SECOND) {
-            LOG_RUN_ERR("[DSS] ABORT INFO: Fail to change status open for %d seconds, exit.", max_time);
-            cm_fync_logfile();
-            _exit(1);
-        }
     }
 }
 
@@ -1286,7 +1275,6 @@ status_t dss_process_command(dss_session_t *session)
         session->is_closed = CM_TRUE;
         return CM_ERROR;
     }
-
     status = dss_check_proto_version(session);
     if (status != CM_SUCCESS) {
         dss_return_error(session);

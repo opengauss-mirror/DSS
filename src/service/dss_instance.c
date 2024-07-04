@@ -599,57 +599,44 @@ status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 }
 #endif
 // get cm lock owner, if no owner, try to become.master_id can not be DSS_INVALID_ID32.
-uint32 dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try_lock)
+status_t dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try_lock, uint32 *master_id)
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
+    *master_id = DSS_INVALID_ID32;
     if (inst->is_maintain || inst->inst_cfg.params.inst_cnt <= 1) {
         *grab_lock = CM_TRUE;
         LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "[RECOVERY]Set curr_id %u to be primary when dssserver is maintain or just one inst.",
             (uint32)inst_cfg->params.inst_id);
-        return (uint32)inst_cfg->params.inst_id;
+        *master_id = (uint32)inst_cfg->params.inst_id;
+        return CM_SUCCESS;
     }
     dss_cm_res *cm_res = &inst->cm_res;
-    uint32 master_id = DSS_INVALID_ID32;
     if (!cm_res->is_init) {
-        return master_id;
+        return CM_SUCCESS;
     }
     status_t ret = CM_SUCCESS;
-    date_t time_start = g_timer()->now;
-    date_t time_now = 0;
-    uint32 max_time = inst_cfg->params.master_lock_timeout;
-    while (CM_TRUE) {
-        time_now = g_timer()->now;
-        if (time_now - time_start > max_time * MICROSECS_PER_SECOND) {
-            LOG_RUN_ERR("[RECOVERY]ABORT INFO: Fail to get lock owner for %d seconds, exit.", max_time);
-            cm_fync_logfile();
-            _exit(1);
+    ret = dss_get_cm_res_lock_owner(cm_res, master_id);
+    DSS_RETURN_IFERR2(ret, LOG_RUN_WAR("Failed to get cm lock owner, if DSS is normal open ignore the log."));
+    if (*master_id == DSS_INVALID_ID32) {
+        if (!try_lock) {
+            return CM_ERROR;
         }
-        ret = dss_get_cm_res_lock_owner(cm_res, &master_id);
-        if (ret != CM_SUCCESS) {
-            DSS_GET_CM_LOCK_LONG_SLEEP;
-            continue;
+        if (inst->no_grab_lock) {
+            LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "[RECOVERY]No need to grab lock when inst %u is set no grab lock.",
+                (uint32)inst_cfg->params.inst_id);
+            dss_set_master_id(DSS_INVALID_ID32);
+            return CM_ERROR;
         }
-        if (master_id == DSS_INVALID_ID32) {
-            if (!try_lock) {
-                continue;
-            }
-            if (inst->no_grab_lock) {
-                LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "[RECOVERY]No need to grab lock when inst %u is set no grab lock.", (uint32)inst_cfg->params.inst_id);
-                dss_set_master_id(DSS_INVALID_ID32);
-                return CM_ERROR;
-            }
-            ret = cm_res_lock(&cm_res->mgr, DSS_CM_LOCK);
-            *grab_lock = ((int)ret == CM_RES_SUCCESS);
-            if (*grab_lock) {
-                master_id = (uint32)inst->inst_cfg.params.inst_id;
-                LOG_RUN_INF("[RECOVERY]inst id %u succeed to get lock owner.", master_id);
-                break;
-            }
-            continue;
+        ret = cm_res_lock(&cm_res->mgr, DSS_CM_LOCK);
+        *grab_lock = ((int)ret == CM_RES_SUCCESS);
+        if (*grab_lock) {
+            *master_id = (uint32)inst->inst_cfg.params.inst_id;
+            LOG_RUN_INF("[RECOVERY]inst id %u succeed to get lock owner.", *master_id);
+            return CM_SUCCESS;
         }
-        break;
+        return CM_ERROR;
     }
-    return master_id;
+    return CM_SUCCESS;
 }
 
 void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab_lock)
@@ -750,7 +737,12 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
     cm_latch_x(&g_dss_instance.switch_latch, DSS_DEFAULT_SESSIONID, LATCH_STAT(LATCH_SWITCH));
     uint32 old_master_id = dss_get_master_id();
     bool32 grab_lock = CM_FALSE;
-    uint32 master_id = dss_get_cm_lock_owner(inst, &grab_lock, CM_TRUE);
+    uint32 master_id =  DSS_INVALID_ID32;
+    status_t status = dss_get_cm_lock_owner(inst, &grab_lock, CM_TRUE, &master_id);
+    if (status != CM_SUCCESS) {
+        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
+        return;
+    }
     if (master_id == DSS_INVALID_ID32) {
         LOG_RUN_WAR("[RECOVERY]cm is not init, just try again.");
         cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
