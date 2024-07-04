@@ -173,6 +173,11 @@ status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long o
 status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ack);
 status_t dss_fallocate_impl(dss_conn_t *conn, int handle, int mode, long long int offset, long long int length);
 
+void dss_set_conn_wait_event(dss_conn_t *conn, dss_wait_event_e event);
+void dss_unset_conn_wait_event(dss_conn_t *conn);
+status_t dss_call_ex_with_stat(dss_conn_t *conn, dss_packet_t *req, dss_packet_t *ack);
+status_t dss_msg_interact_with_stat(dss_conn_t *conn, uint8 cmd, void *send_info, void *ack);
+
 #define DSS_SET_PTR_VALUE_IF_NOT_NULL(ptr, value) \
     do {                                          \
         if (ptr) {                                \

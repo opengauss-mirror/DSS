@@ -33,6 +33,8 @@
 #include "dss_api_impl.h"
 #include "dss_defs.h"
 #include "dss_fs_aux.h"
+#include "dss_thv.h"
+#include "dss_stats.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -102,7 +104,7 @@ status_t dss_apply_extending_file(dss_conn_t *conn, int32 handle, int64 size, in
     send_info.size = size;
     send_info.vg_name = context->vg_name;
     send_info.vg_id = context->vgid;
-    return dss_msg_interact(conn, DSS_CMD_EXTEND_FILE, (void *)&send_info, NULL);
+    return dss_msg_interact_with_stat(conn, DSS_CMD_EXTEND_FILE, (void *)&send_info, NULL);
 }
 
 status_t dss_apply_fallocate_file(dss_conn_t *conn, int32 handle, int32 mode, int64 offset, int64 size)
@@ -160,7 +162,7 @@ status_t dss_apply_refresh_file(dss_conn_t *conn, dss_file_context_t *context, i
 
     // send it and wait for ack
     dss_packet_t *ack_pack = &conn->pack;
-    status_t status = dss_call_ex(&conn->pipe, send_pack, ack_pack);
+    status_t status = dss_call_ex_with_stat(conn, send_pack, ack_pack);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to send message when refresh file."));
 
     // check return state
@@ -251,7 +253,8 @@ static status_t dss_check_find_fs_block(files_rw_ctx_t *rw_ctx, dss_fs_pos_desc_
 
         fs_pos->is_exist_aux = CM_TRUE;
         fs_pos->data_auid = fs_pos->fs_aux->head.data_id;
-        LOG_DEBUG_INF("Found fs aux block:%llu, data_id:%llu, version:%llu, for fs_aux.parent:%llu, file:%llu, node:%llu.",
+        LOG_DEBUG_INF(
+            "Found fs aux block:%llu, data_id:%llu, version:%llu, for fs_aux.parent:%llu, file:%llu, node:%llu.",
             DSS_ID_TO_U64(fs_pos->fs_aux->head.common.id), DSS_ID_TO_U64(fs_pos->fs_aux->head.data_id),
             fs_pos->fs_aux->head.common.version, DSS_ID_TO_U64(fs_pos->fs_aux->head.ftid), node->fid,
             DSS_ID_TO_U64(node->id));
@@ -417,7 +420,7 @@ status_t dss_apply_refresh_volume(dss_conn_t *conn, dss_file_context_t *context,
 
     // send it and wait for ack
     ack_pack = &conn->pack;
-    CM_RETURN_IFERR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
+    CM_RETURN_IFERR(dss_call_ex_with_stat(conn, send_pack, ack_pack));
 
     // check return state
     if (ack_pack->head->result != CM_SUCCESS) {
@@ -599,6 +602,7 @@ status_t dss_connect(const char *server_locator, dss_conn_opt_t *options, dss_co
 
 void dss_disconnect(dss_conn_t *conn)
 {
+    dss_set_thv_run_ctx_item(DSS_THV_RUN_CTX_ITEM_SESSION, NULL);
     if (conn->flag == CM_TRUE) {
         cs_disconnect(&conn->pipe);
         dss_free_packet_buffer(&conn->pack);
@@ -662,6 +666,7 @@ status_t dss_set_session_id(dss_conn_t *conn, uint32 sid)
     }
     dss_session_t *sessions = (dss_session_t *)(dss_env->session);
     conn->session = &(sessions[sid]);
+    dss_set_thv_run_ctx_item(DSS_THV_RUN_CTX_ITEM_SESSION, conn->session);
     return CM_SUCCESS;
 }
 
@@ -1498,7 +1503,7 @@ static status_t dss_update_written_size(
 
     // send it and wait for ack
     dss_packet_t *ack_pack = &conn->pack;
-    if (dss_call_ex(&conn->pipe, send_pack, ack_pack) != CM_SUCCESS) {
+    if (dss_call_ex_with_stat(conn, send_pack, ack_pack) != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to send message when update file size.");
         return CM_ERROR;
     }
@@ -1667,6 +1672,10 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         volume.id = vol->id;
         volume.name_p = vg_item->dss_ctrl->volume.defs[auid.volume].name;
         volume.vg_type = vol->vg_type;
+
+        timeval_t begin_tv_disk;
+        dss_begin_stat(&begin_tv_disk);
+
         if (param->is_read) {
             LOG_DEBUG_INF("Begin to read volume %s, offset:%lld, size:%d, fname:%s, fsize:%llu, fwritten_size:%llu.",
                 volume.name_p, vol_offset, real_size, node->name, node->size, node->written_size);
@@ -1690,6 +1699,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
             return status;
         }
 
+        dss_session_end_stat(conn->session, &begin_tv_disk, (param->is_read ? DSS_PREAD_DISK : DSS_PWRITE_DISK));
         dss_read_write_check_need_updt_fs_aux(param, &rw_ctx, &fs_pos, real_size, &need_updt_fs_aux);
 
         read_cnt += real_size;
@@ -1793,11 +1803,14 @@ status_t dss_pwrite_file_impl(dss_conn_t *conn, int handle, const void *buf, int
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
     param.is_read = DSS_FALSE;
+    dss_set_conn_wait_event(conn, DSS_PWRITE_SYN_META);
     if (dss_pwrite_file_prepare(conn, context, offset) != CM_SUCCESS) {
+        dss_unset_conn_wait_event(conn);
         dss_unlatch(&context->latch);
         return CM_ERROR;
     }
     status = dss_read_write_file_core(&param, (void *)buf, size, NULL);
+    dss_unset_conn_wait_event(conn);
     dss_unlatch(&context->latch);
     LOG_DEBUG_INF("dss pwrite file leave, result: %d", status);
 
@@ -1837,6 +1850,7 @@ status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, 
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
     param.is_read = DSS_TRUE;
+    dss_set_conn_wait_event(conn, DSS_PREAD_SYN_META);
     do {
         bool32 read_end = CM_FALSE;
         status = dss_pread_file_prepare(conn, context, size, offset, &read_end);
@@ -1847,7 +1861,7 @@ status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, 
         }
         status = dss_read_write_file_core(&param, buf, size, read_size);
     } while (0);
-
+    dss_unset_conn_wait_event(conn);
     dss_unlatch(&context->latch);
     LOG_DEBUG_INF("dss pread file leave, result: %d", status);
     return status;
@@ -2031,7 +2045,7 @@ status_t dss_truncate_impl(dss_conn_t *conn, int handle, long long int length)
         return CM_ERROR;
     }
 
-    if (length > (int64)DSS_MAX_FILE_SIZE) { 
+    if (length > (int64)DSS_MAX_FILE_SIZE) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "length must less than DSS_MAX_FILE_SIZE");
         LOG_DEBUG_ERR("File length is invalid:%lld.", length);
         return CM_ERROR;
@@ -2881,7 +2895,7 @@ status_t dss_aio_check_need_updt_fs_aux(dss_rw_param_t *param, int32 size, bool3
     rw_ctx.env = param->dss_env;
     rw_ctx.file_ctx = context;
     rw_ctx.handle = param->handle;
-    rw_ctx.read = CM_TRUE; // should NOT apply extend for aio post
+    rw_ctx.read = CM_TRUE;  // should NOT apply extend for aio post
 
     int64 top_size = (context->node->size > (param->offset + size)) ? (offset + size) : context->node->size;
     int64 left_size = size;
@@ -2902,12 +2916,12 @@ status_t dss_aio_check_need_updt_fs_aux(dss_rw_param_t *param, int32 size, bool3
         DSS_RETURN_IF_ERROR(status);
         if (!fs_pos.is_valid) {
             LOG_RUN_ERR("Fail to find fs block for file:%s, fid:%llu, fti:%llu, cur offset:%llu, size:%lld,"
-                "written_size:%llu, file size:%llu.",
+                        "written_size:%llu, file size:%llu.",
                 context->node->name, context->node->fid, DSS_ID_TO_U64(context->node->id), offset, cur_size,
                 context->node->written_size, (uint64)context->node->size);
             return CM_ERROR;
         }
-    
+
         if (fs_pos.fs_aux != NULL) {
             // if found one, ignore others
             bool32 is_inited = dss_check_fs_aux_inited(context->vg_item, fs_pos.fs_aux, offset, cur_size);
@@ -3201,6 +3215,44 @@ status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ac
     conn->server_version = dss_get_version(ack_pack);
     conn->proto_version = MIN(DSS_PROTO_VERSION, conn->server_version);
     return dss_decode_packet(make_proc, ack_pack, ack);
+}
+
+void dss_set_conn_wait_event(dss_conn_t *conn, dss_wait_event_e event)
+{
+    if (conn->session != NULL) {
+        dss_set_stat(&((dss_session_t *)conn->session)->stat_ctx, event);
+    }
+}
+
+void dss_unset_conn_wait_event(dss_conn_t *conn)
+{
+    if (conn->session != NULL) {
+        dss_unset_stat(&((dss_session_t *)conn->session)->stat_ctx);
+    }
+}
+
+status_t dss_call_ex_with_stat(dss_conn_t *conn, dss_packet_t *req, dss_packet_t *ack)
+{
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
+    status_t status = dss_call_ex(&conn->pipe, req, ack);
+    if (status == CM_SUCCESS && conn->session != NULL) {
+        dss_session_t *session = (dss_session_t *)conn->session;
+        dss_end_stat_ex(&session->stat_ctx, &session->dss_session_stat[session->stat_ctx.wait_event], &begin_tv);
+    }
+    return status;
+}
+
+status_t dss_msg_interact_with_stat(dss_conn_t *conn, uint8 cmd, void *send_info, void *ack)
+{
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
+    status_t status = dss_msg_interact(conn, cmd, send_info, ack);
+    if (status == CM_SUCCESS && conn->session != NULL) {
+        dss_session_t *session = (dss_session_t *)conn->session;
+        dss_end_stat_ex(&session->stat_ctx, &session->dss_session_stat[session->stat_ctx.wait_event], &begin_tv);
+    }
+    return status;
 }
 
 #ifdef __cplusplus

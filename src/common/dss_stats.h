@@ -75,7 +75,7 @@ static inline void dss_end_stat_base(dss_stat_item_t *stat_item, timeval_t *begi
 
 static inline void dss_end_stat_ex(dss_stat_ctx_t *stat_ctx, dss_stat_item_t *stat_item, timeval_t *begin_tv)
 {
-    if(stat_ctx->enable_stat) {
+    if (stat_ctx->enable_stat) {
         dss_end_stat_base(stat_item, begin_tv);
     }
 }

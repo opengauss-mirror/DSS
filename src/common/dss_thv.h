@@ -48,6 +48,16 @@
 extern "C" {
 #endif
 
+typedef enum tag_dss_thv_run_ctx_item {
+    DSS_THV_RUN_CTX_ITEM_SESSION = 0,  // bind one session cur thd
+    DSS_THV_RUN_CTX_ITEM_MAX,
+} dss_thv_run_ctx_item_e;
+
+typedef struct tag_dss_thv_run_ctx {
+    uint32 thread_id;
+    void *item_addr[DSS_THV_RUN_CTX_ITEM_MAX];
+} dss_thv_run_ctx_t;
+
 /* ****Thread variable defined begin.**** */
 #define DB_MAX_THV_OBJ_NUM 3
 
@@ -86,6 +96,9 @@ status_t cm_get_thv(thv_type_e var_type, bool32 is_create, pointer_t *result);
 status_t cm_launch_thv(thv_ctrl_t *thv_ctrls, uint32 thv_ctrl_cnt);
 
 uint32 dss_get_current_thread_id();
+void dss_set_thv_run_ctx_item(dss_thv_run_ctx_item_e item, void *item_addr);
+void *dss_get_thv_run_ctx_item(dss_thv_run_ctx_item_e item);
+
 #ifdef __cplusplus
 }
 #endif
