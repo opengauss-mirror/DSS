@@ -188,7 +188,7 @@ static inline status_t dss_reserv_text_buf(dss_packet_t *pack, uint32 size, char
 {
     CM_ASSERT(pack != NULL);
     CM_ASSERT(data_buf != NULL);
-    if (CM_ALIGN4(size) > DSS_REMAIN_SIZE(pack) - sizeof(uint32)) {
+    if (CM_ALIGN4(size) >= DSS_REMAIN_SIZE(pack) - sizeof(uint32)) {
         CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, size, DSS_REMAIN_SIZE(pack) - 1);
         return CM_ERROR;
     }

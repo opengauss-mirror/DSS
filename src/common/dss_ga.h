@@ -54,7 +54,7 @@ typedef enum tagga_pool_name {
     GA_SESSION_POOL = (GA_APP_AREA + 1),
     GA_8K_POOL = (GA_APP_AREA + 2),
     GA_16K_POOL = (GA_APP_AREA + 3),
-    GA_FS_AUX_POOL = (GA_APP_AREA + 4)
+    GA_FS_AUX_POOL = (GA_APP_AREA + 4),
 } ga_pool_id_e;
 
 typedef struct tagga_object_map {

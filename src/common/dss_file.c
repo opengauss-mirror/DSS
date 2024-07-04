@@ -2889,7 +2889,7 @@ status_t dss_extend_batch_inner(dss_session_t *session, dss_vg_info_item_t *vg_i
         second_block =
             dss_find_fs_block(session, vg_item, node, entry_block->bitmap[block_count], CM_TRUE, NULL, block_count);
         DSS_RETURN_IF_FALSE3((second_block != NULL), dss_rollback_mem_update(session, vg_item),
-            LOG_DEBUG_ERR("Failed to alloc au, vg name:%s.", vg_item->dss_ctrl->vg_info.vg_name));
+            LOG_DEBUG_ERR("Failed to alloc au, vg name %s.", vg_item->dss_ctrl->vg_info.vg_name));
     } else {
         judge.index = (uint16_t)block_count;
         status = dss_alloc_fs_block(session, vg_item, (char **)&second_block, &judge);
@@ -3297,7 +3297,7 @@ status_t dss_do_fallocate(dss_session_t *session, dss_node_data_t *node_data)
     }
 
     if (node_data->mode != 0) {
-        DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("Failed to check mode, vg id:%d.", node_data->mode),
+        DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("Failed to check mode,vg id %d.", node_data->mode),
             DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "fallocate mode", (uint64)node_data->mode));
     }
 

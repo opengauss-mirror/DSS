@@ -49,7 +49,7 @@ extern "C" {
 #endif
 
 typedef enum tag_dss_thv_run_ctx_item {
-    DSS_THV_RUN_CTX_ITEM_SESSION = 0,  // bind one session cur thd
+    DSS_THV_RUN_CTX_ITEM_SESSION = 0,  // bind one session to cur thd
     DSS_THV_RUN_CTX_ITEM_MAX,
 } dss_thv_run_ctx_item_e;
 
