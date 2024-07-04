@@ -756,7 +756,7 @@ static status_t dss_process_get_inst_status(dss_session_t *session)
     dss_status->local_instance_id = g_dss_instance.inst_cfg.params.inst_id;
     dss_status->master_id = dss_get_master_id();
     char *dss_instance_status = dss_get_dss_instance_status(dss_status->instance_status_id);
-    uint32 errcode = strcpy_s(dss_status->instance_status, DSS_MAX_STATUS_LEN, dss_instance_status);
+    errno_t errcode = strcpy_s(dss_status->instance_status, DSS_MAX_STATUS_LEN, dss_instance_status);
     MEMS_RETURN_IFERR(errcode);
 
     char *dss_server_status = dss_get_dss_server_status(dss_status->server_status_id);
@@ -773,7 +773,7 @@ static status_t dss_process_get_time_stat(dss_session_t *session)
 {
     uint64 size = sizeof(dss_stat_item_t) * DSS_EVT_COUNT;
     dss_stat_item_t *time_stat = NULL;
-    DSS_RETURN_IF_ERROR(dss_reserv_text_buf(&session->send_pack, size, (char **)&time_stat));
+    DSS_RETURN_IF_ERROR(dss_reserv_text_buf(&session->send_pack, (uint32)size, (char **)&time_stat));
 
     errno_t errcode = memset_s(time_stat, (size_t)size, 0, (size_t)size);
     securec_check_ret(errcode);

@@ -444,7 +444,7 @@ status_t dss_make_dir(dss_session_t *session, const char *parent, const char *di
     return dss_make_dir_file(session, parent, dir_name, GFT_PATH, 0);
 }
 
-status_t dss_create_file(dss_session_t *session, const char *parent, const char *name, int32_t flag)
+status_t dss_create_file(dss_session_t *session, const char *parent, const char *name, int32 flag)
 {
     return dss_make_dir_file(session, parent, name, GFT_FILE, flag);
 }

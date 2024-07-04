@@ -539,9 +539,9 @@ static void dss_check_peer_by_simulation_cm(dss_instance_t *inst)
 }
 #endif
 
-static void dss_check_peer_default(void)
+static void dss_check_peer_default()
 {
-    dss_check_mes_conn(DSS_INVALID_64);
+    dss_check_mes_conn(DSS_INVALID_ID64);
 }
 
 void dss_init_cm_res(dss_instance_t *inst)
@@ -847,7 +847,7 @@ void dss_check_peer_inst(dss_instance_t *inst, uint64 inst_id)
     // after lock, check again, other thed may get the lock, and init the map before
     uint64 cur_inst_map = dss_get_inst_work_status();
     // has connection
-    if (inst_id != DSS_INVALID_64 && (cur_inst_map & inst_mask) != 0) {
+    if (inst_id != DSS_INVALID_ID64 && (cur_inst_map & inst_mask) != 0) {
         cm_spin_unlock(&inst->inst_work_lock);
         return;
     }

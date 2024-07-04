@@ -732,7 +732,7 @@ int dss_fallocate(int handle, int mode, long long offset, long long length)
 {
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fallocate get conn error"));
+    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fallocate get conn error."));
     ret = dss_fallocate_impl(conn, HANDLE_VALUE(handle), mode, offset, length);
     dss_get_api_volume_error();
 

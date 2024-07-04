@@ -1208,7 +1208,7 @@ status_t dss_latch_context_by_handle(
         return CM_ERROR;
     }
 
-    DSS_ASSERT_LOG(handle == (int32)file_cxt->id, "handle %d not equal to file id %u", handle, file_ctx->id);
+    DSS_ASSERT_LOG(handle == (int32)file_cxt->id, "handle %d not equal to file id %u", handle, file_cxt->id);
 
     if (file_cxt->node == NULL) {
         dss_unlatch(&file_cxt->latch);
@@ -1466,7 +1466,7 @@ static status_t dss_check_ready_fs_block(files_rw_ctx_t *rw_ctx, dss_fs_pos_desc
         } else {
             // when be written, need to wait server to write zero
             status = dss_check_apply_refresh_file(conn, context, rw_ctx->offset);
-            DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to refresh fs block"));
+            DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to refresh fs block."));
             // after check from server, if try to read, but no more data to read, go back to caller
             if (rw_ctx->read && (uint64)rw_ctx->offset >= node->written_size) {
                 break;
@@ -2164,7 +2164,7 @@ static status_t dss_init_files(dss_env_t *dss_env, uint32 max_open_files)
     }
     dss_env->files = (dss_file_context_t *)cm_malloc(context_size);
     if (dss_env->files == NULL) {
-        return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "alloc memory failed", ERR_ALLOC_MEMORY);
+        return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "alloc memory failed", CM_ERROR);
     }
     errno_t rc = memset_s(dss_env->files, context_size, 0, context_size);
     if (rc != EOK) {
@@ -2384,7 +2384,7 @@ status_t dss_islink_impl(dss_conn_t *conn, const char *path, bool32 *result)
     }
 
     dss_init_get(ack_pack);
-    gft_item_type_t type = GFT_PATH;
+    gft_item_type_t type;
     if (dss_get_int32(ack_pack, (int32 *)result) != CM_SUCCESS) {
         DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get result data error");
         LOG_DEBUG_ERR("get result data error.");
@@ -2982,7 +2982,7 @@ status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long o
     dss_file_context_t *context = NULL;
     dss_rw_param_t param;
 
-    DSS_RETURN_IF_ERROR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
+    CM_RETURN_IFERR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_SHARE));
     LOG_DEBUG_INF("Begin get file fd in aio, filename:%s, handle:%d, offset:%lld, size:%d", context->node->name, handle,
         offset, size);
 

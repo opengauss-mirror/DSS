@@ -1390,7 +1390,7 @@ static void touch_help(const char *prog_name, int print_flag)
         return;
     }
     (void)printf("-p/--path <path>, <required>, file need to touch, path must begin with '+'\n");
-    (void)printf("-f/--flag <flag>, [optional], file flag need to set");
+    (void)printf("-f/--flag <flag>, [optional], file flag need to set\n");
     help_param_uds();
 }
 
@@ -2469,7 +2469,7 @@ static status_t dev_proc(void)
     status = cm_str2bigint(cmd_dev_args[DSS_ARG_IDX_1].input_args, &offset);
     if (status != CM_SUCCESS) {
         dss_close_volume(&volume);
-        DSS_PRINT_ERROR("The value of offset is invalid");
+        DSS_PRINT_ERROR("The value of offset is invalid.\n");
         return CM_ERROR;
     }
 

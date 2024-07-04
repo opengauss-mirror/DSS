@@ -833,8 +833,8 @@ void dss_clean_session_latch(dss_session_t *session, bool32 is_daemon)
             LOG_DEBUG_INF("Clean sid:%u daemon wait next time to clean.", DSS_SESSIONID_IN_LOCK(session->id));
             return;
         } else {
-            bool32 is_cleaned = dss_clean_lock_for_shm_meta(session, shared_latch, is_daemon);
-            if (!is_cleaned) {
+            bool32 is_clean = dss_clean_lock_for_shm_meta(session, shared_latch, is_daemon);
+            if (!is_clean) {
                 cm_spin_unlock(&session->lock);
                 LOG_DEBUG_INF("Clean sid:%u daemon wait next time to clean.", DSS_SESSIONID_IN_LOCK(session->id));
                 return;

@@ -212,7 +212,7 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
 
     dss_vg_info_item_t *vg_item = dss_find_vg_item_by_id(meta_syn->vg_id);
     if (vg_item == NULL) {
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find vg:%u", meta_syn->vg_id));
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find vg:%u.", meta_syn->vg_id));
     }
 
     uint32 meta_len = dss_buffer_cache_get_block_size(meta_syn->meta_type);
@@ -233,7 +233,7 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
     block = dss_find_block_in_shm_no_refresh_ex(session, vg_item, meta_block_id, &out_obj_id);
     if (block == NULL) {
         LOG_DEBUG_INF(
-            "syn meta file:%llu, file_ver:%llu, vg:%u, block:%llu, type:%u, with version:%llu not found node fail.",
+            "syn meta file:%llu, file_ver:%llu, vg :%u, block:%llu  type:%u, with version:%llu not found node fail.",
             meta_syn->fid, meta_syn->file_ver, meta_syn->vg_id, meta_syn->meta_block_id, meta_syn->meta_type,
             meta_syn->syn_meta_version);
         *ack = CM_TRUE;
@@ -256,7 +256,7 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
         (common_block->version >= meta_syn->syn_meta_version) ||
         (node != NULL && (node->flags & DSS_FT_NODE_FLAG_INVALID_FS_META))) {
         LOG_DEBUG_INF(
-            "syn meta file:%llu, file_ver:%llu, vg:%u, block:%llu, type:%u, with version:%llu fid or version skip.",
+            "syn meta file:%llu, file_ver:%llu, vg :%u, block: %llu type:%u, with version:%llu fid or version skip.",
             meta_syn->fid, meta_syn->file_ver, meta_syn->vg_id, meta_syn->meta_block_id, meta_syn->meta_type,
             meta_syn->syn_meta_version);
     } else {
@@ -271,7 +271,7 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
     dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);
     *ack = CM_TRUE;
     LOG_DEBUG_INF(
-        "syn ack:%u when notify syn meta file:%llu, file_ver:%llu, vg:%u, block:%llu, type:%u, with version:%llu.",
+        "syn ack:%u when notify syn meta file:%llu, file_ver:%llu, vg :%u, block: %llu type:%u, with version:%llu.",
         (uint32)(*ack), meta_syn->fid, meta_syn->file_ver, meta_syn->vg_id, meta_syn->meta_block_id,
         meta_syn->meta_type, meta_syn->syn_meta_version);
     return CM_SUCCESS;
@@ -319,7 +319,7 @@ status_t dss_invalidate_meta_remote(
 
     *invalid_ack = CM_TRUE;
     LOG_DEBUG_INF("End to invalidate meta vg id:%u, meta type:%u, meta id:%llu, ack:%u.", invalidate_meta_msg->vg_id,
-        invalidate_meta_msg->meta_type, invalidate_meta_msg->meta_block_id, (uint32)(*invalid_ack));
+        invalidate_meta_msg->meta_type, invalidate_meta_msg->meta_block_id, (uint32)*invalid_ack);
     return CM_SUCCESS;
 }
 

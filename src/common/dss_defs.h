@@ -460,7 +460,7 @@ static inline void dss_auid_unset_uninit(auid_t *auid)
 
 static inline bool32 dss_auid_is_uninit(auid_t *auid)
 {
-    return (auid->item & DSS_AU_UNINITED_MARK);
+    return ((auid->item & DSS_AU_UNINITED_MARK) != 0);
 }
 
 #define DSS_BLOCK_ID_SET_INITED(block_id) ((*(uint64 *)&block_id) & (*(uint64 *)&dss_unset_inited_mask))

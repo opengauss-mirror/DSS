@@ -316,7 +316,7 @@ static int dss_handle_recv_broadcast_msg(
     return ret;
 }
 
-static void dss_handle_discard_recv_brodcat_msg(ruid_type ruid)
+static void dss_handle_discard_recv_broadcat_msg(ruid_type ruid)
 {
     mes_msg_list_t responses;
     int ret = mes_broadcast_get_response(ruid, &responses, 0);
@@ -399,7 +399,7 @@ static status_t dss_broadcast_msg_with_try(dss_message_head_t *dss_head, dss_rec
         if (!recv_msg->ignore_ack) {
             ret = dss_handle_recv_broadcast_msg(dss_head->ruid, timeout, &succ_ack_inst, recv_msg);
         } else {
-            dss_handle_discard_recv_brodcat_msg(dss_head->ruid);
+            dss_handle_discard_recv_broadcat_msg(dss_head->ruid);
             ret = CM_SUCCESS;
             succ_ack_inst = succ_req_inst;
         }
