@@ -196,7 +196,7 @@ status_t dss_conn_create(pointer_t *result)
     dss_init_packet(&conn->pack, conn->pipe.options);
     dss_conn_opt_t *options = NULL;
     (void)cm_get_thv(GLOBAL_THV_OBJ1, CM_FALSE, (pointer_t *)&options);
-    if (dss_try_conn(options, conn) != CM_SUCCESS) {
+    if (dss_conn_sync(options, conn) != CM_SUCCESS) {
         DSS_THROW_ERROR(ERR_DSS_CONNECT_FAILED, cm_get_os_error(), strerror(cm_get_os_error()));
         DSS_FREE_POINT(conn);
         return CM_ERROR;
@@ -862,7 +862,7 @@ void dss_refresh_logger(char *log_field, unsigned long long *value)
     }
 }
 
-int32 dss_init_logger(
+int dss_init_logger(
     char *log_home, unsigned int log_level, unsigned int log_backup_file_count, unsigned long long log_max_file_size)
 {
     errno_t ret;
