@@ -369,13 +369,10 @@ static status_t dss_lsnr_proc(bool32 is_emerg, uds_lsnr_t *lsnr, cs_pipe_t *pipe
     dss_session_t *session = NULL;
     status_t status;
     status = dss_create_session(pipe, &session);
-    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[DSS_CONNECT]dss_lsnr_proc create session failed.\n"));
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[DSS_CONNECT] create session failed.\n"));
     // process_handshake
     status = dss_handshake(session);
-    DSS_RETURN_IFERR3(status,
-        LOG_RUN_ERR(
-            "[DSS_CONNECT]Session:%u socket:%u handshake with client failed.", session->id, pipe->link.uds.sock),
-        dss_destroy_session(session));
+    DSS_RETURN_IFERR3(status, LOG_RUN_ERR("[DSS_CONNECT] create session failed.\n"), dss_destroy_session(session));
     status = dss_reactors_add_session(session);
     DSS_RETURN_IFERR3(status,
         LOG_RUN_ERR("[DSS_CONNECT]Session:%u socket:%u closed.", session->id, pipe->link.uds.sock),

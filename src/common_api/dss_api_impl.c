@@ -712,16 +712,16 @@ status_t dss_connect_ex(const char *server_locator, dss_conn_opt_t *options, dss
     dss_init_conn(conn);
     do {
         status = dss_connect(server_locator, options, conn);
-        DSS_BREAK_IFERR2(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss cmd connet server failed."));
+        DSS_BREAK_IFERR2(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client connet server failed."));
         uint32 max_open_file = DSS_DEFAULT_OPEN_FILES_NUM;
         conn->proto_version = DSS_PROTO_VERSION;
         status = dss_cli_handshake(conn, max_open_file);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss cmd handshake to server failed."),
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client handshake to server failed."),
             dss_disconnect(conn));
 
         status = dss_init_vol_handle_sync(conn);
-        DSS_BREAK_IFERR3(
-            status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss cmd init vol handle failed."), dss_disconnect(conn));
+        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client init vol handle failed."),
+            dss_disconnect(conn));
         dss_env->conn_count++;
     } while (0);
     return status;
@@ -752,6 +752,7 @@ status_t dss_make_dir_impl(dss_conn_t *conn, const char *parent, const char *dir
 {
     DSS_RETURN_IF_ERROR(dss_check_device_path(parent));
     DSS_RETURN_IF_ERROR(dss_check_name(dir_name));
+    LOG_DEBUG_INF("dss make dir entry, parent:%s, dir_name:%s", parent, dir_name);
     dss_make_dir_info_t send_info;
     send_info.parent = parent;
     send_info.name = dir_name;
@@ -2630,7 +2631,8 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
         *vol_offset = dss_get_au_offset(vg_item, auid);
         *vol_offset = *vol_offset + (int64)fs_pos.au_offset;
         uint64 super_au_size = CM_CALC_ALIGN(DSS_VOLUME_HEAD_SIZE, au_size);
-        cm_panic(*((uint64 *)vol_offset) >= super_au_size);  // wrongly writing superau area
+        // wrongly writing superau area
+        DSS_ASSERT_LOG(*((uint64 *)vol_offset) >= super_au_size, "The volume offset:%llu is invalid!", *vol_offset);
 
         /* get the real block device descriptor */
         *fd = vol->handle;
