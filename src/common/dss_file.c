@@ -1499,7 +1499,7 @@ status_t dss_update_au_disk(
     uint32 obj_id = first;
     for (uint32 i = 0; i < count; i++) {
         buf = ga_object_addr(pool_id, obj_id);
-
+        DSS_ASSERT_LOG(buf != NULL, "buf is NULL when update au disk, auid:%s", dss_display_metaid(auid));
         dss_common_block_t *block = (dss_common_block_t *)buf;
         block->version++;
         block->checksum = dss_get_checksum(buf, size);
@@ -2041,6 +2041,8 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     if (type == GFT_FILE && DSS_IS_FILE_INNER_INITED(flag)) {
         node_flag |= DSS_FT_NODE_FLAG_INNER_INITED;
     }
+    DSS_LOG_DEBUG_OP("[FT][ALLOC] Succeed to allocate ftnode: %s for file:%s.", dss_display_metaid(node->id), name);
+    LOG_DEBUG_INF("[FT][ALLOC] Parent node name:%s, %s", parent_node->name, dss_display_metaid(parent_node->id));
     dss_init_alloc_ft_node(gft, node, node_flag, parent_node);
     dss_ft_node_link_list(session, vg_item, parent_node, id, node, gft);
     /*

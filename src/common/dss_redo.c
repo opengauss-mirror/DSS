@@ -810,8 +810,8 @@ status_t rp_redo_rename_file(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
     }
 
     status_t status = dss_update_ft_block_disk(vg_item, cur_block, data->node.id);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO] Failed to update fs block: %s to disk.", dss_display_metaid(data->node.id)));
-
+    DSS_RETURN_IFERR2(
+        status, LOG_DEBUG_ERR("[REDO] Failed to update fs block: %s to disk.", dss_display_metaid(data->node.id)));
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(cur_block);
     dss_add_syn_meta(vg_item, block_ctrl, cur_block->common.version);
 
@@ -877,7 +877,7 @@ status_t rp_redo_set_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_fs(block);
     dss_add_syn_meta(vg_item, block_ctrl, block->head.common.version);
 
-    DSS_LOG_DEBUG_OP("[REDO] Succeed to replay set fs block: %s, used_num:%hu, vg name:%s.", dss_display_metaid(data->id),
+    DSS_LOG_DEBUG_OP("[REDO] Succeed to replay set fs block: %s, used_num:%hu, vg name:%s.", dss_display_metaid(data->id),    
         block->head.used_num, vg_item->vg_name);
     return CM_SUCCESS;
 }

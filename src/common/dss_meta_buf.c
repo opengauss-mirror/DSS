@@ -83,6 +83,7 @@ static void dss_register_buffer_cache_inner(
     if (bucket->has_next) {
         ga_obj_id_t first_obj_id = *(ga_obj_id_t *)&bucket->first;
         char *addr = ga_object_addr(first_obj_id.pool_id, first_obj_id.obj_id);
+        DSS_ASSERT_LOG(addr != NULL, "obj addr is NULL when register buffer cache");
         dss_common_block_t *block = DSS_GET_COMMON_BLOCK_HEAD(addr);
         first_block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
     } else {
