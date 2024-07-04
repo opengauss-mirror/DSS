@@ -31,8 +31,8 @@
 extern "C" {
 #endif
 typedef enum en_dss_latch_mode {
-    LATCH_MODE_SHARE = 0,
-    LATCH_MODE_EXCLUSIVE = 1
+    LATCH_MODE_SHARE = 0,    /* SHARE */
+    LATCH_MODE_EXCLUSIVE = 1 /* EXCLUSIVE*/
 } dss_latch_mode_e;
 
 typedef enum en_dss_latch_shared_op {
