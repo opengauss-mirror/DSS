@@ -33,6 +33,7 @@
 #include "cm_spinlock.h"
 #include "cm_thread.h"
 #include "dss_defs.h"
+#include "dss_session.h"
 
 #ifdef __cplusplus
 extern "C" {

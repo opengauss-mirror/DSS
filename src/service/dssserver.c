@@ -140,7 +140,7 @@ static void handle_main_wait(void)
             break;
         }
         if (!g_dss_instance.is_maintain) {
-            dss_check_peer_inst(&g_dss_instance, DSS_INVALID_64);
+            dss_check_peer_inst(&g_dss_instance, DSS_INVALID_ID64);
         }
         if (periods == MILLISECS_PER_SECOND * SECONDS_PER_DAY / interval) {
             periods = 0;

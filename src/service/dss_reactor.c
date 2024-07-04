@@ -23,7 +23,6 @@
  */
 #include "cm_epoll.h"
 #include "dss_reactor.h"
-#include "dss_session.h"
 #include "dss_instance.h"
 #include "dss_service.h"
 
@@ -81,7 +80,10 @@ static void dss_reactor_session_entry(void *param)
     dss_process_single_cmd(&session);
     // do NOT add any code after here, and can not use any data of dss_workthread_t from here
     if (session != NULL) {
-        dss_reactor_set_oneshot(session);
+        if (dss_reactor_set_oneshot(session) != CM_SUCCESS) {
+            LOG_RUN_ERR("[reactor] set oneshot flag of socket failed, session %u, reactor %u, os error %d", session->id,
+                ((reactor_t *)session->reactor)->id, cm_get_sock_error());
+        }
     }
 }
 
@@ -171,8 +173,8 @@ static void dss_reactor_poll_events(reactor_t *reactor)
         if (reactor->status != REACTOR_STATUS_RUNNING) {
             if (dss_reactor_set_oneshot(sess) != CM_SUCCESS) {
                 LOG_RUN_ERR("[reactor] set oneshot flag of socket failed, session %u, "
-                            "reactor %lu, os error %d, event %u",
-                    sess->id, reactor->iothread.id, cm_get_sock_error(), ev->events);
+                            "reactor %u, os error %d, event %u",
+                    sess->id, reactor->id, cm_get_sock_error(), ev->events);
             }
             continue;
         }
@@ -254,7 +256,7 @@ static status_t dss_reactors_start()
 status_t dss_create_reactors()
 {
     reactors_t *pool = &g_dss_instance.reactors;
-    cm_atomic_set(&pool->roudroubin, 0);
+    (void)cm_atomic_set(&pool->roudroubin, 0);
     pool->reactor_count = g_dss_instance.inst_cfg.params.iothread_count;
     size_t size = sizeof(reactor_t) * pool->reactor_count;
     if ((size == 0) || (size / sizeof(reactor_t) != pool->reactor_count)) {
@@ -286,6 +288,9 @@ void dss_pause_reactors()
 {
     reactors_t *pool = &g_dss_instance.reactors;
     reactor_t *reactor = NULL;
+    if (pool->reactor_arr == NULL) {
+        return;
+    }
     for (uint32 i = 0; i < pool->reactor_count; i++) {
         reactor = &pool->reactor_arr[i];
         reactor->status = REACTOR_STATUS_PAUSING;
@@ -299,6 +304,9 @@ void dss_continue_reactors()
 {
     reactors_t *pool = &g_dss_instance.reactors;
     reactor_t *reactor = NULL;
+    if (pool->reactor_arr == NULL) {
+        return;
+    }
 
     for (uint32 i =0; i < pool->reactor_count; i++) {
         reactor = &pool->reactor_arr[i];

@@ -1354,11 +1354,11 @@ int64 dss_seek_file_impl_core(dss_rw_param_t *param, int64 offset, int origin)
             return CM_ERROR;
         }
         LOG_DEBUG_INF("Apply to refresh file, offset:%lld, size:%lld, need_refresh:%d.", offset, size, need_refresh);
-    }
-    if (origin == SEEK_END) {
-        new_offset = (int64)context->node->written_size + offset;
-    } else if (origin == DSS_SEEK_MAXWR) {
-        new_offset = (int64)context->node->written_size;
+        if (origin == SEEK_END) {
+            new_offset = (int64)context->node->written_size + offset;
+        } else if (origin == DSS_SEEK_MAXWR) {
+            new_offset = (int64)context->node->written_size;
+        }
     }
     if (new_offset < 0) {
         DSS_THROW_ERROR(ERR_DSS_FILE_SEEK, context->vg_item->id, context->fid, offset, context->node->size);
@@ -1675,6 +1675,12 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         } else {
             LOG_DEBUG_INF("Begin to write volume %s, offset:%lld, size:%d, fname:%s, fsize:%llu, fwritten_size:%llu.",
                 volume.name_p, vol_offset, real_size, node->name, node->size, node->written_size);
+#if defined(_DEBUG) && !defined(OPENGAUSS)
+            if (CM_STR_EQUAL(context->vg_item->vg_name, "dss_data") && !CM_STR_BEGIN_WITH(node->name, "ctrl")) {
+                    LOG_DEBUG_INF("dss pwrite file %s, vol_offset:%lld, head:%u-%u", node->name, vol_offset,
+                        *(uint16 *)((char*)buf + sizeof(uint32)), *(uint32 *)buf);
+                }
+#endif
             status = dss_write_volume(&volume, (int64)vol_offset, buf, real_size);
         }
         if (status != CM_SUCCESS) {
