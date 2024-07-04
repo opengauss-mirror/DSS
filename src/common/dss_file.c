@@ -3338,15 +3338,17 @@ static void dss_transfer_remaining_au_inner(dss_session_t *session, dss_vg_info_
     dss_fs_block_t *dst_sfsb, uint32 *src_au_idx, uint32 *dst_au_idx, dss_redo_truncate_fs_block_batch_t *redo, auid_t *auid)
 {
     uint16 count = 0;
-    uint32 au_idx_limit = DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
-    dss_init_truncate_fs_block_batch_redo(src_partial_sfsb, dst_sfsb, (uint16)(*src_au_idx), (uint16)(*dst_au_idx), redo);
+    uint32 au_idx_limit = (uint32)(DSS_FILE_SPACE_BLOCK_BITMAP_COUNT);
+    dss_init_truncate_fs_block_batch_redo(
+        src_partial_sfsb, dst_sfsb, (uint16)(*src_au_idx), (uint16)(*dst_au_idx), redo);
     while (*src_au_idx < au_idx_limit && !dss_cmp_auid(*auid, DSS_INVALID_ID64) && (*dst_au_idx) < au_idx_limit) {
         redo->id_set[count] = src_partial_sfsb->bitmap[*src_au_idx];
         dst_sfsb->bitmap[*dst_au_idx] = src_partial_sfsb->bitmap[*src_au_idx];
         dss_set_blockid(&src_partial_sfsb->bitmap[*src_au_idx], DSS_INVALID_64);
         dst_sfsb->head.used_num++;
         src_partial_sfsb->head.used_num--;
-        LOG_DEBUG_INF("Success to transfer the partial FSB, curr src_au_idx:%u, curr dst_au_idx:%u, dst SFSB used num:%d, "
+        LOG_DEBUG_INF(
+            "Success to transfer the partial FSB, curr src_au_idx:%u, curr dst_au_idx:%u, dst SFSB used num:%d, "
             "src SFSB used num:%d.",
             *src_au_idx, *dst_au_idx, dst_sfsb->head.used_num, src_partial_sfsb->head.used_num);
         (*src_au_idx)++;
@@ -3369,12 +3371,12 @@ static void dss_transfer_remaining_au(dss_session_t *session, dss_fs_block_t *sr
     auid_t auid = src_partial_sfsb->bitmap[src_au_idx];
     dss_fs_block_t *dst_sfsb = dst_first_sfsb;
     CM_ASSERT(dst_au_idx <= au_idx_limit);
-    LOG_DEBUG_INF("Begin to transfer the partial FSB, src_au_idx:%u, %u AUs to xfer, dst_au_idx:%u, au_idx_limit:%u, "
-                  "dst SFSB:%s, used num:%hu.",
-        src_au_idx, ((au_idx_limit - src_au_idx) + 1), dst_au_idx, au_idx_limit,
-        dss_display_metaid(dst_sfsb->head.common.id), dst_sfsb->head.used_num);
-    LOG_DEBUG_INF("Src SFSB:%s, used num:%hu", dss_display_metaid(src_partial_sfsb->head.common.id),
-        src_partial_sfsb->head.used_num);
+    LOG_DEBUG_INF(
+        "Begin to transfer the partial FSB, src_partial_sfsb: %s, src_au_idx:%u, %u AUs to xfer, src_used num: %hu,"
+        "dst_entry_fsb: %s, dst_au_idx:%u, au_idx_limit:%u, dst_used num:%hu.",
+        dss_display_metaid(src_partial_sfsb->head.common.id), src_au_idx, ((au_idx_limit - src_au_idx) + 1),
+        src_partial_sfsb->head.used_num, dss_display_metaid(dst_sfsb->head.common.id), dst_au_idx, au_idx_limit,
+        dst_sfsb->head.used_num);
     dss_redo_truncate_fs_block_batch_t redo;
     dss_transfer_remaining_au_inner(
         session, vg_item, src_partial_sfsb, dst_sfsb, &src_au_idx, &dst_au_idx, &redo, &auid);
@@ -3397,17 +3399,23 @@ static void dss_transfer_second_level_fsb(dss_session_t *session, dss_vg_info_it
     uint32 au_idx_limit = DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
     uint16 count = 0;
     dss_redo_truncate_fs_block_batch_t redo;
-    dss_init_truncate_fs_block_batch_redo(src_entry_fsb, dst_entry_fsb, (uint16)curr_src_idx, (uint16)*dst_sfsb_idx, &redo);
+    LOG_DEBUG_INF(
+        "Begin to transfer the complete FSB, src_entry_fsb: %s, src_au_idx:%u, %u AUs to xfer, src_used num: %hu,"
+        "dst_entry_fsb: %s, dst_au_idx:%u, au_idx_limit:%u, dst_used num:%hu.",
+        dss_display_metaid(src_entry_fsb->head.common.id), curr_src_idx, ((au_idx_limit - curr_src_idx) + 1),
+        src_entry_fsb->head.used_num, dss_display_metaid(dst_entry_fsb->head.common.id), *dst_sfsb_idx, au_idx_limit,
+        dst_entry_fsb->head.used_num);
+    dss_init_truncate_fs_block_batch_redo(src_entry_fsb, dst_entry_fsb, (uint16)curr_src_idx, (uint16)(*dst_sfsb_idx), &redo);
     while (!dss_cmp_blockid(src_entry_fsb->bitmap[curr_src_idx], DSS_INVALID_64) && curr_src_idx < au_idx_limit) {
         redo.id_set[count] = src_entry_fsb->bitmap[curr_src_idx];
         dss_block_id_t dst_old_id = dst_entry_fsb->bitmap[*dst_sfsb_idx];
         CM_ASSERT(dss_cmp_blockid(dst_old_id, DSS_INVALID_64));
         dst_entry_fsb->bitmap[*dst_sfsb_idx] = src_entry_fsb->bitmap[curr_src_idx];
+        CM_ASSERT(!dss_cmp_blockid(dst_entry_fsb->bitmap[*dst_sfsb_idx], DSS_INVALID_64));
         dss_set_blockid(&src_entry_fsb->bitmap[curr_src_idx], DSS_INVALID_64);
         // '++' would cause overcnt by 1 err. Compensate 1 in caller.
         dst_entry_fsb->head.used_num = (uint16_t)(*dst_sfsb_idx + 1);
         src_entry_fsb->head.used_num--;
-        CM_ASSERT(!dss_cmp_blockid(dst_entry_fsb->bitmap[*dst_sfsb_idx], DSS_INVALID_64));
         LOG_DEBUG_INF("Success to transfer intact SFSB:%llu, from src EFSB:%s[%u], to dst EFSB:%llu[%d], "
                       "curr src EFSB used num:%d, curr dst EFSB used num:%d.",
             DSS_ID_TO_U64(dst_entry_fsb->bitmap[*dst_sfsb_idx]), dss_display_metaid(src_entry_fsb->head.common.id),
@@ -3456,13 +3464,15 @@ static void dss_build_truncated_ftn(dss_session_t *session, dss_vg_info_item_t *
         dss_fs_block_t *src_partial_sfsb = NULL;
         dss_block_id_t src_partial_sfsb_id = src_entry_fsb->bitmap[src_partial_sfsb_idx];
         (void)dss_get_second_block(vg_item, src_partial_sfsb_id, &src_partial_sfsb);
-        CM_ASSERT(src_partial_sfsb != NULL);
+        DSS_ASSERT_LOG(src_partial_sfsb != NULL, "Null pointer: src_partial_sfsb, src_partial_sfsb_id=%s.",
+            dss_display_metaid(src_partial_sfsb_id));
 
         dss_fs_block_t *dst_sfsb = NULL;
         dss_block_id_t dst_sfsb_id = dst_entry_fsb->bitmap[dst_sfsb_idx < 0 ? 0 : dst_sfsb_idx];
         dst_sfsb_id = dss_cmp_blockid(dst_sfsb_id, DSS_INVALID_64) ? cache_first_sfsb : dst_sfsb_id;
         (void)dss_get_second_block(vg_item, dst_sfsb_id, &dst_sfsb);
-
+        DSS_ASSERT_LOG(dst_sfsb != NULL, "Null pointer: dst_sfsb, dst_sfsb_id=%s.",
+            dss_display_metaid(dst_sfsb_id));
         uint32 dst_au_idx = 0;
         while (dst_au_idx < au_idx_limit && !dss_cmp_auid(dst_sfsb->bitmap[dst_au_idx], DSS_INVALID_64)) {
             dst_au_idx++;
@@ -4400,7 +4410,7 @@ static status_t dss_clean_node_tree(dss_session_t *session, dss_vg_info_item_t *
             continue;
         }
         node = dss_get_next_node(session, vg_item, node);
-    } while (node != NULL && get_instance_status_proc() == DSS_STATUS_OPEN);
+    } while (node != NULL && (get_instance_status_proc() == DSS_STATUS_OPEN));
     return CM_SUCCESS;
 }
 

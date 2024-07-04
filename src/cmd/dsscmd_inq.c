@@ -114,15 +114,16 @@ static status_t dss_modify_cluster_node_info(
 
     bool32 remote = CM_FALSE;
     dss_group_global_ctrl_t *global_ctrl  = &vg_item->dss_ctrl->global_ctrl;
+    LOG_RUN_INF("old cluster_node_info is %llu.", global_ctrl->cluster_node_info);
     status_t status = dss_load_vg_ctrl_part(
-        vg_item, (int64)(DSS_VOLUME_HEAD_SIZE - DSS_DISK_UNIT_SIZE), global_ctrl, DSS_DISK_UNIT_SIZE, &remote);
+        vg_item, (int64)(DSS_CLRL_GLOBAL_CTRL_OFFSET), global_ctrl, DSS_DISK_UNIT_SIZE, &remote);
     if (status != CM_SUCCESS) {
         dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
         LOG_DEBUG_ERR("[FENCE] Failed to load global ctrl part %s, errno:%d, errmsg:%s.", vg_item->entry_path,
             cm_get_os_error(), strerror(cm_get_os_error()));
         return status;
     }
-
+    LOG_RUN_INF("new cluster_node_info is %llu.", global_ctrl->cluster_node_info);
     bool32 is_reg = cm_bitmap64_exist(&global_ctrl->cluster_node_info, (uint8)host_id);
     if (is_reg && inq_status == DSS_INQ_STATUS_REG) {
         dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
@@ -140,8 +141,11 @@ static status_t dss_modify_cluster_node_info(
     }
 
     status = dss_write_ctrl_to_disk(
-        vg_item, (int64)(DSS_VOLUME_HEAD_SIZE - DSS_DISK_UNIT_SIZE), global_ctrl, DSS_DISK_UNIT_SIZE);
+        vg_item, (int64)(DSS_CLRL_GLOBAL_CTRL_OFFSET), global_ctrl, DSS_DISK_UNIT_SIZE);
     dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
+    if (status == CM_SUCCESS) {
+        LOG_RUN_INF("update cluster_node_info is %llu.", global_ctrl->cluster_node_info);
+    }
     return status;
 }
 
