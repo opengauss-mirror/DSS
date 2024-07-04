@@ -580,7 +580,7 @@ status_t dss_connect(const char *server_locator, dss_conn_opt_t *options, dss_co
     }
     conn->cli_vg_handles = NULL;
     conn->pipe.options = 0;
-    int timeout = options != NULL ? options->timeout : g_dss_uds_conn_timeout;
+    int32 timeout = options != NULL ? options->timeout : g_dss_uds_conn_timeout;
     conn->pipe.connect_timeout = timeout < 0 ? DSS_UDS_CONNECT_TIMEOUT : timeout;
     conn->pipe.socket_timeout = DSS_UDS_SOCKET_TIMEOUT;
     conn->pipe.link.uds.sock = CS_INVALID_SOCKET;
