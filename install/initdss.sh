@@ -33,7 +33,7 @@ if [[ $# -ne 1 ]]
 then
     log "parameter numbers not meet, num=$#."
     usage
-    exit -1
+    exit 255
 fi
 
 #variables
@@ -46,14 +46,14 @@ check_dss_config()
     if [[ ! -e ${LOCAL_DATADIR}/cfg/dss_inst.ini ]]
     then
         log "${LOCAL_DATADIR}/cfg/dss_inst.ini must exist"
-        exit -1
+        exit 255
     fi
 
     log "Checking dss_vg_conf.ini before start dss..."
     if [[ ! -e ${LOCAL_DATADIR}/cfg/dss_vg_conf.ini ]]
     then
         log "${LOCAL_DATADIR}/cfg/dss_vg_conf.ini must exist"
-        exit -1
+        exit 255
     fi
 }
 

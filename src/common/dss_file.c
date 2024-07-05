@@ -215,7 +215,7 @@ status_t dss_get_name_from_path(const char *path, uint32_t *beg_pos, char *name)
             (*beg_pos)++;
             name_len++;
             if (name_len >= DSS_MAX_NAME_LEN) {
-                char *err_msg = "name length should less than 64";
+                char *err_msg = "name length should less than 64.";
                 DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, (char *)path + *beg_pos, err_msg));
             }
         }
@@ -3036,7 +3036,7 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
             if (!second_block) {
                 dss_rollback_mem_update(session, vg_item);
                 char *err_msg = "Failed to alloc file space meta block,vg name";
-                DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("%s %s.", err_msg, vg_item->dss_ctrl->vg_info.vg_name));
+                DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("%s : %s.", err_msg, vg_item->dss_ctrl->vg_info.vg_name));
             }
             second_block_id = second_block->head.common.id;
             DSS_LOG_DEBUG_OP("Allocate second level block:%s.", dss_display_metaid(second_block_id));

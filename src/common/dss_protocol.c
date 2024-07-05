@@ -182,7 +182,8 @@ static status_t dss_read_packet(cs_pipe_t *pipe, dss_packet_t *pack, bool32 cs_c
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_TCP_TIMEOUT, cs_mes));
 
     if (!ready) {
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_TCP_TIMEOUT, cs_mes));
+       DSS_THROW_ERROR(ERR_TCP_TIMEOUT, cs_mes);
+       return CM_ERROR;
     }
 
     status = VIO_RECV_TIMED(pipe, pack->buf + offset, (uint32)remain_size, CM_NETWORK_IO_TIMEOUT);
