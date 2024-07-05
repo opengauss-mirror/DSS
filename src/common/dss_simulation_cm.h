@@ -29,7 +29,6 @@
 #include "cm_config.h"
 #include "cs_pipe.h"
 #include "mes_metadata.h"
-#include "mes_interface.h"
 #include "dss_errno.h"
 #ifdef __cplusplus
 extern "C" {
@@ -37,12 +36,12 @@ extern "C" {
 
 #ifdef ENABLE_DSSTEST
 #define CM_CONFIG_PATH        "CM_CONFIG_PATH"
-#define CM_REFORMER_ID        "REFORMER_ID"
+#define CM_LOCK_OWNER_ID       "LOCK_OWNER_ID"
 #define CM_BITMAP_ONLINE      "BITMAP_ONLINE"
-#define DSS_LONG_TIMEOUT   5000
+#define DSS_LONG_TIMEOUT   300
 
 typedef enum en_cm_params {
-    CM_PARAM_REFORMER_ID,
+    CM_PARAM_LOCK_OWNER_ID,
     CM_PARAM_BITMAP_ONLINE,
     /* add above here */
     CM_PARAM_COUNT
@@ -50,7 +49,7 @@ typedef enum en_cm_params {
 
 typedef struct st_cm_params {
     uint64 bitmap_online;
-    uint32 reformer_id;
+    uint32 lock_owner_id;
 } cm_params_t;
 
 typedef struct st_simulation_cm {
@@ -61,8 +60,8 @@ typedef struct st_simulation_cm {
     bool32 simulation;
 } simulation_cm_t;
 extern simulation_cm_t g_simulation_cm;
-status_t dss_simulation_cm_res_mgr_init(const char *so_lib_path, cm_res_mgr_t *cm_res_mgr, cm_allocator_t *alloc);
 void dss_simulation_cm_res_mgr_uninit(cm_res_mgr_t *cm_res_mgr);
+status_t dss_simulation_cm_res_mgr_init(const char *so_lib_path, cm_res_mgr_t *cm_res_mgr, cm_allocator_t *alloc);
 #endif
 
 #ifdef __cplusplus
