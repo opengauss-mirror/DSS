@@ -1,6 +1,8 @@
 ## include
 include_directories(${DSS_CEPH_PATH})
 include_directories(${DSS_COMMON_PATH})
+include_directories(${DSS_LOG_PATH})
+include_directories(${DSS_PARAMS_PATH})
 include_directories(${DSS_INTERFACE_PATH})
 
 option(ENABLE_FUZZASAN OFF)
@@ -14,11 +16,15 @@ include_directories(${DSS_OPENSSL_PATH})
 include_directories(${DSS_CBB_PATH})
 include_directories(${LZ4_INC_PATH})
 aux_source_directory(${DSS_COMMON_PATH} COMMON_SRC)
+aux_source_directory(${DSS_LOG_PATH} LOG_SRC)
+aux_source_directory(${DSS_PARAMS_PATH} PARAMS_SRC)
 aux_source_directory(${DSS_SER_PATH} SER_SRC)
 aux_source_directory(${DSS_CEPH_PATH} CEPH_SRC)
 
 set(COMMON_ALL_SRC
         ${COMMON_SRC}
+        ${LOG_SRC}
+        ${PARAMS_SRC}
         ${SER_SRC}
         ${CEPH_SRC}
         )

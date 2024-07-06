@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/dss_param_verify.c
+ *    src/params/dss_param_verify.c
  *
  * -------------------------------------------------------------------------
  */
