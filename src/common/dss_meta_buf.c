@@ -655,7 +655,10 @@ static status_t dss_refresh_buffer_cache_inner(
     dss_block_ctrl_t *block_ctrl_curr = NULL;
     bool32 need_remove = CM_FALSE;
 
-    dss_lock_shm_meta_bucket_s(NULL, vg_item->id, &bucket->enque_lock);
+    status_t status = dss_lock_shm_meta_bucket_s(NULL, vg_item->id, &bucket->enque_lock);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
     next_id = *(ga_obj_id_t *)&bucket->first;
     has_next = bucket->has_next;
     while (has_next) {
@@ -668,7 +671,7 @@ static status_t dss_refresh_buffer_cache_inner(
         // no recycle mem for ft block because api cache the addr
         if (block->type == DSS_BLOCK_TYPE_FT) {
             dss_init_dss_fs_block_cache_info(&block_ctrl->fs_block_cache_info);
-            status_t status =
+            status =
                 dss_check_block_version(vg_item, ((dss_common_block_t *)addr)->id, block->type, addr, NULL, CM_FALSE);
             if (status != CM_SUCCESS) {
                 dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
