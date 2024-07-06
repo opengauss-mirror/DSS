@@ -78,7 +78,7 @@ dss_processor_t g_dss_processors[DSS_CMD_CEIL] = {
         "dss active proc get ft block ack"},
 };
 
-static inline mes_priority_t dss_get_cmd_pro_id(dss_mes_command_t cmd)
+static inline mes_priority_t dss_get_cmd_prio_id(dss_mes_command_t cmd)
 {
     return g_dss_processors[cmd].prio_id;
 }
@@ -116,7 +116,7 @@ static void dss_init_mes_head(dss_message_head_t *head, uint32 cmd, uint32 flags
     head->ruid = ruid;
     head->src_inst = src_inst;
     head->dst_inst = dst_inst;
-    head->flags = flags | dss_get_cmd_pro_id(cmd);
+    head->flags = flags | dss_get_cmd_prio_id(cmd);
 }
 
 static dss_bcast_ack_cmd_t dss_get_bcast_ack_cmd(dss_bcast_req_cmd_t bcast_op)

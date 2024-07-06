@@ -730,7 +730,7 @@ void dss_recovery_when_standby(dss_instance_t *inst, uint32 curr_id, uint32 mast
 }
 /*
     1、old_master_id == master_id, just return;
-    2、old_master_id ！= master_id, just indicates that the master has been reselected.so to judge whether recover.
+    2、old_master_id != master_id, just indicates that the master has been reselected.so to judge whether recover.
 */
 void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
 {

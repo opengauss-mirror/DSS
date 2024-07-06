@@ -57,7 +57,9 @@ void dss_cli_get_err(dss_packet_t *pack, int32 *errcode, char **errmsg)
     (void)dss_get_int32(pack, errcode);
     (void)dss_get_str(pack, errmsg);
     if (*errcode == ERR_DSS_MES_ILL) {
-        
+        LOG_RUN_ERR("[DSS API] ABORT INFO : server broadcast failed, errcode:%d, errmsg:%s.", *errcode, *errmsg);
+        cm_fync_logfile();
+        _exit(1);
     }
 }
 

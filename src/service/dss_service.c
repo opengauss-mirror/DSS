@@ -878,7 +878,7 @@ static status_t dss_process_stop_server(dss_session_t *session)
 static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 switch_id)
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
-    uint32 curr_id = (uint32)(inst_cfg->params.inst_id);
+    uint32 curr_id = (uint32)inst_cfg->params.inst_id;
     uint32 master_id = dss_get_master_id();
     if ((uint32)switch_id == master_id) {
         LOG_RUN_INF("[SWITCH]switchid is equal to current master_id, which is %u.", master_id);

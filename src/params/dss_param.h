@@ -88,10 +88,10 @@ typedef struct st_dss_params {
     rbd_config_params_t rbd_config_params;
     char ceph_config[DSS_FILE_NAME_BUFFER_SIZE];
     bool32 blackbox_detail_on;
+    uint32 mes_wait_timeout;
     bool32 enable_core_state_collect;
     uint32 delay_clean_interval;
     cluster_run_mode_t cluster_run_mode;
-    uint32 mes_wait_timeout;
 } dss_params_t;
 
 typedef struct st_dss_config {
@@ -164,7 +164,8 @@ static inline status_t dss_load_enable_core_state_collect_inner(char *value, dss
     } else if (cm_str_equal_ins(value, "FALSE")) {
         inst_cfg->params.enable_core_state_collect = CM_FALSE;
     } else {
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_ENABLE_CORE_STATE_COLLECT"));
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "_ENABLE_CORE_STATE_COLLECT");
+        return CM_ERROR;
     }
     LOG_RUN_INF("_ENABLE_CORE_STATE_COLLECT = %u.", inst_cfg->params.enable_core_state_collect);
     return CM_SUCCESS;

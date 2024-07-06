@@ -267,7 +267,7 @@ function cleanshmkey()
     groups=`ipcs -m|awk '{ print $1 }'`
     array=(${groups// / })
     LOCAL_INSTANCE_ID=`cat ${DSS_HOME}/cfg/dss_inst.ini | sed s/[[:space:]]//g | grep -Eo "^INST_ID=.*" | awk -F '=' '{ print $2 }'`
-    LOCAL_SHM_KEY=`cat ${DSS_HOME}/cfg/dss_inst.ini | sed s/[[:space:]]//g | grep -Eo "^SHM_KEY=.*" | awk -F '=' '{ print $2 }'`
+    LOCAL_SHM_KEY=`cat ${DSS_HOME}/cfg/dss_inst.ini | sed s/[[:space:]]//g | grep -Eo "^_SHM_KEY=.*" | awk -F '=' '{ print $2 }'`
     CM_GA_SHM_MAX_ID=20480
     CM_FIXED_SHM_ID_TAIL=3
     CM_HASH_SHM_MAX_ID=65
@@ -275,8 +275,8 @@ function cleanshmkey()
     DSS_MAX_SHM_ID=$((CM_FIXED_SHM_ID_TAIL + CM_HASH_SHM_MAX_ID + CM_GA_SHM_MAX_ID))
     SHM_KEY=$(((LOCAL_SHM_KEY << DSS_MAX_SHM_KEY_BITS) + LOCAL_INSTANCE_ID))
     log "[CLEANSHMKEY]Begin to cleanshmkey, shm key is $SHM_KEY"
-    MIN_SHM_KEY=$(((SHM_KEY & 0xFFFF) << 16) | (1 & 0xFFFF)))
-    MAX_SHM_KEY=$(((SHM_KEY & 0xFFFF) << 16) | (DSS_MAX_SHM_ID & 0xFFFF)))
+    MIN_SHM_KEY=$((((SHM_KEY & 0xFFFF) << 16) | (1 & 0xFFFF)))
+    MAX_SHM_KEY=$((((SHM_KEY & 0xFFFF) << 16) | (DSS_MAX_SHM_ID & 0xFFFF)))
     for var in "${array[@]}"
     do
         if [[ $var =~ "0x" ]]; then
