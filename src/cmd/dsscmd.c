@@ -1494,7 +1494,7 @@ static dss_args_set_t cmd_ls_args_set = {
 
 static void ls_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s ls <-p path> [-m measure_type] [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("\nUsage:%s ls <-p path> [-m measure_type] [-w min_inited_size] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]Show information of volume group and disk usage space\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
@@ -1502,6 +1502,8 @@ static void ls_help(const char *prog_name, int print_flag)
     (void)printf("-p/--path <path>, <required>, show information for it\n");
     (void)printf("-m/--measure_type <measure_type>, [optional], B show size by Byte, K show size by kB ,"
                  "M show size by MB ,G show size by GB,  T show size by TB, default show size by Byte\n");
+    (void)printf("-w/ --min_inited_size <min_inited_size>, [optional], "
+                 "1 show min_inited_size, 0 not show min_inited_size\n");
     help_param_uds();
 }
 
