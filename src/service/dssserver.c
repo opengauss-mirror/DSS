@@ -27,6 +27,7 @@
 #ifndef WIN32
 #include <unistd.h>
 #include <sys/types.h>
+#include "dss_blackbox.h"
 #endif
 #include "cm_types.h"
 #include "cm_signal.h"

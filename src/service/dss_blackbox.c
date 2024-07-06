@@ -373,10 +373,10 @@ void dss_write_shm_memory(void)
         LOG_BLACKBOX_INF("print dss_shm_file failed.");
         return;
     }
-    errcode = snprintf_s(file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/%s/dss_shm_%s",
-        cm_log_param_instance()->log_home, "blackbox", timestamp);
-    if (errcode == -1) {
-        LOG_BLACKBOX_INF("print dss_shm_file failed.");
+    errcode = snprintf_s(file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/%s/%s_%s",
+        cm_log_param_instance()->log_home, "blackbox", "dss_shm", timestamp);
+    if (SECUREC_UNLIKELY(errcode == -1)) {
+        LOG_BLACKBOX_INF("printf dss_shm_file failed.");
         return;
     }
     if (cm_open_file_ex(file_name, O_SYNC | O_CREAT | O_RDWR | O_TRUNC | O_BINARY, S_IRUSR | S_IWUSR, &handle) !=
@@ -412,7 +412,7 @@ static void sig_print_excep_info(box_excp_item_t *excep_info, int32 sig_num, sig
 }
 
 uint32 g_sign_mutex = 0;
-void dss_proc_sign_func(int32 sig_num, siginfo_t *sig_info, void *context)
+void dss_proc_sign_func_core(int32 sig_num, siginfo_t *sig_info, void *context, bool32 *dump)
 {
     box_excp_item_t *excep_info = &g_excep_info;
     uint64 loc_id = 0;
@@ -441,26 +441,25 @@ void dss_proc_sign_func(int32 sig_num, siginfo_t *sig_info, void *context)
     }
     status_t ret = dss_update_state_file(CM_TRUE);
     if (ret != CM_SUCCESS) {
-        LOG_RUN_WAR("failed to update state file.");
+        LOG_RUN_WAR("Failed to update core state file.");
+        cm_reset_error();
     }
     if (excep_info != NULL) {
         sig_print_excep_info(excep_info, sig_num, sig_info, context);
     }
     cm_fync_logfile();
     g_sign_mutex = 0;
-    (void)signal(SIGABRT, SIG_DFL);
-    abort();
+    *dump = CM_TRUE;
 }
 
-static status_t dss_sigcap_reg_proc(int32 sig_num)
+void dss_proc_sign_func(int32 sig_num, siginfo_t *sig_info, void *context)
 {
-    status_t ret = cm_regist_signal_restart(sig_num, dss_proc_sign_func);
-    if (ret != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Register the signal cap failed:%d", sig_num);
-        return CM_ERROR;
+    bool32 need_dump = CM_FALSE;
+    dss_proc_sign_func_core(sig_num, sig_info, context, &need_dump);
+    if (need_dump) {
+        (void)signal(SIGABRT, SIG_DFL);
+        abort();
     }
-    LOG_DEBUG_INF("Register the signal cap success:%d", sig_num);
-    return CM_SUCCESS;
 }
 
 status_t dss_update_state_file(bool32 coredump)
@@ -485,6 +484,17 @@ status_t dss_update_state_file(bool32 coredump)
         return CM_ERROR;
     }
     (void)fclose(fp);
+    return CM_SUCCESS;
+}
+
+static status_t dss_sigcap_reg_proc(int32 sig_num)
+{
+    status_t ret = cm_regist_signal_restart(sig_num, dss_proc_sign_func);
+    if (ret != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Register the signal cap failed:%d", sig_num);
+        return CM_ERROR;
+    }
+    LOG_DEBUG_INF("Register the signal cap success:%d", sig_num);
     return CM_SUCCESS;
 }
 

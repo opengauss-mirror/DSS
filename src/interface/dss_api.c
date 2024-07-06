@@ -772,42 +772,6 @@ void dss_set_log_level(unsigned int log_level)
     cm_log_param_instance()->log_level = log_level;
 }
 
-int dss_set_conn_timeout(int32 timeout)
-{
-    if (timeout < 0 && timeout != DSS_CONN_NEVER_TIMEOUT) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid timeout when set connection timeout");
-        return CM_ERROR;
-    }
-    g_dss_uds_conn_timeout = timeout;
-    return CM_SUCCESS;
-}
-
-int dss_set_thread_conn_timeout(dss_conn_opt_t *thv_opts, int32 timeout)
-{
-    if (timeout < 0 && timeout != DSS_CONN_NEVER_TIMEOUT) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid timeout when set connection timeout");
-        return CM_ERROR;
-    }
-    thv_opts->timeout = timeout;
-    return CM_SUCCESS;
-}
-
-int dss_set_conn_opts(dss_conn_opt_key_e key, void *value)
-{
-    dss_clt_env_init();
-    dss_conn_opt_t *thv_opts = NULL;
-    if (cm_get_thv(GLOBAL_THV_OBJ1, CM_TRUE, (pointer_t *)&thv_opts) != CM_SUCCESS) {
-        return CM_ERROR;
-    }
-    switch (key) {
-        case DSS_CONN_OPT_TIME_OUT:
-            return dss_set_thread_conn_timeout(thv_opts, *(int32 *)value);
-        default:
-            DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid key when set connection options");
-            return CM_ERROR;
-    }
-}
-
 static int32 init_single_logger_core(log_param_t *log_param, log_type_t log_id, char *file_name, uint32 file_name_len)
 {
     int32 ret;
@@ -827,6 +791,10 @@ static int32 init_single_logger_core(log_param_t *log_param, log_type_t log_id, 
         case LOG_AUDIT:
             ret = snprintf_s(
                 file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/audit/%s", log_param->log_home, "dss.aud");
+            break;
+        case LOG_BLACKBOX:
+            ret = snprintf_s(
+                file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/blackbox/%s", log_param->log_home, "dss.blog");
             break;
         default:
             ret = 0;
@@ -899,13 +867,49 @@ int dss_init_logger(
     CM_RETURN_IFERR(init_single_logger(log_param, LOG_DEBUG));
     CM_RETURN_IFERR(init_single_logger(log_param, LOG_ALARM));
     CM_RETURN_IFERR(init_single_logger(log_param, LOG_AUDIT));
-
+    CM_RETURN_IFERR(init_single_logger(log_param, LOG_BLACKBOX));
     if (cm_start_timer(g_timer()) != CM_SUCCESS) {
         return ERR_DSS_INIT_LOGGER_FAILED;
     }
     log_param->log_instance_startup = (bool32)CM_TRUE;
 
     return DSS_SUCCESS;
+}
+
+int dss_set_conn_timeout(int32 timeout)
+{
+    if (timeout < 0 && timeout != DSS_CONN_NEVER_TIMEOUT) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid timeout when set connection timeout");
+        return CM_ERROR;
+    }
+    g_dss_uds_conn_timeout = timeout;
+    return CM_SUCCESS;
+}
+
+int dss_set_thread_conn_timeout(dss_conn_opt_t *thv_opts, int32 timeout)
+{
+    if (timeout < 0 && timeout != DSS_CONN_NEVER_TIMEOUT) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid timeout when set connection timeout");
+        return CM_ERROR;
+    }
+    thv_opts->timeout = timeout;
+    return CM_SUCCESS;
+}
+
+int dss_set_conn_opts(dss_conn_opt_key_e key, void *value)
+{
+    dss_clt_env_init();
+    dss_conn_opt_t *thv_opts = NULL;
+    if (cm_get_thv(GLOBAL_THV_OBJ1, CM_TRUE, (pointer_t *)&thv_opts) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+    switch (key) {
+        case DSS_CONN_OPT_TIME_OUT:
+            return dss_set_thread_conn_timeout(thv_opts, *(int32 *)value);
+        default:
+            DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid key when set connection options");
+            return CM_ERROR;
+    }
 }
 
 int dss_aio_prep_pread(void *iocb, int handle, void *buf, size_t count, long long offset)

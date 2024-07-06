@@ -22,6 +22,7 @@ usage()
     echo "    dssserver data path"
     echo "type:"
     echo "    if type is NULL, default value is unregister"
+    echo "    -clearshm: clean share memory used by dss"
     echo "    -clearVg: Clearing and Recreating Vg base on your backup information"
     echo "        Usage: $0 [DSS_HOME] -clearVg [backup_file] [except_vg_name]"
     echo "        backup_file:"
@@ -261,15 +262,47 @@ function unregister()
     log "[UNREG] Unreg success."
 }
 
+function cleanshmkey()
+{
+    groups=`ipcs -m|awk '{ print $1 }'`
+    array=(${groups// / })
+    LOCAL_INSTANCE_ID=`cat ${DSS_HOME}/cfg/dss_inst.ini | sed s/[[:space:]]//g | grep -Eo "^INST_ID=.*" | awk -F '=' '{ print $2 }'`
+    LOCAL_SHM_KEY=`cat ${DSS_HOME}/cfg/dss_inst.ini | sed s/[[:space:]]//g | grep -Eo "^SHM_KEY=.*" | awk -F '=' '{ print $2 }'`
+    CM_GA_SHM_MAX_ID=20480
+    CM_FIXED_SHM_ID_TAIL=3
+    CM_HASH_SHM_MAX_ID=65
+    DSS_MAX_SHM_KEY_BITS=8
+    DSS_MAX_SHM_ID=$((CM_FIXED_SHM_ID_TAIL + CM_HASH_SHM_MAX_ID + CM_GA_SHM_MAX_ID))
+    SHM_KEY=$(((LOCAL_SHM_KEY << DSS_MAX_SHM_KEY_BITS) + LOCAL_INSTANCE_ID))
+    log "[CLEANSHMKEY]Begin to cleanshmkey, shm key is $SHM_KEY"
+    MIN_SHM_KEY=$(((SHM_KEY & 0xFFFF) << 16) | (1 & 0xFFFF)))
+    MAX_SHM_KEY=$(((SHM_KEY & 0xFFFF) << 16) | (DSS_MAX_SHM_ID & 0xFFFF)))
+    for var in "${array[@]}"
+    do
+        if [[ $var =~ "0x" ]]; then
+            SHM_CHECK_KEY=$(printf "%u" $var)
+            if ((SHM_CHECK_KEY >= MIN_SHM_KEY && SHM_CHECK_KEY <= MAX_SHM_KEY)); then
+                echo $var
+                ipcrm -M $SHM_CHECK_KEY
+            fi
+        fi
+    done
+    log "[CLEANSHMKEY]Success to cleanshmkey"
+}
+
 function Main()
 {
     get_clear_dss_log
     check_dss_config
-    if [ "$CMD" == "-clearVg" ]; then
+    if [ "$CMD" == "-clearshm" ]; then
+        cleanshmkey
+        exit 0
+    elif [ "$CMD" == "-clearVg" ]; then
         clear_vg "$@"
         exit 0
     else
         unregister
+        cleanshmkey
         exit 0
     fi
 }

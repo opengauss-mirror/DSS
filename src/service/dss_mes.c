@@ -263,7 +263,7 @@ static int dss_handle_broadcast_msg(mes_msg_list_t *responses, dss_recv_msg_t *r
 {
     int ret;
     dss_message_head_t *ack_head;
-    uint16 src_inst;
+    uint32 src_inst;
     for (uint32 i = 0; i < responses->count; i++) {
         mes_msg_t *msg = &responses->messages[i];
         ack_head = (dss_message_head_t *)msg->buffer;
@@ -1059,6 +1059,7 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
     }
 
     DSS_RETURN_IF_ERROR(dss_get_exec_nodeid(session, &currid, &remoteid));
+
     LOG_DEBUG_INF("[MES] Exec cmd:%u on remote node:%u begin.", (uint32)cmd, remoteid);
     do {
         uint32 proto_ver = dss_get_remote_proto_ver(remoteid);
@@ -1067,7 +1068,7 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
         // 2. send request to remote
         ret = mes_send_request(remoteid, dss_head->flags, &dss_head->ruid, req, dss_head->size);
         if (ret != CM_SUCCESS) {
-            LOG_RUN_ERR("Exec cmd:%u on remote node:%u  send msg fail.", (uint32)cmd, remoteid);
+            LOG_RUN_ERR("Exec cmd:%u on remote node:%u send msg fail.", (uint32)cmd, remoteid);
             dss_destroy_session(session);
             return ERR_DSS_MES_ILL;
         }

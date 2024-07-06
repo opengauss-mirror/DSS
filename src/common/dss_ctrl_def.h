@@ -81,7 +81,7 @@
 #define DSS_AU_ROOT_SIZE 64
 
 typedef enum en_vg_info_type {
-    DSS_VG_INFO_CORE_CTRL = 0,
+    DSS_VG_INFO_CORE_CTRL = 1,
     DSS_VG_INFO_VG_HEADER,
     DSS_VG_INFO_VOLUME_CTRL,
     DSS_VG_INFO_ROOT_FT_BLOCK,
