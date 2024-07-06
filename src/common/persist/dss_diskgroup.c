@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/dss_diskgroup.c
+ *    src/common/persist/dss_diskgroup.c
  *
  * -------------------------------------------------------------------------
  */

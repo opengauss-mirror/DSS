@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/dss_diskgroup.h
+ *    src/common/persist/dss_diskgroup.h
  *
  * -------------------------------------------------------------------------
  */
@@ -51,6 +51,7 @@ extern "C" {
 */
 #define DSS_READ_REMOTE_INTERVAL 50
 
+#pragma pack(8)
 // for lsvg
 typedef struct dss_volume_space_info_t {
     char volume_name[DSS_MAX_VOLUME_PATH_LEN];
@@ -75,6 +76,7 @@ typedef struct st_dss_allvg_vlm_space_t {
     vg_vlm_space_info_t volume_group[DSS_MAX_VOLUME_GROUP_NUM];
     uint32_t group_num;
 } dss_allvg_vlm_space_t;
+#pragma pack()
 
 typedef handle_t dss_directory_t;  // dss_dir_t
 

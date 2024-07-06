@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/dss_ctrl_def.h
+ *    src/common/persist/dss_ctrl_def.h
  *
  * -------------------------------------------------------------------------
  */
@@ -104,6 +104,7 @@ typedef int32 volume_handle_t;
 #define DSS_CTRL_RESV_SIZE \
     ((((((DSS_DISK_UNIT_SIZE) - (24)) - (DSS_FS_BLOCK_ROOT_SIZE)) - (DSS_AU_ROOT_SIZE)) - (DSS_FS_AUX_ROOT_SIZE)))
 
+#pragma pack(8)
 typedef struct st_dss_volume_def {
     uint64 id : 16;
     uint64 flag : 3;
@@ -370,4 +371,5 @@ typedef struct st_dss_share_vg_info_t {
     uint32_t vg_num;
 } dss_share_vg_info_t;
 
+#pragma pack()
 #endif  // __DSS_CTRL_DEF_H__

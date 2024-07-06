@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/dss_alloc_unit.c
+ *    src/common/persist/dss_alloc_unit.c
  *
  * -------------------------------------------------------------------------
  */

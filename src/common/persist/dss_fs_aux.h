@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/dss_fs_aux.h
+ *    src/common/persist/dss_fs_aux.h
  *
  * -------------------------------------------------------------------------
  */
@@ -34,6 +34,7 @@
 extern "C" {
 #endif
 
+#pragma pack(8)
 typedef struct st_dss_fs_aux_root_t {
     uint64 version;
     dss_fs_block_list_t free;
@@ -114,6 +115,7 @@ typedef struct st_dss_redo_updt_fs_block_t {
     uint16 reserve;
 } dss_redo_updt_fs_block_t;
 
+#pragma pack()
 // end for redo<-----------------
 
 void dss_check_fs_aux_affiliation(dss_fs_aux_header_t *block, ftid_t id, uint16_t index);

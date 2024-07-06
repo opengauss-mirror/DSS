@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/dss_fs_aux.c
+ *    src/common/persist/dss_fs_aux.c
  *
  * -------------------------------------------------------------------------
  */

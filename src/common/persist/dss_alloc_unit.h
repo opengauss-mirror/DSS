@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/dss_alloc_unit.h
+ *    src/common/persist/dss_alloc_unit.h
  *
  * -------------------------------------------------------------------------
  */
@@ -43,6 +43,7 @@ typedef enum en_dss_au_type {
     DSS_AU_TYPE_META_FREE,
 } dss_au_type_t;
 
+#pragma pack(8)
 typedef struct st_dss_au_t {
     uint32_t checksum;
     uint32_t type : 4;  // au type:file,meta
@@ -66,6 +67,7 @@ typedef struct st_dss_au_root_t {
     uint32 reserve;
     dss_au_list_t free_list;
 } dss_au_root_t;
+#pragma pack()
 
 bool32 dss_can_alloc_from_recycle(const gft_node_t *root_node, bool32 is_before);
 void dss_init_au_root(dss_ctrl_t *dss_ctrl);
