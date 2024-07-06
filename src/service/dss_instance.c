@@ -95,8 +95,7 @@ status_t dss_lock_instance(void)
 static status_t instance_init_ga(dss_instance_t *inst)
 {
     int32 ret;
-    uint32 sess_cnt = inst->inst_cfg.params.cfg_session_num + inst->inst_cfg.params.work_thread_cnt +
-                      inst->inst_cfg.params.channel_num;
+    uint32 sess_cnt = dss_get_max_total_session_cnt();
     uint32 dss_session_size = (uint32)(sess_cnt * sizeof(dss_session_t));
     ga_destroy_global_area();
     instance_set_pool_def(GA_INSTANCE_POOL, 1, DSS_INS_SIZE, 0);
@@ -230,9 +229,7 @@ static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
     }
     status_t status = dss_get_vg_info(g_dss_share_vg_info, NULL);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to get vg info."));
-    uint32 sess_cnt = inst->inst_cfg.params.cfg_session_num + inst->inst_cfg.params.work_thread_cnt +
-                      inst->inst_cfg.params.channel_num;
-    status = dss_init_session(sess_cnt);
+    status = dss_init_session(dss_get_max_total_session_cnt());
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to initialize sessions."));
     status = dss_init_thread(inst);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to initialize thread."));

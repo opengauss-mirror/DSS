@@ -77,6 +77,12 @@ uint32 dss_get_udssession_startid(void)
     return start_sid;
 }
 
+uint32 dss_get_max_total_session_cnt(void)
+{
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    return dss_get_udssession_startid() + inst_cfg->params.cfg_session_num;
+}
+
 uint32 dss_get_delay_clean_task_idx(void)
 {
     return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_DELAY_CLEAN_BACKGROUND_TASK;
@@ -98,11 +104,10 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
 
     *session = NULL;
     id = DSS_INVALID_ID32;
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
     cm_spin_lock(&g_dss_session_ctrl.lock, NULL);
 
     uint32 start_sid = dss_get_udssession_startid();
-    uint32 end_sid = start_sid + inst_cfg->params.cfg_session_num;
+    uint32 end_sid = dss_get_max_total_session_cnt();
 
     for (i = start_sid; i < end_sid; i++) {
         if (g_dss_session_ctrl.sessions[i].is_used == CM_FALSE) {
@@ -112,9 +117,11 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
     }
 
     if (id == DSS_INVALID_ID32) {
+        LOG_DEBUG_INF("No sessions are available.");
         cm_spin_unlock(&g_dss_session_ctrl.lock);
         return ERR_DSS_SESSION_CREATE;
     }
+    LOG_DEBUG_INF("Session[id=%u] is available.", id);
     cm_spin_lock(&g_dss_session_ctrl.sessions[id].lock, NULL);
     g_dss_session_ctrl.used_count++;
     g_dss_session_ctrl.sessions[id].is_used = CM_TRUE;
