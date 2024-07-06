@@ -91,7 +91,7 @@ status_t dss_get_inst_status_on_server(dss_conn_t *conn, dss_server_status_t *ds
     int32 errcode;
     char *errmsg = NULL;
     if (dss_status == NULL) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "dss_dir_item_t");
+        DSS_THROW_ERROR_EX(ERR_DSS_INVALID_PARAM, "dss_dir_item_t");
         return CM_ERROR;
     }
     dss_init_packet(&conn->pack, conn->pipe.options);
@@ -111,7 +111,7 @@ status_t dss_get_inst_status_on_server(dss_conn_t *conn, dss_server_status_t *ds
     text_t extra_info = CM_NULL_TEXT;
     dss_init_get(ack_pack);
     if (dss_get_text(ack_pack, &extra_info) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_INST_STATUS), "get inst status error");
+        DSS_THROW_ERROR_EX(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_INST_STATUS), "get inst status error");
         LOG_DEBUG_ERR("get inst status error");
         return CM_ERROR;
     }

@@ -71,7 +71,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_DIR_REMOVE_NOT_EMPTY] = "The dir is not empty, can not remove.",
     [ERR_DSS_DIR_CREATE_DUPLICATED] = "Make dir or Create file failed, %s has already existed",
     [ERR_DSS_LINK_READ_NOT_LINK] = "The path %s is not a soft link.",
-    [ERR_DSS_LINK_CREATE] = "Fail to create symbolic link, reason %s",
+    [ERR_DSS_LINK_CREATE] = "Failed to create symbolic link, reason %s",
     [ERR_DSS_CONFIG_FILE_OVERSIZED] = "The size of config file %s is too large",
     [ERR_DSS_CONFIG_LOAD] = "Please check dss_vg_conf.ini, reason %s",
     [ERR_DSS_CONFIG_LINE_OVERLONG] = "The length of row %d is too long",
@@ -365,7 +365,7 @@ static void sql_audit_create_message(
 
 static void sql_audit_log(dss_session_t *session, status_t status, uint8 cmd_type)
 {
-    dss_audit_assist_t assist = {{0}};
+    dss_audit_assist_t assist = {0};
     char *log_msg = cm_get_t2s_addr();
     uint32 log_msg_len;
 

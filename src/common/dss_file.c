@@ -2357,7 +2357,7 @@ gft_node_t *dss_get_ft_node_by_ftid_no_refresh(dss_session_t *session, dss_vg_in
         block_id.item = 0;
         dss_ft_block_t *block = (dss_ft_block_t *)dss_find_block_in_shm_no_refresh(session, vg_item, block_id, NULL);
         if (block == NULL) {
-            LOG_DEBUG_ERR("Failed to find block:%s in mem.", dss_display_metaid(block_id));
+            LOG_DEBUG_ERR("Failed to find block: %s in mem.", dss_display_metaid(block_id));
             return NULL;
         }
 

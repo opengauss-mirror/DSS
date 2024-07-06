@@ -1035,15 +1035,15 @@ int dss_get_lib_version(void)
            DSS_LOCAL_VERSION;
 }
 
-#ifndef WIN32
 void dss_show_version(char *version)
 {
+#ifndef WIN32
     if (snprintf_s(version, DSS_VERSION_MAX_LEN, DSS_VERSION_MAX_LEN - 1, "libdss.so %s", (char *)DEF_DSS_VERSION) ==
         -1) {
         cm_panic(0);
     }
-}
 #endif
+}
 
 #ifdef __cplusplus
 }

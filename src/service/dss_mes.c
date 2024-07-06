@@ -23,6 +23,7 @@
  */
 
 #include "cm_types.h"
+#include "cm_error.h"
 #include "dss_malloc.h"
 #include "dss_session.h"
 #include "dss_file.h"
@@ -667,6 +668,8 @@ static status_t dss_set_mes_profile(mes_profile_t *profile)
     profile->channel_cnt = inst_cfg->params.channel_num;
     profile->conn_created_during_init = 0;
     profile->mes_elapsed_switch = inst_cfg->params.elapsed_switch;
+    profile->mes_with_ip = inst_cfg->params.mes_with_ip;
+    profile->ip_white_list_on = inst_cfg->params.ip_white_list_on;
     profile->inst_cnt = inst_cfg->params.inst_cnt;
     uint32 inst_cnt = 0;
     for (uint32 i = 0; i < DSS_MAX_INSTANCES; i++) {

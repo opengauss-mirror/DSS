@@ -175,7 +175,7 @@ static status_t dss_initial_vg_ctrl(
         return CM_ERROR;
     }
     if (vg_ctrl->core.volume_attrs[0].size <= vg_ctrl->core.volume_attrs[0].hwm) {
-        DSS_THROW_ERROR(ERR_DSS_VG_CREATE, vg_name, "volume size is too small");
+        DSS_THROW_ERROR(ERR_DSS_VG_CREATE, vg_name, "volume size is too small.");
         return CM_ERROR;
     }
     vg_ctrl->core.volume_attrs[0].free = vg_ctrl->core.volume_attrs[0].size - vg_ctrl->core.volume_attrs[0].hwm;

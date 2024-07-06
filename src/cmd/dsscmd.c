@@ -238,13 +238,13 @@ static status_t cmd_check_au_size(const char *au_size_str)
     uint32 au_size;
     status_t ret = cm_str2uint32(au_size_str, &au_size);
     if (ret != CM_SUCCESS) {
-        DSS_PRINT_ERROR("au_size %s is error\n", au_size_str);
+        DSS_PRINT_ERROR("au_size %s is error!\n", au_size_str);
         return CM_ERROR;
     }
 
     if (au_size == 0 || au_size < min_multiple || au_size > max_multiple) {
         DSS_PRINT_ERROR(
-            "au_size %u is error, au_size cannot be 0, au_size must greater than 2MB, smaller than 64MB!\n", au_size);
+            "au_size %u is error, au_size cannot be 0, must greater than 2MB, smaller than 64MB!\n", au_size);
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -762,7 +762,7 @@ static inline void help_param_uds(void)
 
 static dss_args_t cmd_cv_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
-    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'v', "vol_path", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
     {'s', "au_size", CM_FALSE, CM_TRUE, cmd_check_au_size, NULL, NULL, 0, NULL, NULL, 0},
     {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
         NULL, NULL, 0},
@@ -775,13 +775,13 @@ static dss_args_set_t cmd_cv_args_set = {
 
 static void cv_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s cv <-g vg_name> <-v vol_name> [-s au_size] [-D DSS_HOME]\n", prog_name);
+    (void)printf("\nUsage:%s cv <-g vg_name> <-v vol_path> [-s au_size] [-D DSS_HOME]\n", prog_name);
     (void)printf("[manage command] create volume group\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
     (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name\n");
-    (void)printf("-v/--vol_name <vol_name>, <required>, the volume name\n");
+    (void)printf("-v/--vol_path <vol_path>, <required>, the volume path\n");
     (void)printf("-s/--au_size [au_size], [optional], the size of single alloc unit of volume, unit is KB, "
                  "at least 2MB, default value is 2MB\n");
     help_param_dsshome();
@@ -792,10 +792,10 @@ static status_t cv_proc(void)
     status_t status;
 
     const char *vg_name;
-    const char *volume_name;
+    const char *volume_path;
     dss_config_t cv_cfg;
     vg_name = cmd_cv_args[DSS_ARG_IDX_0].input_args;
-    volume_name = cmd_cv_args[DSS_ARG_IDX_1].input_args;
+    volume_path = cmd_cv_args[DSS_ARG_IDX_1].input_args;
     // Documentation Constraints:au_size=0 equals default_au_size
     int64 au_size = 0;
     if (cmd_cv_args[DSS_ARG_IDX_2].input_args) {
@@ -815,12 +815,12 @@ static status_t cv_proc(void)
         DSS_PRINT_ERROR("Failed to load parameters!\n");
         return status;
     }
-    status = dss_create_vg(vg_name, volume_name, &cv_cfg, (uint32)au_size);
+    status = dss_create_vg(vg_name, volume_path, &cv_cfg, (uint32)au_size);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to create volume group, vg name is %s, volume name is %s.\n", vg_name, volume_name);
+        DSS_PRINT_ERROR("Failed to create volume group, vg name is %s, volume path is %s.\n", vg_name, volume_path);
         return status;
     }
-    DSS_PRINT_INF("Succeed to create volume group %s, entry volume is %s.\n", vg_name, volume_name);
+    DSS_PRINT_INF("Succeed to create volume group %s, entry volume is %s.\n", vg_name, volume_path);
     return CM_SUCCESS;
 }
 
@@ -1230,7 +1230,7 @@ static status_t dss_load_local_server_config(
 
 static dss_args_t cmd_adv_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
-    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'v', "vol_path", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
     {'f', "force", CM_FALSE, CM_FALSE, NULL, NULL, NULL, 0, NULL, NULL, 0},
     {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
         NULL, NULL, 0},
@@ -1245,13 +1245,13 @@ static dss_args_set_t cmd_adv_args_set = {
 
 static void adv_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s adv <-g vg_name> <-v vol_name> [-f] [-D DSS_HOME] [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("\nUsage:%s adv <-g vg_name> <-v vol_path> [-f] [-D DSS_HOME] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]add volume in volume group\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
     (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name need to add volume\n");
-    (void)printf("-v/--vol_name <vol_name>, <required>, the volume name need to be added to volume group\n");
+    (void)printf("-v/--vol_path <vol_path>, <required>, the volume path need to be added to volume group\n");
     (void)printf("-f/--force, <required>, add volume offline forcibly\n");
     help_param_dsshome();
     help_param_uds();
@@ -1814,7 +1814,7 @@ static status_t rm_proc(void)
 
 static dss_args_t cmd_rmv_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
-    {'v', "vol_name", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'v', "vol_path", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
     {'f', "force", CM_FALSE, CM_FALSE, NULL, NULL, NULL, 0, NULL, NULL, 0},
     {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
         NULL, NULL, 0},
@@ -1829,13 +1829,13 @@ static dss_args_set_t cmd_rmv_args_set = {
 
 static void rmv_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s rmv <-g vg_name> <-v vol_name> [-f] [-D DSS_HOME] [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("\nUsage:%s rmv <-g vg_name> <-v vol_path> [-f] [-D DSS_HOME] [-U UDS:socket_domain]\n", prog_name);
     (void)printf("[client command]remove volume of volume group\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
     (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name need to remove volume\n");
-    (void)printf("-v/--vol_name <vol_name>, <required>, the volue name need to be removed from volume group\n");
+    (void)printf("-v/--vol_path <vol_path>, <required>, the volue path need to be removed from volume group\n");
     (void)printf("-f/--force, <required>, remove volume offline forcibly\n");
     help_param_dsshome();
     help_param_uds();
@@ -1844,18 +1844,18 @@ static void rmv_help(const char *prog_name, int print_flag)
 static status_t rmv_proc(void)
 {
     const char *vg_name = cmd_rmv_args[DSS_ARG_IDX_0].input_args;
-    const char *vol_name = cmd_rmv_args[DSS_ARG_IDX_1].input_args;
+    const char *vol_path = cmd_rmv_args[DSS_ARG_IDX_1].input_args;
     bool32 force = cmd_rmv_args[DSS_ARG_IDX_2].inputed ? CM_TRUE : CM_FALSE;
     const char *home = cmd_rmv_args[DSS_ARG_IDX_3].input_args;
     dss_conn_t connection;
     status_t status;
 
     if (force) {
-        status = dss_modify_volume_offline(home, vg_name, vol_name, NULL, VOLUME_MODIFY_REMOVE);
+        status = dss_modify_volume_offline(home, vg_name, vol_path, NULL, VOLUME_MODIFY_REMOVE);
         if (status != CM_SUCCESS) {
-            DSS_PRINT_ERROR("Failed to remove volume offline, vg_name is %s, volume name is %s.\n", vg_name, vol_name);
+            DSS_PRINT_ERROR("Failed to remove volume offline, vg name is %s, volume path is %s.\n", vg_name, vol_path);
         } else {
-            DSS_PRINT_INF("Succeed to remove volume offline, vg_name is %s, volume name is %s.\n", vg_name, vol_name);
+            DSS_PRINT_INF("Succeed to remove volume offline, vg name is %s, volume path is %s.\n", vg_name, vol_path);
         }
         return status;
     }
@@ -1864,11 +1864,11 @@ static status_t rmv_proc(void)
         return status;
     }
 
-    status = dsscmd_rmv_impl(&connection, vg_name, vol_name);
+    status = dsscmd_rmv_impl(&connection, vg_name, vol_path);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to remove volume online, vg name is %s, volume name is %s.\n", vg_name, vol_name);
+        DSS_PRINT_ERROR("Failed to remove volume online, vg name is %s, volume path is %s.\n", vg_name, vol_path);
     } else {
-        DSS_PRINT_INF("Succeed to remove volume online, vg name is %s, volume name is %s.\n", vg_name, vol_name);
+        DSS_PRINT_INF("Succeed to remove volume online, vg name is %s, volume path is %s.\n", vg_name, vol_path);
     }
     dss_disconnect_ex(&connection);
     return status;
@@ -2486,7 +2486,7 @@ static status_t examine_proc(void)
 }
 
 static dss_args_t cmd_dev_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'v', "vol_path", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
     {'o', "offset", CM_TRUE, CM_TRUE, cmd_check_offset, NULL, NULL, 0, NULL, NULL, 0},
     {'f', "format", CM_TRUE, CM_TRUE, cmd_check_format, NULL, NULL, 0, NULL, NULL, 0},
 };
@@ -2498,12 +2498,12 @@ static dss_args_set_t cmd_dev_args_set = {
 
 static void dev_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s dev <-p path> <-o offset> <-f format> \n", prog_name);
+    (void)printf("\nUsage:%s dev <-v vol_path> <-o offset> <-f format> \n", prog_name);
     (void)printf("[client command] display dev file content\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
-    (void)printf("-p/--path <path>, <required>, the path of the host need to display\n");
+    (void)printf("-v/--vol_path <vol_path>, <required>, the volume path of the host need to display\n");
     (void)printf("-o/--offset <offset>, <required>, the offset of the dev need to display\n");
     (void)printf("-f/--format <format>, <required>, value is[c|h|u|l|s|x]"
                  "c char, h unsigned short, u unsigned int, l unsigned long, s string, x hex.\n");
@@ -2516,7 +2516,7 @@ static status_t dev_proc(void)
     dss_volume_t volume;
     status = dss_open_volume(path, NULL, DSS_INSTANCE_OPEN_FLAG, &volume);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to open file %s.\n", path);
+        DSS_PRINT_ERROR("Failed to open volume %s.\n", path);
         return status;
     }
 
@@ -2534,18 +2534,18 @@ static status_t dev_proc(void)
         return CM_ERROR;
     }
 
-    (void)printf("filename is %s, offset is %lld.\n", path, offset);
+    (void)printf("volume path is %s, offset is %lld.\n", path, offset);
     status = dss_read_volume(&volume, offset, o_buf, (int32)DSS_CMD_PRINT_BLOCK_SIZE);
     if (status != CM_SUCCESS) {
         dss_close_volume(&volume);
-        DSS_PRINT_ERROR("Failed to read file %s.\n", path);
+        DSS_PRINT_ERROR("Failed to read volume %s.\n", path);
         return status;
     }
     dss_close_volume(&volume);
     char format = cmd_dev_args[DSS_ARG_IDX_2].input_args[0];
     status = print_buf(o_buf, DSS_CMD_PRINT_BLOCK_SIZE, format, offset, DSS_CMD_PRINT_BLOCK_SIZE);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to print file %s.\n", path);
+        DSS_PRINT_ERROR("Failed to print volume %s.\n", path);
         return status;
     }
     return CM_SUCCESS;
