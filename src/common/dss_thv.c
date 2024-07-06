@@ -36,7 +36,7 @@ extern "C" {
 #endif
 
 #ifndef WIN32
-static thread_local_var dss_thv_run_ctx_t dss_thv_run_ctx = {0};
+static __thread dss_thv_run_ctx_t dss_thv_run_ctx = {0};
 #else
 __declspec(thread) dss_thv_run_ctx_t dss_thv_run_ctx = {0};
 #endif
