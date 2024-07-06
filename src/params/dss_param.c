@@ -354,9 +354,9 @@ int32 dss_decrypt_pwd_cb(const char *cipher_text, uint32 cipher_len, char *plain
     }
     if (cipher.cipher_len > 0) {
         status_t status = dss_load_random_file(cipher.rand, (int32)sizeof(cipher.rand));
-        DSS_RETURN_IFERR2(status, CM_THROW_ERROR(ERR_VALUE_ERROR, "[DSS] load random component failed."));
+        DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_VALUE_ERROR, "[DSS] load random component failed."));
         status = cm_decrypt_pwd(&cipher, (uchar *)plain_text, &plain_len);
-        DSS_RETURN_IFERR2(status, CM_THROW_ERROR(ERR_VALUE_ERROR, "[DSS] failed to decrypt ssl pwd."));
+        DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_VALUE_ERROR, "[DSS] failed to decrypt ssl pwd."));
     } else {
         CM_THROW_ERROR(ERR_INVALID_PARAM, "SSL_PWD_CIPHERTEXT");
         LOG_DEBUG_ERR("[DSS] failed to decrypt ssl pwd for the cipher len is invalid.");
@@ -404,7 +404,7 @@ status_t dss_load_mes_ssl(dss_config_t *inst_cfg)
     if (inst_cfg->params.ssl_detect_day > alert_value) {
         DSS_THROW_ERROR_EX(ERR_DSS_INVALID_PARAM,
             "SSL disabled: the value of SSL_PERIOD_DETECTION which is %u is "
-            "bigger than the value of SSL_CERT_NOTIFY_TIME which is %u",
+            "bigger than the value of SSL_CERT_NOTIFY_TIME which is %u.",
             inst_cfg->params.ssl_detect_day, alert_value);
         return CM_ERROR;
     }

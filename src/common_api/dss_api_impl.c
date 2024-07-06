@@ -222,24 +222,27 @@ static status_t dss_check_find_fs_block(files_rw_ctx_t *rw_ctx, dss_fs_pos_desc_
     fs_pos->entry_fs_block =
         dss_find_fs_block(conn->session, context->vg_item, node, node->entry, CM_FALSE, NULL, DSS_ENTRY_FS_INDEX);
     if (fs_pos->entry_fs_block == NULL) {
-        // no error report here
+        LOG_DEBUG_INF("node:%s fs_pos entry_fs_block:%s is not invalid.", dss_display_metaid(node->id),
+            dss_display_metaid(node->entry));
         return CM_SUCCESS;
     }
 
     auid_t auid = fs_pos->entry_fs_block->bitmap[fs_pos->block_count];
     if (dss_cmp_auid(auid, CM_INVALID_ID64)) {
+        LOG_DEBUG_INF("fs_pos entry_fs_block bitmap %u is not invalid.", fs_pos->block_count);
         return CM_SUCCESS;
     }
 
     fs_pos->second_fs_block =
         dss_find_fs_block(conn->session, context->vg_item, node, auid, CM_FALSE, NULL, (uint16)fs_pos->block_count);
     if (fs_pos->second_fs_block == NULL) {
-        // no error report here
+        LOG_DEBUG_INF("fs_pos second_fs_block:%s is not invalid.", dss_display_metaid(auid));
         return CM_SUCCESS;
     }
 
     auid = fs_pos->second_fs_block->bitmap[fs_pos->block_au_count];
     if (dss_cmp_auid(auid, CM_INVALID_ID64)) {
+        LOG_DEBUG_INF("fs_pos second_fs_block bitmap %u is not invalid.", fs_pos->block_au_count);
         return CM_SUCCESS;
     }
     fs_pos->data_auid = auid;
@@ -248,6 +251,7 @@ static status_t dss_check_find_fs_block(files_rw_ctx_t *rw_ctx, dss_fs_pos_desc_
         fs_pos->fs_aux = dss_find_fs_aux(
             conn->session, context->vg_item, node, auid, CM_FALSE, NULL, (uint16)fs_pos->block_au_count);
         if (fs_pos->fs_aux == NULL) {
+            LOG_DEBUG_INF("fs_pos fs_aux %s is not invalid.", dss_display_metaid(auid));
             return CM_SUCCESS;
         }
 
@@ -1606,10 +1610,10 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
 
         auid_t auid = fs_pos.data_auid;
         if (auid.volume >= DSS_MAX_VOLUMES) {
+            LOG_DEBUG_ERR("Auid is invalid, volume:%u, fname:%s, fsize:%llu, written_size:%llu.", (uint32)auid.volume,
+                node->name, node->size, node->written_size);
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "au", *(uint64 *)&auid);
-            DSS_ASSERT_LOG(0, "Auid is invalid, volume:%u, fname:%s, fsize:%llu, written_size:%llu.",
-                (uint32)auid.volume, node->name, node->size, node->written_size);
             return CM_ERROR;
         }
 

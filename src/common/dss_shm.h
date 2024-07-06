@@ -142,6 +142,8 @@ typedef uint64_t sh_mem_p;
 
 #define SHM_MAX_RETRY_ATTACH_NUM 10
 
+#define CM_SHM_CTRL_KEY CM_SHM_IDX_TO_KEY((uint32)SHM_ID_MNG_CTRL)
+
 status_t cm_init_shm(uint32 shm_key);
 void cm_destroy_shm(void);
 

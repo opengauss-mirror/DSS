@@ -33,6 +33,7 @@
 #include "cm_signal.h"
 #include "cm_utils.h"
 #include "dss_errno.h"
+#include "dss_shm.h"
 #include "dss_instance.h"
 #include "dss_mes.h"
 #include "dss_blackbox.h"
@@ -109,8 +110,10 @@ static void dss_destory_shm_memory()
     if (!g_shm_inited) {
         return;
     }
-    for (uint32 i = 0; i < CM_HASH_SHM_MAX_ID; i++) {
-        (void)cm_del_shm(SHM_TYPE_HASH, i);
+    if (g_vgs_info != NULL) {
+        for (uint32 i = 0; i < DSS_MAX_VOLUME_GROUP_NUM; i++) {
+            (void)cm_del_shm(SHM_TYPE_HASH, i);
+        }
     }
     ga_destroy_global_area();
     (void)del_shm_by_key(CM_SHM_CTRL_KEY);
@@ -162,7 +165,8 @@ static status_t dss_recovery_background_task(dss_instance_t *inst)
 {
     LOG_RUN_INF("create dss recovery background task.");
     uint32 recovery_thread_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
-    status_t status = cm_create_thread(dss_get_cm_lock_and_recover, 0, inst, &(inst->threads[recovery_thread_id]));
+    status_t status = cm_create_thread(
+        dss_get_cm_lock_and_recover, 0, &g_dss_instance, &(g_dss_instance.threads[recovery_thread_id]));
     return status;
 }
 
@@ -178,7 +182,7 @@ static status_t dss_delay_clean_background_task(dss_instance_t *inst)
 static status_t dss_create_bg_task_set(dss_instance_t *inst, char *task_name, uint32 max_task_num,
     dss_get_bg_task_idx_func_t get_bg_task_idx, thread_entry_t bg_task_entry, dss_bg_task_info_t *bg_task_info_set)
 {
-    LOG_RUN_INF("create dss background task set for:%s", task_name);
+    LOG_RUN_INF("create dss background task set for:%s.", task_name);
 
     uint32 task_num = g_vgs_info->group_num;
     if (task_num > max_task_num) {
@@ -362,13 +366,14 @@ int main(int argc, char **argv)
     }
 #ifndef WIN32
     if (dss_update_state_file(CM_FALSE) != CM_SUCCESS) {
-        LOG_RUN_WAR("failed to update state file.");
+        LOG_RUN_WAR("failed to update core state file.");
+        cm_reset_error();
     }
     if (dss_signal_proc() != CM_SUCCESS) {
-        (void)printf("dss instance startup failed.\n");
+        (void)printf("dss instance startup failed when register signal.\n");
         fflush(stdout);
         dss_clean_server();
-        LOG_RUN_ERR("dss failed to startup.");
+        LOG_RUN_ERR("dss instance startup failed when register signal.");
         return CM_ERROR;
     }
 #endif
@@ -377,6 +382,7 @@ int main(int argc, char **argv)
         fflush(stdout);
         dss_clean_server();
         LOG_RUN_ERR("dss failed to startup.");
+        LOG_RUN_INF("DSS SERVER STARTED.\n");
         return CM_ERROR;
     }
     (void)printf("DSS SERVER STARTED.\n");
