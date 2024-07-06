@@ -302,7 +302,7 @@ static void sql_audit_init_assist(
     int32 ret, tz_hour, tz_min;
     const char *err_msg = NULL;
     char *user_name = cm_sys_user_name();
-    cm_get_remote_host(&session->pipe, assist->os_host);
+    cs_get_remote_host(&session->pipe, assist->os_host);
     MEMS_RETVOID_IFERR(strcpy_s(assist->db_user, CM_NAME_BUFFER_SIZE, (const char *)user_name));
 
     // DATE
