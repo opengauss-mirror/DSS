@@ -218,7 +218,7 @@ void ga_destroy_global_area(void)
     (void)cm_del_shm(SHM_TYPE_FIXED, (uint32)SHM_ID_APP_GA);
 }
 
-static void ga_attach_pool(uint32 area_type, ga_pool_id_e id, uint32 attach_perm)
+static status_t ga_attach_pool(uint32 area_type, ga_pool_id_e id, uint32 attach_perm)
 {
     uint32 i, object_offset;
     char *area_addr;
@@ -236,6 +236,12 @@ static void ga_attach_pool(uint32 area_type, ga_pool_id_e id, uint32 attach_perm
     object_offset = (uint32)sizeof(ga_pool_ctrl_t) + pool->def.object_count * (uint32)sizeof(ga_object_map_t);
     pool->object_addr = pool->addr + object_offset;
 
+    if (pool->ctrl->ex_count > GA_MAX_EXTENDED_POOLS) {
+        LOG_RUN_ERR("Invalid pool info[id=%u] from shared memory: ex_count is %u, larger than maximum %u", id,
+            pool->ctrl->ex_count, GA_MAX_EXTENDED_POOLS);
+        return CM_ERROR;
+    }
+
     for (i = 0; i < GA_MAX_EXTENDED_POOLS; i++) {
         pool->ex_pool_addr[i] = NULL;
     }
@@ -243,9 +249,10 @@ static void ga_attach_pool(uint32 area_type, ga_pool_id_e id, uint32 attach_perm
     for (i = 0; i < pool->ctrl->ex_count; i++) {
         pool->ex_pool_addr[i] = (char *)cm_attach_shm(SHM_TYPE_GA, (uint32)pool->ctrl->ex_shm_id[i], 0, attach_perm);
     }
+    return CM_SUCCESS;
 }
 
-int32 ga_attach_area(uint32 attach_perm)
+status_t ga_attach_area(uint32 attach_perm)
 {
     uint32 i = 0;
 
@@ -259,7 +266,9 @@ int32 ga_attach_area(uint32 attach_perm)
     }
 
     for (i = 0; i < GA_APP_POOL_COUNT; i++) {
-        ga_attach_pool(GA_APP_AREA, (ga_pool_id_e)i, attach_perm);
+        if (ga_attach_pool(GA_APP_AREA, (ga_pool_id_e)i, attach_perm) != CM_SUCCESS) {
+            return CM_ERROR;
+        }
     }
 
     return CM_SUCCESS;
@@ -271,6 +280,12 @@ static void ga_detach_pool(uint32 area_type, ga_pool_id_e id)
     uint32 i;
 
     if (!pool->ctrl) {
+        return;
+    }
+
+    if (pool->ctrl->ex_count > GA_MAX_EXTENDED_POOLS) {
+        LOG_RUN_ERR("Invalid pool info[id=%u]: ex_count is %u, larger than maximum %u", id, pool->ctrl->ex_count,
+            GA_MAX_EXTENDED_POOLS);
         return;
     }
 

@@ -3083,6 +3083,11 @@ static status_t dss_load_buffer_pool_from_file(int32 file_fd, ga_pool_id_e pool_
     uint32 object_cost = pool->ctrl->def.object_size + (uint32)sizeof(ga_object_map_t);
     uint64 ex_pool_size = (uint64)object_cost * pool->ctrl->def.object_count;
     pool->capacity = CM_ALIGN_512((uint32)sizeof(ga_pool_ctrl_t)) + CM_ALIGN_512(ex_pool_size);
+    if (pool->ctrl->ex_count > GA_MAX_EXTENDED_POOLS) {
+        LOG_RUN_ERR("Invalid pool info[id=%u]: ex_count is %u, larger than maximum %u", pool_id, pool->ctrl->ex_count,
+            GA_MAX_EXTENDED_POOLS);
+        return CM_ERROR;
+    }
     for (uint32 i = 0; i < pool->ctrl->ex_count; i++) {
         pool->ex_pool_addr[i] = pool_ft_block_buf + pool->capacity + i * ex_pool_size;
     }
