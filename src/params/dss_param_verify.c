@@ -409,6 +409,31 @@ status_t dss_notify_cluster_run_mode(void *se, void *item, char *value)
     return CM_SUCCESS;
 }
 
+status_t dss_verify_mes_wait_timeout(void *lex, void *def)
+{
+    char *value = (char *)lex;
+    uint32 num;
+    text_t text = {.str = value, .len = (uint32)strlen(value)};
+    cm_trim_text(&text);
+    status_t status = cm_text2uint32(&text, &num);
+    DSS_RETURN_IFERR2(status, CM_THROW_ERROR(ERR_INVALID_PARAM, "MES_WAIT_TIMEOUT"));
+
+    if (num > DSS_MES_MAX_WAIT_TIMEOUT || num < DSS_MES_MIN_WAIT_TIMEOUT) {
+        DSS_RETURN_IFERR2(CM_ERROR, CM_THROW_ERROR(ERR_INVALID_PARAM, "MES_WAIT_TIMEOUT"));
+    }
+
+    int32 iret_snprintf =
+        snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, PRINT_FMT_UINT32, num);
+    DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
+    return CM_SUCCESS;
+}
+
+status_t dss_notify_mes_wait_timeout(void *se, void *item, char *value)
+{
+    CM_RETURN_IFERR(cm_str2uint32(value, (uint32 *)&g_inst_cfg->params.mes_wait_timeout));
+    return CM_SUCCESS;
+}
+
 #ifdef __cplusplus
 }
 #endif

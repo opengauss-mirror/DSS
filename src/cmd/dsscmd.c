@@ -3827,7 +3827,8 @@ static status_t setcfg_proc(void)
         cm_strcmpi(name, "_LOG_BACKUP_FILE_COUNT") != 0 && cm_strcmpi(name, "_AUDIT_MAX_FILE_SIZE") != 0 &&
         cm_strcmpi(name, "_AUDIT_BACKUP_FILE_COUNT") != 0 && cm_strcmpi(name, "_AUDIT_LEVEL") != 0 &&
         cm_strcmpi(name, "_ENABLE_CORE_STATE_COLLECT") != 0 && cm_strcmpi(name, "DELAY_CLEAN_INTERVAL") != 0 &&
-        cm_strcmpi(name, "CLUSTER_RUN_MODE") != 0 && cm_strcmpi(name, "_BLACKBOX_DETAIL_ON") != 0) {
+        cm_strcmpi(name, "CLUSTER_RUN_MODE") != 0 && cm_strcmpi(name, "_BLACKBOX_DETAIL_ON") != 0 &&
+        cm_strcmpi(name, "MES_WAIT_TIMEOUT") != 0) {
         DSS_PRINT_ERROR("Invalid name when set cfg.\n");
         return DSS_ERROR;
     }

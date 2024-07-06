@@ -174,7 +174,7 @@ static status_t dss_init_log_home(dss_config_t *inst_cfg, log_param_t *log_param
     if (val_len >= CM_MAX_LOG_HOME_LEN) {
         return CM_ERROR;
     } else if (val_len > 0) {
-        errcode = strncpy_s(log_param->log_home, DSS_MAX_PATH_BUFFER_SIZE, value, CM_MAX_LOG_HOME_LEN);
+        errcode = strncpy_s(log_param->log_home, CM_MAX_LOG_HOME_LEN, value, CM_MAX_LOG_HOME_LEN);
         if (errcode != EOK) {
             DSS_THROW_ERROR(ERR_SYSTEM_CALL, (errcode));
             return CM_ERROR;
@@ -182,7 +182,7 @@ static status_t dss_init_log_home(dss_config_t *inst_cfg, log_param_t *log_param
         verify_flag = CM_TRUE;
     } else {
         char *home = dss_get_cfg_dir(inst_cfg);
-        if (snprintf_s(log_param->log_home, DSS_MAX_PATH_BUFFER_SIZE, CM_MAX_PATH_LEN, "%s/log", home) == -1) {
+        if (snprintf_s(log_param->log_home, CM_MAX_LOG_HOME_LEN, CM_MAX_LOG_HOME_LEN - 1, "%s/log", home) == -1) {
             cm_panic(0);
         }
     }

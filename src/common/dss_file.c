@@ -3975,6 +3975,10 @@ static status_t dss_refresh_file_core(
         return CM_ERROR;
     }
 
+    LOG_DEBUG_INF("Apply refresh file:%s, curr size:%llu, ftid: %s by session id:%u.", node->name, node->size,
+        dss_display_metaid(ftid), session->id);
+    LOG_DEBUG_INF("Entry id: %s", dss_display_metaid((node->entry)));
+
     if (node->size == 0) {
         return CM_SUCCESS;
     }
