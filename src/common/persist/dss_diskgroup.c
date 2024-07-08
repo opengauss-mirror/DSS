@@ -391,7 +391,7 @@ status_t dss_load_vg_info_and_recover(bool8 need_recovery)
     return CM_SUCCESS;
 }
 
-void dss_free_shm_hashmap_memory(dss_share_vg_info_t *share_vg_info, uint32 num)
+static void dss_free_shm_hashmap_memory(dss_share_vg_info_t *share_vg_info, uint32 num)
 {
     for (uint32 i = 0; i <= num; i++) {
         shm_hashmap_destroy(&share_vg_info->vg[i].buffer_cache, i);
