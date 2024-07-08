@@ -2966,7 +2966,7 @@ status_t dss_extend_batch(
     int64 file_size = node_data->offset + node_data->size;
     uint64 align_size = CM_CALC_ALIGN((uint64)file_size, au_size);
 
-    uint64 au_count = DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;  // 2041 2nd FSBs
+    uint64 au_count = (uint64)DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;  // 2041 2nd FSBs
     uint64 block_len = au_count * au_size;  // [4G, 128G] per 2nd_level FSB, with AU range [2MB, 64MB]
 
     bool32 cur_finish;
