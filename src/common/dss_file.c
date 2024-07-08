@@ -3848,7 +3848,7 @@ status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 len
     return dss_truncate_inner(session, fid, ftid, length, vg_item);
 }
 
-dss_refresh_ft_by_primary_proc_t dss_refresh_ft_by_primary_proc = NULL;
+dss_refresh_ft_by_primary_proc_t dss_refresh_ft_by_primary_proc;
 void regist_refresh_ft_by_primary_proc(dss_refresh_ft_by_primary_proc_t proc)
 {
     dss_refresh_ft_by_primary_proc = proc;

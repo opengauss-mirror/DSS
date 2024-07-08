@@ -359,8 +359,8 @@ static status_t dss_check_refresh_volume(dss_conn_t *conn, dss_file_context_t *c
 {
     status_t status;
     dss_vg_info_item_t *vg_item = context->vg_item;
-    dss_cli_vg_handles_t *dss_cli_vg_handles = (dss_cli_vg_handles_t *)(conn->cli_vg_handles);
-    dss_simple_volume_t *vol = &dss_cli_vg_handles->vg_vols[vg_item->id].volume_handle[auid.volume];
+    dss_cli_vg_handles_t *cli_vg_handles = (dss_cli_vg_handles_t *)(conn->cli_vg_handles);
+    dss_simple_volume_t *vol = &cli_vg_handles->vg_vols[vg_item->id].volume_handle[auid.volume];
 
     if (vol->handle == DSS_INVALID_HANDLE) {
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
@@ -2601,10 +2601,10 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
 
         auid_t auid = fs_pos.data_auid;
         if (auid.volume >= DSS_MAX_VOLUMES) {
+            LOG_DEBUG_ERR("Auid is invalid, volume:%u, fname:%s, fsize:%llu, written_size:%llu, retry_time:%u.",
+                (uint32)auid.volume, node->name, node->size, node->written_size, retry_time);
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "au", *(uint64 *)&auid);
-            DSS_ASSERT_LOG(0, "Auid is invalid, volume:%u, fname:%s, fsize:%llu, written_size:%llu.",
-                (uint32)auid.volume, node->name, node->size, node->written_size);
             return CM_ERROR;
         }
 

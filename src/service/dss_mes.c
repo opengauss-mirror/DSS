@@ -71,7 +71,7 @@ dss_processor_t g_dss_processors[DSS_CMD_CEIL] = {
     [DSS_CMD_REQ_REFRESH_FT] = {dss_proc_refresh_ft_by_primary_req, CM_TRUE, CM_TRUE, MES_PRIORITY_ONE,
         "dss standby refresh ft by primary req"},
     [DSS_CMD_ACK_REFRESH_FT] = {dss_proc_normal_ack, CM_FALSE, CM_FALSE, MES_PRIORITY_ONE,
-        "dss active proc ft to standby ack"},
+        "dss active proc refresh ft to standby ack"},
     [DSS_CMD_REQ_GET_FT_BLOCK] = {dss_proc_get_ft_block_req, CM_TRUE, CM_TRUE, MES_PRIORITY_ZERO,
         "dss standby get ft block req"},
     [DSS_CMD_ACK_GET_FT_BLOCK] = {dss_proc_normal_ack, CM_FALSE, CM_FALSE, MES_PRIORITY_ZERO,

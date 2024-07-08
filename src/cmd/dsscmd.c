@@ -1375,7 +1375,8 @@ static dss_args_t cmd_touch_args[] = {
     {'p', "path", CM_TRUE, CM_TRUE, dss_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
-    {'f', "flag", CM_FALSE, CM_TRUE, cmd_check_flag, NULL, NULL, 0, NULL, NULL, 0}};
+    {'f', "flag", CM_FALSE, CM_TRUE, cmd_check_flag, NULL, NULL, 0, NULL, NULL, 0}
+};
 static dss_args_set_t cmd_touch_args_set = {
     cmd_touch_args,
     sizeof(cmd_touch_args) / sizeof(dss_args_t),
