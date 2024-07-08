@@ -44,7 +44,7 @@
 #define DSS_GET_FT_AU_LIST(ft_au_list_p) ((dss_ft_au_list_t *)(ft_au_list_p))
 #define DSS_GET_FS_BLOCK_ROOT(dss_ctrl_p) ((dss_fs_block_root_t *)((dss_ctrl_p)->core.fs_block_root))
 #define DSS_MAX_VOLUME_GROUP_NUM (CM_HASH_SHM_MAX_ID)
-
+#define DSS_VG_ITEM_CACHE_NODE_MAX 16
 #define DSS_VG_CONF_NAME "dss_vg_conf.ini"
 #define DSS_RECYLE_DIR_NAME ".recycle"
 
@@ -56,8 +56,8 @@
 #define DSS_CTRL_VG_DATA_OFFSET OFFSET_OF(dss_ctrl_t, vg_data)
 #define DSS_CTRL_VG_LOCK_OFFSET OFFSET_OF(dss_ctrl_t, lock)
 #define DSS_CTRL_ROOT_OFFSET OFFSET_OF(dss_ctrl_t, root)
-#define DSS_CTRL_REDO_OFFSET OFFSET_OF(dss_ctrl_t, redo_ctrl_data)
 #define DSS_CTRL_GLOBAL_CTRL_OFFSET OFFSET_OF(dss_ctrl_t, global_data)
+#define DSS_CTRL_REDO_OFFSET OFFSET_OF(dss_ctrl_t, redo_ctrl_data)
 
 #define DSS_CTRL_BAK_ADDR SIZE_M(1)
 #define DSS_CTRL_BAK_CORE_OFFSET (DSS_CTRL_BAK_ADDR + DSS_CTRL_CORE_OFFSET)
@@ -65,8 +65,8 @@
 #define DSS_CTRL_BAK_VG_DATA_OFFSET (DSS_CTRL_BAK_ADDR + DSS_CTRL_VG_DATA_OFFSET)
 #define DSS_CTRL_BAK_VG_LOCK_OFFSET (DSS_CTRL_BAK_ADDR + DSS_CTRL_VG_LOCK_OFFSET)
 #define DSS_CTRL_BAK_ROOT_OFFSET (DSS_CTRL_BAK_ADDR + DSS_CTRL_ROOT_OFFSET)
-#define DSS_CTRL_BAK_REDO_OFFSET (DSS_CTRL_BAK_ADDR + DSS_CTRL_REDO_OFFSET)
 #define DSS_CTRL_BAK_GLOBAL_CTRL_OFFSET (DSS_CTRL_BAK_ADDR + DSS_CTRL_GLOBAL_CTRL_OFFSET)
+#define DSS_CTRL_BAK_REDO_OFFSET (DSS_CTRL_BAK_ADDR + DSS_CTRL_REDO_OFFSET)
 
 // Size of the volume header. 2MB is used to store vg_ctrl and its backup. The last 2MB is reserved.
 #define DSS_VOLUME_HEAD_SIZE SIZE_M(4)
@@ -120,8 +120,8 @@ typedef enum en_volume_slot {
     VOLUME_OCCUPY = 1,
     VOLUME_PREPARE = 2,  // not registered
     VOLUME_ADD = 3,      // add
-    VOLUME_REMOVE = 3,   // remove
-    VOLUME_REPLACE = 3,  // replace
+    VOLUME_REMOVE = 4,   // remove
+    VOLUME_REPLACE = 5,  // replace
 } volume_slot_e;
 
 typedef struct st_dss_volume_attr {
@@ -190,7 +190,7 @@ typedef struct st_dss_disk_group_header_t {
     uint32 software_version;  // for upgrade
     timeval_t create_time;
     dss_bak_level_e bak_level;
-    uint32 ft_node_ratio;  // A backup ft_node is created for every ft_node_ratio bytes of space
+    uint32 ft_node_ratio;  // ft_node is created for every ft_node_ratio bytes of space
     uint64 bak_ft_offset;  // Start position of the backup ft_node array
 } dss_vg_header_t;
 
@@ -240,10 +240,10 @@ typedef struct st_dss_redo_ctrl {
     uint32 checksum;
     uint32 redo_index;
     uint64 version;
-    uint64 offset; // redo offset
-    uint64 lsn; // redo lsn
+    uint64 offset;  // redo offset
+    uint64 lsn;     // redo lsn
     auid_t redo_start_au[DSS_MAX_EXTENDED_COUNT];
-    uint32 redo_size[DSS_MAX_EXTENDED_COUNT]; // except redo_size > 32KB
+    uint32 redo_size[DSS_MAX_EXTENDED_COUNT];  // except redo_size > 32KB
     uint32 count;
     char reserve[376];
 } dss_redo_ctrl_t;
@@ -264,7 +264,7 @@ typedef struct st_dss_ctrl {
     };
     char root[DSS_ROOT_FT_DISK_SIZE];  // dss_root_ft_block_t, 8KB
     union {
-        dss_redo_ctrl_t redo_ctrl;
+        dss_redo_ctrl_t redo_ctrl;  // 512
         char redo_ctrl_data[DSS_DISK_UNIT_SIZE];
     };
     char reserve1[DSS_CTRL_RESERVE_SIZE1];   // 727K
@@ -317,7 +317,6 @@ typedef enum en_dss_from_type {
     FROM_DISK,
 } dss_from_type_e;
 
-#define DSS_VG_ITEM_CACHE_NODE_MAX 16
 typedef struct st_dss_vg_info_item_t {
     uint32 id;
     char vg_name[DSS_MAX_NAME_LEN];
@@ -337,7 +336,7 @@ typedef struct st_dss_vg_info_item_t {
     dss_from_type_e from_type;
     dss_block_ctrl_task_desc_t syn_meta_desc;
     dss_vg_cache_node_t vg_cache_node[DSS_VG_ITEM_CACHE_NODE_MAX];
-    dss_log_file_ctrl_t log_file_ctrl; // redo log ctrl 
+    dss_log_file_ctrl_t log_file_ctrl;  // redo log ctrl 
 } dss_vg_info_item_t;
 
 typedef struct st_dss_vg_info_t {

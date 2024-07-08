@@ -600,7 +600,7 @@ static status_t dss_load_mes_with_ip(dss_config_t *inst_cfg)
     } else if (cm_str_equal_ins(value, "FALSE")) {
         inst_cfg->params.mes_with_ip = CM_FALSE;
     } else {
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "value of MES_WITH_IP is invalid"));
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "MES_WITH_IP"));
     }
     LOG_DEBUG_INF("MES_WITH_IP status: %u. (0: off, 1: on)", inst_cfg->params.mes_with_ip);
     return CM_SUCCESS;

@@ -285,8 +285,8 @@ void rb_redo_clean_resource(dss_vg_info_item_t *item, auid_t auid, ga_pool_id_e 
 status_t dss_check_recover_redo_log(dss_vg_info_item_t *vg_item, bool8 *recover_redo);
 bool32 dss_check_redo_batch_complete(dss_redo_batch_t *batch, dss_redo_batch_t *tail);
 status_t dss_update_redo_info(dss_vg_info_item_t *vg_item, char *log_buf);
-status_t dss_recover_from_slot_inner(dss_vg_info_item_t *vg_item, char *log_buf);
 status_t dss_recover_from_offset_inner(dss_vg_info_item_t *vg_item, char *log_buf);
+status_t dss_recover_from_slot_inner(dss_vg_info_item_t *vg_item, char *log_buf);
 status_t dss_load_log_buffer_from_offset(dss_vg_info_item_t *vg_item, bool8 *need_recovery);
 status_t dss_load_log_buffer_from_slot(dss_vg_info_item_t *vg_item, bool8 *need_recovery);
 status_t dss_read_redolog_from_disk(dss_vg_info_item_t *vg_item, uint32 volume_id, int64 offset, char *buf, int32 size);
