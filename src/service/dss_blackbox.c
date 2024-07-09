@@ -235,6 +235,7 @@ void dss_write_block_pool(int32 handle, int64 *length, ga_pool_id_e pool_id)
     if (pool->ctrl->ex_count > GA_MAX_EXTENDED_POOLS) {
         LOG_RUN_ERR("Invalid pool info[id=%u]: ex_count is %u, larger than maximum %u", pool_id, pool->ctrl->ex_count,
             GA_MAX_EXTENDED_POOLS);
+        return;
     }
     uint32 object_cost = pool->ctrl->def.object_size + (uint32)sizeof(ga_object_map_t);
     uint64 ex_pool_size = (uint64)object_cost * pool->ctrl->def.object_count;
