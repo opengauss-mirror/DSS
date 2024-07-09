@@ -2015,11 +2015,13 @@ status_t dss_rename_file_impl(dss_conn_t *conn, const char *src, const char *dst
     send_pack->head->flags = 0;
 
     // 1. src
-    DSS_RETURN_IF_ERROR(dss_check_device_path(src));
+    DSS_RETURN_IFERR2(dss_check_device_path(src), LOG_DEBUG_ERR("old name path is invaild."));
     DSS_RETURN_IF_ERROR(dss_put_str(send_pack, src));
     // 2. dst
-    DSS_RETURN_IF_ERROR(dss_check_device_path(dst));
+    DSS_RETURN_IFERR2(dss_check_device_path(dst), LOG_DEBUG_ERR("new name path is invalid."));
     DSS_RETURN_IF_ERROR(dss_put_str(send_pack, dst));
+
+    LOG_DEBUG_INF("Rename file, old name path: %s, new name path: %s", src, dst);
 
     // send it and wait for ack
     ack_pack = &conn->pack;
