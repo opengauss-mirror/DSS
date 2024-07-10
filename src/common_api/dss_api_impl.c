@@ -2632,7 +2632,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
         *vol_offset = *vol_offset + (int64)fs_pos.au_offset;
         uint64 super_au_size = CM_CALC_ALIGN(DSS_VOLUME_HEAD_SIZE, au_size);
         // wrongly writing superau area
-        DSS_ASSERT_LOG(*((uint64 *)vol_offset) >= super_au_size, "The volume offset:%llu is invalid!", *vol_offset);
+        DSS_ASSERT_LOG((uint64)(*vol_offset) >= super_au_size, "The volume offset:%llu is invalid!", *vol_offset);
 
         /* get the real block device descriptor */
         *fd = vol->handle;
