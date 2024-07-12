@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/dss_defs.c
+ *    src/common/persist/dss_defs.c
  *
  * -------------------------------------------------------------------------
  */

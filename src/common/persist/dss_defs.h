@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/dss_defs.h
+ *    src/common/persist/dss_defs.h
  *
  * -------------------------------------------------------------------------
  */
@@ -412,12 +412,14 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
         }                                                                              \
     } while (0)
 
+#pragma pack(8)
 typedef struct st_auid_t {  // id of allocation unit, 8 Bytes
     uint64 volume : DSS_MAX_BIT_NUM_VOLUME;
     uint64 au : DSS_MAX_BIT_NUM_AU;
     uint64 block : DSS_MAX_BIT_NUM_BLOCK;
     uint64 item : DSS_MAX_BIT_NUM_ITEM;
 } auid_t;
+#pragma pack()
 
 typedef auid_t dss_block_id_t;
 typedef auid_t ftid_t;
@@ -472,10 +474,12 @@ static inline bool32 dss_auid_is_uninit(auid_t *auid)
 #define DSS_BLOCK_ID_SET_NOT_AUX(block_id) ((*(uint64 *)&block_id) & (*(uint64 *)&dss_unset_inited_mask))
 #define DSS_BLOCK_ID_IS_AUX(block_id) (((block_id).item & DSS_AU_UNINITED_MARK) == 1)
 
+#pragma pack(8)
 typedef struct st_dss_addr_t {
     uint64 volumeid : 10;
     uint64 offset : 54;
 } dss_addr_t;
+#pragma pack()
 
 typedef struct st_dss_log_def_t {
     log_type_t log_id;
