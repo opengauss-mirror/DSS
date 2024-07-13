@@ -82,6 +82,8 @@ typedef struct st_dss_params {
     bool32 elapsed_switch;
     uint32 shm_key;
     uint32 ssl_detect_day;
+    bool32 mes_with_ip;
+    bool32 ip_white_list_on;
     uint32 iothread_count;
     uint32 workthread_count;
     uint32 xlog_vg_id;
@@ -143,6 +145,10 @@ inline status_t dss_get_ssl_param(const char *param_name, char *param_value, uin
 }
 void dss_ssl_ca_cert_expire(void);
 
+status_t dss_set_cfg_param(char *name, char *value, char *scope);
+status_t dss_get_cfg_param(const char *name, char **value);
+status_t dss_load_delay_clean_interval_core(char *value, dss_config_t *inst_cfg);
+
 static inline status_t dss_load_blackbox_detail_on_inner(char *value, dss_config_t *inst_cfg)
 {
     if (cm_str_equal_ins(value, "TRUE")) {
@@ -170,10 +176,6 @@ static inline status_t dss_load_enable_core_state_collect_inner(char *value, dss
     LOG_RUN_INF("_ENABLE_CORE_STATE_COLLECT = %u.", inst_cfg->params.enable_core_state_collect);
     return CM_SUCCESS;
 }
-
-status_t dss_set_cfg_param(char *name, char *value, char *scope);
-status_t dss_get_cfg_param(const char *name, char **value);
-status_t dss_load_delay_clean_interval_core(char *value, dss_config_t *inst_cfg);
 
 #ifdef __cplusplus
 }

@@ -76,8 +76,13 @@ static config_item_t g_dss_params[] = {
         "GS_TYPE_VARCHAR", NULL, 16, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "_SHM_KEY", CM_TRUE, CM_FALSE,     "1",         NULL, NULL, "-", "[1,64]",
       "GS_TYPE_INTEGER", NULL, 17, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
+#ifdef OPENGAUSS
     { "DSS_NODES_LIST",        CM_TRUE, CM_FALSE,     "0:127.0.0.1:1611", NULL, NULL, "-", "-",
         "GS_TYPE_VARCHAR", NULL, 18,  EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
+#else
+    { "DSS_NODES_LIST",        CM_TRUE, CM_FALSE,     "0|127.0.0.1|1611", NULL, NULL, "-", "-",
+        "GS_TYPE_VARCHAR", NULL, 18,  EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
+#endif
     { "INTERCONNECT_TYPE",        CM_TRUE, CM_FALSE,     "TCP",       NULL, NULL, "-", "TCP,RDMA",
         "GS_TYPE_VARCHAR", NULL, 19, EFFECT_REBOOT,      CFG_INS, NULL, NULL, NULL, NULL},
     { "INTERCONNECT_CHANNEL_NUM", CM_TRUE, CM_FALSE,     "2",         NULL, NULL, "-", "[1,32]",
@@ -112,6 +117,10 @@ static config_item_t g_dss_params[] = {
         34, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_audit_level, dss_notify_audit_level, NULL, NULL},
     { "SSL_PERIOD_DETECTION", CM_TRUE, CM_FALSE, "7", NULL, NULL, "-", "[1,180]",
         "GS_TYPE_INTEGER", NULL, 35, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "MES_WITH_IP",       CM_TRUE, CM_FALSE,    "FALSE",    NULL, NULL, "-", "FALSE,TRUE",
+        "GS_TYPE_BOOLEAN", NULL, 36, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "IP_WHITE_LIST_ON",       CM_TRUE, CM_FALSE,    "TRUE",    NULL, NULL, "-", "FALSE,TRUE",
+        "GS_TYPE_BOOLEAN", NULL, 37, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "IO_THREADS",       CM_TRUE, CM_FALSE, "2",   NULL, NULL, "-", "[1,8]",
         "GS_TYPE_INTEGER", NULL, 38, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     { "WORK_THREADS",       CM_TRUE, CM_FALSE, "16",   NULL, NULL, "-", "[16,128]",
@@ -569,6 +578,34 @@ static status_t dss_load_instance_id(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
+static status_t dss_load_ip_white_list(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "IP_WHITE_LIST_ON");
+    if (cm_str_equal_ins(value, "TRUE")) {
+        inst_cfg->params.ip_white_list_on = CM_TRUE;
+    } else if (cm_str_equal_ins(value, "FALSE")) {
+        inst_cfg->params.ip_white_list_on = CM_FALSE;
+    } else {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "value of IP_WHITE_LIST_ON is invalid"));
+    }
+    LOG_DEBUG_INF("IP_WHITE_LIST status: %u. (0: off, 1: on)", inst_cfg->params.ip_white_list_on);
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_mes_with_ip(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "MES_WITH_IP");
+    if (cm_str_equal_ins(value, "TRUE")) {
+        inst_cfg->params.mes_with_ip = CM_TRUE;
+    } else if (cm_str_equal_ins(value, "FALSE")) {
+        inst_cfg->params.mes_with_ip = CM_FALSE;
+    } else {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "value of MES_WITH_IP is invalid"));
+    }
+    LOG_DEBUG_INF("MES_WITH_IP status: %u. (0: off, 1: on)", inst_cfg->params.mes_with_ip);
+    return CM_SUCCESS;
+}
+
 static status_t dss_load_shm_key(dss_config_t *inst_cfg)
 {
     char *value = cm_get_config_value(&inst_cfg->config, "_SHM_KEY");
@@ -645,6 +682,8 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_dlock_retry_count(inst_cfg));
     CM_RETURN_IFERR(dss_load_mes_params(inst_cfg));
     CM_RETURN_IFERR(dss_load_shm_key(inst_cfg));
+    CM_RETURN_IFERR(dss_load_mes_with_ip(inst_cfg));
+    CM_RETURN_IFERR(dss_load_ip_white_list(inst_cfg));
     CM_RETURN_IFERR(dss_load_threadpool_cfg(inst_cfg));
     CM_RETURN_IFERR(dss_load_cephrbd_params(inst_cfg));
     CM_RETURN_IFERR(dss_load_cephrbd_config_file(inst_cfg));

@@ -204,22 +204,30 @@ static inline void dss_open_fail(const char *name)
     }
 }
 
-status_t dss_open_volume_raw(const char *name, const char *code, int flags, dss_volume_t *volume)
+static status_t dss_open_filehandle_raw(const char *name, int flags, volume_handle_t *fd, volume_handle_t *unaligned_fd)
 {
     // O_RDWR | O_SYNC | O_DIRECT
-    volume->handle = open(name, flags, 0);
-    if (volume->handle == -1) {
+    *fd = open(name, flags, 0);
+    if (*fd == -1) {
         dss_open_fail(name);
         return CM_ERROR;
     }
 
     // O_RDWR | O_SYNC
-    volume->unaligned_handle = open(name, DSS_NOD_OPEN_FLAG, 0);
-    if (volume->unaligned_handle == -1) {
+    *unaligned_fd = open(name, DSS_NOD_OPEN_FLAG, 0);
+    if (*unaligned_fd == -1) {
         dss_open_fail(name);
         return CM_ERROR;
     }
 
+    return CM_SUCCESS;
+}
+
+status_t dss_open_volume_raw(const char *name, const char *code, int flags, dss_volume_t *volume)
+{
+    if (dss_open_filehandle_raw(name, flags, &volume->handle, &volume->unaligned_handle) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
     errno_t ret = snprintf_s(volume->name, DSS_MAX_VOLUME_PATH_LEN, DSS_MAX_VOLUME_PATH_LEN - 1, "%s", name);
     DSS_SECUREC_SS_RETURN_IF_ERROR(ret, CM_ERROR);
     volume->name_p = volume->name;
@@ -228,17 +236,7 @@ status_t dss_open_volume_raw(const char *name, const char *code, int flags, dss_
 
 status_t dss_open_simple_volume_raw(const char *name, int flags, dss_simple_volume_t *volume)
 {
-    // O_RDWR | O_SYNC | O_DIRECT
-    volume->handle = open(name, flags, 0);
-    if (volume->handle == -1) {
-        dss_open_fail(name);
-        return CM_ERROR;
-    }
-
-    // O_RDWR | O_SYNC
-    volume->unaligned_handle = open(name, DSS_NOD_OPEN_FLAG, 0);
-    if (volume->unaligned_handle == -1) {
-        dss_open_fail(name);
+    if (dss_open_filehandle_raw(name, flags, &volume->handle, &volume->unaligned_handle) != CM_SUCCESS) {
         return CM_ERROR;
     }
     return CM_SUCCESS;

@@ -636,10 +636,10 @@ static status_t rp_redo_free_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entr
     }
 
     status = dss_update_fs_bitmap_block_disk(vg_item, log_block, DSS_DISK_UNIT_SIZE, CM_TRUE);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO] Failed to update fs bitmap block:%llu to disk.",
-                                  DSS_ID_TO_U64(log_block->head.common.id)));
-    DSS_LOG_DEBUG_OP("[REDO] Succeed to replay free fs block:%llu, vg name:%s.",
-        DSS_ID_TO_U64(log_block->head.common.id), vg_item->vg_name);
+    DSS_RETURN_IFERR2(status,
+        LOG_DEBUG_ERR("[REDO] Failed to update fs bitmap block: %s.", dss_display_metaid(log_block->head.common.id)));
+    LOG_DEBUG_INF("[REDO] Succeed to replay free fs block: %s, vg name:%s.",
+        dss_display_metaid(log_block->head.common.id), vg_item->vg_name);
     return CM_SUCCESS;
 }
 
@@ -876,8 +876,7 @@ status_t rp_redo_set_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
 
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_fs(block);
     dss_add_syn_meta(vg_item, block_ctrl, block->head.common.version);
-
-    DSS_LOG_DEBUG_OP("[REDO] Succeed to replay set fs block: %s, used_num:%hu, vg name:%s.", dss_display_metaid(data->id),    
+    DSS_LOG_DEBUG_OP("[REDO] Succeed to replay set fs block: %s, used_num:%hu, vg name:%s.", dss_display_metaid(data->id),
         block->head.used_num, vg_item->vg_name);
     return CM_SUCCESS;
 }
@@ -1224,7 +1223,7 @@ status_t rb_redo_format_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *
     dss_block_id_t first = data->auid;
     ga_obj_id_t obj_id;
     status = dss_find_block_objid_in_shm(vg_item, first, DSS_BLOCK_TYPE_FS, &obj_id);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to find block:%llu.", DSS_ID_TO_U64(first)));
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to find block: %s.", dss_display_metaid(first)));
     rb_redo_clean_resource(vg_item, data->auid, GA_16K_POOL, obj_id.obj_id, data->count);
     status = dss_load_vg_ctrl_part(
         vg_item, (int64)DSS_CTRL_CORE_OFFSET, vg_item->dss_ctrl->core_data, DSS_DISK_UNIT_SIZE, &remote);

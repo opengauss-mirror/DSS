@@ -244,6 +244,12 @@ status_t dss_startup_mes(void);
 void dss_stop_mes(void);
 int32 dss_process_broadcast_ack(dss_notify_ack_msg_t *ack, dss_recv_msg_t *recv_msg_output);
 void dss_proc_broadcast_req(dss_session_t *session, mes_msg_t *msg);
+void dss_proc_syb2active_req(dss_session_t *session, mes_msg_t *msg);
+void dss_proc_loaddisk_req(dss_session_t *session, mes_msg_t *msg);
+void dss_proc_join_cluster_req(dss_session_t *session, mes_msg_t *msg);
+void dss_proc_refresh_ft_by_primary_req(dss_session_t *session, mes_msg_t *msg);
+void dss_proc_get_ft_block_req(dss_session_t *session, mes_msg_t *msg);
+
 status_t dss_read_volume_remote(const char *vg_name, dss_volume_t *volume, int64 offset, void *buf, int32 size);
 status_t dss_send2standby(big_packets_ctrl_t *ack, const char *buf);
 int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, uint32 version);

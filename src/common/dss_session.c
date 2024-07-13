@@ -584,11 +584,12 @@ static void dss_clean_latch_s_with_bak(dss_session_t *session, dss_shared_latch_
         shared_latch->latch.sid = 0;
     }
 
+    LOG_DEBUG_INF("Clean sid:%u latch_stack old stack_top:%u.", DSS_SESSIONID_IN_LOCK(session->id),
+        session->latch_stack.stack_top);
+
     LOG_DEBUG_INF("Clean sid:%u shared_latch new count:%hu, new stat:%u.", DSS_SESSIONID_IN_LOCK(session->id),
         shared_latch->latch.shared_count, shared_latch->latch.stat);
 
-    LOG_DEBUG_INF("Clean sid:%u latch_stack old stack_top:%u.", DSS_SESSIONID_IN_LOCK(session->id),
-        session->latch_stack.stack_top);
     // not sure last latch finish, so using the stack_top_bak
     session->latch_stack.stack_top = session->latch_stack.stack_top_bak;
     // when latch first, and not finish, the stack_top may be zero

@@ -287,7 +287,7 @@ status_t ga_attach_area(uint32 attach_perm)
     return CM_SUCCESS;
 }
 
-static void ga_detach_pool(uint32 area_type, ga_pool_id_e id)
+static void ga_detach_pool(ga_pool_id_e id)
 {
     ga_pool_t *pool = &g_app_pools[id];
     uint32 i;
@@ -314,7 +314,7 @@ void ga_detach_area(void)
     uint32 i = 0;
 
     for (i = 0; i < GA_APP_POOL_COUNT; i++) {
-        ga_detach_pool(GA_APP_AREA, (ga_pool_id_e)i);
+        ga_detach_pool((ga_pool_id_e)i);
     }
 
     (void)cm_detach_shm(SHM_TYPE_FIXED, (uint32)SHM_ID_APP_GA);

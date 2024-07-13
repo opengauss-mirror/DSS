@@ -43,8 +43,6 @@ static inline status_t dss_write_shm_memory_file_inner(int32 handle, int64 *leng
 
 status_t dss_sigcap_handle_reg();
 status_t dss_update_state_file(bool32 coredump);
-void dss_proc_sign_func(int32 sig_num, siginfo_t *sig_info, void *context);
-void dss_proc_sign_func_core(int32 sig_num, siginfo_t *sig_info, void *context, bool32 *dump);
 
 #ifdef __cplusplus
 }
