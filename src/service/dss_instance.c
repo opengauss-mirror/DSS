@@ -237,10 +237,10 @@ static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to initialize thread."));
     status = dss_startup_mes();
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to startup mes"));
-    status = dss_start_lsnr(inst);
-    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to start lsnr!"));
     status = dss_create_reactors();
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to start reactors!"));
+    status = dss_start_lsnr(inst);
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to start lsnr!"));
     status = dss_init_inst_handle_session(inst);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance int handle session!"));
     return CM_SUCCESS;
