@@ -2375,7 +2375,6 @@ void dss_get_api_volume_error(void)
     return;
 }
 
-
 status_t dss_get_inst_status_on_server(dss_conn_t *conn, dss_server_status_t *dss_status)
 {
     if (dss_status == NULL) {
@@ -3035,18 +3034,6 @@ void dss_unset_conn_wait_event(dss_conn_t *conn)
     if (conn->session != NULL) {
         dss_unset_stat(&((dss_session_t *)conn->session)->stat_ctx);
     }
-}
-
-status_t dss_call_ex_with_stat(dss_conn_t *conn, dss_packet_t *req, dss_packet_t *ack)
-{
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
-    status_t status = dss_call_ex(&conn->pipe, req, ack);
-    if (status == CM_SUCCESS && conn->session != NULL) {
-        dss_session_t *session = (dss_session_t *)conn->session;
-        dss_end_stat_ex(&session->stat_ctx, &session->dss_session_stat[session->stat_ctx.wait_event], &begin_tv);
-    }
-    return status;
 }
 
 status_t dss_msg_interact_with_stat(dss_conn_t *conn, uint8 cmd, void *send_info, void *ack)
