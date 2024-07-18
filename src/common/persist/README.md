@@ -1,0 +1,3 @@
+**Some C structs are defined firmly same as the structures of metadata on disk**. However, some OS architectures apply 4-byte alignment on C structs by default while others apply 8-byte alignment. As a result, metadata structures written to disks are different between these two kinds of systems, which is fatal for **compatibility**.
+
+Thus, all such C structs are compulsorily applied with **8-byte alignment**. To prevent possible ommissions, C structs defined for disk metadata must be defined under this directory, namely "src/common/persist".

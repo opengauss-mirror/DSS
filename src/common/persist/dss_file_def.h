@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/dss_file_def.h
+ *    src/common/persist/dss_file_def.h
  *
  * -------------------------------------------------------------------------
  */
@@ -50,6 +50,21 @@
 #define DSS_NOD_OPEN_FLAG (O_RDWR | O_SYNC)
 #endif
 
+#define DSS_BLOCK_ID_INIT (uint64)0xFFFFFFFFFFFFFFFE
+#define DSS_GET_COMMON_BLOCK_HEAD(au) ((dss_common_block_t *)((char *)(au)))
+#define DSS_GET_FS_BLOCK_FROM_AU(au, block_id) \
+    ((dss_fs_block_t *)((char *)(au) + DSS_FILE_SPACE_BLOCK_SIZE * (block_id)))
+#define DSS_GET_FT_BLOCK_FROM_AU(au, block_id) ((dss_ft_block_t *)((char *)(au) + DSS_BLOCK_SIZE * (block_id)))
+#define DSS_GET_FT_BLOCK_NUM_IN_AU(dss_ctrl) ((dss_get_vg_au_size(dss_ctrl)) / DSS_BLOCK_SIZE)
+#define DSS_GET_FS_BLOCK_NUM_IN_AU(dss_ctrl) ((dss_get_vg_au_size(dss_ctrl)) / DSS_FILE_SPACE_BLOCK_SIZE)
+#define DSS_FILE_SPACE_BLOCK_BITMAP_COUNT (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(auid_t)
+#define DSS_ENTRY_FS_INDEX 0xFFFD
+#define DSS_FS_INDEX_INIT 0xFFFE
+#define DSS_FILE_CONTEXT_FLAG_USED 1
+#define DSS_FILE_CONTEXT_FLAG_FREE 0
+
+#pragma pack(8)
+
 // GFT mean DSS File Table
 typedef enum en_zft_item_type {
     GFT_PATH,  // path
@@ -65,7 +80,6 @@ typedef struct st_zft_list {
     ftid_t last;
 } gft_list_t;
 
-#define DSS_BLOCK_ID_INIT (uint64)0xFFFFFFFFFFFFFFFE
 // used for ft node parent and fs block ftid init,
 typedef union st_gft_node {
     struct {
@@ -115,13 +129,6 @@ typedef struct st_dss_check_dir_output_t {
     bool8 is_lock_x;
 } dss_check_dir_output_t;
 
-#define DSS_GET_COMMON_BLOCK_HEAD(au) ((dss_common_block_t *)((char *)(au)))
-#define DSS_GET_FS_BLOCK_FROM_AU(au, block_id) \
-    ((dss_fs_block_t *)((char *)(au) + DSS_FILE_SPACE_BLOCK_SIZE * (block_id)))
-#define DSS_GET_FT_BLOCK_FROM_AU(au, block_id) ((dss_ft_block_t *)((char *)(au) + DSS_BLOCK_SIZE * (block_id)))
-#define DSS_GET_FT_BLOCK_NUM_IN_AU(dss_ctrl) ((dss_get_vg_au_size(dss_ctrl)) / DSS_BLOCK_SIZE)
-#define DSS_GET_FS_BLOCK_NUM_IN_AU(dss_ctrl) ((dss_get_vg_au_size(dss_ctrl)) / DSS_FILE_SPACE_BLOCK_SIZE)
-#define DSS_FILE_SPACE_BLOCK_BITMAP_COUNT (DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(auid_t)
 typedef enum en_dss_block_flag {
     DSS_BLOCK_FLAG_RESERVE,
     DSS_BLOCK_FLAG_FREE,
@@ -158,8 +165,6 @@ typedef struct st_dss_fs_root_t {
     dss_fs_block_list_t free;
 } dss_fs_block_root_t;
 
-#define DSS_ENTRY_FS_INDEX 0xFFFD
-#define DSS_FS_INDEX_INIT 0xFFFE
 typedef struct st_dss_block_header {
     dss_common_block_t common;
     dss_block_id_t next;
@@ -200,8 +205,7 @@ typedef union st_dss_root_ft_block {
     char root_ft_block[256];  // to ensure that the structure size is 256
 } dss_root_ft_block_t;
 
-#define DSS_FILE_CONTEXT_FLAG_USED 1
-#define DSS_FILE_CONTEXT_FLAG_FREE 0
+#pragma pack()
 
 typedef enum en_dss_file_mode {
     DSS_FILE_MODE_READ = 0x00000001,
