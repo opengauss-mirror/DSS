@@ -135,43 +135,18 @@ status_t dss_apply_fallocate_file(dss_conn_t *conn, int32 handle, int32 mode, in
 
 status_t dss_apply_refresh_file(dss_conn_t *conn, dss_file_context_t *context, int64 offset)
 {
-    int32 errcode = -1;
-    char *errmsg = NULL;
-    uint64 fid = context->fid;
     ftid_t ftid = context->node->id;
-
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-    dss_packet_t *send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_REFRESH_FILE;
-    send_pack->head->flags = 0;
-
     LOG_DEBUG_INF(
         "Apply refresh file:%s, curr size:%llu, refresh ft id:%llu, refresh entry id:%llu, refresh offset:%llu.",
         context->node->name, context->node->size, DSS_ID_TO_U64(ftid), DSS_ID_TO_U64(context->node->entry), offset);
-    // 1. fid
-    CM_RETURN_IFERR(dss_put_int64(send_pack, fid));
-    // 2. ftid
-    CM_RETURN_IFERR(dss_put_int64(send_pack, *(uint64 *)&ftid));
-    // 3. vg name
-    CM_RETURN_IFERR(dss_put_str(send_pack, context->vg_name));
-    // 4. vgid
-    CM_RETURN_IFERR(dss_put_int32(send_pack, context->vgid));
-    // 5. offset
-    CM_RETURN_IFERR(dss_put_int64(send_pack, (uint64)offset));
 
-    // send it and wait for ack
-    dss_packet_t *ack_pack = &conn->pack;
-    status_t status = dss_call_ex_with_stat(conn, send_pack, ack_pack);
-    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to send message when refresh file."));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-    return CM_SUCCESS;
+    dss_refresh_file_info_t send_info;
+    send_info.fid = context->fid;
+    send_info.ftid = *(uint64 *)(&ftid);
+    send_info.vg_name = context->vg_name;
+    send_info.vg_id = context->vgid;
+    send_info.offset = offset;
+    return dss_msg_interact_with_stat(conn, DSS_CMD_REFRESH_FILE, (void *)&send_info, NULL);
 }
 
 static status_t dss_check_apply_refresh_file(dss_conn_t *conn, dss_file_context_t *context, int64 offset)
@@ -402,38 +377,11 @@ static status_t dss_check_refresh_volume(dss_conn_t *conn, dss_file_context_t *c
 
 status_t dss_apply_refresh_volume(dss_conn_t *conn, dss_file_context_t *context, auid_t auid)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_REFRESH_VOLUME;
-    send_pack->head->flags = 0;
-
-    // 1. volume id
-    uint32 volumeid = ((uint32)(auid.volume));
-    CM_RETURN_IFERR(dss_put_int32(send_pack, volumeid));
-    // 2. vg name
-    CM_RETURN_IFERR(dss_put_str(send_pack, context->vg_name));
-    // 3. vgid
-    CM_RETURN_IFERR(dss_put_int32(send_pack, context->vgid));
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    CM_RETURN_IFERR(dss_call_ex_with_stat(conn, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-
-    return CM_SUCCESS;
+    dss_refresh_volume_info_t send_info;
+    send_info.volume_id = ((uint32)(auid.volume));
+    send_info.vg_name = context->vg_name;
+    send_info.vg_id = context->vgid;
+    return dss_msg_interact_with_stat(conn, DSS_CMD_REFRESH_VOLUME, (void *)&send_info, NULL);
 }
 
 status_t dss_refresh_volume_handle(dss_conn_t *conn, dss_file_context_t *context, auid_t auid)
@@ -491,43 +439,18 @@ status_t dss_lock_vg_s(dss_vg_info_item_t *vg_item, dss_session_t *session)
 
 status_t dss_apply_refresh_file_table(dss_conn_t *conn, dss_dir_t *dir)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-    dss_block_id_t blockid;
-
-    blockid = dir->cur_ftid;
+    dss_block_id_t blockid = dir->cur_ftid;
     blockid.item = 0;
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
 
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_REFRESH_FILE_TABLE;
-    send_pack->head->flags = 0;
-
-    // 1. blockid
-    DSS_RETURN_IF_ERROR(dss_put_int64(send_pack, *(uint64 *)&blockid));
-    // 2. vg name
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, dir->vg_item->vg_name));
-    // 3. vgid
-    DSS_RETURN_IF_ERROR(dss_put_int32(send_pack, dir->vg_item->id));
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
+    dss_refresh_file_table_info_t send_info;
+    send_info.block_id = *(uint64 *)&blockid;
+    send_info.vg_name = dir->vg_item->vg_name;
+    send_info.vg_id = dir->vg_item->id;
+    status_t status = dss_msg_interact(conn, DSS_CMD_REFRESH_FILE_TABLE, (void *)&send_info, NULL);
 
     LOG_DEBUG_INF("Apply to refresh file table blockid:%s, vgid:%u, vg name:%s.", dss_display_metaid(blockid),
         dir->vg_item->id, dir->vg_item->vg_name);
-
-    return CM_SUCCESS;
+    return status;
 }
 
 static inline void dss_init_conn(dss_conn_t *conn)
@@ -882,11 +805,6 @@ gft_node_t *dss_read_dir_impl(dss_conn_t *conn, dss_dir_t *dir, bool32 skip_dele
 
 status_t dss_close_dir_impl(dss_conn_t *conn, dss_dir_t *dir)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    status_t status;
-    int32 errcode = -1;
-    char *errmsg = NULL;
     if (!dir || !dir->vg_item) {
         return CM_ERROR;
     }
@@ -895,108 +813,34 @@ status_t dss_close_dir_impl(dss_conn_t *conn, dss_dir_t *dir)
     dss_env_t *dss_env = dss_get_env();
     CM_RETURN_IF_FALSE(dss_env->initialized);
 
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_CLOSE_DIR;
-    send_pack->head->flags = 0;
-
-    // 1. pftid
-    uint64 pftid = *(uint64 *)&dir->pftid;
-    status = dss_put_int64(send_pack, pftid);
-    DSS_RETURN_IFERR2(status, DSS_FREE_POINT(dir));
-
-    // 2. vg name
-    status = dss_put_str(send_pack, dir->vg_item->vg_name);
-    DSS_RETURN_IFERR2(status, DSS_FREE_POINT(dir));
-
-    // 3. vgid
-    status = dss_put_int32(send_pack, dir->vg_item->id);
+    dss_close_dir_info_t send_info;
+    send_info.pftid = *(uint64 *)&dir->pftid;
+    send_info.vg_name = dir->vg_item->vg_name;
+    send_info.vg_id = dir->vg_item->id;
+    status_t status = dss_msg_interact(conn, DSS_CMD_CLOSE_DIR, (void *)&send_info, NULL);
     DSS_FREE_POINT(dir);
-    DSS_RETURN_IF_ERROR(status);
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    status = dss_call_ex(&conn->pipe, send_pack, ack_pack);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to send message when close path."));
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-    return CM_SUCCESS;
+    return status;
 }
 
 status_t dss_create_file_impl(dss_conn_t *conn, const char *file_path, int flag)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
     LOG_DEBUG_INF("dss create file entry, file path:%s, flag:%d", file_path, flag);
-
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_CREATE_FILE;
-    send_pack->head->flags = 0;
-
-    // 1. name
     DSS_RETURN_IF_ERROR(dss_check_device_path(file_path));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, file_path));
-    // 2. flag
-    DSS_RETURN_IF_ERROR(dss_put_int32(send_pack, (uint32)flag));
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-
+    dss_create_file_info_t send_info;
+    send_info.file_path = file_path;
+    send_info.flag = (uint32)flag;
+    status_t status = dss_msg_interact(conn, DSS_CMD_CREATE_FILE, (void *)&send_info, NULL);
     LOG_DEBUG_INF("dss create file leave");
-    return CM_SUCCESS;
+    return status;
 }
 
 status_t dss_remove_file_impl(dss_conn_t *conn, const char *file_path)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
     LOG_DEBUG_INF("dss remove file entry, file path:%s", file_path);
-
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_DELETE_FILE;
-    send_pack->head->flags = 0;
-
-    // 1. file_name
     DSS_RETURN_IF_ERROR(dss_check_device_path(file_path));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, file_path));
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-
+    status_t status = dss_msg_interact(conn, DSS_CMD_DELETE_FILE, (void *)file_path, NULL);
     LOG_DEBUG_INF("dss remove file leave");
-    return CM_SUCCESS;
+    return status;
 }
 
 status_t dss_find_vg_by_file_path(const char *path, dss_vg_info_item_t **vg_item)
@@ -1023,35 +867,10 @@ status_t dss_find_vg_by_file_path(const char *path, dss_vg_info_item_t **vg_item
 
 static status_t dss_get_ftid_by_path_on_server(dss_conn_t *conn, const char *path, ftid_t *ftid, char *vg_name)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
     LOG_DEBUG_INF("begin to get ftid by path: %s", path);
-    dss_init_set(&conn->pack, conn->proto_version);
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_GET_FTID_BY_PATH;
-    send_pack->head->flags = 0;
-
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, path));
-
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-
     text_t extra_info = CM_NULL_TEXT;
-    dss_init_get(ack_pack);
-    if (dss_get_text(ack_pack, &extra_info) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_FTID_BY_PATH), "get result connect error");
-        LOG_DEBUG_ERR("get result connect error.");
-        return CM_ERROR;
-    }
+    DSS_RETURN_IF_ERROR(dss_msg_interact(conn, DSS_CMD_GET_FTID_BY_PATH, (void *)path, (void *)&extra_info));
+
     if (extra_info.len != sizeof(dss_find_node_t)) {
         DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_FTID_BY_PATH), "get result length error");
         LOG_DEBUG_ERR("get result length error.");
@@ -1255,46 +1074,12 @@ status_t dss_close_file_impl(dss_conn_t *conn, int handle)
 
 status_t dss_exist_impl(dss_conn_t *conn, const char *path, bool32 *result, gft_item_type_t *type)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
     LOG_DEBUG_INF("dss exits file entry, name:%s", path);
-
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_EXIST;
-    send_pack->head->flags = 0;
-
     DSS_RETURN_IF_ERROR(dss_check_device_path(path));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, path));
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-
-    dss_init_get(ack_pack);
-    if (dss_get_int32(ack_pack, (int32 *)result) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get result data error");
-        LOG_DEBUG_ERR("get result data error.");
-        return CM_ERROR;
-    }
-    if (dss_get_int32(ack_pack, (int32 *)type) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get type data error");
-        LOG_DEBUG_ERR("get type data error.");
-        return CM_ERROR;
-    }
-
+    dss_exist_recv_info_t recv_info;
+    DSS_RETURN_IF_ERROR(dss_msg_interact(conn, DSS_CMD_EXIST, (void *)path, (void *)&recv_info));
+    *result = (bool32)recv_info.result;
+    *type = (gft_item_type_t)recv_info.type;
     LOG_DEBUG_INF("dss exits file or dir leave, name:%s, result:%d, type:%u", path, *result, *type);
     return CM_SUCCESS;
 }
@@ -1479,45 +1264,18 @@ static status_t dss_check_ready_fs_block(files_rw_ctx_t *rw_ctx, dss_fs_pos_desc
 static status_t dss_update_written_size(
     dss_env_t *dss_env, dss_conn_t *conn, dss_file_context_t *context, int64 offset, int64 size)
 {
-    int32 errcode = -1;
-    char *errmsg = NULL;
     uint64 fid = context->fid;
     ftid_t ftid = context->node->id;
-
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-
-    dss_packet_t *send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_UPDATE_WRITTEN_SIZE;
-    send_pack->head->flags = 0;
-
-    // 1. fid
-    CM_RETURN_IFERR(dss_put_int64(send_pack, *(uint64 *)&context->node->fid));
-    // 2. ftid
-    CM_RETURN_IFERR(dss_put_int64(send_pack, *(uint64 *)&ftid));
-    // 3. vg id
-    CM_RETURN_IFERR(dss_put_int32(send_pack, context->vgid));
-    // 4. offset
-    CM_RETURN_IFERR(dss_put_int64(send_pack, (uint64)offset));
-    // 5. size
-    CM_RETURN_IFERR(dss_put_int64(send_pack, (uint64)size));
-
-    // send it and wait for ack
-    dss_packet_t *ack_pack = &conn->pack;
-    if (dss_call_ex_with_stat(conn, send_pack, ack_pack) != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to send message when update file size.");
-        return CM_ERROR;
-    }
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
+    dss_update_written_size_info_t send_info;
+    send_info.fid = *(uint64 *)&context->node->fid;
+    send_info.ftid = *(uint64 *)&ftid;
+    send_info.vg_id = context->vgid;
+    send_info.offset = (uint64)offset;
+    send_info.size = (uint64)size;
+    status_t status = dss_msg_interact_with_stat(conn, DSS_CMD_UPDATE_WRITTEN_SIZE, (void *)&send_info, NULL);
     LOG_DEBUG_INF("Success to update written_size for file:\"%s\", fid:%llu, updated offset:%lld, size:%lld.",
         context->node->name, fid, offset, size);
-    return CM_SUCCESS;
+    return status;
 }
 
 static void dss_api_check_need_updt_fs_aux(dss_file_context_t *context, files_rw_ctx_t *rw_ctx,
@@ -2002,46 +1760,18 @@ status_t dss_copy_file_impl(dss_conn_t *conn, const char *src, const char *dest)
 
 status_t dss_rename_file_impl(dss_conn_t *conn, const char *src, const char *dst)
 {
-    dss_packet_t *send_pack = NULL;
-    dss_packet_t *ack_pack = NULL;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_RENAME_FILE;
-    send_pack->head->flags = 0;
-
-    // 1. src
     DSS_RETURN_IFERR2(dss_check_device_path(src), LOG_DEBUG_ERR("old name path is invaild."));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, src));
-    // 2. dst
     DSS_RETURN_IFERR2(dss_check_device_path(dst), LOG_DEBUG_ERR("new name path is invalid."));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, dst));
-
     LOG_DEBUG_INF("Rename file, old name path: %s, new name path: %s", src, dst);
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-
+    dss_rename_file_info_t send_info;
+    send_info.src = src;
+    send_info.dst = dst;
+    DSS_RETURN_IF_ERROR(dss_msg_interact(conn, DSS_CMD_RENAME_FILE, (void *)&send_info, NULL));
     return CM_SUCCESS;
 }
 
 status_t dss_truncate_impl(dss_conn_t *conn, int handle, long long int length)
 {
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
     if (length < 0) {
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "length must be a positive integer");
         LOG_DEBUG_ERR("File length is invalid:%lld.", length);
@@ -2060,32 +1790,15 @@ status_t dss_truncate_impl(dss_conn_t *conn, int handle, long long int length)
     LOG_DEBUG_INF("Truncating file via handle(%d), file name: %s, node size: %lld, length: %lld.", handle,
         context->node->name, context->node->size, length);
 
-    uint64 fid = context->fid;
-    ftid_t ftid = context->node->id;
-
-    dss_init_set(&conn->pack, conn->proto_version);
-    dss_packet_t *send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_TRUNCATE_FILE;
-    send_pack->head->flags = 0;
-
-    DSS_RETURN_IFERR2(dss_put_int64(send_pack, fid), dss_unlatch(&context->latch));
-    DSS_RETURN_IFERR2(dss_put_int64(send_pack, *(uint64 *)&ftid), dss_unlatch(&context->latch));
-    DSS_RETURN_IFERR2(dss_put_int64(send_pack, (uint64)length), dss_unlatch(&context->latch));
-    DSS_RETURN_IFERR2(dss_put_str(send_pack, context->vg_name), dss_unlatch(&context->latch));
-    DSS_RETURN_IFERR2(dss_put_int32(send_pack, context->vgid), dss_unlatch(&context->latch));
-
-    dss_packet_t *ack_pack = &conn->pack;
-    DSS_RETURN_IFERR2(dss_call_ex(&conn->pipe, send_pack, ack_pack), dss_unlatch(&context->latch));
-
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_unlatch(&context->latch);
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-
+    dss_truncate_file_info_t send_info;
+    send_info.fid = context->fid;
+    send_info.ftid = *(uint64 *)&(context->node->id);
+    send_info.length = (uint64)length;
+    send_info.vg_name = context->vg_name;
+    send_info.vg_id = context->vgid;
+    status_t status = dss_msg_interact(conn, DSS_CMD_TRUNCATE_FILE, (void *)&send_info, NULL);
     dss_unlatch(&context->latch);
-    return CM_SUCCESS;
+    return status;
 }
 
 void dss_destroy_vol_handle_sync(dss_conn_t *conn)
@@ -2292,111 +2005,31 @@ void dss_destroy(void)
 
 status_t dss_symlink_impl(dss_conn_t *conn, const char *oldpath, const char *newpath)
 {
-    dss_packet_t *send_pack = NULL;
-    dss_packet_t *ack_pack = NULL;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_SYMLINK;
-    send_pack->head->flags = 0;
-
     DSS_RETURN_IF_ERROR(dss_check_device_path(oldpath));
     DSS_RETURN_IF_ERROR(dss_check_device_path(newpath));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, oldpath));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, newpath));
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-
-    return CM_SUCCESS;
+    dss_symlink_info_t send_info;
+    send_info.old_path = oldpath;
+    send_info.new_path = newpath;
+    return dss_msg_interact(conn, DSS_CMD_SYMLINK, (void *)&send_info, NULL);
 }
 
 status_t dss_unlink_impl(dss_conn_t *conn, const char *link)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
     LOG_DEBUG_INF("dss unlink entry, link:%s", link);
-
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_UNLINK;
-    send_pack->head->flags = 0;
-
     DSS_RETURN_IF_ERROR(dss_check_device_path(link));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, link));
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-
+    status_t status = dss_msg_interact(conn, DSS_CMD_UNLINK, (void *)link, NULL);
     LOG_DEBUG_INF("dss unlink leave");
-    return CM_SUCCESS;
+    return status;
 }
 
 status_t dss_islink_impl(dss_conn_t *conn, const char *path, bool32 *result)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_EXIST;
-    send_pack->head->flags = 0;
-
     DSS_RETURN_IF_ERROR(dss_check_device_path(path));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, path));
+    dss_exist_recv_info_t recv_info;
+    DSS_RETURN_IF_ERROR(dss_msg_interact(conn, DSS_CMD_EXIST, (void *)path, (void *)&recv_info));
+    *result = (bool32)recv_info.result;
+    gft_item_type_t type = (gft_item_type_t)recv_info.type;
 
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-
-    dss_init_get(ack_pack);
-    gft_item_type_t type;
-    if (dss_get_int32(ack_pack, (int32 *)result) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get result data error");
-        LOG_DEBUG_ERR("get result data error.");
-        return CM_ERROR;
-    }
-    if (dss_get_int32(ack_pack, (int32 *)&type) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get type data error");
-        LOG_DEBUG_ERR("get type data error.");
-        return CM_ERROR;
-    }
     if (*result && (type == GFT_LINK || type == GFT_LINK_TO_FILE || type == GFT_LINK_TO_PATH)) {
         *result = CM_TRUE;
     } else {
@@ -2407,39 +2040,10 @@ status_t dss_islink_impl(dss_conn_t *conn, const char *path, bool32 *result)
 
 status_t dss_readlink_impl(dss_conn_t *conn, const char *dir_path, char *out_str, size_t str_len)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_READLINK;
-    send_pack->head->flags = 0;
-
     DSS_RETURN_IF_ERROR(dss_check_device_path(dir_path));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, dir_path));
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-
     text_t extra_info = CM_NULL_TEXT;
-    dss_init_get(ack_pack);
-    if (dss_get_text(ack_pack, &extra_info) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_READLINK), "readlink get connect error");
-        LOG_DEBUG_ERR("readlink get result connect error");
-        return CM_ERROR;
-    }
+    DSS_RETURN_IF_ERROR(dss_msg_interact(conn, DSS_CMD_READLINK, (void *)dir_path, (void *)&extra_info));
+
     if (extra_info.len == 0 || extra_info.len >= DSS_FILE_PATH_MAX_LENGTH) {
         DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_READLINK), "readlink get length error");
         LOG_DEBUG_ERR("readlink get result length error");
@@ -2730,78 +2334,21 @@ status_t dss_compare_size_equal_impl(const char *vg_name, long long *au_size)
 
 status_t dss_setcfg_impl(dss_conn_t *conn, const char *name, const char *value, const char *scope)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_SETCFG;
-    send_pack->head->flags = 0;
-
-    // name value scope
     DSS_RETURN_IF_ERROR(dss_check_name(name));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, name));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, value));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, scope));
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
+    dss_setcfg_info_t send_info;
+    send_info.name = name;
+    send_info.value = value;
+    send_info.scope = scope;
+    status_t status = dss_msg_interact(conn, DSS_CMD_SETCFG, (void *)&send_info, NULL);
     LOG_DEBUG_INF("dss set cfg leave");
-    return CM_SUCCESS;
+    return status;
 }
 
 status_t dss_getcfg_impl(dss_conn_t *conn, const char *name, char *out_str, size_t str_len)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_GETCFG;
-    send_pack->head->flags = 0;
-
-    // name
     DSS_RETURN_IF_ERROR(dss_check_name(name));
-    DSS_RETURN_IF_ERROR(dss_put_str(send_pack, name));
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
-    }
-
     text_t extra_info = CM_NULL_TEXT;
-    uint32_t len = DSS_MAX_PACKET_SIZE - sizeof(dss_packet_head_t) - sizeof(int32);
-    dss_init_get(ack_pack);
-
-    status_t ret = dss_get_text(ack_pack, &extra_info);
-    DSS_RETURN_IFERR2(
-        ret, DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GETCFG), "get cfg connect error"));
-    if (extra_info.len >= len) {
-        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GETCFG), "get cfg length error");
-        return CM_ERROR;
-    }
+    DSS_RETURN_IF_ERROR(dss_msg_interact(conn, DSS_CMD_GETCFG, (void *)name, (void *)&extra_info));
     if (extra_info.len == 0) {
         LOG_DEBUG_INF("Client get cfg is NULL.");
         return CM_SUCCESS;
@@ -2828,33 +2375,57 @@ void dss_get_api_volume_error(void)
     return;
 }
 
-status_t dss_stop_server_impl(dss_conn_t *conn)
+
+status_t dss_get_inst_status_on_server(dss_conn_t *conn, dss_server_status_t *dss_status)
 {
-    dss_packet_t *send_pack;
-    dss_packet_t *ack_pack;
-    int32 errcode = -1;
-    char *errmsg = NULL;
-
-    // make up packet
-    dss_init_set(&conn->pack, conn->proto_version);
-
-    send_pack = &conn->pack;
-    send_pack->head->cmd = DSS_CMD_STOP_SERVER;
-    send_pack->head->flags = 0;
-
-    // send it and wait for ack
-    ack_pack = &conn->pack;
-    DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
-
-    // check return state
-    if (ack_pack->head->result != CM_SUCCESS) {
-        dss_cli_get_err(ack_pack, &errcode, &errmsg);
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        LOG_DEBUG_ERR("dss stop server failed");
+    if (dss_status == NULL) {
+        DSS_THROW_ERROR_EX(ERR_DSS_INVALID_PARAM, "dss_dir_item_t");
         return CM_ERROR;
     }
-    LOG_DEBUG_INF("dss stop server leave");
+    text_t extra_info = CM_NULL_TEXT;
+    DSS_RETURN_IF_ERROR(dss_msg_interact(conn, DSS_CMD_GET_INST_STATUS, NULL, (void *)&extra_info));
+    *dss_status = *(dss_server_status_t *)extra_info.str;
     return CM_SUCCESS;
+}
+
+status_t dss_get_time_stat_on_server(dss_conn_t *conn, dss_stat_item_t *time_stat, uint64 size)
+{
+    text_t stat_info = CM_NULL_TEXT;
+    DSS_RETURN_IF_ERROR(dss_msg_interact(conn, DSS_CMD_GET_TIME_STAT, NULL, (void *)&stat_info));
+    for (uint64 i = 0; i < DSS_EVT_COUNT; i++) {
+        time_stat[i] = *(dss_stat_item_t *)(stat_info.str + i * (uint64)sizeof(dss_stat_item_t));
+    }
+    return CM_SUCCESS;
+}
+
+status_t dss_set_main_inst_on_server(dss_conn_t *conn)
+{
+    return dss_msg_interact(conn, DSS_CMD_SET_MAIN_INST, NULL, NULL);
+}
+
+status_t dss_disable_grab_lock_on_server(dss_conn_t *conn)
+{
+    return dss_msg_interact(conn, DSS_CMD_DISABLE_GRAB_LOCK, NULL, NULL);
+}
+
+status_t dss_enable_grab_lock_on_server(dss_conn_t *conn)
+{
+    return dss_msg_interact(conn, DSS_CMD_ENABLE_GRAB_LOCK, NULL, NULL);
+}
+
+status_t dss_close_file_on_server(dss_conn_t *conn, dss_vg_info_item_t *vg_item, uint64 fid, ftid_t ftid)
+{
+    dss_close_file_info_t send_info;
+    send_info.fid = fid;
+    send_info.vg_name = vg_item->vg_name;
+    send_info.vg_id = vg_item->id;
+    send_info.ftid = *(uint64 *)&ftid;
+    return dss_msg_interact(conn, DSS_CMD_CLOSE_FILE, (void *)&send_info, NULL);
+}
+
+status_t dss_stop_server_impl(dss_conn_t *conn)
+{
+    return dss_msg_interact(conn, DSS_CMD_STOP_SERVER, NULL, NULL);
 }
 
 status_t dss_set_stat_info(dss_stat_info_t item, gft_node_t *node)
@@ -3042,6 +2613,38 @@ static status_t dss_encode_load_ctrl(dss_conn_t *conn, dss_packet_t *pack, void 
     CM_RETURN_IFERR(dss_put_int32(pack, info->index));
     return CM_SUCCESS;
 }
+static status_t dss_encode_update_written_size(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_update_written_size_info_t *info = (dss_update_written_size_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_int64(pack, info->fid));
+    CM_RETURN_IFERR(dss_put_int64(pack, info->ftid));
+    CM_RETURN_IFERR(dss_put_int32(pack, info->vg_id));
+    CM_RETURN_IFERR(dss_put_int64(pack, info->offset));
+    CM_RETURN_IFERR(dss_put_int64(pack, info->size));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_setcfg(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_setcfg_info_t *info = (dss_setcfg_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_str(pack, info->name));
+    CM_RETURN_IFERR(dss_put_str(pack, info->value));
+    CM_RETURN_IFERR(dss_put_str(pack, info->scope));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_symlink(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_symlink_info_t *info = (dss_symlink_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_str(pack, info->old_path));
+    CM_RETURN_IFERR(dss_put_str(pack, info->new_path));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_unlink(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    return dss_put_str(pack, (const char *)send_info);
+}
 
 static status_t dss_encode_handshake(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
 {
@@ -3063,11 +2666,146 @@ static status_t dss_decode_handshake(dss_packet_t *ack_pack, void *ack)
     return CM_SUCCESS;
 }
 
+static status_t dss_encode_exist(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    return dss_put_str(pack, (const char *)send_info);
+}
+
+static status_t dss_decode_exist(dss_packet_t *ack_pack, void *ack)
+{
+    dss_exist_recv_info_t *info = (dss_exist_recv_info_t *)ack;
+    if (dss_get_int32(ack_pack, &(info->result)) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get result data error");
+        LOG_DEBUG_ERR("get result data error.");
+        return CM_ERROR;
+    }
+    if (dss_get_int32(ack_pack, &(info->type)) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_EXIST), "get type data error");
+        LOG_DEBUG_ERR("get type data error.");
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_readlink(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    return dss_put_str(pack, (const char *)send_info);
+}
+
+static status_t dss_decode_readlink(dss_packet_t *ack_pack, void *ack)
+{
+    if (dss_get_text(ack_pack, (text_t *)ack) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_READLINK), "readlink get connect error");
+        LOG_DEBUG_ERR("readlink get result connect error");
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_get_ft_id_by_path(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    return dss_put_str(pack, (const char *)send_info);
+}
+
+static status_t dss_decode_get_ft_id_by_path(dss_packet_t *ack_pack, void *ack)
+{
+    if (dss_get_text(ack_pack, (text_t *)ack) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_FTID_BY_PATH), "get result connect error");
+        LOG_DEBUG_ERR("get result connect error");
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_getcfg(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    return dss_put_str(pack, (const char *)send_info);
+}
+
+static status_t dss_decode_getcfg(dss_packet_t *ack_pack, void *ack)
+{
+    text_t *info = (text_t *)ack;
+    if (dss_get_text(ack_pack, info) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GETCFG), "get cfg connect error");
+        return CM_ERROR;
+    }
+    if (info->len >= DSS_MAX_PACKET_SIZE - sizeof(dss_packet_head_t) - sizeof(int32)) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GETCFG), "get cfg length error");
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_decode_get_inst_status(dss_packet_t *ack_pack, void *ack)
+{
+    text_t *info = (text_t *)ack;
+    if (dss_get_text(ack_pack, info) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_INST_STATUS), "get inst status error");
+        return CM_ERROR;
+    }
+    if (info->len != sizeof(dss_server_status_t)) {
+        DSS_THROW_ERROR(
+            ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_INST_STATUS), "get inst status length error");
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_decode_get_time_stat(dss_packet_t *ack_pack, void *ack)
+{
+    text_t *time_stat = (text_t *)ack;
+    if (dss_get_text(ack_pack, time_stat) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_TIME_STAT), "get time stat error");
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_refresh_file(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_refresh_file_info_t *info = (dss_refresh_file_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_int64(pack, info->fid));
+    CM_RETURN_IFERR(dss_put_int64(pack, info->ftid));
+    CM_RETURN_IFERR(dss_put_str(pack, info->vg_name));
+    CM_RETURN_IFERR(dss_put_int32(pack, info->vg_id));
+    CM_RETURN_IFERR(dss_put_int64(pack, (uint64)info->offset));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_truncate_file(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_truncate_file_info_t *info = (dss_truncate_file_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_int64(pack, info->fid));
+    CM_RETURN_IFERR(dss_put_int64(pack, info->ftid));
+    CM_RETURN_IFERR(dss_put_int64(pack, info->length));
+    CM_RETURN_IFERR(dss_put_str(pack, info->vg_name));
+    CM_RETURN_IFERR(dss_put_int32(pack, info->vg_id));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_refresh_file_table(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_refresh_file_table_info_t *info = (dss_refresh_file_table_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_int64(pack, info->block_id));
+    CM_RETURN_IFERR(dss_put_str(pack, info->vg_name));
+    CM_RETURN_IFERR(dss_put_int32(pack, info->vg_id));
+    return CM_SUCCESS;
+}
+
 static status_t dss_encode_add_or_remove_volume(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
 {
     dss_add_or_remove_info_t *info = (dss_add_or_remove_info_t *)send_info;
     CM_RETURN_IFERR(dss_put_str(pack, info->vg_name));
     CM_RETURN_IFERR(dss_put_str(pack, info->volume_name));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_refresh_volume(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_refresh_volume_info_t *info = (dss_refresh_volume_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_int32(pack, info->volume_id));
+    CM_RETURN_IFERR(dss_put_str(pack, info->vg_name));
+    CM_RETURN_IFERR(dss_put_int32(pack, info->vg_id));
     return CM_SUCCESS;
 }
 
@@ -3086,6 +2824,14 @@ static status_t dss_encode_extend_file(dss_conn_t *conn, dss_packet_t *pack, voi
     CM_RETURN_IFERR(dss_put_str(pack, info->vg_name));
     // 6. vgid
     CM_RETURN_IFERR(dss_put_int32(pack, info->vg_id));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_rename_file(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_rename_file_info_t *info = (dss_rename_file_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_str(pack, info->src));
+    CM_RETURN_IFERR(dss_put_str(pack, info->dst));
     return CM_SUCCESS;
 }
 
@@ -3125,6 +2871,15 @@ static status_t dss_decode_open_dir(dss_packet_t *ack_pack, void *ack)
     return CM_SUCCESS;
 }
 
+static status_t dss_encode_close_dir(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_close_dir_info_t *info = (dss_close_dir_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_int64(pack, info->pftid));
+    CM_RETURN_IFERR(dss_put_str(pack, info->vg_name));
+    CM_RETURN_IFERR(dss_put_int32(pack, info->vg_id));
+    return CM_SUCCESS;
+}
+
 static status_t dss_encode_open_file(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
 {
     dss_open_file_info_t *info = (dss_open_file_info_t *)send_info;
@@ -3133,6 +2888,29 @@ static status_t dss_encode_open_file(dss_conn_t *conn, dss_packet_t *pack, void 
     /* 2. flag */
     CM_RETURN_IFERR(dss_put_int32(pack, (uint32)info->flag));
     return CM_SUCCESS;
+}
+
+static status_t dss_encode_close_file(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_close_file_info_t *info = (dss_close_file_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_int64(pack, info->fid));
+    CM_RETURN_IFERR(dss_put_str(pack, info->vg_name));
+    CM_RETURN_IFERR(dss_put_int32(pack, info->vg_id));
+    CM_RETURN_IFERR(dss_put_int64(pack, info->ftid));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_create_file(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_create_file_info_t *info = (dss_create_file_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_str(pack, info->file_path));
+    CM_RETURN_IFERR(dss_put_int32(pack, info->flag));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_delete_file(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    return dss_put_str(pack, (const char *)send_info);
 }
 
 static status_t dss_decode_open_file(dss_packet_t *ack_pack, void *ack)
@@ -3167,19 +2945,40 @@ typedef struct st_dss_packet_proc {
     char *cmd_info;
 } dss_packet_proc_t;
 
-dss_packet_proc_t g_dss_packet_proc[DSS_CMD_END] = {
-    [DSS_CMD_MKDIR] = {dss_encode_make_dir, NULL, "make dir"},
+dss_packet_proc_t g_dss_packet_proc[DSS_CMD_END] = {[DSS_CMD_MKDIR] = {dss_encode_make_dir, NULL, "make dir"},
     [DSS_CMD_RMDIR] = {dss_encode_remove_dir, NULL, "remove dir"},
     [DSS_CMD_OPEN_DIR] = {dss_encode_open_dir, dss_decode_open_dir, "open dir"},
+    [DSS_CMD_CLOSE_DIR] = {dss_encode_close_dir, NULL, "close dir"},
     [DSS_CMD_OPEN_FILE] = {dss_encode_open_file, dss_decode_open_file, "open file"},
+    [DSS_CMD_CLOSE_FILE] = {dss_encode_close_file, NULL, "close file"},
+    [DSS_CMD_CREATE_FILE] = {dss_encode_create_file, NULL, "create file"},
+    [DSS_CMD_DELETE_FILE] = {dss_encode_delete_file, NULL, "delete file"},
     [DSS_CMD_EXTEND_FILE] = {dss_encode_extend_file, NULL, "extend file"},
+    [DSS_CMD_RENAME_FILE] = {dss_encode_rename_file, NULL, "rename file"},
+    [DSS_CMD_REFRESH_FILE] = {dss_encode_refresh_file, NULL, "refresh file"},
+    [DSS_CMD_TRUNCATE_FILE] = {dss_encode_truncate_file, NULL, "truncate file"},
+    [DSS_CMD_REFRESH_FILE_TABLE] = {dss_encode_refresh_file_table, NULL, "refresh file table"},
     [DSS_CMD_ADD_VOLUME] = {dss_encode_add_or_remove_volume, NULL, "add volume"},
+    [DSS_CMD_REFRESH_VOLUME] = {dss_encode_refresh_volume, NULL, "refresh volume"},
     [DSS_CMD_REMOVE_VOLUME] = {dss_encode_add_or_remove_volume, NULL, "remove volume"},
     [DSS_CMD_KICKH] = {dss_encode_kickh, NULL, "kickh"},
     [DSS_CMD_LOAD_CTRL] = {dss_encode_load_ctrl, NULL, "load ctrl"},
+    [DSS_CMD_UPDATE_WRITTEN_SIZE] = {dss_encode_update_written_size, NULL, "update written size"},
+    [DSS_CMD_STOP_SERVER] = {NULL, NULL, "stop server"},
+    [DSS_CMD_SETCFG] = {dss_encode_setcfg, NULL, "setcfg"},
+    [DSS_CMD_SYMLINK] = {dss_encode_symlink, NULL, "symlink"},
+    [DSS_CMD_UNLINK] = {dss_encode_unlink, NULL, "unlink"},
+    [DSS_CMD_SET_MAIN_INST] = {NULL, NULL, "set main inst"},
+    [DSS_CMD_DISABLE_GRAB_LOCK] = {NULL, NULL, "disable grab lock"},
+    [DSS_CMD_ENABLE_GRAB_LOCK] = {NULL, NULL, "enable grab lock"},
     [DSS_CMD_HANDSHAKE] = {dss_encode_handshake, dss_decode_handshake, "handshake with server"},
     [DSS_CMD_FALLOCATE_FILE] = {dss_encode_fallocate_file, NULL, "fallocate file"},
-};
+    [DSS_CMD_EXIST] = {dss_encode_exist, dss_decode_exist, "exist"},
+    [DSS_CMD_READLINK] = {dss_encode_readlink, dss_decode_readlink, "read link"},
+    [DSS_CMD_GET_FTID_BY_PATH] = {dss_encode_get_ft_id_by_path, dss_decode_get_ft_id_by_path, "get ftid by path"},
+    [DSS_CMD_GETCFG] = {dss_encode_getcfg, dss_decode_getcfg, "getcfg"},
+    [DSS_CMD_GET_INST_STATUS] = {NULL, dss_decode_get_inst_status, "get inst status"},
+    [DSS_CMD_GET_TIME_STAT] = {NULL, dss_decode_get_time_stat, "get time stat"}};
 
 status_t dss_decode_packet(dss_packet_proc_t *make_proc, dss_packet_t *ack_pack, void *ack)
 {
@@ -3203,7 +3002,9 @@ status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ac
         send_pack->head->cmd = cmd;
         send_pack->head->flags = 0;
         make_proc = &g_dss_packet_proc[cmd];
-        DSS_RETURN_IF_ERROR(make_proc->encode_proc(conn, send_pack, send_info));
+        if (make_proc->encode_proc != NULL) {
+            DSS_RETURN_IF_ERROR(make_proc->encode_proc(conn, send_pack, send_info));
+        }
         ack_pack = &conn->pack;
         DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
 

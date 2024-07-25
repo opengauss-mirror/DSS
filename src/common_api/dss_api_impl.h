@@ -56,10 +56,28 @@ typedef struct st_dss_open_file_info {
     int flag;
 } dss_open_file_info_t;
 
+typedef struct st_dss_close_file_info {
+    uint64 fid;
+    const char *vg_name;
+    uint32 vg_id;
+    uint64 ftid;
+} dss_close_file_info_t;
+
+typedef struct st_dss_create_file_info {
+    const char *file_path;
+    uint32 flag;
+} dss_create_file_info_t;
+
 typedef struct st_dss_open_dir_info {
     const char *dir_path;
     bool32 refresh_recursive;
 } dss_open_dir_info_t;
+
+typedef struct st_dss_close_dir_info {
+    uint64 pftid;
+    const char *vg_name;
+    uint32 vg_id;
+} dss_close_dir_info_t;
 
 typedef struct st_dss_add_or_remove_info {
     const char *vg_name;
@@ -75,10 +93,62 @@ typedef struct st_dss_extend_info {
     uint32 vg_id;
 } dss_extend_info_t;
 
+typedef struct st_dss_rename_file_info {
+    const char *src;
+    const char *dst;
+} dss_rename_file_info_t;
+
 typedef struct st_dss_make_dir_info {
     const char *parent;
     const char *name;
 } dss_make_dir_info_t;
+
+typedef struct st_dss_refresh_file_info {
+    uint64 fid;
+    uint64 ftid;
+    const char *vg_name;
+    uint32 vg_id;
+    int64 offset;
+} dss_refresh_file_info_t;
+
+typedef struct st_dss_refresh_volume_info {
+    uint32 volume_id;
+    const char *vg_name;
+    uint32 vg_id;
+} dss_refresh_volume_info_t;
+
+typedef struct st_dss_truncate_file_info {
+    uint64 fid;
+    uint64 ftid;
+    uint64 length;
+    const char *vg_name;
+    uint32 vg_id;
+} dss_truncate_file_info_t;
+
+typedef struct st_dss_refresh_file_table_info {
+    uint64 block_id;
+    const char *vg_name;
+    uint32 vg_id;
+} dss_refresh_file_table_info_t;
+
+typedef struct st_dss_update_written_size_info {
+    uint64 fid;
+    uint64 ftid;
+    uint32 vg_id;
+    uint64 offset;
+    uint64 size;
+} dss_update_written_size_info_t;
+
+typedef struct st_dss_setcfg_info {
+    const char *name;
+    const char *value;
+    const char *scope;
+} dss_setcfg_info_t;
+
+typedef struct st_dss_symlink_info {
+    const char *old_path;
+    const char *new_path;
+} dss_symlink_info_t;
 
 typedef struct st_dss_remove_dir_info {
     const char *name;
@@ -98,6 +168,12 @@ typedef struct st_dss_fallocate_info {
     uint32 vg_id;
     int32 mode;
 } dss_fallocate_info_t;
+
+typedef struct st_dss_exist_recv_info {
+    int32 result;
+    int32 type;
+} dss_exist_recv_info_t;
+
 typedef struct st_dss_conn_opt {
     int32 timeout;
     char *user_name;
@@ -177,6 +253,13 @@ void dss_set_conn_wait_event(dss_conn_t *conn, dss_wait_event_e event);
 void dss_unset_conn_wait_event(dss_conn_t *conn);
 status_t dss_call_ex_with_stat(dss_conn_t *conn, dss_packet_t *req, dss_packet_t *ack);
 status_t dss_msg_interact_with_stat(dss_conn_t *conn, uint8 cmd, void *send_info, void *ack);
+
+status_t dss_close_file_on_server(dss_conn_t *conn, dss_vg_info_item_t *vg_item, uint64 fid, ftid_t ftid);
+status_t dss_get_inst_status_on_server(dss_conn_t *conn, dss_server_status_t *dss_status);
+status_t dss_get_time_stat_on_server(dss_conn_t *conn, dss_stat_item_t *time_stat, uint64 size);
+status_t dss_set_main_inst_on_server(dss_conn_t *conn);
+status_t dss_disable_grab_lock_on_server(dss_conn_t *conn);
+status_t dss_enable_grab_lock_on_server(dss_conn_t *conn);
 
 #define DSS_SET_PTR_VALUE_IF_NOT_NULL(ptr, value) \
     do {                                          \
