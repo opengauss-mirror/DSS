@@ -2301,6 +2301,34 @@ gft_node_t *dss_get_ft_node_by_ftid(
     return NULL;
 }
 
+gft_node_t *dss_get_ft_node_by_ftid_no_refresh(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id)
+{
+    dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
+    if (is_ft_root_block(id)) {
+        char *root = dss_ctrl->root;
+        dss_root_ft_block_t *ft_block = (dss_root_ft_block_t *)(root);
+        if (id.item < ft_block->ft_block.node_num) {
+            return (gft_node_t *)((root + sizeof(dss_root_ft_block_t)) + id.item * sizeof(gft_node_t));
+        }
+    } else {
+        dss_block_id_t block_id = id;
+        block_id.item = 0;
+        dss_ft_block_t *block = (dss_ft_block_t *)dss_find_block_in_shm_no_refresh(session, vg_item, block_id, NULL);
+        if (block == NULL) {
+            LOG_DEBUG_ERR("Failed to find block:%s in mem.", dss_display_metaid(block_id));
+            return NULL;
+        }
+
+        if (block->node_num <= id.item) {
+            LOG_DEBUG_ERR("The block is wrong, node_num:%u, item:%u.", block->node_num, (uint32)id.item);
+            return NULL;
+        }
+
+        return (gft_node_t *)(((char *)block + sizeof(dss_ft_block_t)) + id.item * sizeof(gft_node_t));
+    }
+    return NULL;
+}
+
 gft_node_t *dss_get_ft_node_by_ftid_from_disk_and_refresh_shm(
     dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id)
 {
@@ -2339,34 +2367,6 @@ gft_node_t *dss_get_ft_node_by_ftid_from_disk_and_refresh_shm(
             DSS_ID_TO_U64(block_id), dss_get_ft_block_fid(ft_block), dss_get_ft_block_file_ver(ft_block),
             DSS_ID_TO_U64(node->id), node->fid, node->file_ver);
         return node;
-    }
-    return NULL;
-}
-
-gft_node_t *dss_get_ft_node_by_ftid_no_refresh(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id)
-{
-    dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
-    if (is_ft_root_block(id)) {
-        char *root = dss_ctrl->root;
-        dss_root_ft_block_t *ft_block = (dss_root_ft_block_t *)(root);
-        if (id.item < ft_block->ft_block.node_num) {
-            return (gft_node_t *)((root + sizeof(dss_root_ft_block_t)) + id.item * sizeof(gft_node_t));
-        }
-    } else {
-        dss_block_id_t block_id = id;
-        block_id.item = 0;
-        dss_ft_block_t *block = (dss_ft_block_t *)dss_find_block_in_shm_no_refresh(session, vg_item, block_id, NULL);
-        if (block == NULL) {
-            LOG_DEBUG_ERR("Failed to find block: %s in mem.", dss_display_metaid(block_id));
-            return NULL;
-        }
-
-        if (block->node_num <= id.item) {
-            LOG_DEBUG_ERR("The block is wrong, node_num:%u, item:%u.", block->node_num, (uint32)id.item);
-            return NULL;
-        }
-
-        return (gft_node_t *)(((char *)block + sizeof(dss_ft_block_t)) + id.item * sizeof(gft_node_t));
     }
     return NULL;
 }
@@ -3985,7 +3985,7 @@ static status_t dss_refresh_file_core(
 
     dss_fs_pos_desc_t fs_pos = {0};
     status = dss_find_data_au_by_offset(session, vg_item, node, offset, &fs_pos);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to find fs data block by offset:%lld", offset));
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to find fs data block by offset:%lld.", offset));
 
     if (DSS_IS_FILE_INNER_INITED(node->flags) && fs_pos.is_valid && fs_pos.is_exist_aux) {
         status = dss_try_find_data_au_batch(session, vg_item, node, fs_pos.second_fs_block, fs_pos.block_au_count);
@@ -4183,7 +4183,7 @@ status_t dss_update_file_written_size(
         if (status != CM_SUCCESS) {
             dss_unlock_vg_mem_and_shm(session, vg_item);
             DSS_RETURN_IFERR2(
-                status, LOG_DEBUG_ERR("Faile to put fs aux log, min_inited_size:%llu of file:%s, node size:%llu",
+                status, LOG_DEBUG_ERR("Fail to put fs aux log, min_inited_size:%llu of file:%s, node size:%llu.",
                             node->min_inited_size, node->name, node->size));
         }
     }
@@ -4332,7 +4332,7 @@ static status_t dss_check_delay_node(
         uint64 bg_task_ref_cnt = (uint64)cm_atomic_get((atomic_t *)&block_ctrl->bg_task_ref_cnt);
         if (bg_task_ref_cnt > 0) {
             LOG_DEBUG_INF(
-                "[DELAY_CLEAN] File %s ftid:%llu is delay node, but have ref by bg task local, check next time.",
+                "[DELAY_CLEAN]File %s ftid:%llu is delay node, but have ref by bg task local, check next time.",
                 node->name, DSS_ID_TO_U64(node->id));
             return CM_SUCCESS;
         }

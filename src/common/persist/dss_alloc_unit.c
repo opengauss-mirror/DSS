@@ -299,8 +299,8 @@ bool32 dss_alloc_au_batch(dss_session_t *session, dss_vg_info_item_t *vg_item, a
             found = 1;
 
             dss_update_core_ctrl(session, vg_item, &dss_ctrl->core, 0, CM_FALSE);
-            DSS_LOG_DEBUG_OP("Allocate batch count:%u, first au, v:%u,au:%llu,block:%u,item:%u,hwm:%llu,i:%u.", count,
-                auid->volume, (uint64)auid->au, auid->block, auid->item, dss_ctrl->core.volume_attrs[i].hwm, i);
+            DSS_LOG_DEBUG_OP("Allocate batch count:%u, first au %s,hwm:%llu,i:%u.", count, dss_display_metaid(*auid),
+                dss_ctrl->core.volume_attrs[i].hwm, i);
             break;
         }
     }

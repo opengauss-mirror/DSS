@@ -1382,7 +1382,7 @@ static dss_args_t cmd_touch_args[] = {
         0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
-    {'f', "flag", CM_FALSE, CM_TRUE, cmd_check_flag, NULL, NULL, 0, NULL, NULL, 0}
+    {'f', "flag", CM_FALSE, CM_TRUE, cmd_check_flag, NULL, NULL, 0, NULL, NULL, 0},
 };
 static dss_args_set_t cmd_touch_args_set = {
     cmd_touch_args,
@@ -4396,8 +4396,7 @@ static status_t rollback_proc(void)
 #define DSS_CMD_TRUNCATE_ARGS_UDS 2
 
 static dss_args_t cmd_truncate_args[] = {
-    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert,
-        0, NULL, NULL, 0},
+    {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, NULL, NULL, 0, NULL, NULL, 0},
     {'l', "length", CM_TRUE, CM_TRUE, cmd_check_length, NULL, NULL, 0, NULL, NULL, 0},
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
