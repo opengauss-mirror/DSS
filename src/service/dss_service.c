@@ -755,6 +755,7 @@ static status_t dss_process_get_inst_status(dss_session_t *session)
     dss_status->server_status_id = dss_get_server_status_flag();
     dss_status->local_instance_id = g_dss_instance.inst_cfg.params.inst_id;
     dss_status->master_id = dss_get_master_id();
+    dss_status->is_maintain = g_dss_instance.is_maintain;
     char *dss_instance_status = dss_get_dss_instance_status(dss_status->instance_status_id);
     errno_t errcode = strcpy_s(dss_status->instance_status, DSS_MAX_STATUS_LEN, dss_instance_status);
     MEMS_RETURN_IFERR(errcode);
@@ -1225,7 +1226,7 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
             status = g_dss_remote_handle.proc(session);
         }
         dss_dec_active_sessions(session);
-        if (status != CM_SUCCESS && 
+        if (status != CM_SUCCESS &&
             (cm_get_error_code() == ERR_DSS_RECOVER_CAUSE_BREAK || cm_get_error_code() == ERR_DSS_MASTER_CHANGE)) {
             LOG_RUN_INF("Req breaked by error %d for cmd:%u", cm_get_error_code(), session->recv_pack.head->cmd);
             cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
