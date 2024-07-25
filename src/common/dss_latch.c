@@ -60,7 +60,7 @@ void dss_latch_s2(latch_t *latch, uint32 sid, bool32 is_force, latch_statis_t *s
 
 void dss_latch_x2ix(latch_t *latch, uint32 sid, latch_statis_t *stat)
 {
-    cm_latch_x2ix(latch, sid, stat);
+    (void)cm_latch_x2ix(latch, sid, stat);
 }
 
 void dss_latch_ix2x(latch_t *latch, uint32 sid, latch_statis_t *stat)

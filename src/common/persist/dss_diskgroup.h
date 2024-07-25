@@ -42,6 +42,7 @@ extern "C" {
 #endif
 
 #define DSS_READ4STANDBY_ERR (int32)3
+
 /*
     1、when the node is standby, just send message to primary to read volume
     2、if the primary is just in recovery or switch, may wait the read request

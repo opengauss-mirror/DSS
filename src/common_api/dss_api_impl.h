@@ -244,8 +244,8 @@ status_t dss_setcfg_impl(dss_conn_t *conn, const char *name, const char *value, 
 status_t dss_getcfg_impl(dss_conn_t *conn, const char *name, char *out_str, size_t str_len);
 status_t dss_stop_server_impl(dss_conn_t *conn);
 void dss_get_api_volume_error(void);
-status_t dss_get_phy_size_impl(dss_conn_t *conn, int handle, long long *size);
 status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long offset, int size);
+status_t dss_get_phy_size_impl(dss_conn_t *conn, int handle, long long *size);
 status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ack);
 status_t dss_fallocate_impl(dss_conn_t *conn, int handle, int mode, long long int offset, long long int length);
 

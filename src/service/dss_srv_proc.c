@@ -318,8 +318,8 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
         dss_unlock_vg_mem_and_shm(session, vg_item);
         return ret;
     }
-
     dss_init_vg_cache_node_info(vg_item);
+
     // error_handle: rollback memory
     dss_rollback_mem_update(session, vg_item);
     int32 err_code = cm_get_error_code();

@@ -437,7 +437,7 @@ status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **inf
 
         g_vgs_info->volume_group[i].stack.size = DSS_MAX_STACK_BUF_SIZE;
         int32 ret =
-            shm_hashmap_init(&share_vg_info->vg[i].buffer_cache, DSS_BLOCK_HASH_SIZE, i, cm_oamap_uint64_compare);
+            shm_hashmap_init(&share_vg_info->vg[i].buffer_cache, DSS_BLOCK_HASH_SIZE, i, dss_buffer_cache_key_compare);
         if (ret != CM_SUCCESS) {
             if (i != 0) {
                 dss_free_shm_hashmap_memory(share_vg_info, i - 1);

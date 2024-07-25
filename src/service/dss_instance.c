@@ -393,18 +393,6 @@ status_t dss_start_lsnr(dss_instance_t *inst)
     return cs_start_uds_lsnr(&inst->lsnr, dss_lsnr_proc);
 }
 
-void dss_uninit_cm(dss_instance_t *inst)
-{
-    if (inst->cm_res.is_valid) {
-#ifdef ENABLE_DSSTEST
-        dss_simulation_cm_res_mgr_uninit(&inst->cm_res.mgr);
-#else
-        cm_res_mgr_uninit(&inst->cm_res.mgr);
-#endif
-        inst->cm_res.is_valid = CM_FALSE;
-    }
-}
-
 status_t dss_init_cm(dss_instance_t *inst)
 {
     inst->cm_res.is_valid = CM_FALSE;
@@ -434,6 +422,18 @@ status_t dss_init_cm(dss_instance_t *inst)
 #endif
     inst->cm_res.is_valid = CM_TRUE;
     return CM_SUCCESS;
+}
+
+void dss_uninit_cm(dss_instance_t *inst)
+{
+    if (inst->cm_res.is_valid) {
+#ifdef ENABLE_DSSTEST
+        dss_simulation_cm_res_mgr_uninit(&inst->cm_res.mgr);
+#else
+        cm_res_mgr_uninit(&inst->cm_res.mgr);
+#endif
+        inst->cm_res.is_valid = CM_FALSE;
+    }
 }
 
 void dss_free_log_ctrl()
