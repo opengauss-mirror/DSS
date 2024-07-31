@@ -51,7 +51,8 @@ extern "C" {
 typedef enum st_dss_background_task_type {
     DSS_RECOVERY_BACKGROUND_TASK = 0,
     DSS_DELAY_CLEAN_BACKGROUND_TASK = 1,
-    DSS_META_SYN_BG_TASK_BASE = 2,
+    DSS_HASHMAP_DYNAMIC_EXTEND_TASK = 2,
+    DSS_META_SYN_BG_TASK_BASE = 3,
     DSS_BACKGROUND_TASK_NUM = DSS_META_SYN_BG_TASK_BASE + DSS_META_SYN_BG_TASK_NUM_MAX,
 } dss_background_task_type_e;
 
@@ -126,6 +127,7 @@ typedef struct st_dss_session {
     dss_stat_item_t dss_session_stat[DSS_EVT_COUNT];
     uint32 client_version; /* client version */
     uint32 proto_version;  /* client and server negotiated version */
+    uint32 objectid;
     dss_stat_ctx_t stat_ctx;
 } dss_session_t;
 
@@ -146,9 +148,11 @@ typedef struct st_dss_session_ctrl {
     bool32 is_inited;
     uint32 used_count;
     uint32 total;
-    dss_session_t *sessions;
+    uint32 alloc_sessions;
+    dss_session_t **sessions;
 } dss_session_ctrl_t;
 
+extern dss_session_ctrl_t g_dss_session_ctrl;
 status_t dss_init_session(uint32 max_session_num);
 dss_session_ctrl_t *dss_get_session_ctrl(void);
 status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session);
@@ -176,8 +180,9 @@ uint32 dss_get_udssession_startid(void);
 uint32 dss_get_recover_task_idx(void);
 uint32 dss_get_max_total_session_cnt(void);
 uint32 dss_get_delay_clean_task_idx(void);
-
+uint32 dss_get_hashmap_dynamic_extend_task_idx(void);
 bool32 dss_lock_shm_meta_timed_x(const dss_session_t *session, dss_shared_latch_t *shared_latch, uint32 wait_ticks);
+uint32 dss_get_delay_clean_task_idx(void);
 typedef uint32 (*dss_get_bg_task_idx_func_t)(uint32 idx);
 uint32 dss_get_meta_syn_task_idx(uint32 idx);
 

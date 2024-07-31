@@ -32,6 +32,7 @@
 #include "dss_fault_injection.h"
 #include "dss_diskgroup.h"
 #include "dss_param.h"
+#include "dss_diskgroup.h"
 
 #ifdef __cplusplus
 extern "C" {

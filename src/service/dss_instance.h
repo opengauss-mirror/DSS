@@ -45,7 +45,6 @@ extern "C" {
 #define DSS_MAX_INSTANCE_OPEN_FILES 1
 #define DSS_LOGFILE_SIZE 10000
 #define DSS_LOG_LEVEL 0xffffffff
-#define DSS_INS_SIZE (sizeof(dss_share_vg_info_t))
 
 typedef enum {
     CM_RES_SUCCESS = 0,
@@ -121,6 +120,7 @@ void dss_recovery_when_primary(dss_session_t *session, dss_instance_t *inst, uin
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id);
 void dss_get_cm_lock_and_recover(thread_t *thread);
 void dss_delay_clean_proc(thread_t *thread);
+void dss_hashmap_dynamic_extend_and_redistribute_proc(thread_t *thread);
 bool32 dss_check_join_cluster();
 void dss_check_unreg_volume(dss_session_t *session);
 void dss_meta_syn_proc(thread_t *thread);

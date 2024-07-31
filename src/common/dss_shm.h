@@ -52,9 +52,9 @@ typedef int32 cm_shm_handle_t;
 extern uint32 g_shm_key;
 extern bool32 g_shm_inited;
 
-#define CM_FIXED_SHM_MAX_ID 3
+#define CM_FIXED_SHM_MAX_ID CM_FIXED_SHM_ID_TAIL
 #define CM_HASH_SHM_MAX_ID 65
-#define CM_GA_SHM_MAX_ID 20480U
+#define CM_GA_SHM_MAX_ID 20480U  // max total extended pool
 #define CM_SHM_MAX_BLOCK ((CM_FIXED_SHM_MAX_ID) + (CM_HASH_SHM_MAX_ID) + (CM_GA_SHM_MAX_ID))
 /* share memory manager control block magic string, must be 8Bytes aligned, now 48Bytes */
 #define CM_SHM_MAGIC "Huawei Tech. Co., Ltd. gauss100 DB DSS Software"
@@ -100,6 +100,8 @@ typedef struct tagcm_shm_ctrl {
 typedef enum tagcm_fixed_shm_id {
     SHM_ID_MNG_CTRL = 1, /* The first id must be for shared memory management control block */
     SHM_ID_APP_GA,
+    SHM_ID_MNG_VG,
+    SHM_ID_MNG_SESS,
     CM_FIXED_SHM_ID_TAIL
 } cm_fixed_shm_id_e;
 

@@ -35,30 +35,56 @@
 extern "C" {
 #endif
 
-dss_session_ctrl_t g_dss_session_ctrl = {0, 0, 0, 0, NULL};
-int dss_init_session(uint32 max_session_num)
+dss_session_ctrl_t g_dss_session_ctrl = {0, 0, 0, 0, 0, NULL};
+
+status_t dss_extend_session(uint32 extend_num)
 {
     uint32 objectid;
-    objectid = ga_alloc_object(GA_SESSION_POOL, DSS_INVALID_ID32);
-    if (objectid == DSS_INVALID_ID32) {
+    uint32_t old_alloc_sessions = g_dss_session_ctrl.alloc_sessions;
+    uint32_t new_alloc_sessions = g_dss_session_ctrl.alloc_sessions + extend_num;
+    if (new_alloc_sessions > g_dss_session_ctrl.total) {
+        LOG_RUN_ERR("Failed to extend session ,expect new alloc sessions %u, but max is %u.", new_alloc_sessions,
+            g_dss_session_ctrl.total);
+        DSS_THROW_ERROR(ERR_DSS_SESSION_EXTEND, "expect new alloc sessions %u, but max is %u.", new_alloc_sessions,
+            g_dss_session_ctrl.total);
+        return CM_ERROR;
+    }
+    for (uint32_t i = old_alloc_sessions; i < new_alloc_sessions; i++) {
+        objectid = ga_alloc_object(GA_SESSION_POOL, DSS_INVALID_ID32);
+        if (objectid == DSS_INVALID_ID32) {
+            LOG_RUN_ERR("Failed to alloc object for session %u.", i);
+            DSS_THROW_ERROR(ERR_DSS_SESSION_EXTEND, "Failed to alloc object for session %u.", i);
+            return CM_ERROR;
+        }
+        LOG_DEBUG_INF("Alloc object %u for session %u.", objectid, i);
+        g_dss_session_ctrl.sessions[i] = (dss_session_t *)ga_object_addr(GA_SESSION_POOL, objectid);
+        g_dss_session_ctrl.sessions[i]->id = i;
+        g_dss_session_ctrl.sessions[i]->is_used = CM_FALSE;
+        g_dss_session_ctrl.sessions[i]->is_closed = CM_TRUE;
+        g_dss_session_ctrl.sessions[i]->put_log = CM_FALSE;
+        g_dss_session_ctrl.sessions[i]->objectid = objectid;
+        g_dss_session_ctrl.alloc_sessions++;
+    }
+    LOG_RUN_INF("Succeed to extend sessions to %u.", g_dss_session_ctrl.alloc_sessions);
+    return CM_SUCCESS;
+}
+
+status_t dss_init_session(uint32 max_session_num)
+{
+    uint32 dss_session_size = (uint32)(max_session_num * sizeof(dss_session_t *));
+    g_dss_session_ctrl.sessions = cm_malloc(dss_session_size);
+    if (g_dss_session_ctrl.sessions == NULL) {
         return ERR_DSS_GA_INIT;
     }
-
-    g_dss_session_ctrl.sessions = (dss_session_t *)ga_object_addr(GA_SESSION_POOL, objectid);
-    if (g_dss_share_vg_info == NULL) {
-        return ERR_DSS_GA_INIT;
-    }
-
-    uint32 dss_session_size = (uint32)(max_session_num * sizeof(dss_session_t));
     errno_t errcode = memset_s(g_dss_session_ctrl.sessions, dss_session_size, 0, dss_session_size);
     securec_check_ret(errcode);
-    for (uint32 i = 0; i < max_session_num; ++i) {
-        g_dss_session_ctrl.sessions[i].id = i;
-        g_dss_session_ctrl.sessions[i].is_used = CM_FALSE;
-        g_dss_session_ctrl.sessions[i].is_closed = CM_TRUE;
-        g_dss_session_ctrl.sessions[i].put_log = CM_FALSE;
-    }
+    g_dss_session_ctrl.alloc_sessions = 0;
+    uint32 extend_num = max_session_num >= DSS_SESSION_NUM_PER_GROUP ? DSS_SESSION_NUM_PER_GROUP : max_session_num;
     g_dss_session_ctrl.total = max_session_num;
+    status_t status = dss_extend_session(extend_num);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
     g_dss_session_ctrl.is_inited = CM_TRUE;
     return CM_SUCCESS;
 }
@@ -89,9 +115,14 @@ uint32 dss_get_recover_task_idx(void)
     return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM);
 }
 
-uint32 dss_get_delay_clean_task_idx(void)
+uint32 dss_get_hashmap_dynamic_extend_task_idx(void)
 {
     return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_DELAY_CLEAN_BACKGROUND_TASK;
+}
+
+uint32 dss_get_delay_clean_task_idx(void)
+{
+    return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_HASHMAP_DYNAMIC_EXTEND_TASK;
 }
 
 uint32 dss_get_bg_task_set_idx(uint32 task_id_base, uint32 idx)
@@ -107,7 +138,7 @@ uint32 dss_get_meta_syn_task_idx(uint32 idx)
 dss_session_t *dss_get_reserv_session(uint32 idx)
 {
     dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
-    dss_session_t *session = &session_ctrl->sessions[idx];
+    dss_session_t *session = session_ctrl->sessions[idx];
     return session;
 }
 
@@ -121,73 +152,81 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
 
     uint32 start_sid = dss_get_udssession_startid();
     uint32 end_sid = dss_get_max_total_session_cnt();
-
+    status_t status;
     for (i = start_sid; i < end_sid; i++) {
-        if (g_dss_session_ctrl.sessions[i].is_used == CM_FALSE) {
+        if (i >= g_dss_session_ctrl.alloc_sessions) {
+            uint32 extend_num =
+                g_dss_session_ctrl.total - g_dss_session_ctrl.alloc_sessions >= DSS_SESSION_NUM_PER_GROUP ?
+                    DSS_SESSION_NUM_PER_GROUP :
+                    g_dss_session_ctrl.total - g_dss_session_ctrl.alloc_sessions;
+            status = dss_extend_session(extend_num);
+            if (status != CM_SUCCESS) {
+                cm_spin_unlock(&g_dss_session_ctrl.lock);
+                return status;
+            }
+        }
+        if (g_dss_session_ctrl.sessions[i]->is_used == CM_FALSE) {
             id = i;
             break;
         }
     }
-
     if (id == DSS_INVALID_ID32) {
         LOG_DEBUG_INF("No sessions are available.");
         cm_spin_unlock(&g_dss_session_ctrl.lock);
         return ERR_DSS_SESSION_CREATE;
     }
-    LOG_DEBUG_INF("Session[id=%u] is available.", id);
-    cm_spin_lock(&g_dss_session_ctrl.sessions[id].lock, NULL);
+    *session = g_dss_session_ctrl.sessions[i];
+    LOG_DEBUG_INF("Session[%u] is available.", id);
+    cm_spin_lock(&(*session)->lock, NULL);
     g_dss_session_ctrl.used_count++;
-    g_dss_session_ctrl.sessions[id].is_used = CM_TRUE;
-    cm_spin_unlock(&g_dss_session_ctrl.sessions[id].lock);
+    (*session)->is_used = CM_TRUE;
+    cm_spin_unlock(&(*session)->lock);
     cm_spin_unlock(&g_dss_session_ctrl.lock);
-    dss_latch_stack_t *latch_stack = &g_dss_session_ctrl.sessions[id].latch_stack;
+    dss_latch_stack_t *latch_stack = &(*session)->latch_stack;
     (void)memset_s(latch_stack, sizeof(dss_latch_stack_t), 0, sizeof(dss_latch_stack_t));
 
-    g_dss_session_ctrl.sessions[id].is_direct = CM_TRUE;
-    g_dss_session_ctrl.sessions[id].connected = CM_FALSE;
+    (*session)->is_direct = CM_TRUE;
+    (*session)->connected = CM_FALSE;
     if (pipe != NULL) {
-        g_dss_session_ctrl.sessions[id].pipe = *pipe;
-        g_dss_session_ctrl.sessions[id].connected = CM_TRUE;
+        (*session)->pipe = *pipe;
+        (*session)->connected = CM_TRUE;
     }
-    g_dss_session_ctrl.sessions[id].is_closed = CM_FALSE;
-    g_dss_session_ctrl.sessions[id].proto_type = PROTO_TYPE_UNKNOWN;
-    g_dss_session_ctrl.sessions[id].status = DSS_SESSION_STATUS_IDLE;
-    g_dss_session_ctrl.sessions[id].client_version = DSS_PROTO_VERSION;
-    g_dss_session_ctrl.sessions[id].proto_version = DSS_PROTO_VERSION;
-    (void)memset_s(g_dss_session_ctrl.sessions[id].dss_session_stat, DSS_EVT_COUNT * sizeof(dss_stat_item_t), 0,
+    (*session)->is_closed = CM_FALSE;
+    (*session)->proto_type = PROTO_TYPE_UNKNOWN;
+    (*session)->status = DSS_SESSION_STATUS_IDLE;
+    (*session)->client_version = DSS_PROTO_VERSION;
+    (*session)->proto_version = DSS_PROTO_VERSION;
+    (void)memset_s((*session)->dss_session_stat, DSS_EVT_COUNT * sizeof(dss_stat_item_t), 0,
         DSS_EVT_COUNT * sizeof(dss_stat_item_t));
-    *session = &g_dss_session_ctrl.sessions[id];
     return CM_SUCCESS;
 }
 
 void dss_destroy_session(dss_session_t *session)
 {
-    uint32 id = session->id;
-    if (g_dss_session_ctrl.sessions[id].connected == CM_TRUE) {
+    if (session->connected == CM_TRUE) {
         cs_disconnect(&session->pipe);
-        g_dss_session_ctrl.sessions[id].connected = CM_FALSE;
+        session->connected = CM_FALSE;
     }
     cm_spin_lock(&g_dss_session_ctrl.lock, NULL);
-    cm_spin_lock(&g_dss_session_ctrl.sessions[id].lock, NULL);
+    cm_spin_lock(&session->lock, NULL);
     g_dss_session_ctrl.used_count--;
-    g_dss_session_ctrl.sessions[id].is_closed = CM_TRUE;
-    g_dss_session_ctrl.sessions[id].is_used = CM_FALSE;
-    g_dss_session_ctrl.sessions[id].cli_info.cli_pid = 0;
-    g_dss_session_ctrl.sessions[id].cli_info.start_time = 0;
-    g_dss_session_ctrl.sessions[id].client_version = DSS_PROTO_VERSION;
-    g_dss_session_ctrl.sessions[id].proto_version = DSS_PROTO_VERSION;
-    g_dss_session_ctrl.sessions[id].put_log = CM_FALSE;
-
-    cm_spin_unlock(&g_dss_session_ctrl.sessions[id].lock);
+    session->is_closed = CM_TRUE;
+    session->is_used = CM_FALSE;
+    session->cli_info.cli_pid = 0;
+    session->cli_info.start_time = 0;
+    session->client_version = DSS_PROTO_VERSION;
+    session->proto_version = DSS_PROTO_VERSION;
+    session->put_log = CM_FALSE;
+    cm_spin_unlock(&session->lock);
     cm_spin_unlock(&g_dss_session_ctrl.lock);
 }
 
 dss_session_t *dss_get_session(uint32 sid)
 {
-    if (sid >= g_dss_session_ctrl.total) {
+    if (sid >= g_dss_session_ctrl.alloc_sessions || sid >= g_dss_session_ctrl.total) {
         return NULL;
     }
-    return &g_dss_session_ctrl.sessions[sid];
+    return g_dss_session_ctrl.sessions[sid];
 }
 
 static bool32 dss_is_timeout(int32 timeout, int32 sleep_times, int32 sleeps)

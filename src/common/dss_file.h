@@ -354,7 +354,10 @@ static inline void dss_unlatch_node(gft_node_t *node)
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_node(node);
     dss_unlatch(&block_ctrl->latch);
 }
-
+static inline dss_file_context_t *dss_get_file_context_by_handle(dss_file_run_ctx_t *file_run_ctx, int32 handle)
+{
+    return &file_run_ctx->files.files_group[handle / DSS_FILE_CONTEXT_PER_GROUP][handle % DSS_FILE_CONTEXT_PER_GROUP];
+}
 // this is need to re-consturct the code-file-place
 typedef status_t (*dss_invalidate_other_nodes_proc_t)(
     dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack);

@@ -1042,12 +1042,11 @@ gft_node_t *dss_find_gft_node_by_fid_in_bucket(
 
 gft_node_t *dss_get_gft_node_by_fid(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 fid)
 {
-    shm_hashmap_t *map = vg_item->buffer_cache;
-    shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
+    shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
     shm_hashmap_bucket_t *bucket = NULL;
     gft_node_t *node = NULL;
-    for (uint32 i = 0; i < map->num; i++) {
-        bucket = &buckets[i];
+    for (uint32 i = 0; i < hash_ctrl->bucket_num; i++) {
+        bucket = shm_hashmap_get_bucket(hash_ctrl, i);
         node = dss_find_gft_node_by_fid_in_bucket(session, vg_item, bucket, fid);
         if (node != NULL) {
             return node;

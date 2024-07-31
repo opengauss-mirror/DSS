@@ -337,6 +337,7 @@ typedef struct st_dss_vg_info_item_t {
     dss_block_ctrl_task_desc_t syn_meta_desc;
     dss_vg_cache_node_t vg_cache_node[DSS_VG_ITEM_CACHE_NODE_MAX];
     dss_log_file_ctrl_t log_file_ctrl;  // redo log ctrl
+    uint32 objectid;
 } dss_vg_info_item_t;
 
 typedef struct st_dss_vg_info_t {
@@ -361,14 +362,11 @@ typedef struct st_dss_vg_conf_t {
 typedef struct st_dss_share_vg_item_t {
     dss_shared_latch_t vg_latch;
     shm_hashmap_t buffer_cache;
-    char reserve[440];  // align 512
+    uint32 objectid;
+    uint32 id;
+    char reserve[412];  // align 512
     dss_ctrl_t dss_ctrl;
 } dss_share_vg_item_t;
-
-typedef struct st_dss_share_vg_info_t {
-    dss_share_vg_item_t vg[DSS_MAX_VOLUME_GROUP_NUM];
-    uint32_t vg_num;
-} dss_share_vg_info_t;
 
 #pragma pack()
 #endif  // __DSS_CTRL_DEF_H__

@@ -89,18 +89,18 @@ status_t dss_lock_instance(void)
 static status_t instance_init_ga(dss_instance_t *inst)
 {
     int32 ret;
-    uint32 sess_cnt = dss_get_max_total_session_cnt();
-    uint32 dss_session_size = (uint32)(sess_cnt * sizeof(dss_session_t));
     ga_destroy_global_area();
-    instance_set_pool_def(GA_INSTANCE_POOL, 1, DSS_INS_SIZE, 0);
-    instance_set_pool_def(GA_SESSION_POOL, 1, dss_session_size, 0);
+    instance_set_pool_def(GA_INSTANCE_POOL, 1, sizeof(dss_share_vg_item_t), DSS_MAX_VOLUME_GROUP_NUM - 1);
+    instance_set_pool_def(
+        GA_SESSION_POOL, DSS_SESSION_NUM_PER_GROUP, sizeof(dss_session_t), GA_MAX_SESSION_EXTENDED_POOLS);
     instance_set_pool_def(GA_8K_POOL, DSS_MAX_MEM_BLOCK_SIZE / (DSS_BLOCK_SIZE + DSS_BLOCK_CTRL_SIZE),
         DSS_BLOCK_SIZE + DSS_BLOCK_CTRL_SIZE, GA_MAX_8K_EXTENDED_POOLS);
     instance_set_pool_def(GA_16K_POOL, DSS_MAX_MEM_BLOCK_SIZE / (DSS_FILE_SPACE_BLOCK_SIZE + DSS_BLOCK_CTRL_SIZE),
         DSS_FILE_SPACE_BLOCK_SIZE + DSS_BLOCK_CTRL_SIZE, GA_MAX_EXTENDED_POOLS);
     instance_set_pool_def(GA_FS_AUX_POOL, DSS_MAX_MEM_BLOCK_SIZE / (DSS_FS_AUX_SIZE + DSS_BLOCK_CTRL_SIZE),
         DSS_FS_AUX_SIZE + DSS_BLOCK_CTRL_SIZE, GA_MAX_EXTENDED_POOLS);
-
+    instance_set_pool_def(
+        GA_SEGMENT_POOL, DSS_MAX_VOLUME_GROUP_NUM, DSS_BUCKETS_SIZE_PER_SEGMENT, DSS_MAX_SEGMENT_NUM - 1);    
     ret = ga_create_global_area();
     DSS_RETURN_IF_ERROR(ret);
     LOG_RUN_INF("Init GA pool and area successfully.");
@@ -214,14 +214,9 @@ static status_t dss_init_inst_handle_session(dss_instance_t *inst)
     return CM_SUCCESS;
 }
 
-static status_t instance_init_core(dss_instance_t *inst, uint32 objectid)
+static status_t instance_init_core(dss_instance_t *inst)
 {
-    g_dss_share_vg_info = (dss_share_vg_info_t *)ga_object_addr(GA_INSTANCE_POOL, objectid);
-    if (g_dss_share_vg_info == NULL) {
-        DSS_RETURN_IFERR2(
-            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to get instance object address!"));
-    }
-    status_t status = dss_get_vg_info(g_dss_share_vg_info, NULL);
+    status_t status = dss_get_vg_info();
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to get vg info."));
     status = dss_init_session(dss_get_max_total_session_cnt());
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to initialize sessions."));
@@ -253,6 +248,7 @@ static void dss_init_maintain(dss_instance_t *inst, dss_srv_args_t dss_args)
         LOG_RUN_INF("DSS_MAINTAIN is FALSE");
     }
 }
+
 static status_t instance_init(dss_instance_t *inst)
 {
     status_t status = dss_lock_instance();
@@ -261,22 +257,17 @@ static status_t instance_init(dss_instance_t *inst)
         (uint32)(inst->inst_cfg.params.shm_key << (uint8)DSS_MAX_SHM_KEY_BITS) + (uint32)inst->inst_cfg.params.inst_id;
     status = cm_init_shm(shm_key);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to initialize shared memory!"));
-
     status = instance_init_ga(inst);
     DSS_RETURN_IFERR4(status, (void)del_shm_by_key(CM_SHM_CTRL_KEY), cm_destroy_shm(),
         LOG_RUN_ERR("DSS instance failed to initialize ga!"));
-
-    uint32 objectid = ga_alloc_object(GA_INSTANCE_POOL, CM_INVALID_ID32);
-    if (objectid == CM_INVALID_ID32) {
+    status = instance_init_core(inst);
+    if (status != CM_SUCCESS) {
         (void)del_shm_by_key(CM_SHM_CTRL_KEY);
         ga_detach_area();
         cm_destroy_shm();
-        DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to alloc instance object!");
+        CM_FREE_PTR(g_dss_session_ctrl.sessions);
         return CM_ERROR;
     }
-
-    status = instance_init_core(inst, objectid);
-    DSS_RETURN_IFERR4(status, (void)del_shm_by_key(CM_SHM_CTRL_KEY), ga_detach_area(), cm_destroy_shm());
     LOG_RUN_INF("DSS instance begin to run.");
     return CM_SUCCESS;
 }
@@ -839,7 +830,8 @@ void dss_delay_clean_proc(thread_t *thread)
     cm_set_thread_name("delay_clean");
     uint32 work_idx = dss_get_delay_clean_task_idx();
     dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
-    dss_session_t *session = &session_ctrl->sessions[work_idx];
+    dss_session_t *session = session_ctrl->sessions[work_idx];
+    LOG_RUN_INF("Session[id=%u] is available for delay clean task.", session->id);
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 sleep_times = 0;
     while (!thread->closed) {
@@ -858,6 +850,20 @@ void dss_delay_clean_proc(thread_t *thread)
     }
 }
 
+void dss_hashmap_dynamic_extend_and_redistribute_proc(thread_t *thread)
+{
+    cm_set_thread_name("hashmap_dynamic_extend_and_redistribute");
+    uint32 work_idx = dss_get_hashmap_dynamic_extend_task_idx();
+    dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
+    dss_session_t *session = session_ctrl->sessions[work_idx];
+    while (!thread->closed) {
+        for (uint32_t i = 0; i < g_vgs_info->group_num; i++) {
+            dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[i];
+            dss_hashmap_dynamic_extend_and_redistribute_per_vg(vg_item, session);
+        }
+        cm_sleep(CM_SLEEP_500_FIXED);
+    }
+}
 static void dss_check_peer_inst_inner(dss_instance_t *inst)
 {
     /**
@@ -889,7 +895,7 @@ void dss_check_peer_inst(dss_instance_t *inst, uint64 inst_id)
     uint64 inst_mask = ((uint64)0x1 << inst_id);
     cm_spin_lock(&inst->inst_work_lock, NULL);
 
-    // after lock, check again, other thed may get the lock, and init the map before
+    // after lock, check again, other thd may get the lock, and init the map before
     uint64 cur_inst_map = dss_get_inst_work_status();
     // has connection
     if (inst_id != DSS_INVALID_ID64 && (cur_inst_map & inst_mask) != 0) {
@@ -1028,7 +1034,7 @@ void dss_meta_syn_proc(thread_t *thread)
     dss_bg_task_info_t *bg_task_info = (dss_bg_task_info_t *)(thread->argument);
     uint32 work_idx = dss_get_meta_syn_task_idx(bg_task_info->my_task_id);
     dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
-    dss_session_t *session = &session_ctrl->sessions[work_idx];
+    dss_session_t *session = session_ctrl->sessions[work_idx];
     while (!thread->closed) {
         // DSS_STATUS_OPEN for control with switchover
         if (g_dss_instance.status == DSS_STATUS_OPEN) {
