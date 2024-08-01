@@ -2970,15 +2970,6 @@ static status_t dss_decode_open_dir(dss_packet_t *ack_pack, void *ack)
     return CM_SUCCESS;
 }
 
-static status_t dss_encode_close_dir(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
-{
-    dss_close_dir_info_t *info = (dss_close_dir_info_t *)send_info;
-    CM_RETURN_IFERR(dss_put_int64(pack, info->pftid));
-    CM_RETURN_IFERR(dss_put_str(pack, info->vg_name));
-    CM_RETURN_IFERR(dss_put_int32(pack, info->vg_id));
-    return CM_SUCCESS;
-}
-
 static status_t dss_encode_open_file(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
 {
     dss_open_file_info_t *info = (dss_open_file_info_t *)send_info;
@@ -2986,6 +2977,15 @@ static status_t dss_encode_open_file(dss_conn_t *conn, dss_packet_t *pack, void 
     CM_RETURN_IFERR(dss_put_str(pack, info->file_path));
     /* 2. flag */
     CM_RETURN_IFERR(dss_put_int32(pack, (uint32)info->flag));
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_close_dir(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    dss_close_dir_info_t *info = (dss_close_dir_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_int64(pack, info->pftid));
+    CM_RETURN_IFERR(dss_put_str(pack, info->vg_name));
+    CM_RETURN_IFERR(dss_put_int32(pack, info->vg_id));
     return CM_SUCCESS;
 }
 
