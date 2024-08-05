@@ -22,6 +22,7 @@
  * -------------------------------------------------------------------------
  */
 
+#include "dss_service.h"
 #include "cm_system.h"
 #include "dss_instance.h"
 #include "dss_io_fence.h"
@@ -31,7 +32,7 @@
 #include "dss_mes.h"
 #include "dss_api.h"
 #include "dss_thv.h"
-#include "dss_service.h"
+#include "dss_hp_interface.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -159,9 +160,19 @@ static void dss_clean_open_files(dss_session_t *session)
     LOG_RUN_INF("Clean open files for pid:%llu.", session->cli_info.cli_pid);
 }
 
+static void dss_clean_session_hotpatch_latch(dss_session_t *session)
+{
+    if (session->is_holding_hotpatch_latch) {
+        LOG_DEBUG_INF("Clean sid:%u is holding hotpatch latch, now clean it.", session->id);
+        dss_hp_unlatch(session->id);
+        session->is_holding_hotpatch_latch = CM_FALSE;
+    }
+}
+
 void dss_release_session_res(dss_session_t *session)
 {
     dss_clean_session_latch(session, CM_FALSE);
+    dss_clean_session_hotpatch_latch(session);
     dss_clean_open_files(session);
     dss_destroy_session(session);
 }
@@ -808,6 +819,148 @@ static status_t dss_process_get_time_stat(dss_session_t *session)
     return CM_SUCCESS;
 }
 
+static status_t dss_process_hotpatch_inner(dss_session_t *session)
+{
+    int32 operation;
+    dss_init_get(&session->recv_pack);
+    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &operation));
+    char *patch_path = NULL;
+    switch ((dss_hp_operation_cmd_e)operation) {
+        case DSS_HP_OP_LOAD:
+            DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &patch_path));
+            DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+                session->audit_info.resource, DSS_AUDIT_MODIFY, "%s %s", DSS_HP_OPERATION_LOAD, patch_path));
+            DSS_RETURN_IF_ERROR(dss_hp_load(patch_path));
+            break;
+        case DSS_HP_OP_ACTIVE:
+            DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &patch_path));
+            DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+                session->audit_info.resource, DSS_AUDIT_MODIFY, "%s %s", DSS_HP_OPERATION_ACTIVE, patch_path));
+            DSS_RETURN_IF_ERROR(dss_hp_active(patch_path));
+            break;
+        case DSS_HP_OP_DEACTIVE:
+            DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &patch_path));
+            DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+                session->audit_info.resource, DSS_AUDIT_MODIFY, "%s %s", DSS_HP_OPERATION_DEACTIVE, patch_path));
+            DSS_RETURN_IF_ERROR(dss_hp_deactive(patch_path));
+            break;
+        case DSS_HP_OP_UNLOAD:
+            DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &patch_path));
+            DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+                session->audit_info.resource, DSS_AUDIT_MODIFY, "%s %s", DSS_HP_OPERATION_UNLOAD, patch_path));
+            DSS_RETURN_IF_ERROR(dss_hp_unload(patch_path));
+            break;
+        case DSS_HP_OP_REFRESH:
+            DSS_RETURN_IF_ERROR(
+                dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", DSS_HP_OPERATION_REFRESH));
+            DSS_RETURN_IF_ERROR(dss_hp_refresh_patch_info());
+            break;
+        case DSS_HP_OP_INVALID:
+        default:
+            DSS_THROW_ERROR(ERR_INVALID_PARAM, "hotpatch operation");
+            LOG_RUN_ERR("[HotPatch] Unsupported hotpatch operation: %u", operation);
+            return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_process_hotpatch(dss_session_t *session)
+{
+    if (dss_hp_check_is_inited() != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+    dss_hp_latch_x(session->id);
+    session->is_holding_hotpatch_latch = CM_TRUE;
+    status_t ret = dss_process_hotpatch_inner(session);
+    dss_hp_unlatch(session->id);
+    session->is_holding_hotpatch_latch = CM_FALSE;
+    return ret;
+}
+
+static bool is_buffer_sufficient(dss_packet_t *pack, const dss_hp_info_view_row_t *hp_info_view_row)
+{
+    size_t estimated_size = sizeof(uint32) + CM_ALIGN4(strlen(hp_info_view_row->patch_name) + 1) + sizeof(uint32) +
+                            CM_ALIGN4(strlen(hp_info_view_row->patch_lib_state) + 1) +
+                            CM_ALIGN4(strlen(hp_info_view_row->patch_commit) + 1) +
+                            CM_ALIGN4(strlen(hp_info_view_row->patch_bin_version) + 1);
+    return (uint32)estimated_size <= DSS_REMAIN_SIZE(pack);
+}
+
+static status_t put_hotpatch_info(dss_packet_t *pack, const dss_hp_info_view_row_t *hp_info_view_row)
+{
+    DSS_RETURN_IF_ERROR(dss_put_int32(pack, hp_info_view_row->patch_number));
+    DSS_RETURN_IF_ERROR(dss_put_str(pack, hp_info_view_row->patch_name));
+    DSS_RETURN_IF_ERROR(dss_put_int32(pack, (uint32)hp_info_view_row->patch_state));
+    DSS_RETURN_IF_ERROR(dss_put_str(pack, hp_info_view_row->patch_lib_state));
+    DSS_RETURN_IF_ERROR(dss_put_str(pack, hp_info_view_row->patch_commit));
+    DSS_RETURN_IF_ERROR(dss_put_str(pack, hp_info_view_row->patch_bin_version));
+    return CM_SUCCESS;
+}
+
+static status_t dss_process_query_hotpatch_inner(dss_session_t *session, uint32 start_patch_number, bool32 *is_finished)
+{
+    uint32 total_count;
+    bool32 is_same_version = CM_FALSE;
+    *is_finished = CM_FALSE;
+    DSS_RETURN_IF_ERROR(dss_hp_get_patch_count(&total_count, &is_same_version));
+    // 1. total_count
+    DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, total_count));
+    uint32 *cur_batch_count_loc =
+        (uint32 *)(DSS_WRITE_ADDR(&session->send_pack));  // keep the location of cur_batch_count
+    uint32 cur_batch_count = 0;
+    // 2. cur_batch_count
+    // For now just occupy the place, value would be modified later.
+    DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, cur_batch_count));
+    // 3. hotpatch info
+    for (uint32 patch_number = start_patch_number; patch_number <= total_count; ++patch_number) {
+        dss_hp_info_view_row_t hp_info_view_row;
+        DSS_RETURN_IF_ERROR(dss_hp_get_patch_info_row(patch_number, &hp_info_view_row));
+        // Before putting, verify the remaining buffer space.
+        if (!is_buffer_sufficient(&session->send_pack, &hp_info_view_row)) {
+            LOG_RUN_INF("[HotPatch] Buffer insufficient for %dth patch.", patch_number);
+            break;
+        }
+        DSS_RETURN_IF_ERROR(put_hotpatch_info(&session->send_pack, &hp_info_view_row));
+        ++cur_batch_count;
+    }
+    // Modify cur_batch_count to its actual value.
+    *cur_batch_count_loc = cur_batch_count;
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY,
+        "[HotPatch] start_patch_number: %u, toatl_count: %u, cur_batch_count:%u", start_patch_number, total_count,
+        cur_batch_count));
+    // start_patch_number starts from 1, not zero. So when finished, start_patch_number + cur_batch_count - 1 =
+    // total_count.
+    if (start_patch_number + cur_batch_count > total_count) {
+        *is_finished = CM_TRUE;  // Tell the caller to release the latch.
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_process_query_hotpatch(dss_session_t *session)
+{
+    if (dss_hp_check_is_inited() != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+    dss_init_get(&session->recv_pack);
+    int start_patch_number;
+    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &start_patch_number));
+    if (start_patch_number == 1) {
+        dss_hp_latch_s(session->id);  // Latch only at the first interaction.
+        session->is_holding_hotpatch_latch = CM_TRUE;
+    }
+    bool32 is_finished;
+    status_t ret = dss_process_query_hotpatch_inner(session, (uint32)start_patch_number, &is_finished);
+    // Hotpatch info may be too many to be transmitted to client in one message.
+    // So one message would carry only some of them and client may query multiple times.
+    // If transmission not finished in this interaction, dsscmd would not disconnect the session.
+    // Thus, the latch should be kept and wait to be released by foillowing query.
+    if (ret != CM_SUCCESS || is_finished == CM_TRUE) {
+        dss_hp_unlatch(session->id);
+        session->is_holding_hotpatch_latch = CM_FALSE;
+    }
+    return ret;
+}
+
 void dss_wait_session_pause(dss_instance_t *inst)
 {
     uds_lsnr_t *lsnr = &inst->lsnr;
@@ -1161,6 +1314,7 @@ static dss_cmd_hdl_t g_dss_cmd_handle[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
         CM_FALSE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_ENABLE_GRAB_LOCK)] = {DSS_CMD_ENABLE_GRAB_LOCK, dss_process_enable_grab_lock, NULL,
         CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_HOTPATCH)] = {DSS_CMD_HOTPATCH, dss_process_hotpatch, NULL, CM_FALSE},
     // query
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_HANDSHAKE)] = {DSS_CMD_HANDSHAKE, dss_process_handshake, NULL, CM_FALSE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST)] = {DSS_CMD_EXIST, dss_process_exist, NULL, CM_FALSE},
@@ -1171,6 +1325,8 @@ static dss_cmd_hdl_t g_dss_cmd_handle[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_INST_STATUS)] = {DSS_CMD_GET_INST_STATUS, dss_process_get_inst_status, NULL,
         CM_FALSE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_TIME_STAT)] = {DSS_CMD_GET_TIME_STAT, dss_process_get_time_stat, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_QUERY_HOTPATCH)] = {DSS_CMD_QUERY_HOTPATCH, dss_process_query_hotpatch, NULL,
+        CM_FALSE},
 };
 
 dss_cmd_hdl_t g_dss_remote_handle = {DSS_CMD_EXEC_REMOTE, dss_process_remote, NULL, CM_FALSE};

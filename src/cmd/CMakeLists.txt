@@ -6,6 +6,7 @@ include_directories(${DSS_LOG_PATH})
 include_directories(${DSS_PARAMS_PATH})
 include_directories(${DSS_COMMON_API_PATH})
 include_directories(${DSS_INTERFACE_PATH})
+include_directories(${DSS_HOTPATCH_PATH})
 
 option(ENABLE_FUZZASAN OFF)
 if (ENABLE_FUZZASAN)
@@ -34,6 +35,7 @@ set(COMMON_ALL_SRC
         ${COMMON_API_SRC}
         ${CMD_SRC}
         ${CEPH_SRC}
+        ${HOT_PATCH_SRC}
         )
 
 ADD_EXECUTABLE(dsscmd ${COMMON_ALL_SRC})

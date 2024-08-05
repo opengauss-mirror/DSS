@@ -31,6 +31,7 @@
 #include "dss_interaction.h"
 #include "dss_session.h"
 #include "dss_api.h"
+#include "dss_hp_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -175,6 +176,17 @@ typedef struct st_dss_exist_recv_info {
     int32 type;
 } dss_exist_recv_info_t;
 
+typedef struct st_dss_hotpatch_cmd_info {
+    uint32 operation_cmd;
+    const char *patch_path;
+} dss_hotpatch_cmd_info_t;
+
+typedef struct st_dss_query_hotpatch_recv_info {
+    uint32 total_count;
+    uint32 cur_batch_count;
+    dss_hp_info_view_t *hp_info_view;  // Location of output buffer must be specified before decoding.
+} dss_query_hotpatch_recv_info_t;
+
 typedef struct st_dss_conn_opt {
     int32 timeout;
     char *user_name;
@@ -249,6 +261,8 @@ status_t dss_aio_post_pwrite_file_impl(dss_conn_t *conn, int handle, long long o
 status_t dss_get_phy_size_impl(dss_conn_t *conn, int handle, long long *size);
 status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ack);
 status_t dss_fallocate_impl(dss_conn_t *conn, int handle, int mode, long long int offset, long long int length);
+status_t dss_hotpatch_impl(dss_conn_t *conn, const char *hp_cmd_str, const char *patch_path);
+status_t dss_query_hotpatch_impl(dss_conn_t *conn, dss_hp_info_view_t *hp_info_view);
 
 void dss_set_conn_wait_event(dss_conn_t *conn, dss_wait_event_e event);
 void dss_unset_conn_wait_event(dss_conn_t *conn);

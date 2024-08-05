@@ -6,6 +6,7 @@ include_directories(${DSS_LOG_PATH})
 include_directories(${DSS_PARAMS_PATH})
 include_directories(${DSS_COMMON_API_PATH})
 include_directories(${DSS_INTERFACE_PATH})
+include_directories(${DSS_HOTPATCH_PATH})
 
 option(ENABLE_FUZZASAN OFF)
 if (ENABLE_FUZZASAN)
@@ -34,22 +35,23 @@ set(COMMON_ALL_SRC
         ${COMMON_API_SRC}
         ${TBOX_SRC}
         ${CEPH_SRC}
+        ${HOT_PATCH_SRC}
         )
 
 ADD_EXECUTABLE(dsstbox ${COMMON_ALL_SRC})
 
 if (ENABLE_FUZZASAN)
-    target_link_libraries(dsstbox dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${lz4} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} ${fuzz_lib} -Wl,--no-whole-archive)
+    target_link_libraries(dsstbox dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${HOTPATCH_DEPENDENCY_LIB} ${HOTPATCH_LDS} ${libz} ${lz4} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} ${fuzz_lib} -Wl,--no-whole-archive)
 else()
-    target_link_libraries(dsstbox dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${lz4} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
+    target_link_libraries(dsstbox dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${HOTPATCH_DEPENDENCY_LIB} ${HOTPATCH_LDS} ${libz} ${lz4} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
 endif(ENABLE_FUZZASAN)
 
 if (ENABLE_DSSTEST)
     add_library(dsstbox_test SHARED ${COMMON_ALL_SRC})
     if (ENABLE_FUZZASAN)
-        target_link_libraries(dsstbox_test dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${lz4} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} ${fuzz_lib} -Wl,--no-whole-archive)
+        target_link_libraries(dsstbox_test dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${HOTPATCH_DEPENDENCY_LIB} ${HOTPATCH_LDS} ${libz} ${lz4} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} ${fuzz_lib} -Wl,--no-whole-archive)
     else()
-        target_link_libraries(dsstbox_test dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${libz} ${lz4} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
+        target_link_libraries(dsstbox_test dssapi pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${HOTPATCH_DEPENDENCY_LIB} ${HOTPATCH_LDS} ${libz} ${lz4} ${3rd_libssl} ${3rd_libccb} ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
     endif(ENABLE_FUZZASAN)
 endif(ENABLE_DSSTEST)
 
