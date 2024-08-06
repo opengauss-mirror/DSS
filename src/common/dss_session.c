@@ -443,6 +443,7 @@ bool32 dss_lock_shm_meta_timed_x(const dss_session_t *session, dss_shared_latch_
 void dss_lock_shm_meta_x2ix(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
     cm_panic_log(dss_is_server(), "can not op x latch in client");
+    CM_ASSERT(shared_latch->latch.stat == LATCH_STATUS_X);
     latch_statis_t *stat = NULL;
     uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
     dss_latch_x2ix(&shared_latch->latch, sid, stat);
@@ -451,6 +452,7 @@ void dss_lock_shm_meta_x2ix(dss_session_t *session, dss_shared_latch_t *shared_l
 void dss_lock_shm_meta_ix2x(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
     cm_panic_log(dss_is_server(), "can not op x latch in client");
+    CM_ASSERT(shared_latch->latch.stat == LATCH_STATUS_IX);
     latch_statis_t *stat = NULL;
     uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
     dss_latch_ix2x(&shared_latch->latch, sid, stat);
@@ -464,9 +466,11 @@ void dss_lock_shm_meta_bucket_x(dss_shared_latch_t *shared_latch)
 void dss_unlock_shm_meta_s_without_stack(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
     cm_panic_log(dss_is_server(), "can not op shared latch without session latch stack in client");
+    CM_ASSERT(shared_latch->latch.shared_count > 0);
     spin_statis_t *stat_spin = NULL;
     uint32 sid = (session != NULL ? DSS_SESSIONID_IN_LOCK(session->id) : DSS_DEFAULT_SESSIONID);
     cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, stat_spin);
+
     if (shared_latch->latch.shared_count > 0) {
         shared_latch->latch.shared_count--;
     }
@@ -483,6 +487,7 @@ void dss_unlock_shm_meta_s_without_stack(dss_session_t *session, dss_shared_latc
 void dss_unlock_shm_meta_x(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
     cm_panic_log(dss_is_server(), "can not op x latch in client");
+    CM_ASSERT(shared_latch->latch.stat == LATCH_STATUS_X);
     spin_statis_t *stat_spin = NULL;
     uint32 sid = (session != NULL ? DSS_SESSIONID_IN_LOCK(session->id) : DSS_DEFAULT_SESSIONID);
     cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, stat_spin);
@@ -494,6 +499,7 @@ void dss_unlock_shm_meta_x(dss_session_t *session, dss_shared_latch_t *shared_la
 void dss_unlock_shm_meta_without_stack(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
     cm_panic_log(dss_is_server(), "can not op shared latch without session latch stack in client");
+    CM_ASSERT(shared_latch->latch.stat != LATCH_STATUS_IDLE);
     if (shared_latch->latch.stat == LATCH_STATUS_S || shared_latch->latch.stat == LATCH_STATUS_IX) {
         dss_unlock_shm_meta_s_without_stack(session, shared_latch);
         return;
@@ -504,7 +510,8 @@ void dss_unlock_shm_meta_without_stack(dss_session_t *session, dss_shared_latch_
 // only used by api-client or by clean
 bool32 dss_unlock_shm_meta_s_with_stack(dss_session_t *session, dss_shared_latch_t *shared_latch, bool32 is_try_lock)
 {
-    // NOT check:cm_panic_log(!(dss_is_server()), "can not op shared latch with latch stack session in server");
+    // can not call checkcm_paninc_log with dss_is_server
+    CM_ASSERT(shared_latch->latch.stat != LATCH_STATUS_IDLE);
     session->latch_stack.stack_top_bak = session->latch_stack.stack_top;
     session->latch_stack.op = LATCH_SHARED_OP_UNLATCH;
 
@@ -605,8 +612,8 @@ static void dss_clean_latch_s_with_bak(dss_session_t *session, dss_shared_latch_
 
 static void dss_clean_unlatch_without_bak(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
-    LOG_DEBUG_INF("Clean sid:%u unlatch shared_latch, old count:%hu, old stat:%u.", DSS_SESSIONID_IN_LOCK(session->id),
-        shared_latch->latch.shared_count, shared_latch->latch.stat);
+    LOG_DEBUG_INF("Clean sid:%u unlatch shared_latch without bak, old count:%hu, old stat:%u.",
+        DSS_SESSIONID_IN_LOCK(session->id), shared_latch->latch.shared_count, shared_latch->latch.stat);
 
     CM_ASSERT(shared_latch->latch.shared_count > 0);
     shared_latch->latch.shared_count--;
@@ -633,8 +640,8 @@ static void dss_clean_unlatch_without_bak(dss_session_t *session, dss_shared_lat
 
 static void dss_clean_unlatch_with_bak(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
-    LOG_DEBUG_INF("Clean sid:%u unlatch shared_latch, old count:%hu, old stat:%u.", DSS_SESSIONID_IN_LOCK(session->id),
-        shared_latch->latch.shared_count, shared_latch->latch.stat);
+    LOG_DEBUG_INF("Clean sid:%u unlatch shared_latch with bak, old count:%hu, old stat:%u.",
+        DSS_SESSIONID_IN_LOCK(session->id), shared_latch->latch.shared_count, shared_latch->latch.stat);
     // not sure last unlatch finsh, using the shared_count_bak first
     shared_latch->latch.shared_count = shared_latch->latch_extent.shared_count_bak;
     shared_latch->latch.stat = shared_latch->latch_extent.stat_bak;
@@ -668,8 +675,8 @@ static void dss_clean_last_op_with_lock(dss_session_t *session, dss_shared_latch
 {
     CM_ASSERT((DSS_SESSIONID_IN_LOCK(session->id)) == shared_latch->latch.lock);
 
-    LOG_DEBUG_INF("Clean sid:%u latch_stack op:%u, stack_top_bak:%hu.", DSS_SESSIONID_IN_LOCK(session->id),
-        session->latch_stack.op, session->latch_stack.stack_top_bak);
+    LOG_DEBUG_INF("Clean sid:%u last op with lock latch_stack op:%u, stack_top_bak:%hu.",
+        DSS_SESSIONID_IN_LOCK(session->id), session->latch_stack.op, session->latch_stack.stack_top_bak);
 
     LOG_DEBUG_INF("Clean sid:%u latch_extent stat_bak:%hu, shared_count_bak:%hu.", DSS_SESSIONID_IN_LOCK(session->id),
         shared_latch->latch_extent.stat_bak, shared_latch->latch_extent.shared_count_bak);
