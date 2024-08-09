@@ -259,6 +259,10 @@ status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32
     log_param_t *log_param = cm_log_param_instance();
     log_param->log_level = 0;
     log_param->log_compressed = DSS_TRUE;
+    log_param->log_compress_buf = malloc(CM_LOG_COMPRESS_BUFSIZE);
+    if (log_param->log_compress_buf == NULL) {
+        log_param->log_compressed = DSS_FALSE;
+    }
 
     if (dss_init_log_home(inst_cfg, log_param) != CM_SUCCESS) {
         return CM_ERROR;
