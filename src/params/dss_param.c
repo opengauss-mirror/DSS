@@ -36,6 +36,12 @@ extern "C" {
 #endif
 
 dss_config_t *g_inst_cfg = NULL;
+static dss_config_t g_inst_cfg_inner = {0};
+dss_config_t *dss_get_g_inst_cfg()
+{
+    return &g_inst_cfg_inner;
+}
+
 // clang-format off
 static config_item_t g_dss_params[] = {
     /* name, isdefault, attr, default_value, value, runtime_value, description, range, datatype, comment,
