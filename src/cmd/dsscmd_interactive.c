@@ -459,8 +459,10 @@ void dss_cmd_push_history(uint32 cmd_bytes, uint32 cmd_width, int *hist_count, c
 void dss_cmd_set_terminal(uint32 *ws_col, struct termios *oldt)
 {
     struct winsize size;
-    (void)ioctl(0, TIOCGWINSZ, &size);
-    *ws_col = size.ws_col;
+    status_t status = ioctl(STDIN_FILENO, TIOCGWINSZ, &size);
+    const uint32 DEFAULT_WS_COL = 80;
+    /* set default ws_col when ioctl fails */
+    *ws_col = (status != CM_SUCCESS) ? DEFAULT_WS_COL : size.ws_col;
 
     struct termios newt;
     (void)tcgetattr(STDIN_FILENO, oldt);

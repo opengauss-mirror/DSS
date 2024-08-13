@@ -102,6 +102,7 @@ typedef struct st_dss_config {
     dss_params_t params;
 } dss_config_t;
 extern dss_config_t *g_inst_cfg;
+dss_config_t *dss_get_g_inst_cfg();
 
 #define DSS_UNIX_DOMAIN_SOCKET_NAME ".dss_unix_d_socket"
 #define DSS_MAX_SSL_PERIOD_DETECTION 180

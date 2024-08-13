@@ -2429,7 +2429,7 @@ static status_t examine_proc(void)
     char *home = NULL;
     char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
     dss_conn_t connection;
-    dss_config_t inst_cfg;
+    dss_config_t *inst_cfg = dss_get_g_inst_cfg();
 
     status_t status = get_examine_parameter(&path, &offset, &format);
     if (status != CM_SUCCESS) {
@@ -2440,7 +2440,7 @@ static status_t examine_proc(void)
         return status;
     }
 
-    status = set_config_info(home, &inst_cfg);
+    status = set_config_info(home, inst_cfg);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to load config info!\n");
         return status;
@@ -2660,14 +2660,14 @@ static status_t showdisk_proc(void)
     const char *vg_name = cmd_showdisk_args[DSS_ARG_IDX_0].input_args;
     char *home = cmd_showdisk_args[DSS_ARG_IDX_4].input_args;
     status_t status;
-    dss_config_t inst_cfg;
+    dss_config_t *inst_cfg = dss_get_g_inst_cfg();
     dss_vg_info_item_t *vg_item = NULL;
-    status = set_config_info(home, &inst_cfg);
+    status = set_config_info(home, inst_cfg);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to load config info!\n");
         return status;
     }
-    status = dss_load_vg_conf_info(&g_vgs_info, &inst_cfg);
+    status = dss_load_vg_conf_info(&g_vgs_info, inst_cfg);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load vg info from config, errcode is %d.\n", status);
         return status;
@@ -3419,16 +3419,16 @@ static status_t fshowmem_proc_by_fid_and_node_id(dss_vg_info_item_t *vg_item, ds
 }
 static status_t fshowmem_proc(void)
 {
-    status_t status;
+    status_t status = CM_SUCCESS;
     if (cmd_fshowmem_args[DSS_ARG_IDX_10].inputed) {
-        dss_config_t inst_cfg;
+        dss_config_t *inst_cfg = dss_get_g_inst_cfg();
         char *home = cmd_fshowmem_args[DSS_ARG_IDX_10].input_args;
-        status = set_config_info(home, &inst_cfg);
+        status = set_config_info(home, inst_cfg);
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to set config info.\n");
             return status;
         }
-        status = dss_init_loggers(&inst_cfg, g_dss_admin_log, sizeof(g_dss_admin_log) / sizeof(dss_log_def_t), "dsscmd");
+        status = dss_init_loggers(inst_cfg, g_dss_admin_log, sizeof(g_dss_admin_log) / sizeof(dss_log_def_t), "dsscmd");
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("DSS init loggers failed!\n");
             return status;
@@ -4784,13 +4784,14 @@ int main(int argc, char **argv)
         exit(help_ret);
     }
 
-    dss_config_t inst_cfg;
-    if (dss_set_cfg_dir(NULL, &inst_cfg) != CM_SUCCESS) {
+    dss_config_t *inst_cfg = dss_get_g_inst_cfg();
+    if (dss_set_cfg_dir(NULL, inst_cfg) != CM_SUCCESS) {
         (void)printf("Environment variant DSS_HOME not found!\n");
         return CM_ERROR;
     }
-    status_t ret = dss_load_local_server_config(
-        &inst_cfg, g_dss_admin_parameters, sizeof(g_dss_admin_parameters) / sizeof(config_item_t));
+
+    uint32 param_num = sizeof(g_dss_admin_parameters) / sizeof(config_item_t);
+    status_t ret = dss_load_local_server_config(inst_cfg, g_dss_admin_parameters, param_num);
     if (ret != CM_SUCCESS) {
         (void)printf("load local server config failed during init loggers.\n");
         return CM_ERROR;
@@ -4801,7 +4802,7 @@ int main(int argc, char **argv)
         return CM_ERROR;
     }
 
-    ret = dss_init_loggers(&inst_cfg, g_dss_admin_log, sizeof(g_dss_admin_log) / sizeof(dss_log_def_t), "dsscmd");
+    ret = dss_init_loggers(inst_cfg, g_dss_admin_log, sizeof(g_dss_admin_log) / sizeof(dss_log_def_t), "dsscmd");
     if (ret != CM_SUCCESS && is_log_necessary(argc, argv)) {
         (void)printf("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code()));
         return ret;

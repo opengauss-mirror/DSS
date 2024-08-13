@@ -283,12 +283,12 @@ status_t dss_inq_lun(const char *home)
 {
 #ifndef WIN32
     status_t status;
-    dss_config_t inst_cfg;
+    dss_config_t *inst_cfg = dss_get_g_inst_cfg();
     dss_vg_info_t *vg_info = NULL;
-    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, inst_cfg, &vg_info));
 
     for (uint32 i = 0; i < vg_info->group_num; i++) {
-        status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], CM_TRUE, CM_FALSE);
+        status = dss_get_vg_non_entry_info(inst_cfg, &vg_info->volume_group[i], CM_TRUE, CM_FALSE);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to get vg non entry info when inq lun.\n");
@@ -314,12 +314,12 @@ status_t dss_inq_reg(const char *home)
 {
 #ifndef WIN32
     status_t status;
-    dss_config_t inst_cfg;
+    dss_config_t *inst_cfg = dss_get_g_inst_cfg();
     dss_vg_info_t *vg_info = NULL;
-    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, inst_cfg, &vg_info));
 
     for (uint32 i = 0; i < vg_info->group_num; i++) {
-        status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], CM_TRUE, CM_FALSE);
+        status = dss_get_vg_non_entry_info(inst_cfg, &vg_info->volume_group[i], CM_TRUE, CM_FALSE);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to get vg non entry info when inq reg.\n");
@@ -426,18 +426,18 @@ status_t dss_reghl_core(const char *home)
 {
 #ifndef WIN32
     status_t status;
-    dss_config_t inst_cfg;
+    dss_config_t *inst_cfg = dss_get_g_inst_cfg();
     dss_vg_info_t *vg_info = NULL;
-    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, inst_cfg, &vg_info));
 
     for (uint32 i = 0; i < vg_info->group_num; i++) {
-        status = dss_iof_register_single(inst_cfg.params.inst_id, vg_info->volume_group[i].entry_path);
+        status = dss_iof_register_single(inst_cfg->params.inst_id, vg_info->volume_group[i].entry_path);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to register vg entry disk when reghl, errcode is %d.\n", status);
             return status;
         }
-        status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], CM_TRUE, CM_FALSE);
+        status = dss_get_vg_non_entry_info(inst_cfg, &vg_info->volume_group[i], CM_TRUE, CM_FALSE);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to get vg non entry info when reghl, errcode is %d.\n", status);
@@ -445,14 +445,14 @@ status_t dss_reghl_core(const char *home)
         }
         if (i == 0) {
             status = dss_modify_cluster_node_info(
-                &vg_info->volume_group[i], &inst_cfg, DSS_INQ_STATUS_REG, inst_cfg.params.inst_id);
+                &vg_info->volume_group[i], inst_cfg, DSS_INQ_STATUS_REG, inst_cfg->params.inst_id);
             if (status != CM_SUCCESS) {
                 dss_inq_free_vg_info(vg_info);
                 DSS_PRINT_ERROR("Failed to modify node cluster info, errcode is %d.\n", status);
                 return status;
             }
         }
-        status = dss_reghl_inner(&vg_info->volume_group[i], inst_cfg.params.inst_id);
+        status = dss_reghl_inner(&vg_info->volume_group[i], inst_cfg->params.inst_id);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to reghl, errcode is %d.\n", status);
@@ -460,7 +460,7 @@ status_t dss_reghl_core(const char *home)
         }
     }
     dss_inq_free_vg_info(vg_info);
-    LOG_RUN_INF("Succeed to register instance %llu.", inst_cfg.params.inst_id);
+    LOG_RUN_INF("Succeed to register instance %llu.", inst_cfg->params.inst_id);
 #endif
     return CM_SUCCESS;
 }
@@ -488,14 +488,14 @@ status_t dss_unreghl_core(const char *home, bool32 is_lock)
 #ifndef WIN32
     bool32 is_reg;
     status_t status;
-    dss_config_t inst_cfg;
+    dss_config_t *inst_cfg = dss_get_g_inst_cfg();
     dss_vg_info_t *vg_info = NULL;
     int64 iofence_key[DSS_MAX_INSTANCES] = {0};
-    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, inst_cfg, &vg_info));
 
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         status = dss_check_volume_register(
-            vg_info->volume_group[i].entry_path, inst_cfg.params.inst_id, &is_reg, iofence_key);
+            vg_info->volume_group[i].entry_path, inst_cfg->params.inst_id, &is_reg, iofence_key);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to check volume register when unreghl, errcode is %d.\n", status);
@@ -504,7 +504,7 @@ status_t dss_unreghl_core(const char *home, bool32 is_lock)
         if (!is_reg) {
             continue;
         }
-        status = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[i], is_lock, CM_FALSE);
+        status = dss_get_vg_non_entry_info(inst_cfg, &vg_info->volume_group[i], is_lock, CM_FALSE);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to get vg entry info when unreghl, errcode is %d.\n", status);
@@ -512,14 +512,14 @@ status_t dss_unreghl_core(const char *home, bool32 is_lock)
         }
         if (i == 0 && is_lock) {
             status = dss_modify_cluster_node_info(
-                &vg_info->volume_group[i], &inst_cfg, DSS_INQ_STATUS_UNREG, inst_cfg.params.inst_id);
+                &vg_info->volume_group[i], inst_cfg, DSS_INQ_STATUS_UNREG, inst_cfg->params.inst_id);
             if (status != CM_SUCCESS) {
                 dss_inq_free_vg_info(vg_info);
                 DSS_PRINT_ERROR("Failed to modify node cluster info, errcode is %d.\n", status);
                 return status;
             }
         }
-        status = dss_unreghl_inner(&vg_info->volume_group[i], inst_cfg.params.inst_id);
+        status = dss_unreghl_inner(&vg_info->volume_group[i], inst_cfg->params.inst_id);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to unreghl, errcode is %d.\n", status);
@@ -527,7 +527,7 @@ status_t dss_unreghl_core(const char *home, bool32 is_lock)
         }
     }
     dss_inq_free_vg_info(vg_info);
-    LOG_RUN_INF("Succeed to unregister instance %llu.", inst_cfg.params.inst_id);
+    LOG_RUN_INF("Succeed to unregister instance %llu.", inst_cfg->params.inst_id);
 #endif
     return CM_SUCCESS;
 }
@@ -569,10 +569,10 @@ status_t dss_inq_reg_core(const char *home, int64 host_id)
     bool32 is_reg;
     uint32 count = 0;
     status_t status;
-    dss_config_t inst_cfg;
+    dss_config_t *inst_cfg = dss_get_g_inst_cfg();
     dss_vg_info_t *vg_info = NULL;
     int64 iofence_key[DSS_MAX_INSTANCES] = {0};
-    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, inst_cfg, &vg_info));
 
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         status = dss_check_volume_register(vg_info->volume_group[i].entry_path, host_id, &is_reg, iofence_key);
@@ -599,7 +599,7 @@ status_t dss_inq_reg_core(const char *home, int64 host_id)
         LOG_RUN_INF("The node %lld is registered partially, inq_result = 1.", host_id);
         return CM_TIMEDOUT;
     }
-    status = dss_inq_reg_inner(vg_info, &inst_cfg, host_id, iofence_key);
+    status = dss_inq_reg_inner(vg_info, inst_cfg, host_id, iofence_key);
     dss_inq_free_vg_info(vg_info);
     if (status == CM_ERROR) {
         DSS_PRINT_ERROR("Failed to check vg entry info when inq reg, errcode is %d.\n", status);
@@ -643,17 +643,17 @@ static status_t dss_clean_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, 
 status_t dss_clean_vg_lock(const char *home, int64 inst_id)
 {
 #ifndef WIN32
-    dss_config_t inst_cfg;
+    dss_config_t *inst_cfg = dss_get_g_inst_cfg();
     dss_vg_info_t *vg_info = NULL;
-    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, inst_cfg, &vg_info));
 
-    int32 dss_mode = dss_storage_mode(&inst_cfg);
+    int32 dss_mode = dss_storage_mode(inst_cfg);
     if (dss_mode == DSS_MODE_DISK) {
         dss_inq_free_vg_info(vg_info);
         return CM_SUCCESS;
     }
 
-    status_t status = dss_clean_inner(vg_info, &inst_cfg, inst_id);
+    status_t status = dss_clean_inner(vg_info, inst_cfg, inst_id);
     dss_inq_free_vg_info(vg_info);
     return status;
 #endif
@@ -695,11 +695,10 @@ static status_t dss_kickh_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, 
 status_t dss_kickh_core(const char *home, int64 host_id)
 {
 #ifndef WIN32
-    dss_config_t inst_cfg;
+    dss_config_t *inst_cfg = dss_get_g_inst_cfg();
     dss_vg_info_t *vg_info = NULL;
-    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
-
-    status_t status = dss_kickh_inner(vg_info, &inst_cfg, host_id, CM_FALSE);
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, inst_cfg, &vg_info));
+    status_t status = dss_kickh_inner(vg_info, inst_cfg, host_id, CM_FALSE);
     if (status != CM_SUCCESS) {
         dss_inq_free_vg_info(vg_info);
         DSS_PRINT_ERROR("Failed to kickh without lock.\n");
@@ -713,7 +712,7 @@ status_t dss_kickh_core(const char *home, int64 host_id)
         return CM_ERROR;
     }
 
-    status = dss_kickh_inner(vg_info, &inst_cfg, host_id, CM_TRUE);
+    status = dss_kickh_inner(vg_info, inst_cfg, host_id, CM_TRUE);
     dss_inq_free_vg_info(vg_info);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to kickh with lock.\n");
