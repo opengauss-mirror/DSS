@@ -645,10 +645,10 @@ status_t dss_modify_volume_offline(
         return CM_ERROR;
     }
 
-    dss_config_t inst_cfg;
+    dss_config_t *inst_cfg = dss_get_g_inst_cfg();
     dss_vg_info_t *vg_info = NULL;
     bool32 is_first_vg = CM_FALSE;
-    CM_RETURN_IFERR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
+    CM_RETURN_IFERR(dss_inq_alloc_vg_info(home, inst_cfg, &vg_info));
     dss_vg_info_item_t *vg_item = dss_find_vg_item_inner(vg_info, vg_name, &is_first_vg);
     if (vg_item == NULL) {
         dss_inq_free_vg_info(vg_info);
@@ -657,26 +657,26 @@ status_t dss_modify_volume_offline(
     }
     status_t ret;
     if (!is_first_vg) {
-        ret = dss_get_vg_non_entry_info(&inst_cfg, &vg_info->volume_group[0], CM_TRUE, CM_TRUE);
+        ret = dss_get_vg_non_entry_info(inst_cfg, &vg_info->volume_group[0], CM_TRUE, CM_TRUE);
         if (ret != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to get first vg non entry info when modify volume offline.\n");
             return ret;
         }
     }
-    ret = dss_get_vg_non_entry_info(&inst_cfg, vg_item, CM_TRUE, CM_TRUE);
+    ret = dss_get_vg_non_entry_info(inst_cfg, vg_item, CM_TRUE, CM_TRUE);
     if (ret != CM_SUCCESS) {
         dss_inq_free_vg_info(vg_info);
         DSS_PRINT_ERROR("Failed to get vg non entry info when modify volume offline.\n");
         return ret;
     }
-    if (dss_lock_vg_storage_w(vg_item, vg_item->entry_path, &inst_cfg) != CM_SUCCESS) {
+    if (dss_lock_vg_storage_w(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
         dss_inq_free_vg_info(vg_info);
         DSS_PRINT_ERROR("Failed to lock vg:%s.\n", vg_name);
         return CM_ERROR;
     }
-    ret = dss_modify_volume_offline_inner(vg_item, old_vol, new_vol, type, &inst_cfg);
-    dss_unlock_vg_storage(vg_item, vg_item->entry_path, &inst_cfg);
+    ret = dss_modify_volume_offline_inner(vg_item, old_vol, new_vol, type, inst_cfg);
+    dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
     dss_inq_free_vg_info(vg_info);
     if (ret != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to execute modify volume inner.\n");
