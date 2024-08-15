@@ -60,7 +60,7 @@ static void find_traverse_node(
         }
     }
 
-    if (is_match(node->name, name)) {
+    if (is_match(node->name, name) && !(node->flags & DSS_FT_NODE_FLAG_DEL)) {
         (void)printf("%s\n", path_text.str);
     }
     if (memset_s(tmp + origin_len, DSS_MAX_PATH_BUFFER_SIZE - origin_len, 0, strlen(node->name) + 1) != EOK) {
