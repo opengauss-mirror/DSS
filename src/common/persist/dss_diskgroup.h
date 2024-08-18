@@ -212,6 +212,7 @@ bool32 dss_is_readwrite(void);
 bool32 dss_is_readonly(void);
 void dss_set_server_flag(void);
 bool32 dss_need_exec_local(void);
+dss_vg_info_t *dss_malloc_vg_info(void);
 
 typedef dss_instance_status_e (*dss_get_instance_status_proc_t)(void);
 extern dss_get_instance_status_proc_t get_instance_status_proc;

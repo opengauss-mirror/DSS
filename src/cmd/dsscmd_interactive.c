@@ -28,6 +28,7 @@
 #include "dss_file.h"
 #include "dss_interaction.h"
 #include "dss_api_impl.h"
+#include "dsscmd_conn_opt.h"
 
 #ifndef WIN32
 #include <termios.h>
@@ -146,26 +147,20 @@ status_t dss_cmd_check_path_exist(dss_conn_t *conn, char *path)
 
 status_t dss_cmd_check_path(char *path)
 {
-    status_t status;
-    char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
-    dss_conn_t conn;
-
-    status = dss_check_device_path(path);
+    status_t status = dss_check_device_path(path);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("check path error.\n");
         return status;
     }
 
-    DSS_RETURN_IF_ERROR(get_server_locator(NULL, server_locator));
-    status = dss_uds_get_connection(server_locator, &conn);
-    if (status != CM_SUCCESS) {
+    /* get connection from env of dss_home */
+    dss_conn_t *conn = dss_get_connection_opt(NULL);
+    if (conn == NULL) {
         DSS_PRINT_ERROR("Failed to get uds connection.\n");
         return status;
     }
 
-    status = dss_cmd_check_path_exist(&conn, path);
-    dss_disconnect_ex(&conn);
-    clean_cmd();
+    status = dss_cmd_check_path_exist(conn, path);
     return status;
 }
 
@@ -621,10 +616,13 @@ void dss_cmd_fgets(int *hist_count, int *list_num, uint32 welcome_width, char *c
 
 uint32 dss_cmd_print_welcome()
 {
-    uint32 nchars = printf("dsscmd> ");
+    bool8 isConnected = dss_get_connection_opt_status();
+        uint32 num = printf("dsscmd%s%s%s%s> ", isConnected ? "@connected" : "",
+        strcmp(g_cur_path, "") == CM_SUCCESS ? "" : "(",
+        strcmp(g_cur_path, "") == CM_SUCCESS ? "" : g_cur_path,
+        strcmp(g_cur_path, "") == CM_SUCCESS ? "" : ")");
     fflush(stdout);
-
-    return nchars;
+    return num;
 }
 
 bool8 dss_exe_interactive_cmd(int argc, char **args)
@@ -709,6 +707,5 @@ void dss_cmd_run_interactively()
         }
 
         (void)execute_cmd(argc, args, cmd_idx);
-        clean_cmd();
     }
 }

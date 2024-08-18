@@ -71,6 +71,15 @@ static int32 g_dss_lock_vg_fd = CM_INVALID_INT32;
 static uint32 g_dss_recover_thread_id = 0;
 
 // CAUTION: dss_admin manager command just like dss_create_vg,cannot call it,
+
+dss_vg_info_t *dss_malloc_vg_info(void)
+{
+    if (g_vgs_info != NULL) {
+        return g_vgs_info;  /* reuse memory of g_vgs_info */
+    }
+    return (dss_vg_info_t *)cm_malloc(sizeof(dss_vg_info_t));
+}
+
 bool32 dss_is_server(void)
 {
     return g_is_dss_server;
@@ -185,8 +194,7 @@ status_t dss_load_vg_conf_inner(dss_vg_info_t *vgs_info, const dss_config_t *ins
 
 status_t dss_load_vg_conf_info(dss_vg_info_t **vgs, const dss_config_t *inst_cfg)
 {
-    status_t status;
-    dss_vg_info_t *vgs_info = (dss_vg_info_t *)cm_malloc(sizeof(dss_vg_info_t));
+    dss_vg_info_t *vgs_info = dss_malloc_vg_info();
     bool32 result = (bool32)(vgs_info != NULL);
     DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, sizeof(dss_vg_info_t), "dss_load_vg_conf_info"));
 
@@ -194,7 +202,7 @@ status_t dss_load_vg_conf_info(dss_vg_info_t **vgs, const dss_config_t *inst_cfg
     result = (bool32)(errcode == EOK);
     DSS_RETURN_IF_FALSE3(result, DSS_FREE_POINT(vgs_info), CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode));
 
-    status = dss_load_vg_conf_inner(vgs_info, inst_cfg);
+    status_t status = dss_load_vg_conf_inner(vgs_info, inst_cfg);
     if (status != CM_SUCCESS) {
         DSS_FREE_POINT(vgs_info);
         return CM_ERROR;
@@ -214,7 +222,7 @@ status_t dss_load_vg_conf_info(dss_vg_info_t **vgs, const dss_config_t *inst_cfg
 void dss_free_vg_info()
 {
     LOG_RUN_INF("free g_vgs_info.");
-    DSS_FREE_POINT(g_vgs_info);
+    DSS_FREE_POINT(g_vgs_info)
 }
 
 dss_vg_info_item_t *dss_find_vg_item(const char *vg_name)
