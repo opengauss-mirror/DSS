@@ -27,6 +27,7 @@
 
 #include "cm_utils.h"
 #include "dss_defs.h"
+#include "dss_args_parse.h"
 #include "dsscmd.h"
 
 #define VERSION_SHORT       (g_run_interatively ? "v" : "-v")

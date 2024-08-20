@@ -181,6 +181,7 @@ typedef struct st_dss_fs_block_t {
     dss_block_id_t bitmap[0];
 } dss_fs_block_t;
 
+#define DSS_FS_BLOCK_ITEM_NUM ((DSS_FILE_SPACE_BLOCK_SIZE - sizeof(dss_fs_block_header)) / sizeof(auid_t))
 typedef struct st_gft_root_t {
     gft_list_t free_list;  // free file table node list
     gft_list_t items;      // not used for now

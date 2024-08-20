@@ -224,6 +224,11 @@ static inline uint64 dss_get_fs_block_file_ver(dss_fs_block_t *fs_block)
     return block_ctrl->file_ver;
 }
 
+static inline int64 dss_get_fsb_offset(uint32 au_size, const dss_block_id_t *id)
+{
+    return (int64)id->au * au_size + (int64)DSS_FILE_SPACE_BLOCK_SIZE * id->block;
+}
+
 static inline dss_block_ctrl_t *dss_get_block_ctrl_by_ft(dss_ft_block_t *ft_block)
 {
     return (dss_block_ctrl_t *)((char *)ft_block + DSS_BLOCK_CTRL_SIZE);

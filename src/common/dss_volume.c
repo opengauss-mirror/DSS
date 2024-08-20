@@ -423,8 +423,8 @@ status_t dss_read_volume(dss_volume_t *volume, int64 offset, void *buf, int32 si
             dss_try_pread_volume(volume, offset + total_size, (char *)buf + total_size, size - total_size, &curr_size);
 #endif
         if (ret != CM_SUCCESS) {
-            LOG_RUN_ERR("Failed to read volume %s, begin:%d, volume id:%u, size:%d, offset:%lld.", volume->name_p,
-                total_size, volume->id, size - total_size, offset);
+            LOG_RUN_ERR("Failed to read volume %s, begin:%d, volume id:%u, size:%d, offset:%lld, errmsg:%s.",
+                volume->name_p, total_size, volume->id, size - total_size, offset, strerror(errno));
             return CM_ERROR;
         }
 

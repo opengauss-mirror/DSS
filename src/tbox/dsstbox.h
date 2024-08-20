@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Huawei Technologies Co.,Ltd.
+ * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
  *
  * DSS is licensed under Mulan PSL v2.
  * You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -13,31 +13,26 @@
  * See the Mulan PSL v2 for more details.
  * -------------------------------------------------------------------------
  *
- * dsscmd.h
+ * dsstbox.h
  *
  *
  * IDENTIFICATION
- *    src/cmd/dsscmd.h
+ *    src/tbox/dsstbox.h
  *
  * -------------------------------------------------------------------------
  */
 
-#ifndef __DSSCMD_H__
-#define __DSSCMD_H__
+#ifndef __DSSTBOX_H_
+#define __DSSTBOX_H_
 
 #include "dss_defs.h"
-#include "dss_interaction.h"
 
-status_t get_server_locator(char *input_args, char *server_locator);
-
-status_t dss_uds_get_connection(const char *server_locator, dss_conn_t *conn);
-
-void dss_cmd_set_path_optional();
-
-int32 execute_help_cmd(int argc, char **argv, uint32_t *idx, bool8 *go_ahead);
-
-status_t execute_cmd(int argc, char **argv, uint32 idx);
-
-void clean_cmd();
+typedef struct st_repair_input_def {
+    char *vol_path;
+    char *type;
+    char *key_value;
+    dss_block_id_t block_id;
+    uint32_t au_size;
+} repair_input_def_t;
 
 #endif
