@@ -517,18 +517,6 @@ typedef struct st_dss_audit_info {
         }                        \
     }
 
-static inline int64 cm_scn_delta(void)
-{
-    return CM_UNIX_EPOCH + CM_HOST_TIMEZONE;
-}
-
-static inline date_t cm_timeval2date(struct timeval tv)
-{
-    date_t dt = cm_scn_delta();
-    dt += ((int64)tv.tv_sec * MICROSECS_PER_SECOND + tv.tv_usec);
-    return dt;
-}
-
 #define MICROSECS_PER_MIN 60000000U
 static inline uint64 cm_day_usec(void)
 {
