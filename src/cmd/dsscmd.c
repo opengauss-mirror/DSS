@@ -69,13 +69,6 @@
 #define DSS_DEFAULT_VG_TYPE 't' /* show vg information in table format by default */
 static const char dss_ls_print_flag[] = {'d', '-', 'l'};
 
-dss_log_def_t g_dss_admin_log[] = {
-    {LOG_DEBUG, "debug/dsscmd.dlog"},
-    {LOG_OPER, "oper/dsscmd.olog"},
-    {LOG_RUN, "run/dsscmd.rlog"},
-    {LOG_ALARM, "alarm/dsscmd.alog"},
-};
-
 typedef struct st_dss_print_help_t {
     char fmt;
     uint32 bytes;
@@ -3057,7 +3050,7 @@ static status_t fshowmem_proc(void)
             DSS_PRINT_ERROR("Failed to set config info.\n");
             return status;
         }
-        status = dss_init_loggers(inst_cfg, g_dss_admin_log, sizeof(g_dss_admin_log) / sizeof(dss_log_def_t), "dsscmd");
+        status = dss_init_loggers(inst_cfg, dss_get_cmd_log_def(), dss_get_cmd_log_def_count(), "dsscmd");
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("DSS init loggers failed!\n");
             return status;
@@ -4408,7 +4401,7 @@ int main(int argc, char **argv)
         return CM_ERROR;
     }
 
-    ret = dss_init_loggers(inst_cfg, g_dss_admin_log, sizeof(g_dss_admin_log) / sizeof(dss_log_def_t), "dsscmd");
+    ret = dss_init_loggers(inst_cfg, dss_get_cmd_log_def(), dss_get_cmd_log_def_count(), "dsscmd");
     if (ret != CM_SUCCESS && is_log_necessary(argc, argv)) {
         (void)printf("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code()));
         return ret;

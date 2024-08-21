@@ -120,6 +120,39 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_RECOVER_CAUSE_BREAK] = "Req break by recovery.",
 };
 
+dss_log_def_t g_dss_cmd_log[] = {
+    {LOG_DEBUG, "debug/dsscmd.dlog"},
+    {LOG_OPER, "oper/dsscmd.olog"},
+    {LOG_RUN, "run/dsscmd.rlog"},
+    {LOG_ALARM, "alarm/dsscmd.alog"},
+};
+
+dss_log_def_t g_dss_instance_log[] = {
+    {LOG_DEBUG, "debug/dssinstance.dlog"},
+    {LOG_OPER, "oper/dssinstance.olog"},
+    {LOG_RUN, "run/dssinstance.rlog"},
+    {LOG_ALARM, "alarm/dssinstance.alog"},
+    {LOG_AUDIT, "audit/dssinstance.aud"},
+    {LOG_BLACKBOX, "blackbox/dssinstance.blog"},
+};
+
+dss_log_def_t *dss_get_instance_log_def()
+{
+    return g_dss_instance_log;
+}
+dss_log_def_t *dss_get_cmd_log_def()
+{
+    return g_dss_cmd_log;
+}
+uint32 dss_get_instance_log_def_count()
+{
+    return sizeof(g_dss_instance_log) / sizeof(dss_log_def_t);
+}
+uint32 dss_get_cmd_log_def_count()
+{
+    return sizeof(g_dss_cmd_log) / sizeof(dss_log_def_t);
+}
+
 static status_t dss_init_log_file(log_param_t *log_param, dss_config_t *inst_cfg)
 {
     int64 val_int64;
