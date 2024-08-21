@@ -78,6 +78,7 @@ status_t dss_iof_kick_one_volume(char *dev, int64 rk, int64 rk_kick, ptlist_t *r
     reg_info.rk = rk;
     reg_info.rk_kick = rk_kick;
     reg_info.dev = dev;
+    reg_info.type = RESERV_TYPE_REGISTER_WRITE;
 
     is_reg = dss_iof_is_register(dev, rk, regs);
     if (!is_reg) {
@@ -97,10 +98,14 @@ status_t dss_iof_kick_one_volume(char *dev, int64 rk, int64 rk_kick, ptlist_t *r
 
     status = cm_iof_kick(&reg_info);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR(
-            "[FENCE][KICK] kick dev failed, org rk %lld, org sark %lld, dev %s.", reg_info.rk, reg_info.rk_kick,
-            reg_info.dev);
-        return status;
+        // To be compatible with the earlier version, use type 6 to try again.
+        reg_info.type = RESERV_TYPE_REGISTER_ACCESS;
+        status = cm_iof_kick(&reg_info);
+        if (status != CM_SUCCESS) {
+            LOG_DEBUG_ERR("[FENCE][KICK] kick dev failed, org rk %lld, org sark %lld, dev %s.", reg_info.rk,
+                reg_info.rk_kick, reg_info.dev);
+            return status;
+        }
     }
 #endif
     return CM_SUCCESS;
@@ -236,6 +241,8 @@ status_t dss_iof_register_single(int64 rk, char *dev)
     iof_reg_out_t reg_info;
     reg_info.rk = rk;
     reg_info.dev = dev;
+    reg_info.type = RESERV_TYPE_REGISTER_WRITE;
+
     status_t ret = cm_iof_register(&reg_info);
     if (ret != CM_SUCCESS) {
         if (ret != CM_IOF_ERR_DUP_OP) {
