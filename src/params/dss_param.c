@@ -145,7 +145,6 @@ static config_item_t g_dss_params[] = {
         dss_notify_enable_core_state_collect, NULL, NULL},
     {"DELAY_CLEAN_INTERVAL", CM_TRUE, ATTR_NONE, "100", NULL, NULL, "-", "[5,1000000]", "GS_TYPE_INTEGER", NULL, 45,
         EFFECT_IMMEDIATELY, CFG_INS, dss_verify_delay_clean_interval, dss_notify_delay_clean_interval, NULL, NULL},
-
 #if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
     {"SS_FI_PACKET_LOSS_ENTRIES", CM_TRUE, ATTR_NONE, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 46,
         EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_entity, dss_notify_fi_packet_loss_entity, NULL, NULL},
@@ -170,6 +169,8 @@ static config_item_t g_dss_params[] = {
         55, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_custom_fault_value, dss_notify_fi_custom_fault_value, NULL,
         NULL},
 #endif
+    { "LOG_COMPRESSED",  CM_TRUE, ATTR_READONLY, "FALSE", NULL, NULL, "-", "[FALSE,TRUE]",  "GS_TYPE_BOOLEAN", NULL,
+        56, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 static const char *g_dss_config_file = (const char *)"dss_inst.ini";

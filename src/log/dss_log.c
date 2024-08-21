@@ -227,7 +227,28 @@ static status_t dss_init_log_home(dss_config_t *inst_cfg, log_param_t *log_param
     }
     return CM_SUCCESS;
 }
-
+static status_t dss_load_log_compressed(dss_config_t *inst_cfg, log_param_t *log_param)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "LOG_COMPRESSED");
+    if (cm_str_equal_ins(value, "TRUE")) {
+        log_param->log_compressed = CM_TRUE;
+        log_param->log_compress_buf = malloc(CM_LOG_COMPRESS_BUFSIZE);
+        if (log_param->log_compress_buf == NULL) {
+            log_param->log_compressed = CM_FALSE;
+            LOG_RUN_ERR("Failed to alloc compree buf when init log.");
+            DSS_THROW_ERROR(ERR_DSS_INIT_LOGGER_FAILED);
+            return CM_ERROR;
+        }
+    } else if (cm_str_equal_ins(value, "FALSE")) {
+        log_param->log_compressed = CM_FALSE;
+        log_param->log_compress_buf = NULL;
+    } else {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "LOG_COMPRESSED");
+        return CM_ERROR;
+    }
+    LOG_RUN_INF("LOG_COMPRESSED = %u.", log_param->log_compressed);
+    return CM_SUCCESS;
+}
 static status_t dss_init_loggers_inner(dss_config_t *inst_cfg, log_param_t *log_param)
 {
     uint32 val_uint32;
@@ -283,8 +304,7 @@ static status_t dss_init_loggers_inner(dss_config_t *inst_cfg, log_param_t *log_
         CM_THROW_ERROR(ERR_INVALID_PARAM, "_AUDIT_LEVEL");
         return CM_ERROR;
     }
-
-    return CM_SUCCESS;
+    return dss_load_log_compressed(inst_cfg, log_param);
 }
 
 status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32 log_def_count, char *name)
@@ -292,12 +312,6 @@ status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32
     char file_name[CM_MAX_PATH_LEN];
     log_param_t *log_param = cm_log_param_instance();
     log_param->log_level = 0;
-    log_param->log_compressed = DSS_TRUE;
-    log_param->log_compress_buf = malloc(CM_LOG_COMPRESS_BUFSIZE);
-    if (log_param->log_compress_buf == NULL) {
-        log_param->log_compressed = DSS_FALSE;
-    }
-
     if (dss_init_log_home(inst_cfg, log_param) != CM_SUCCESS) {
         return CM_ERROR;
     }
