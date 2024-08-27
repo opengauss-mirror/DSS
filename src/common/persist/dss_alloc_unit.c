@@ -74,125 +74,166 @@ static status_t dss_alloc_au_recycle_fs_aux(
     return CM_SUCCESS;
 }
 
-static status_t dss_alloc_au_from_recycle(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, bool32 is_before, auid_t *auid)
+static void dss_remove_last_au_from_sec_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item,
+    gft_node_t *ft_node, dss_fs_block_t *entry_fs_block, uint16 entry_fs_idx, ga_obj_id_t obj_id, dss_fs_block_t *block)
 {
-    dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
-    dss_au_root_t *dss_au_root = DSS_GET_AU_ROOT(dss_ctrl);
-    bool32 entry_changed = CM_FALSE;
-    ftid_t free_root = *(ftid_t *)(&dss_au_root->free_root);
-    gft_node_t *root_node = dss_get_ft_node_by_ftid(session, vg_item, free_root, DSS_TRUE, CM_FALSE);
-    CM_ASSERT(root_node != NULL);
-    if (dss_can_alloc_from_recycle(root_node, is_before)) {
-        LOG_DEBUG_INF("[AU][ALLOC] Begin to alloc au from recycle dir in vg:%s.", vg_item->vg_name);
-        ftid_t id = root_node->items.first;
-        gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, id, DSS_TRUE, CM_FALSE);
-        if (node == NULL) {
-            LOG_DEBUG_ERR("[AU][ALLOC] Failed to get ft node: %s, maybe no memory.", dss_display_metaid(id));
-            return CM_ERROR;
-        }
-
-        CM_ASSERT(node->type == GFT_FILE || node->type == GFT_LINK);
-        dss_check_ft_node_parent(node, free_root);
-        ga_obj_id_t entry_objid;
-        dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
-            session, vg_item, node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, &entry_objid, CM_FALSE);
-        if (entry_block == NULL) {
-            LOG_DEBUG_ERR("[AU][ALLOC] Failed to get fs block: %s, maybe no memory.", dss_display_metaid(node->entry));
-            return CM_ERROR;
-        }
-        dss_check_fs_block_affiliation(entry_block, node->id, DSS_ENTRY_FS_INDEX);
-        uint16 index;
-        ga_obj_id_t sec_objid;
-        dss_fs_block_t *entry_fs_block = (dss_fs_block_t *)entry_block;
-        CM_ASSERT(entry_block->used_num > 0);
-
-        index = (uint16)(entry_block->used_num - 1);
-        dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
-            session, vg_item, entry_fs_block->bitmap[index], DSS_BLOCK_TYPE_FS, DSS_TRUE, &sec_objid, CM_FALSE);
-        if (block == NULL) {
-            LOG_DEBUG_ERR("[AU][ALLOC] Failed to get fs block: %s, maybe no memory.", dss_display_metaid(node->entry));
-            return CM_ERROR;
-        }
-        // when truncate file, the file size just one au, and target size size smaller than current size, then size of
-        // file created by truncate is zero, means no au, and block->head.used_num is zero, so delete
-        // CM_ASSERT(block->head.used_num > 0);
-        dss_check_fs_block_flags(&block->head, DSS_BLOCK_FLAG_USED);
-        uint16 old_used_num = entry_fs_block->head.used_num;
-        dss_block_id_t old_id = entry_fs_block->bitmap[index];
-        uint16 old_sec_used_num = block->head.used_num;
-        dss_block_id_t old_sec_id;
-        if (block->head.used_num > 0) {
-            uint16 sec_index = (uint16)(block->head.used_num - 1);
-            // weather *auid is aux or not, record it for redo here
-            *auid = block->bitmap[sec_index];
-            old_sec_id = *auid;
-
-            status_t status = dss_alloc_au_recycle_fs_aux(session, vg_item, node, auid, sec_index);
-            DSS_RETURN_IF_ERROR(status);
-
-            CM_ASSERT(auid->volume < DSS_MAX_VOLUMES);
-            block->head.used_num--;
-            dss_set_blockid(&block->bitmap[sec_index], DSS_INVALID_64);
-            dss_redo_set_file_size_t redo_size;
-            uint64 old_size = (uint64)node->size;
-            uint64 au_size = dss_get_vg_au_size(dss_ctrl);
-            (void)cm_atomic_set(&node->size, (int64)((uint64)node->size - au_size));
-            redo_size.ftid = node->id;
-            redo_size.size = (uint64)node->size;
-            redo_size.oldsize = old_size;
-            dss_put_log(session, vg_item, DSS_RT_SET_FILE_SIZE, &redo_size, sizeof(redo_size));
-            if (block->head.used_num == 0) {
-                dss_free_fs_block_addr(session, vg_item, (char *)block, sec_objid);
-                dss_set_blockid(&entry_fs_block->bitmap[index], DSS_INVALID_64);
-                entry_changed = DSS_TRUE;
-            }
-
-            // if not free ,change
-            if (!entry_changed) {
-                dss_redo_set_fs_block_t redo;
-                redo.index = sec_index;
-                redo.id = block->head.common.id;
-                redo.used_num = block->head.used_num;
-                redo.value = block->bitmap[sec_index];
-                redo.old_used_num = old_sec_used_num;
-                redo.old_value = old_sec_id;
-                dss_put_log(session, vg_item, DSS_RT_SET_FILE_FS_BLOCK, &redo, sizeof(redo));
-            }
-        } else {
-            dss_free_fs_block_addr(session, vg_item, (char *)block, sec_objid);
-            dss_set_blockid(&entry_fs_block->bitmap[index], DSS_INVALID_64);
-            entry_changed = DSS_TRUE;
-        }
-
-        dss_redo_set_fs_block_t redo;
-        if (entry_changed) {
-            entry_block->used_num--;
-            if (entry_block->used_num == 0) {
-                dss_free_fs_block_addr(session, vg_item, (char *)entry_block, entry_objid);
-                dss_free_ft_node(session, vg_item, root_node, node, CM_TRUE);
-            } else {
-                redo.index = index;
-                redo.id = entry_block->common.id;
-                redo.used_num = entry_block->used_num;
-                redo.value = entry_fs_block->bitmap[index];
-                redo.old_used_num = old_used_num;
-                redo.old_value = old_id;
-                dss_put_log(session, vg_item, DSS_RT_SET_FILE_FS_BLOCK, &redo, sizeof(redo));
-            }
-        }
-
-        DSS_LOG_DEBUG_OP("[AU][ALLOC] Succeed to allocate au: %s from recyle dir.", dss_display_metaid(*auid));
-        return CM_SUCCESS;
-    }
-
-    if (is_before) {
-        dss_set_auid(auid, DSS_INVALID_64);
-        return CM_SUCCESS;
+    uint16 tail_idx = (uint16)(block->head.used_num - 1);
+    uint16 old_sec_used_num = block->head.used_num;
+    dss_block_id_t old_sec_id = block->bitmap[tail_idx];
+    block->head.used_num--;
+    dss_set_blockid(&block->bitmap[tail_idx], DSS_INVALID_64);
+    dss_redo_set_file_size_t redo_size;
+    uint64 old_size = (uint64)ft_node->size;
+    uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
+    (void)cm_atomic_set(&ft_node->size, (int64)((uint64)ft_node->size - au_size));
+    redo_size.ftid = ft_node->id;
+    redo_size.size = (uint64)ft_node->size;
+    redo_size.oldsize = old_size;
+    dss_put_log(session, vg_item, DSS_RT_SET_FILE_SIZE, &redo_size, sizeof(redo_size));
+    // If the fs_block is exhausted after this allocation, it should be feed.
+    // If not exhausted, it should be modified for loss the allcated AU.
+    if (block->head.used_num == 0) {
+        LOG_DEBUG_INF("[AU][ALLOC] Second FSB(%s) is exhausted after allocation, free its space.",
+            dss_display_metaid(block->head.common.id));
+        dss_free_fs_block_addr(session, vg_item, (char *)block, obj_id);
+        dss_set_blockid(&entry_fs_block->bitmap[entry_fs_idx], DSS_INVALID_64);
     } else {
-        DSS_THROW_ERROR(ERR_DSS_NO_SPACE);
+        dss_redo_set_fs_block_t redo;
+        redo.index = tail_idx;
+        redo.id = block->head.common.id;
+        redo.used_num = block->head.used_num;
+        redo.value = block->bitmap[tail_idx];
+        redo.old_used_num = old_sec_used_num;
+        redo.old_value = old_sec_id;
+        dss_put_log(session, vg_item, DSS_RT_SET_FILE_FS_BLOCK, &redo, sizeof(redo));
+    }
+}
+
+static void dss_remove_last_sec_fs_from_entry_fs(dss_session_t *session, dss_vg_info_item_t *vg_item,
+    gft_node_t *recycle_root_node, gft_node_t *ft_node, dss_fs_block_t *entry_fs_block, ga_obj_id_t entry_objid)
+{
+    dss_fs_block_header *entry_block = &(entry_fs_block->head);
+    uint16 old_used_num = entry_block->used_num;
+    uint16 entry_fs_tail_idx = (uint16)(entry_block->used_num - 1);
+    dss_block_id_t old_id = entry_fs_block->bitmap[entry_fs_tail_idx];
+    entry_block->used_num--;
+    dss_redo_set_fs_block_t redo;
+    if (entry_block->used_num == 0) {
+        LOG_DEBUG_INF("[AU][ALLOC] entry FSB(%s) become empty, free its space.", dss_display_metaid(ft_node->entry));
+        dss_free_fs_block_addr(session, vg_item, (char *)entry_block, entry_objid);
+        dss_free_ft_node(session, vg_item, recycle_root_node, ft_node, CM_TRUE);
+    } else {
+        redo.index = entry_fs_tail_idx;
+        redo.id = entry_block->common.id;
+        redo.used_num = entry_block->used_num;
+        redo.value = entry_fs_block->bitmap[entry_fs_tail_idx];
+        redo.old_used_num = old_used_num;
+        redo.old_value = old_id;
+        dss_put_log(session, vg_item, DSS_RT_SET_FILE_FS_BLOCK, &redo, sizeof(redo));
+    }
+}
+
+// Try to allocate one au from the specified recycle file, there are such possibilities:
+// 1. If the recycle file has more than one AUs, then allocate it.
+//  1.1 If after allocation, the recycle file is exhausted, its metadata would be directly freed.
+//  1.2 If after allocation, it still has AUs left, just update its metadata accordingly.
+// 2. If the recycle file has no AUs, its metadata would be directly freed.
+static status_t dss_alloc_au_from_one_recycle_file(dss_session_t *session, dss_vg_info_item_t *vg_item,
+    gft_node_t *recycle_root_node, gft_node_t *ft_node, bool32 *found, auid_t *auid)
+{
+    LOG_DEBUG_INF("[AU][ALLOC] Begin to alloc au from recycle file %s.", ft_node->name);
+    *found = DSS_FALSE;
+    ga_obj_id_t entry_objid;
+    dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
+        session, vg_item, ft_node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, &entry_objid, CM_FALSE);
+    if (entry_block == NULL) {
+        LOG_DEBUG_ERR("[AU][ALLOC] Failed to get fs block: %s.", dss_display_metaid(ft_node->entry));
         return CM_ERROR;
     }
+    CM_ASSERT(entry_block->used_num > 0);
+    dss_check_fs_block_affiliation(entry_block, ft_node->id, DSS_ENTRY_FS_INDEX);
+    ga_obj_id_t sec_objid;
+    dss_fs_block_t *entry_fs_block = (dss_fs_block_t *)entry_block;
+    uint16 entry_fs_tail_idx = (uint16)(entry_block->used_num - 1);
+    dss_block_id_t sec_block_id = entry_fs_block->bitmap[entry_fs_tail_idx];
+    dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
+        session, vg_item, sec_block_id, DSS_BLOCK_TYPE_FS, DSS_TRUE, &sec_objid, CM_FALSE);
+    if (block == NULL) {
+        LOG_DEBUG_ERR("[AU][ALLOC] Failed to get fs block: %s.", dss_display_metaid(ft_node->entry));
+        return CM_ERROR;
+    }
+    dss_check_fs_block_flags(&block->head, DSS_BLOCK_FLAG_USED);
+    bool32 is_sec_fs_empty = DSS_FALSE;
+    if (block->head.used_num > 0) {
+        uint16 tail_idx = (uint16)(block->head.used_num - 1);
+        *auid = block->bitmap[tail_idx];
+        CM_ASSERT(auid->volume < DSS_MAX_VOLUMES);
+        DSS_RETURN_IF_ERROR(dss_alloc_au_recycle_fs_aux(session, vg_item, ft_node, auid, tail_idx));
+        dss_remove_last_au_from_sec_fs_block(
+            session, vg_item, ft_node, entry_fs_block, entry_fs_tail_idx, sec_objid, block);
+        if (block->head.used_num == 0) {
+            is_sec_fs_empty = DSS_TRUE;
+        }
+        *found = DSS_TRUE;
+    } else {
+        LOG_DEBUG_INF(
+            "[AU][ALLOC] Second FSB(%s) is empty, free its space.", dss_display_metaid(block->head.common.id));
+        dss_free_fs_block_addr(session, vg_item, (char *)block, sec_objid);
+        dss_set_blockid(&entry_fs_block->bitmap[entry_fs_tail_idx], DSS_INVALID_64);
+        is_sec_fs_empty = DSS_TRUE;
+    }
+
+    if (is_sec_fs_empty) {
+        LOG_DEBUG_INF("[AU][ALLOC] Second FSB(%s) is freed, its entry FSB(%s) needs modification.",
+            dss_display_metaid(sec_block_id), dss_display_metaid(ft_node->entry));
+        dss_remove_last_sec_fs_from_entry_fs(session, vg_item, recycle_root_node, ft_node, entry_fs_block, entry_objid);
+    }
+
+    if (*found) {
+        DSS_LOG_DEBUG_OP(
+            "[AU][ALLOC] Succeed to allocate au: %s from recycle file %s.", dss_display_metaid(*auid), ft_node->name);
+    } else {
+        DSS_LOG_DEBUG_OP("[AU][ALLOC] No au found in recycle file %s.", ft_node->name);
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_alloc_au_from_recycle(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, bool32 is_before, bool32 *found, auid_t *auid)
+{
+    dss_set_auid(auid, DSS_INVALID_64);
+    dss_au_root_t *dss_au_root = DSS_GET_AU_ROOT(vg_item->dss_ctrl);
+    ftid_t free_root = *(ftid_t *)(&dss_au_root->free_root);
+    gft_node_t *recycle_root_node = dss_get_ft_node_by_ftid(session, vg_item, free_root, DSS_TRUE, CM_FALSE);
+    CM_ASSERT(recycle_root_node != NULL);
+    *found = DSS_FALSE;
+    if (!dss_can_alloc_from_recycle(recycle_root_node, is_before)) {
+        LOG_DEBUG_INF("[AU][ALLOC] Currently we cannot allocate AUs from .recycle of vg:%s.", vg_item->vg_name);
+        return CM_SUCCESS;
+    }
+
+    LOG_DEBUG_INF("[AU][ALLOC] Begin to alloc au from recycle dir in vg:%s.", vg_item->vg_name);
+
+    // Try every file under .recycle one by one until one available AU is found for allocation.
+    do {
+        ftid_t cur_ftid = recycle_root_node->items.first;
+        gft_node_t *cur_node = dss_get_ft_node_by_ftid(session, vg_item, cur_ftid, DSS_TRUE, CM_FALSE);
+        if (cur_node == NULL) {
+            LOG_DEBUG_ERR("[AU][ALLOC] Failed to get ft node: %s.", dss_display_metaid(cur_ftid));
+            return CM_ERROR;
+        }
+
+        CM_ASSERT(cur_node->type == GFT_FILE || cur_node->type == GFT_LINK);
+        dss_check_ft_node_parent(cur_node, free_root);
+        // The recycle file may be freed in dss_alloc_au_from_one_recycle_file.
+        DSS_RETURN_IF_ERROR(
+            dss_alloc_au_from_one_recycle_file(session, vg_item, recycle_root_node, cur_node, found, auid));
+        if (*found || recycle_root_node->items.count == 0) {
+            break;
+        }
+    } while (DSS_TRUE);
+
+    return CM_SUCCESS;
 }
 
 status_t dss_alloc_au_core(dss_session_t *session, dss_ctrl_t *dss_ctrl, dss_vg_info_item_t *vg_item, auid_t *auid)
@@ -228,13 +269,18 @@ status_t dss_alloc_au_core(dss_session_t *session, dss_ctrl_t *dss_ctrl, dss_vg_
         }
     }
 
-    if (found == 0) {
-        status_t status = dss_alloc_au_from_recycle(session, vg_item, CM_FALSE, auid);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("[AU][ALLOC] Failed to allocate au from recycle dir after trying to allocate vg disk, vg %s.",
-                entry_path);
-            return status;
-        }
+    if (found) {
+        return CM_SUCCESS;
+    }
+    status_t status = dss_alloc_au_from_recycle(session, vg_item, CM_FALSE, &found, auid);
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR(
+            "[AU][ALLOC] Failed to allocate au from recycle dir after trying to allocate vg disk, vg %s.", entry_path);
+        return status;
+    }
+    if (!found) {
+        DSS_THROW_ERROR(ERR_DSS_NO_SPACE);
+        return CM_ERROR;
     }
     return CM_SUCCESS;
 }
@@ -311,34 +357,28 @@ status_t dss_alloc_au(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_
 {
     CM_ASSERT(vg_item != NULL && auid != NULL);
     LOG_DEBUG_INF("[AU][ALLOC] Begin to allocate au in vg:%s", vg_item->vg_name);
-    status_t status = dss_refresh_core_and_volume(vg_item);
-    if (status != CM_SUCCESS) {
-        return status;
-    }
+    DSS_RETURN_IF_ERROR(dss_refresh_core_and_volume(vg_item));
     char *entry_path = vg_item->entry_path;
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
 
     dss_au_root_t *au_root = DSS_GET_AU_ROOT(dss_ctrl);
     /* when we are creating vg, the free_root may be not initialized yet! */
     if (au_root->free_root != CM_INVALID_ID64) {
-        status = dss_alloc_au_from_recycle(session, vg_item, DSS_TRUE, auid);
+        bool32 found = CM_FALSE;
+        status_t status = dss_alloc_au_from_recycle(session, vg_item, DSS_TRUE, &found, auid);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("[AU][ALLOC] Failed to allocate au from recycle dir, vg %s.", entry_path);
             return status;
         }
 
-        if (!dss_cmp_auid(*auid, DSS_INVALID_64)) {
+        if (found) {
             DSS_LOG_DEBUG_OP(
                 "[AU][ALLOC] Succeed to allocate au: %s from recyle dir at first.", dss_display_metaid(*auid));
             return CM_SUCCESS;
         }
     }
 
-    status = dss_alloc_au_core(session, dss_ctrl, vg_item, auid);
-    if (status != CM_SUCCESS) {
-        return status;
-    }
-
+    DSS_RETURN_IF_ERROR(dss_alloc_au_core(session, dss_ctrl, vg_item, auid));
     return CM_SUCCESS;
 }
 
