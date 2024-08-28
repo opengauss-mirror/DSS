@@ -43,6 +43,7 @@ extern "C" {
 #define DSS_ACCMODE 00000003
 #define DSS_OPEN_MODE(flag) ((flag + 1) & DSS_ACCMODE)
 int32 g_dss_uds_conn_timeout = DSS_UDS_CONNECT_TIMEOUT;
+uint32 g_dss_server_pid = 0;
 
 typedef struct str_files_rw_ctx {
     dss_conn_t *conn;
@@ -624,6 +625,12 @@ status_t dss_cli_handshake(dss_conn_t *conn, uint32 max_open_file)
 
     dss_get_server_info_t output_info = {NULL, DSS_INVALID_SESSIONID};
     CM_RETURN_IFERR(dss_msg_interact(conn, DSS_CMD_HANDSHAKE, (void *)&cli_info, (void *)&output_info));
+    if (g_dss_server_pid == 0) {
+        g_dss_server_pid = output_info.server_pid;
+    } else if (g_dss_server_pid != output_info.server_pid) {
+        DSS_THROW_ERROR(ERR_DSS_SERVER_REBOOT);
+        return ERR_DSS_SERVER_REBOOT;
+    }
     return dss_set_server_info(conn, output_info.home, output_info.sid, max_open_file);
 }
 
@@ -2662,6 +2669,7 @@ static status_t dss_decode_handshake(dss_packet_t *ack_pack, void *ack)
     dss_get_server_info_t *output_info = (dss_get_server_info_t *)ack;
     output_info->home = ack_info.str;
     CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&output_info->sid));
+    CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&output_info->server_pid));
     return CM_SUCCESS;
 }
 
