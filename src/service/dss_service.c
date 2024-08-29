@@ -547,11 +547,14 @@ static status_t dss_process_handshake(dss_session_t *session)
     char *server_home = dss_get_cfg_dir(ZFS_CFG);
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", server_home));
     LOG_RUN_INF("[DSS_CONNECT]Server home is %s, when get home.", server_home);
+    uint32 server_pid = getpid();
     text_t data;
     cm_str2text(server_home, &data);
     data.len++;  // for keeping the '\0'
     DSS_RETURN_IF_ERROR(dss_put_text(&session->send_pack, &data));
-    return dss_put_int32(&session->send_pack, session->id);
+    DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, session->id));
+    DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, server_pid));
+    return CM_SUCCESS;
 }
 
 static status_t dss_process_refresh_volume(dss_session_t *session)

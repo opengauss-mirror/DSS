@@ -158,6 +158,7 @@ typedef struct st_dss_remove_dir_info {
 typedef struct st_dss_get_server_info {
     char *home;
     uint32 sid;
+    uint32 server_pid;
 } dss_get_server_info_t;
 
 typedef struct st_dss_fallocate_info {
