@@ -114,6 +114,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
         "[CHECK_PROTO]Protocol version need be changed, old protocol version is %u, new protocol version is %u.",
     [ERR_DSS_INVALID_BLOCK_TYPE] =
         "Get Invalid block type, expect type is %u, but the type in share memory is %u.",
+    [ERR_DSS_SERVER_REBOOT] = "DSS server has reboot or close, dss client need reboot or close.",
     [ERR_DSS_VOLUME_FENCE_CHECK_COND] = "Fail to check fence cond:%s.",
     [ERR_DSS_MASTER_CHANGE] = "Master id has changed.",
     [ERR_DSS_RECOVER_CAUSE_BREAK] = "Req break by recovery.",
