@@ -28,9 +28,7 @@
 #include "dss_defs.h"
 #include "dss_interaction.h"
 
-status_t get_server_locator(char *input_args, char *server_locator);
-
-status_t dss_uds_get_connection(const char *server_locator, dss_conn_t *conn);
+status_t get_server_locator(const char *input_uds_home_args, char *server_locator);
 
 void dss_cmd_set_path_optional();
 

@@ -52,6 +52,7 @@
 #include "dsscmd_du.h"
 #include "dsscmd_find.h"
 #include "dsscmd_encrypt.h"
+#include "dsscmd_conn_opt.h"
 #include "dsscmd_interactive.h"
 #ifndef WIN32
 #include "config.h"
@@ -217,8 +218,7 @@ static status_t cmd_check_convert_uds_home(const char *input_args, void **conver
     const char *server_path = (const char *)(input_args + strlen(DSS_SUBSTR_UDS_PATH));
     char path[DSS_MAX_PATH_BUFFER_SIZE];
     char *file = NULL;
-    status_t status;
-    status = dss_fetch_uds_path((char *)server_path, (char *)path, (char **)&file);
+    status_t status = dss_fetch_uds_path((char *)server_path, (char *)path, (char **)&file);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Fetch uds path failed.\n");
         return CM_ERROR;
@@ -226,7 +226,7 @@ static status_t cmd_check_convert_uds_home(const char *input_args, void **conver
 
     status = cmd_realpath_home(path, (char **)convert_result, convert_size);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("home realpth failed, home: %s.\n", input_args);
+        DSS_PRINT_ERROR("home realpath failed, home: %s.\n", input_args);
         return status;
     }
 
@@ -560,42 +560,6 @@ static status_t cv_proc(void)
     return CM_SUCCESS;
 }
 
-status_t dss_uds_get_connection(const char *server_locator, dss_conn_t *conn)
-{
-    status_t status;
-    if (strlen(server_locator) <= strlen(DSS_SUBSTR_UDS_PATH)) {
-        LOG_DEBUG_ERR("the format of UDS is wrong\n");
-        return CM_ERROR;
-    }
-    const char *server_path = (const char *)(server_locator + strlen(DSS_SUBSTR_UDS_PATH));
-    if (server_path[0] == '~') {
-        int32 ret;
-        const char *sys_home_path = getenv(SYS_HOME);
-        char abs_server_path[DSS_MAX_PATH_BUFFER_SIZE];
-
-        ret = snprintf_s(abs_server_path, DSS_MAX_PATH_BUFFER_SIZE, DSS_MAX_PATH_BUFFER_SIZE - 1, "UDS:%s%s",
-            sys_home_path, server_path + 1);
-        if (ret < 0) {
-            LOG_RUN_ERR("snprintf_s error %d", ret);
-            return CM_ERROR;
-        }
-
-        status = dss_connect_ex((const char *)abs_server_path, NULL, conn);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to connect,url:%s.\n", abs_server_path);
-            return status;
-        }
-    } else {
-        status = dss_connect_ex(server_locator, NULL, conn);
-        if (status != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to connect,url:%s.\n", server_locator);
-            return status;
-        }
-    }
-
-    return CM_SUCCESS;
-}
-
 static dss_args_t cmd_lsvg_args[] = {
     {'m', "measure_type", CM_FALSE, CM_TRUE, cmd_check_measure_type, NULL, NULL, 0, NULL, NULL, 0},
     {'t', "show_type", CM_FALSE, CM_TRUE, cmd_check_show_type, NULL, NULL, 0, NULL, NULL, 0},
@@ -856,33 +820,43 @@ static status_t lsvg_info(dss_conn_t *connection, const char *measure, bool32 de
     return CM_SUCCESS;
 }
 
-status_t get_server_locator(char *input_args, char *server_locator)
+status_t get_default_server_locator(char *server_locator)
 {
-    if (input_args != NULL) {
-        errno_t errcode = strcpy_s(server_locator, DSS_MAX_PATH_BUFFER_SIZE, input_args);
-        if (errcode != EOK) {
-            DSS_PRINT_ERROR("Failed to strcpy server_locator, err = %d.\n", errcode);
-            return CM_ERROR;
-        }
-    } else {
-        char name[CM_MAX_PATH_LEN] = "LSNR_PATH";
-        char *value = NULL;
-        status_t status = dss_get_cfg_param(name, &value);
-        if (status != CM_SUCCESS) {
-            DSS_PRINT_ERROR("get cfg param failed, by %s.\n", name);
-            return CM_ERROR;
-        }
-        int ret = snprintf_s(
-            server_locator, DSS_MAX_PATH_BUFFER_SIZE, DSS_MAX_PATH_BUFFER_SIZE - 1, "UDS:%s/.dss_unix_d_socket", value);
-        if (ret < 0) {
-            DSS_PRINT_ERROR("snsprintf_s server_locator failed.\n");
-            return CM_ERROR;
-        }
+    char name[CM_MAX_PATH_LEN] = "LSNR_PATH";
+    char *value = NULL;
+    status_t status = dss_get_cfg_param(name, &value);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("get cfg param failed, by %s.\n", name);
+        return CM_ERROR;
+    }
+    const size_t PATH_SIZE = DSS_MAX_PATH_BUFFER_SIZE;
+    int ret = snprintf_s(server_locator, PATH_SIZE, PATH_SIZE - 1, "UDS:%s/.dss_unix_d_socket", value);
+    if (ret < 0) {
+        DSS_PRINT_ERROR("Failed(%d) to snsprintf_s server_locator\n", ret);
+        return CM_ERROR;
     }
     return CM_SUCCESS;
 }
 
-static status_t lsvg_get_parameter(char *server_locator, const char **measure, bool32 *detail)
+status_t get_specified_server_locator(const char *input_args, char *server_locator)
+{
+    errno_t errcode = strcpy_s(server_locator, DSS_MAX_PATH_BUFFER_SIZE, input_args);
+    if (errcode != EOK) {
+        DSS_PRINT_ERROR("Failed(%d) to strcpy_s of server_locator\n", errcode);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+status_t get_server_locator(const char *input_uds_home_args, char *server_locator)
+{
+    if (input_uds_home_args != NULL) {
+        return get_specified_server_locator(input_uds_home_args, server_locator);
+    }
+    return get_default_server_locator(server_locator);
+}
+
+static status_t lsvg_get_parameter(const char **measure, bool32 *detail)
 {
     if (cmd_lsvg_args[DSS_ARG_IDX_0].input_args != NULL) {
         *measure = cmd_lsvg_args[DSS_ARG_IDX_0].input_args;
@@ -902,42 +876,30 @@ static status_t lsvg_get_parameter(char *server_locator, const char **measure, b
         DSS_PRINT_ERROR("show_type error.\n");
         return CM_ERROR;
     }
-
-    status_t status = get_server_locator(cmd_lsvg_args[DSS_ARG_IDX_2].input_args, server_locator);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to get server_locator.\n");
-        return CM_ERROR;
-    }
-
     return CM_SUCCESS;
 }
 
 static status_t lsvg_proc(void)
 {
-    status_t status;
-    const char *measure;
-    char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
     bool32 detail;
-    dss_conn_t connection;
-
-    status = lsvg_get_parameter(server_locator, &measure, &detail);
+    const char *measure;
+    status_t status = lsvg_get_parameter(&measure, &detail);
     if (status != CM_SUCCESS) {
         return status;
     }
 
-    status = dss_uds_get_connection(server_locator, &connection);
-    if (status != CM_SUCCESS) {
+    const char* input_args = cmd_lsvg_args[DSS_ARG_IDX_2].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
         DSS_PRINT_ERROR("Failed to get uds connection.\n");
-        return status;
+        return CM_ERROR;
     }
 
-    status = lsvg_info(&connection, measure, detail);
+    status = lsvg_info(conn, measure, detail);
     if (status != CM_SUCCESS) {
-        dss_disconnect_ex(&connection);
         DSS_PRINT_ERROR("Failed to display lsvg info.\n");
         return status;
     }
-    dss_disconnect_ex(&connection);
     DSS_PRINT_INF("Succeed to display lsvg info.\n");
     return CM_SUCCESS;
 }
@@ -971,30 +933,12 @@ static void adv_help(const char *prog_name, int print_flag)
     help_param_uds();
 }
 
-static status_t get_connection_by_input_args(char *input_args, dss_conn_t *connection)
-{
-    char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
-    status_t status = get_server_locator(input_args, server_locator);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to get server_locator.\n");
-        return CM_ERROR;
-    }
-
-    status = dss_uds_get_connection(server_locator, connection);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to get uds connection.\n");
-        return status;
-    }
-    return CM_SUCCESS;
-}
-
 static status_t adv_proc(void)
 {
     const char *vg_name = cmd_adv_args[DSS_ARG_IDX_0].input_args;
     const char *vol_path = cmd_adv_args[DSS_ARG_IDX_1].input_args;
     bool32 force = cmd_adv_args[DSS_ARG_IDX_2].inputed ? CM_TRUE : CM_FALSE;
     const char *home = cmd_adv_args[DSS_ARG_IDX_3].input_args;
-    dss_conn_t connection;
     status_t status;
 
     if (force) {
@@ -1006,20 +950,18 @@ static status_t adv_proc(void)
         }
         return status;
     }
-
-    status = get_connection_by_input_args(cmd_adv_args[DSS_ARG_IDX_4].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    const char* input_args = cmd_adv_args[DSS_ARG_IDX_4].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        DSS_PRINT_ERROR("Failed to get uds connection.\n");
+        return CM_ERROR;
     }
-
-    status = dsscmd_adv_impl(&connection, vg_name, vol_path);
+    status = dsscmd_adv_impl(conn, vg_name, vol_path);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to add volume online, vg_name is %s, volume path is %s.\n", vg_name, vol_path);
     } else {
         DSS_PRINT_INF("Succeed to add volume online, vg_name is %s, volume path is %s.\n", vg_name, vol_path);
     }
-
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -1071,20 +1013,17 @@ static status_t mkdir_proc(void)
     }
 
     const char *dir_name = cmd_mkdir_args[DSS_ARG_IDX_1].input_args;
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_mkdir_args[DSS_ARG_IDX_2].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    const char* input_args = cmd_mkdir_args[DSS_ARG_IDX_2].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
-
-    status = dss_make_dir_impl(&connection, path, dir_name);
+    status_t status = dss_make_dir_impl(conn, path, dir_name);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to make dir, path is %s, dir name is %s.\n", path, dir_name);
     } else {
         DSS_PRINT_INF("Succeed to make dir, path is %s, dir name is %s.\n", path, dir_name);
     }
-    dss_disconnect_ex(&connection);
-
     return status;
 }
 
@@ -1127,27 +1066,26 @@ static status_t touch_proc(void)
         path = cmd_touch_args[DSS_CMD_TOUCH_ARGS_PATH].convert_result;
     }
 
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_touch_args[DSS_CMD_TOUCH_ARGS_UDS].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    const char *input_args = cmd_touch_args[DSS_CMD_TOUCH_ARGS_UDS].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
 
     int64 flag = 0;
     if (cmd_touch_args[DSS_CMD_TOUCH_ARGS_FLAG].inputed) {
-        status = cm_str2bigint(cmd_touch_args[DSS_CMD_TOUCH_ARGS_FLAG].input_args, &flag);
+        status_t status = cm_str2bigint(cmd_touch_args[DSS_CMD_TOUCH_ARGS_FLAG].input_args, &flag);
         if (status != CM_SUCCESS) {
             return status;
         }
     }
 
-    status = (status_t)dss_create_file_impl(&connection, path, (int32)flag);
+    status_t status = (status_t)dss_create_file_impl(conn, path, (int32)flag);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to create file, name is %s.\n", path);
     } else {
         DSS_PRINT_INF("Succeed to create file, name is %s.\n", path);
     }
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -1174,17 +1112,17 @@ static void ts_help(const char *prog_name, int print_flag)
 
 static status_t ts_proc(void)
 {
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_ts_args[DSS_ARG_IDX_0].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    status_t status = CM_SUCCESS;
+    const char *input_args = cmd_ts_args[DSS_ARG_IDX_0].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
 
     dss_stat_item_t time_stat[DSS_EVT_COUNT];
-    status = dss_get_time_stat_on_server(&connection, time_stat, DSS_EVT_COUNT);
+    status = dss_get_time_stat_on_server(conn, time_stat, DSS_EVT_COUNT);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to get time stat.\n");
-        dss_disconnect_ex(&connection);
         return CM_ERROR;
     }
     (void)printf("|      event     |   count   | total_wait_time | avg_wait_time | max_single_time \n");
@@ -1199,7 +1137,6 @@ static status_t ts_proc(void)
             time_stat[i].max_single_time);
     }
     (void)printf("+------------------------+-----------+-----------------+---------------+-----------------\n");
-    dss_disconnect_ex(&connection);
     return CM_SUCCESS;
 }
 
@@ -1246,8 +1183,7 @@ static void ls_help(const char *prog_name, int print_flag)
     help_param_uds();
 }
 
-static status_t ls_get_parameter(
-    const char **path, const char **measure, char *server_locator, uint32 *show_min_inited_size)
+static status_t ls_get_parameter(const char **path, const char **measure, uint32 *show_min_inited_size)
 {
     *path = cmd_ls_args[DSS_CMD_LS_PATH_IDX].input_args;
     if (cmd_ls_args[DSS_CMD_LS_PATH_IDX].convert_result != NULL) {
@@ -1261,17 +1197,12 @@ static status_t ls_get_parameter(
         *path = g_cur_path;
     }
 
-    *measure = cmd_ls_args[DSS_CMD_LS_MEASURE_IDX].input_args != NULL ? cmd_ls_args[DSS_CMD_LS_MEASURE_IDX].input_args :
-                                                                        DSS_DEFAULT_MEASURE;
-    status_t status = get_server_locator(cmd_ls_args[DSS_CMD_LS_UDS_IDX].input_args, server_locator);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to get server_locator.\n");
-        return CM_ERROR;
-    }
+    char *ls_measure_input_args = cmd_ls_args[DSS_CMD_LS_MEASURE_IDX].input_args;
+    *measure = ls_measure_input_args != NULL ? ls_measure_input_args : DSS_DEFAULT_MEASURE;
     if (cmd_ls_args[DSS_CMD_LS_MIN_INITED_SIZE].input_args == NULL) {
         *show_min_inited_size = 0;
     } else {
-        status = cm_str2uint32(cmd_ls_args[DSS_CMD_LS_MIN_INITED_SIZE].input_args, show_min_inited_size);
+        status_t status = cm_str2uint32(cmd_ls_args[DSS_CMD_LS_MIN_INITED_SIZE].input_args, show_min_inited_size);
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("The value of zero_or_one is invalid.\n");
             return CM_ERROR;
@@ -1409,23 +1340,19 @@ static status_t ls_proc_core(dss_conn_t *conn, const char *path, const char *mea
 static status_t ls_proc(void)
 {
     const char *path = NULL;
-    char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
     const char *measure = NULL;
     uint32 show_min_inited_size = 0;
-    status_t status = ls_get_parameter(&path, &measure, server_locator, &show_min_inited_size);
+    status_t status = ls_get_parameter(&path, &measure, &show_min_inited_size);
     if (status != CM_SUCCESS) {
         return status;
     }
-
-    dss_conn_t connection;
-    status = dss_uds_get_connection(server_locator, &connection);
-    if (status != CM_SUCCESS) {
+    const char *input_args = cmd_ls_args[DSS_CMD_LS_UDS_IDX].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
         DSS_PRINT_ERROR("Failed to get uds connection.\n");
-        return status;
+        return CM_ERROR;
     }
-
-    status = ls_proc_core(&connection, path, measure, show_min_inited_size);
-    dss_disconnect_ex(&connection);
+    status = ls_proc_core(conn, path, measure, show_min_inited_size);
     return status;
 }
 
@@ -1457,13 +1384,15 @@ static status_t cp_proc(void)
 {
     char *srcpath = cmd_cp_args[DSS_ARG_IDX_0].input_args;
     char *despath = cmd_cp_args[DSS_ARG_IDX_1].input_args;
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_cp_args[DSS_ARG_IDX_2].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+
+    status_t status = CM_SUCCESS;
+    const char *input_args = cmd_cp_args[DSS_ARG_IDX_2].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
 
-    status = dss_copy_file_impl(&connection, srcpath, despath);
+    status = dss_copy_file_impl(conn, srcpath, despath);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to copy file from srcpath %s to destpath %s.\n", srcpath, despath);
 #ifdef OPENGAUSS
@@ -1472,7 +1401,6 @@ static status_t cp_proc(void)
     } else {
         DSS_PRINT_INF("Succeed to copy file from srcpath %s to destpath %s.\n", srcpath, despath);
     }
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -1509,20 +1437,19 @@ static status_t rm_proc(void)
     if (cmd_rm_args[DSS_ARG_IDX_0].convert_result != NULL) {
         path = cmd_rm_args[DSS_ARG_IDX_0].convert_result;
     }
-
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_rm_args[DSS_ARG_IDX_1].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    status_t status = CM_SUCCESS;
+    const char *input_args = cmd_rm_args[DSS_ARG_IDX_1].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
 
-    status = dss_remove_file_impl(&connection, path);
+    status = dss_remove_file_impl(conn, path);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to remove device %s.\n", path);
     } else {
         DSS_PRINT_INF("Succeed to remove device %s.\n", path);
     }
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -1561,9 +1488,7 @@ static status_t rmv_proc(void)
     const char *vol_path = cmd_rmv_args[DSS_ARG_IDX_1].input_args;
     bool32 force = cmd_rmv_args[DSS_ARG_IDX_2].inputed ? CM_TRUE : CM_FALSE;
     const char *home = cmd_rmv_args[DSS_ARG_IDX_3].input_args;
-    dss_conn_t connection;
-    status_t status;
-
+    status_t status = CM_SUCCESS;
     if (force) {
         status = dss_modify_volume_offline(home, vg_name, vol_path, NULL, VOLUME_MODIFY_REMOVE);
         if (status != CM_SUCCESS) {
@@ -1573,18 +1498,19 @@ static status_t rmv_proc(void)
         }
         return status;
     }
-    status = get_connection_by_input_args(cmd_rmv_args[DSS_ARG_IDX_4].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+
+    const char *input_args = cmd_rmv_args[DSS_ARG_IDX_4].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
 
-    status = dsscmd_rmv_impl(&connection, vg_name, vol_path);
+    status = dsscmd_rmv_impl(conn, vg_name, vol_path);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to remove volume online, vg name is %s, volume path is %s.\n", vg_name, vol_path);
     } else {
         DSS_PRINT_INF("Succeed to remove volume online, vg name is %s, volume path is %s.\n", vg_name, vol_path);
     }
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -1621,19 +1547,19 @@ static status_t rmdir_proc(void)
     }
 
     bool32 recursive = cmd_rmdir_args[DSS_ARG_IDX_1].inputed ? CM_TRUE : CM_FALSE;
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_rmdir_args[DSS_ARG_IDX_2].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    status_t status = CM_SUCCESS;
+    const char *input_args = cmd_rmdir_args[DSS_ARG_IDX_2].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
 
-    status = dss_remove_dir_impl(&connection, path, recursive);
+    status = dss_remove_dir_impl(conn, path, recursive);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to rm dir, path is %s.\n", path);
     } else {
         DSS_PRINT_INF("Succeed to rm dir, path is %s.\n", path);
     }
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -2035,7 +1961,7 @@ static status_t get_examine_parameter(char **path, int64 *offset, char *fmt)
     return CM_SUCCESS;
 }
 
-static status_t get_examine_opt_parameter(char *server_locator, char **home, int32 *read_size)
+static status_t get_examine_opt_parameter(int32 *read_size)
 {
     *read_size = DSS_DISK_UNIT_SIZE;
     if (cmd_examine_args[DSS_ARG_IDX_3].input_args != NULL) {
@@ -2043,12 +1969,6 @@ static status_t get_examine_opt_parameter(char *server_locator, char **home, int
     }
     if (*read_size <= 0) {
         LOG_DEBUG_ERR("Invalid read_size.\n");
-        return CM_ERROR;
-    }
-    *home = cmd_examine_args[DSS_ARG_IDX_4].input_args;
-    status_t status = get_server_locator(cmd_examine_args[DSS_ARG_IDX_5].input_args, server_locator);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to get server_locator.\n");
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -2140,62 +2060,58 @@ static status_t examine_proc(void)
     int64 offset;
     char format;
     int32 read_size = DSS_DISK_UNIT_SIZE;
-    char *home = NULL;
-    char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
-    dss_conn_t connection;
     dss_config_t *inst_cfg = dss_get_g_inst_cfg();
 
     status_t status = get_examine_parameter(&path, &offset, &format);
     if (status != CM_SUCCESS) {
         return status;
     }
-    status = get_examine_opt_parameter(server_locator, &home, &read_size);
+
+    status = get_examine_opt_parameter(&read_size);
     if (status != CM_SUCCESS) {
         return status;
     }
 
-    status = set_config_info(home, inst_cfg);
+    char *input_args = cmd_examine_args[DSS_ARG_IDX_4].input_args;
+    status = set_config_info(input_args, inst_cfg);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to load config info!\n");
         return status;
     }
-    status = dss_uds_get_connection(server_locator, &connection);
-    if (status != CM_SUCCESS) {
+
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
         DSS_PRINT_ERROR("Failed to get uds connection.\n");
-        return status;
-    }
-    int32 handle;
-    status = dss_open_file_impl(&connection, path, O_RDONLY, &handle);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to open dir, path is %s.\n", path);
-        dss_disconnect_ex(&connection);
         return CM_ERROR;
     }
 
-    int64 file_size = dss_seek_file_impl(&connection, handle, 0, SEEK_END);
+    int32 handle;
+    status = dss_open_file_impl(conn, path, O_RDONLY, &handle);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to open dir, path is %s.\n", path);
+        return CM_ERROR;
+    }
+
+    int64 file_size = dss_seek_file_impl(conn, handle, 0, SEEK_END);
     if (file_size == CM_INVALID_INT64) {
         DSS_PRINT_ERROR("Failed to seek file %s size.\n", path);
-        (void)dss_close_file_impl(&connection, handle);
-        dss_disconnect_ex(&connection);
+        (void)dss_close_file_impl(conn, handle);
         return CM_ERROR;
     }
     int64 unit_aligned_offset = adjust_readsize(offset, &read_size, file_size);
 
-    unit_aligned_offset = dss_seek_file_impl(&connection, handle, unit_aligned_offset, SEEK_SET);
+    unit_aligned_offset = dss_seek_file_impl(conn, handle, unit_aligned_offset, SEEK_SET);
     if (unit_aligned_offset == -1) {
         DSS_PRINT_ERROR("Failed to seek file %s.\n", path);
-        (void)dss_close_file_impl(&connection, handle);
-        dss_disconnect_ex(&connection);
+        (void)dss_close_file_impl(conn, handle);
         return CM_ERROR;
     }
     (void)printf("filename is %s, offset is %lld.\n", path, offset);
-    status = print_file_proc(&connection, handle, offset, read_size, format);
+    status = print_file_proc(conn, handle, offset, read_size, format);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to print file %s.\n", path);
     }
-    (void)dss_close_file_impl(&connection, handle);
-    dss_disconnect_ex(&connection);
-
+    (void)dss_close_file_impl(conn, handle);
     return status;
 }
 
@@ -2627,10 +2543,11 @@ static status_t showmem_proc(void)
     }
 
     dss_vg_info_item_t *vg_item = NULL;
-    dss_conn_t conn;
-    status_t status = get_connection_by_input_args(cmd_showmem_args[DSS_ARG_IDX_9].input_args, &conn);
-    if (status != CM_SUCCESS) {
-        return status;
+    status_t status = CM_SUCCESS;
+    const char *input_args = cmd_showmem_args[DSS_ARG_IDX_9].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
     dss_show_param_t show_param;
     dss_init_show_param(&show_param);
@@ -2645,22 +2562,21 @@ static status_t showmem_proc(void)
         }
         vg_item->from_type = FROM_SHM;
         if (cmd_showmem_args[DSS_ARG_IDX_1].inputed) {
-            DSS_BREAK_IFERR3(dss_lock_vg_s(vg_item, conn.session), status = CM_ERROR,
+            DSS_BREAK_IFERR3(dss_lock_vg_s(vg_item, conn->session), status = CM_ERROR,
                 DSS_PRINT_ERROR("Failed to lock vg %s.\n", vg_name));
             status = dss_print_struct_name(vg_item, cmd_showmem_args[DSS_ARG_IDX_1].input_args);
-            DSS_UNLOCK_VG_META_S(vg_item, conn.session);
+            DSS_UNLOCK_VG_META_S(vg_item, conn->session);
         } else if (cmd_showmem_args[DSS_ARG_IDX_2].inputed) {
-            status = showmem_proc_by_block_id_and_index_id((dss_session_t *)conn.session, vg_item);
+            status = showmem_proc_by_block_id_and_index_id((dss_session_t *)conn->session, vg_item);
         } else if (cmd_showmem_args[DSS_ARG_IDX_4].inputed) {
-            status = showmem_proc_by_fid_and_node_id((dss_session_t *)conn.session, vg_item, &show_param);
+            status = showmem_proc_by_fid_and_node_id((dss_session_t *)conn->session, vg_item, &show_param);
         } else if (cmd_showmem_args[DSS_ARG_IDX_6].inputed) {
-            status = showmem_proc_by_path((dss_session_t *)conn.session, vg_item, &show_param);
+            status = showmem_proc_by_path((dss_session_t *)conn->session, vg_item, &show_param);
         } else {
             status = CM_ERROR;
             DSS_PRINT_ERROR("none of struct_name and block_id and fid.\n");
         }
     } while (CM_FALSE);
-    dss_disconnect_ex(&conn);
     return status;
 }
 
@@ -3238,19 +3154,19 @@ static status_t rename_proc(void)
         new_name = cmd_rename_args[DSS_ARG_IDX_1].convert_result;
     }
 
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_rename_args[DSS_ARG_IDX_2].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    status_t status = CM_SUCCESS;
+    const char *input_args = cmd_rename_args[DSS_ARG_IDX_2].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
 
-    status = dss_rename_file_impl(&connection, old_name, new_name);
+    status = dss_rename_file_impl(conn, old_name, new_name);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to rename file, old name is %s, new name is %s.\n", old_name, new_name);
     } else {
         DSS_PRINT_INF("Succeed to rename file, old name is %s, new name is %s.\n", old_name, new_name);
     }
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -3306,8 +3222,6 @@ static status_t du_proc(void)
     }
 
     const char *input_param = cmd_du_args[DSS_ARG_IDX_1].input_args;
-    dss_conn_t connection;
-
     char path_buf[DSS_FILE_PATH_MAX_LENGTH];
     errno_t errcode = strcpy_s(path_buf, sizeof(path_buf), path);
     if (errcode != EOK) {
@@ -3322,16 +3236,16 @@ static status_t du_proc(void)
         return status;
     }
 
-    status = get_connection_by_input_args(cmd_du_args[DSS_ARG_IDX_2].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    const char *input_args = cmd_du_args[DSS_ARG_IDX_2].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
 
-    status = du_traverse_path(path_buf, sizeof(path_buf), &connection, params, sizeof(params));
+    status = du_traverse_path(path_buf, sizeof(path_buf), conn, params, sizeof(params));
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to traverse path %s.\n", path_buf);
     }
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -3384,13 +3298,6 @@ static status_t find_proc(void)
     }
 
     char *name = cmd_find_args[DSS_ARG_IDX_1].input_args;
-    char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
-    status_t status = get_server_locator(cmd_find_args[DSS_ARG_IDX_2].input_args, server_locator);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to get server_locator.\n");
-        return CM_ERROR;
-    }
-
     char path_buf[DSS_FILE_PATH_MAX_LENGTH];
     char name_buf[DSS_FILE_NAME_BUFFER_SIZE];
 
@@ -3408,18 +3315,16 @@ static status_t find_proc(void)
         return CM_ERROR;
     }
 
-    dss_conn_t connection;
-    status = dss_uds_get_connection(server_locator, &connection);
-    if (status != CM_SUCCESS) {
+    const char *input_args = cmd_find_args[DSS_ARG_IDX_2].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
         DSS_PRINT_ERROR("Failed to get uds connection.\n");
-        return status;
+        return CM_ERROR;
     }
-
-    status = find_traverse_path(&connection, path_buf, sizeof(path_buf), name_buf, sizeof(name_buf));
+    status_t status = find_traverse_path(conn, path_buf, sizeof(path_buf), name_buf, sizeof(name_buf));
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to find traverse path %s.\n", path_buf);
     }
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -3460,19 +3365,19 @@ static status_t ln_proc(void)
         newpath = cmd_ln_args[DSS_ARG_IDX_1].convert_result;
     }
 
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_ln_args[DSS_ARG_IDX_2].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    status_t status = CM_SUCCESS;
+    const char *input_args = cmd_ln_args[DSS_ARG_IDX_2].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
 
-    status = dss_symlink_impl(&connection, oldpath, newpath);
+    status = dss_symlink_impl(conn, oldpath, newpath);
     if (status == CM_SUCCESS) {
         DSS_PRINT_INF("Success to link %s to %s.\n", newpath, oldpath);
     } else {
         DSS_PRINT_ERROR("Failed to link %s to %s.\n", newpath, oldpath);
     }
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -3506,34 +3411,30 @@ static status_t readlink_proc(void)
         link_path = cmd_readlink_args[DSS_ARG_IDX_0].convert_result;
     }
 
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_readlink_args[DSS_ARG_IDX_1].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    const char *input_args = cmd_readlink_args[DSS_ARG_IDX_1].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
 
     bool32 is_link = false;
-    status = dss_islink_impl(&connection, link_path, &is_link);
+    status_t status = dss_islink_impl(conn, link_path, &is_link);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to confirm that the path %s is a soft link.\n", link_path);
-        dss_disconnect_ex(&connection);
         return CM_ERROR;
     }
     if (status == CM_SUCCESS && !is_link) {
         DSS_PRINT_ERROR("The path %s does not exist or is not a soft link.\n", link_path);
-        dss_disconnect_ex(&connection);
         return CM_ERROR;
     }
 
     char path_convert[DSS_FILE_PATH_MAX_LENGTH] = {0};
-    status = dss_readlink_impl(&connection, link_path, (char *)path_convert, sizeof(path_convert));
+    status = dss_readlink_impl(conn, link_path, (char *)path_convert, sizeof(path_convert));
     if (status == CM_SUCCESS) {
         DSS_PRINT_INF("link: %s link to: %s.\n", link_path, path_convert);
     } else {
         DSS_PRINT_ERROR("Failed to read link %s.\n", link_path);
     }
-
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -3567,19 +3468,18 @@ static status_t unlink_proc(void)
         link = cmd_unlink_args[DSS_ARG_IDX_0].convert_result;
     }
 
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_unlink_args[DSS_ARG_IDX_1].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    const char *input_args = cmd_unlink_args[DSS_ARG_IDX_1].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
 
-    status = dss_unlink_impl(&connection, link);
+    status_t status = dss_unlink_impl(conn, link);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to unlink %s.\n", link);
     } else {
         DSS_PRINT_INF("Succeed to unlink %s.\n", link);
     }
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -3699,20 +3599,19 @@ static status_t setcfg_proc(void)
     char *value = cmd_setcfg_args[DSS_ARG_IDX_1].input_args;
     char *scope =
         cmd_setcfg_args[DSS_ARG_IDX_2].input_args != NULL ? cmd_setcfg_args[DSS_ARG_IDX_2].input_args : "both";
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_setcfg_args[DSS_ARG_IDX_3].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+
+    const char *input_args = cmd_setcfg_args[DSS_ARG_IDX_3].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
 
-    status = dss_setcfg_impl(&connection, name, value, scope);
+    status_t status = dss_setcfg_impl(conn, name, value, scope);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to set cfg, name is %s, value is %s.\n", name, value);
     } else {
         DSS_PRINT_INF("Succeed to set cfg, name is %s, value is %s.\n", name, value);
     }
-
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -3741,21 +3640,18 @@ static void getcfg_help(const char *prog_name, int print_flag)
 static status_t getcfg_proc(void)
 {
     char *name = cmd_getcfg_args[DSS_ARG_IDX_0].input_args;
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_getcfg_args[DSS_ARG_IDX_1].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    const char *input_args = cmd_touch_args[DSS_CMD_TOUCH_ARGS_UDS].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
-
     char value[DSS_PARAM_BUFFER_SIZE] = {0};
-    status = dss_getcfg_impl(&connection, name, value, DSS_PARAM_BUFFER_SIZE);
+    status_t status = dss_getcfg_impl(conn, name, value, DSS_PARAM_BUFFER_SIZE);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to get cfg, name is %s, value is %s.\n", name, (strlen(value) == 0) ? NULL : value);
     } else {
         DSS_PRINT_INF("Succeed to get cfg, name is %s, value is %s.\n", name, (strlen(value) == 0) ? NULL : value);
     }
-
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -3782,13 +3678,14 @@ static void getstatus_help(const char *prog_name, int print_flag)
 
 static status_t getstatus_proc(void)
 {
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_getstatus_args[DSS_ARG_IDX_0].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    const char *input_args = cmd_getstatus_args[DSS_ARG_IDX_0].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
+
     dss_server_status_t dss_status;
-    status = dss_get_inst_status_on_server(&connection, &dss_status);
+    status_t status = dss_get_inst_status_on_server(conn, &dss_status);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to get server status.\n");
     } else {
@@ -3796,7 +3693,6 @@ static status_t getstatus_proc(void)
             dss_status.local_instance_id, dss_status.instance_status, dss_status.server_status, dss_status.master_id,
             (dss_status.is_maintain ? "TRUE" : "FALSE"));
     }
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -3822,19 +3718,19 @@ static void stopdss_help(const char *prog_name, int print_flag)
 
 static status_t stopdss_proc(void)
 {
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_stopdss_args[DSS_ARG_IDX_0].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    const char *input_args = cmd_stopdss_args[DSS_ARG_IDX_0].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
 
-    status = dss_stop_server_impl(&connection);
+    status_t status = dss_stop_server_impl(conn);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to stop server.\n");
     } else {
         DSS_PRINT_INF("Succeed to stop server.\n");
     }
-    dss_disconnect_ex(&connection);
+    dss_conn_opt_exit();
     return status;
 }
 
@@ -4154,33 +4050,31 @@ static status_t truncate_proc(void)
         return status;
     }
 
-    dss_conn_t conn;
-    status = get_connection_by_input_args(cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_UDS].input_args, &conn);
-    if (status != CM_SUCCESS) {
-        return status;
+    const char *input_args = cmd_truncate_args[DSS_CMD_TRUNCATE_ARGS_UDS].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
 
     int handle;
-    status = (status_t)dss_open_file_impl(&conn, path, O_RDWR, &handle);
+    status = (status_t)dss_open_file_impl(conn, path, O_RDWR, &handle);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to truncate file, name is %s.\n", path);
-        dss_disconnect_ex(&conn);
         return status;
     }
 
-    status = (status_t)dss_truncate_impl(&conn, handle, length);
+    status = (status_t)dss_truncate_impl(conn, handle, length);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to truncate file, name is %s.\n", path);
-        (void)dss_close_file_impl(&conn, handle);
-        dss_disconnect_ex(&conn);
+        (void)dss_close_file_impl(conn, handle);
         return status;
     }
     DSS_PRINT_INF("Success to truncate file, name is %s.\n", path);
 
-    (void)dss_close_file_impl(&conn, handle);
-    dss_disconnect_ex(&conn);
+    (void)dss_close_file_impl(conn, handle);
     return status;
 }
+
 static dss_args_t cmd_disable_grab_lock_args[] = {
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -4204,18 +4098,18 @@ static void disable_grab_lock_help(const char *prog_name, int print_flag)
 
 static status_t disable_grab_lock_proc(void)
 {
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_disable_grab_lock_args[DSS_ARG_IDX_0].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    const char *input_args = cmd_disable_grab_lock_args[DSS_ARG_IDX_0].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
-    status = dss_disable_grab_lock_on_server(&connection);
+
+    status_t status = dss_disable_grab_lock_on_server(conn);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to disable grab lock.\n");
     } else {
         DSS_PRINT_INF("Succeed to disable grab lock.\n");
     }
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -4242,18 +4136,17 @@ static void enable_grab_lock_help(const char *prog_name, int print_flag)
 
 static status_t enable_grab_lock_proc(void)
 {
-    dss_conn_t connection;
-    status_t status = get_connection_by_input_args(cmd_enable_grab_lock_args[DSS_ARG_IDX_0].input_args, &connection);
-    if (status != CM_SUCCESS) {
-        return status;
+    const char *input_args = cmd_enable_grab_lock_args[DSS_ARG_IDX_0].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        return CM_ERROR;
     }
-    status = dss_enable_grab_lock_on_server(&connection);
+    status_t status = dss_enable_grab_lock_on_server(conn);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to enable grab lock.\n");
     } else {
         DSS_PRINT_INF("Succeed to enable grab lock.\n");
     }
-    dss_disconnect_ex(&connection);
     return status;
 }
 
@@ -4306,6 +4199,7 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set,
 
 void clean_cmd()
 {
+    dss_conn_opt_exit();
     dss_free_vg_info();
     ga_reset_app_pools();
 }
@@ -4474,7 +4368,7 @@ void dss_cmd_set_path_optional()
     cmd_find_args[0].required = CM_FALSE;
 }
 
-int main(int argc, char **argv)
+static status_t dss_check_user_permit()
 {
 #ifndef WIN32
     // check root
@@ -4489,10 +4383,19 @@ int main(int argc, char **argv)
         return CM_ERROR;
     }
 #endif
-    uint32 idx;
-    int32 help_ret;
-    bool8 go_ahead;
+    return CM_SUCCESS;
+}
 
+int main(int argc, char **argv)
+{
+    status_t status = dss_check_user_permit();
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+
+    uint32 idx = 0;
+    int32 help_ret = CM_SUCCESS;
+    bool8 go_ahead = CM_FALSE;
     help_ret = execute_help_cmd(argc, argv, &idx, &go_ahead);
     if (!go_ahead) {
         exit(help_ret);
@@ -4520,13 +4423,16 @@ int main(int argc, char **argv)
         return ret;
     }
 
-    if (g_run_interatively) {
-        dss_cmd_run_interactively();
-        return CM_SUCCESS;
-    }
+    do {
+        if (g_run_interatively) {
+            dss_cmd_run_interactively();
+            ret = CM_SUCCESS;
+            break;
+        }
+        cm_reset_error();
+        ret = execute_cmd(argc, argv, idx);
+    } while (0);
 
-    cm_reset_error();
-    ret = execute_cmd(argc, argv, idx);
     clean_cmd();
     return ret;
 }
