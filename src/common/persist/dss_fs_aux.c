@@ -699,7 +699,8 @@ status_t dss_try_find_data_au_batch(dss_session_t *session, dss_vg_info_item_t *
     }
 
     auid_t auid;
-    for (uint32 i = block_au_count_beg + 1; i < second_block->head.used_num; i++) {
+    for (uint32 i = block_au_count_beg + 1;
+         i < second_block->head.used_num && (i - block_au_count_beg) < DSS_REFRESH_FS_AUX_BATCH_MAX; i++) {
         auid = second_block->bitmap[i];
         if (DSS_BLOCK_ID_IS_AUX(auid)) {
             if (dss_find_block_in_shm_no_refresh(session, vg_item, auid, NULL) != NULL) {
@@ -854,9 +855,15 @@ status_t dss_get_gft_node_with_cache(
     dss_vg_cache_node_t *vg_cache_node = &vg_item->vg_cache_node[ftid_cache_index];
 
     gft_node_t *node = NULL;
+    dss_block_ctrl_t *block_ctrl = NULL;
     dss_latch_s(&vg_cache_node->latch);
     if (vg_cache_node->fid == fid && vg_cache_node->ftid == DSS_ID_TO_U64(ftid) && vg_cache_node->node != NULL) {
         node = (gft_node_t *)vg_cache_node->node;
+
+        // for recycle to cut off the link
+        block_ctrl = dss_get_block_ctrl_by_node(node);
+        dss_inc_meta_ref_hot(block_ctrl);
+
         dss_unlatch(&vg_cache_node->latch);
         *node_out = node;
     } else {
@@ -883,6 +890,11 @@ status_t dss_get_gft_node_with_cache(
             vg_cache_node->ftid = DSS_ID_TO_U64(ftid);
             vg_cache_node->fid = node->fid;
             *node_out = node;
+
+            // for recycle to cut off the link
+            block_ctrl = dss_get_block_ctrl_by_node(node);
+            block_ctrl->fs_block_cache_info.owner_vg_id = vg_item->id;
+            block_ctrl->fs_block_cache_info.owner_ftid_cache_index = ftid_cache_index;
         }
         dss_unlatch(&vg_cache_node->latch);
     }
@@ -897,11 +909,17 @@ status_t dss_get_entry_block_with_cache(
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_node(node);
 
     dss_fs_block_t *entry_block = NULL;
+    dss_block_ctrl_t *entry_block_ctrl = NULL;
     dss_latch_s_node(session, node, NULL);
     if (block_ctrl->fs_block_cache_info.entry_block_id == DSS_ID_TO_U64(node->entry) &&
         block_ctrl->fs_block_cache_info.entry_block_addr != NULL &&
         dss_is_fs_block_valid(node, (dss_fs_block_t *)block_ctrl->fs_block_cache_info.entry_block_addr)) {
         entry_block = (dss_fs_block_t *)block_ctrl->fs_block_cache_info.entry_block_addr;
+
+        // for recycle to cut off the link
+        entry_block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(entry_block);
+        dss_inc_meta_ref_hot(entry_block_ctrl);
+
         dss_unlatch_node(node);
     } else {
         dss_unlatch_node(node);
@@ -920,6 +938,12 @@ status_t dss_get_entry_block_with_cache(
         dss_latch_x_node(session, node, NULL);
         block_ctrl->fs_block_cache_info.entry_block_addr = (char *)entry_block;
         block_ctrl->fs_block_cache_info.entry_block_id = DSS_ID_TO_U64(node->entry);
+
+        // for recycle to cut off the link
+        entry_block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(entry_block);
+        entry_block_ctrl->fs_block_cache_info.owner_node_addr = (char *)node;
+        entry_block_ctrl->fs_block_cache_info.owner_node_id = DSS_ID_TO_U64(node->id);
+
         dss_unlatch_node(node);
     }
     *fs_block_out = entry_block;
@@ -932,11 +956,17 @@ status_t dss_get_second_block_with_cache(dss_session_t *session, dss_vg_info_ite
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_node(node);
 
     dss_fs_block_t *second_block = NULL;
+    dss_block_ctrl_t *second_block_ctrl = NULL;
     dss_latch_s_node(session, node, NULL);
     if (block_ctrl->fs_block_cache_info.fs_block_id == DSS_ID_TO_U64(block_id) &&
         block_ctrl->fs_block_cache_info.fs_block_addr != NULL &&
         dss_is_fs_block_valid(node, (dss_fs_block_t *)block_ctrl->fs_block_cache_info.fs_block_addr)) {
         second_block = (dss_fs_block_t *)block_ctrl->fs_block_cache_info.fs_block_addr;
+
+        // for recycle to cut off the link
+        second_block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(second_block);
+        dss_inc_meta_ref_hot(second_block_ctrl);
+
         dss_unlatch_node(node);
     } else {
         dss_unlatch_node(node);
@@ -955,6 +985,12 @@ status_t dss_get_second_block_with_cache(dss_session_t *session, dss_vg_info_ite
         dss_latch_x_node(session, node, NULL);
         block_ctrl->fs_block_cache_info.fs_block_addr = (char *)second_block;
         block_ctrl->fs_block_cache_info.fs_block_id = DSS_ID_TO_U64(block_id);
+
+        // for recycle to cut off the link
+        second_block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(second_block);
+        second_block_ctrl->fs_block_cache_info.owner_node_addr = (char *)node;
+        second_block_ctrl->fs_block_cache_info.owner_node_id = DSS_ID_TO_U64(node->id);
+
         dss_unlatch_node(node);
     }
     *fs_block_out = second_block;
@@ -967,11 +1003,17 @@ status_t dss_get_fs_aux_with_cache(dss_session_t *session, dss_vg_info_item_t *v
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_node(node);
 
     dss_fs_aux_t *fs_aux = NULL;
+    dss_block_ctrl_t *fs_aux_block_ctrl = NULL;
     dss_latch_s_node(session, node, NULL);
     if (block_ctrl->fs_block_cache_info.fs_aux_block_id == DSS_ID_TO_U64(block_id) &&
         block_ctrl->fs_block_cache_info.fs_aux_addr != NULL &&
         dss_is_fs_aux_valid(node, (dss_fs_aux_t *)block_ctrl->fs_block_cache_info.fs_aux_addr)) {
         fs_aux = (dss_fs_aux_t *)block_ctrl->fs_block_cache_info.fs_aux_addr;
+
+        // for recycle to cut off the link
+        fs_aux_block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_aux);
+        dss_inc_meta_ref_hot(fs_aux_block_ctrl);
+
         dss_unlatch_node(node);
     } else {
         dss_unlatch_node(node);
@@ -990,6 +1032,12 @@ status_t dss_get_fs_aux_with_cache(dss_session_t *session, dss_vg_info_item_t *v
         dss_latch_x_node(session, node, NULL);
         block_ctrl->fs_block_cache_info.fs_aux_addr = (char *)fs_aux;
         block_ctrl->fs_block_cache_info.fs_aux_block_id = DSS_ID_TO_U64(block_id);
+
+        // for recycle to cut off the link
+        fs_aux_block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_aux);
+        fs_aux_block_ctrl->fs_block_cache_info.owner_node_addr = (char *)node;
+        fs_aux_block_ctrl->fs_block_cache_info.owner_node_id = DSS_ID_TO_U64(node->id);
+
         dss_unlatch_node(node);
     }
 
@@ -1327,6 +1375,7 @@ void print_redo_init_fs_aux(dss_redo_entry_t *entry)
     (void)printf("  }\n");
     (void)printf("}\n");
 }
+// end for redo
 #ifdef __cplusplus
 }
 #endif

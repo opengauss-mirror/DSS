@@ -49,6 +49,12 @@ extern "C" {
 
 #define GA_INSTANCE_POOL_SIZE (uint32)(1048576) /* 1M */
 
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+#define GA_USAGE_UNIT (CM_100X_FIXED * CM_100X_FIXED)
+#else
+#define GA_USAGE_UNIT (CM_100X_FIXED)
+#endif
+
 typedef uint64 ga_offset_t;
 
 typedef enum tagga_pool_name {
@@ -132,6 +138,7 @@ status_t ga_create_global_area(void);
 void ga_destroy_global_area(void);
 int32 ga_attach_area(uint32 attach_perm);
 void ga_detach_area(void);
+uint32 ga_get_pool_usage(ga_pool_id_e pool_id);
 
 void ga_append_into_queue_by_pool_id(ga_pool_id_e pool_id, ga_queue_t *queue, uint32 object_id);
 uint32 ga_alloc_object(ga_pool_id_e pool_id, uint32 specific_id);

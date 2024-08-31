@@ -127,7 +127,7 @@ typedef enum {
 static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 {
     return ((type == DSS_CMD_GET_INST_STATUS) || (type == DSS_CMD_HANDSHAKE) || (type == DSS_CMD_STOP_SERVER) ||
-            (type == DSS_CMD_ENABLE_GRAB_LOCK));
+            (type == DSS_CMD_ENABLE_GRAB_LOCK) || (type == DSS_CMD_GETCFG) || (type == DSS_CMD_SETCFG));
 }
 
 #define DSS_DEFAULT_AU_SIZE SIZE_M(8)

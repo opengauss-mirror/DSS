@@ -182,6 +182,11 @@ void dss_set_node_flag(
 void dss_validate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node);
 status_t dss_invalidate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node);
 
+static inline bool32 dss_is_node_deleted(gft_node_t *node)
+{
+    return (node->flags & DSS_FT_NODE_FLAG_DEL);
+}
+
 static inline bool32 dss_is_fs_meta_valid(gft_node_t *node)
 {
     return !(node->flags & DSS_FT_NODE_FLAG_INVALID_FS_META);

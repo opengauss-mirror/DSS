@@ -185,13 +185,14 @@ static status_t dss_hashmap_dynamic_extend_background_task(dss_instance_t *inst)
 {
     LOG_RUN_INF("create dss hashmap extend background task.");
     uint32 hashmap_extend_idx = dss_get_hashmap_dynamic_extend_task_idx();
-    status_t status =
-        cm_create_thread(dss_hashmap_dynamic_extend_and_redistribute_proc, 0, &g_dss_instance, &(g_dss_instance.threads[hashmap_extend_idx]));
+    status_t status = cm_create_thread(dss_hashmap_dynamic_extend_and_redistribute_proc, 0, &g_dss_instance,
+        &(g_dss_instance.threads[hashmap_extend_idx]));
     return status;
 }
 
 static status_t dss_create_bg_task_set(dss_instance_t *inst, char *task_name, uint32 max_task_num,
-    dss_get_bg_task_idx_func_t get_bg_task_idx, thread_entry_t bg_task_entry, dss_bg_task_info_t *bg_task_info_set)
+    dss_get_bg_task_idx_func_t get_bg_task_idx, thread_entry_t bg_task_entry, dss_bg_task_info_t *bg_task_info_set,
+    void *task_args)
 {
     LOG_RUN_INF("create dss background task set for:%s.", task_name);
 
@@ -210,6 +211,7 @@ static status_t dss_create_bg_task_set(dss_instance_t *inst, char *task_name, ui
         bg_task_info_set[i].task_num_max = task_num;
         bg_task_info_set[i].my_task_id = i;
         bg_task_info_set[i].vg_id_beg = vg_id;
+        bg_task_info_set[i].task_args = task_args;
         if (vg_left > 0) {
             cur_range = vg_per_task + 1;
             vg_left--;
@@ -236,10 +238,34 @@ static status_t dss_create_meta_syn_bg_task_set(dss_instance_t *inst)
         return CM_SUCCESS;
     }
     LOG_RUN_INF("create dss meta syn background task.");
-    status_t status = dss_create_bg_task_set(&g_dss_instance, "dss meta syn background task",
-        DSS_META_SYN_BG_TASK_NUM_MAX, dss_get_meta_syn_task_idx, dss_meta_syn_proc, g_dss_instance.syn_meta_task);
+    status_t status = dss_create_bg_task_set(inst, "dss meta syn background task", DSS_META_SYN_BG_TASK_NUM_MAX,
+        dss_get_meta_syn_task_idx, dss_meta_syn_proc, inst->syn_meta_task, NULL);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Create dss meta syn background task set failed.");
+    }
+    return status;
+}
+
+static status_t dss_create_recycle_meta_bg_task_set(dss_instance_t *inst)
+{
+    LOG_RUN_INF("create dss recycle meta background task.");
+
+    inst->recycle_meta.recycle_meta_args.recyle_meta_pos = &inst->inst_cfg.params.recyle_meta_pos;
+    cm_init_cond(&inst->recycle_meta.recycle_meta_args.trigger_cond);
+
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+    // set recyle_meta_pos from param cfg
+#else
+    // set recyle_meta_pos by default
+    inst->recycle_meta.recycle_meta_args.recyle_meta_pos->hwm = DSS_RECYCLE_META_RECYCLE_RATE_HWM;
+    inst->recycle_meta.recycle_meta_args.recyle_meta_pos->lwm = DSS_RECYCLE_META_RECYCLE_RATE_LWM;
+#endif
+
+    status_t status = dss_create_bg_task_set(inst, "dss recycle meta background task", DSS_RECYLE_META_TASK_NUM_MAX,
+        dss_get_recycle_meta_task_idx, dss_recycle_meta_proc, inst->recycle_meta.recycle_meta_task,
+        &inst->recycle_meta.recycle_meta_args);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Create dss recycle meta background task set failed.");
     }
     return status;
 }
@@ -265,6 +291,12 @@ static status_t dss_init_background_tasks(void)
     status = dss_hashmap_dynamic_extend_background_task(&g_dss_instance);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Create hashmap_extend meta background task failed.");
+        return status;
+    }
+
+    status = dss_create_recycle_meta_bg_task_set(&g_dss_instance);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Create dss recycle meta background task failed.");
         return status;
     }
     return CM_SUCCESS;

@@ -27,6 +27,7 @@
 #include "dss_file.h"
 #include "cm_bilist.h"
 #include "dss_fs_aux.h"
+#include "dss_syn_meta.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -83,6 +84,8 @@ char *dss_buffer_get_meta_addr(ga_pool_id_e pool_id, uint32 object_id)
     return NULL;
 }
 
+static void dss_remove_recycle_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl);
+
 bool32 dss_buffer_cache_key_compare(void *key, void *key2)
 {
     uint64 id = DSS_BLOCK_ID_IGNORE_UNINITED(*(uint64 *)key);
@@ -92,6 +95,7 @@ bool32 dss_buffer_cache_key_compare(void *key, void *key2)
 
 static inline ga_pool_id_e dss_buffer_cache_get_pool_id(uint32_t block_type)
 {
+    CM_ASSERT(block_type < DSS_BLOCK_TYPE_MAX);
     if (block_type == DSS_BLOCK_TYPE_FT) {
         return GA_8K_POOL;
     } else if (block_type == DSS_BLOCK_TYPE_FS) {
@@ -103,6 +107,7 @@ static inline ga_pool_id_e dss_buffer_cache_get_pool_id(uint32_t block_type)
 
 uint32 dss_buffer_cache_get_block_size(uint32_t block_type)
 {
+    CM_ASSERT(block_type < DSS_BLOCK_TYPE_MAX);
     if (block_type == DSS_BLOCK_TYPE_FT) {
         return DSS_BLOCK_SIZE;
     } else if (block_type == DSS_BLOCK_TYPE_FS) {
@@ -128,6 +133,7 @@ static void dss_register_buffer_cache_inner(dss_session_t *session, shm_hash_ctr
         block_ctrl->has_next = CM_FALSE;
     }
     block_ctrl->hash = hash;
+    block_ctrl->my_obj_id = obj_id;
     SHM_HASH_BUCKET_INSERT(bucket, *(sh_mem_p *)&obj_id, block_ctrl, first_block_ctrl);
 }
 
@@ -225,20 +231,20 @@ void dss_hashmap_dynamic_extend_and_redistribute_per_vg(dss_vg_info_item_t *vg_i
 {
     shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
     if (shm_hashmap_need_extend_and_redistribute(hash_ctrl)) {
-        dss_lock_shm_meta_x(session, vg_item->vg_latch);
+        dss_enter_shm_x(session, vg_item);
         LOG_DEBUG_INF("[HASHMAP]Begin to extend hashmap of vg %s.", vg_item->vg_name);
         status_t status = dss_hashmap_extend_and_redistribute_batch(session, hash_ctrl, DSS_EXTEND_BATCH);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR(
                 "[HASHMAP]Failed to extend hashmap of vg %s, nsegments is %u, max_bucket is %u, bucket_num is %u.",
                 vg_item->vg_name, hash_ctrl->nsegments, hash_ctrl->max_bucket, hash_ctrl->bucket_num);
-            dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);
+            dss_leave_shm(session, vg_item);
             return;
         }
         LOG_DEBUG_INF(
             "[HASHMAP]Succeed to extend hashmap of vg %s, nsegments is %u, max_bucket is %u, bucket_num is %u.",
             vg_item->vg_name, hash_ctrl->nsegments, hash_ctrl->max_bucket, hash_ctrl->bucket_num);
-        dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);
+        dss_leave_shm(session, vg_item);
     }
 }
 
@@ -328,6 +334,8 @@ void dss_unregister_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_
         block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
         block_id_tmp = ((dss_common_block_t *)meta_addr)->id;
         if ((block_ctrl->hash == hash) && (dss_buffer_cache_key_compare(&block_id_tmp, &block_id) == CM_TRUE)) {
+            // may has been linked to recycle meta list
+            dss_remove_recycle_meta(session, vg_item, block_ctrl);
             dss_unregister_buffer_cache_inner(hash_ctrl, bucket, next_id, meta_addr);
             LOG_DEBUG_INF("Move block id %s from bucket %u, hash:%u, type:%u, num:%u.",
                 dss_display_metaid(block_id_tmp), bucket_idx, hash, block->type, bucket->entry_num);
@@ -449,6 +457,7 @@ static status_t dss_load_buffer_cache(dss_session_t *session, dss_vg_info_item_t
                 *out_obj_id = next_id;
             }
             block_ctrl->type = type;
+            dss_inc_meta_ref_hot(block_ctrl);
             return CM_SUCCESS;
         }
         has_next = block_ctrl->has_next;
@@ -499,7 +508,8 @@ static status_t dss_load_buffer_cache(dss_session_t *session, dss_vg_info_item_t
         *out_obj_id = ga_obj_id;
     }
     *block_addr = meta_addr;
-    DSS_LOG_DEBUG_OP("Succeed to load meta_addr block, v:%u,au:%llu,block:%u,item:%u,type:%d.", block_id.volume,
+    dss_inc_meta_ref_hot(block_ctrl);
+    DSS_LOG_DEBUG_OP("Succeed to load meta block, v:%u,au:%llu,block:%u,item:%u,type:%d.", block_id.volume,
         (uint64)block_id.au, block_id.block, block_id.item, type);
     return CM_SUCCESS;
 }
@@ -545,6 +555,8 @@ void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_it
             if (out_obj_id != NULL) {
                 *out_obj_id = next_id;
             }
+
+            dss_inc_meta_ref_hot(block_ctrl);
             return meta_addr;
         }
         has_next = block_ctrl->has_next;
@@ -553,69 +565,6 @@ void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_it
     if (vg_item->from_type == FROM_SHM) {
         dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
     }
-    return NULL;
-}
-
-// do not care content change
-static void *dss_find_block_in_bucket_ex(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 hash, uint64 *key,
-    bool32 is_print_error_log, ga_obj_id_t *out_obj_id)
-{
-    shm_hashmap_t *map = vg_item->buffer_cache;
-    CM_ASSERT(key != NULL);
-    if (map == NULL) {
-        if (is_print_error_log) {
-            LOG_DEBUG_ERR("Pointer to map or compare_func is NULL");
-        }
-        return NULL;
-    }
-    char *meta_addr = NULL;
-    dss_block_ctrl_t *block_ctrl = NULL;
-    dss_block_ctrl_t *next_block_ctrl = NULL;
-    auid_t block_id_tmp = {0};
-    shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
-    uint32 bucket_idx = shm_hashmap_calc_bucket_idx(hash_ctrl, hash);
-    uint32 segment_objid = DSS_INVALID_ID32;
-    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx, &segment_objid);
-    if (bucket == NULL) {
-        if (is_print_error_log) {
-            LOG_DEBUG_ERR("Pointer to bucket %u is NULL.", bucket_idx);
-        }
-        return NULL;
-    }
-    (void)dss_lock_shm_meta_bucket_s(session, segment_objid, &bucket->enque_lock);
-    ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
-    bool32 has_next = bucket->has_next;
-    if (has_next) {
-        meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
-        cm_panic(meta_addr != NULL);
-        block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
-        block_id_tmp = ((dss_common_block_t *)meta_addr)->id;
-        dss_latch_s(&block_ctrl->latch);
-    }
-    dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
-
-    while (has_next) {
-        if ((block_ctrl->hash == hash) && (dss_buffer_cache_key_compare(&block_id_tmp, key) == CM_TRUE)) {
-            if (out_obj_id != NULL) {
-                *out_obj_id = next_id;
-            }
-            dss_unlatch(&block_ctrl->latch);
-            return meta_addr;
-        }
-        has_next = block_ctrl->has_next;
-        next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
-        if (has_next) {
-            meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
-            cm_panic(meta_addr != NULL);
-            next_block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
-            block_id_tmp = ((dss_common_block_t *)meta_addr)->id;
-            dss_latch_s(&next_block_ctrl->latch);
-        }
-        dss_unlatch(&block_ctrl->latch);
-        block_ctrl = next_block_ctrl;
-        next_block_ctrl = NULL;
-    }
-
     return NULL;
 }
 
@@ -677,7 +626,7 @@ static status_t dss_add_buffer_cache_inner(dss_session_t *session, shm_hash_ctrl
     ga_obj_id.pool_id = pool_id;
     ga_obj_id.obj_id = obj_id;
     dss_register_buffer_cache_inner(session, hash_ctrl, bucket, ga_obj_id, meta_addr, hash);
-
+    dss_inc_meta_ref_hot(block_ctrl);
     DSS_LOG_DEBUG_OP("Succeed to load meta_addr block, v:%u,au:%llu,block:%u,item:%u,type:%d.", add_block_id.volume,
         (uint64)add_block_id.au, add_block_id.block, add_block_id.item, type);
     *shm_buf = meta_addr;
@@ -720,6 +669,7 @@ static status_t dss_add_buffer_cache(dss_session_t *session, dss_vg_info_item_t 
             uint32 size = dss_buffer_cache_get_block_size(type);
             securec_check_ret(memcpy_s(meta_addr, size, refresh_buf, size));
             dss_common_block_t *ref_block = DSS_GET_COMMON_BLOCK_HEAD(meta_addr);
+            dss_inc_meta_ref_hot(block_ctrl);
             DSS_LOG_DEBUG_OP("Dss refresh block in shm, v:%u,au:%llu,block:%u,item:%u,type:%d.", ref_block->id.volume,
                 (uint64)ref_block->id.au, ref_block->id.block, ref_block->id.item, ref_block->type);
             *shm_buf = meta_addr;
@@ -823,89 +773,70 @@ char *dss_find_block_in_shm_no_refresh(
     return dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
 }
 
-// do not care content change
-char *dss_find_block_in_shm_no_refresh_ex(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id, ga_obj_id_t *out_obj_id)
-{
-    uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
-    return dss_find_block_in_bucket_ex(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
-}
-
-static status_t dss_refresh_buffer_cache_inner(dss_session_t *session, dss_vg_info_item_t *vg_item,
-    uint32 bucket_idx, ga_queue_t *obj_que, ga_pool_id_e *obj_pool_id)
+static status_t dss_refresh_buffer_cache_inner(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 bucket_idx,
+    ga_queue_t *obj_que, ga_pool_id_e *obj_pool_id)
 {
     shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
-    uint32 segment_objid = DSS_INVALID_ID32;
-    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx, &segment_objid);
-    bool32 has_next = CM_FALSE;
-    ga_obj_id_t next_id = {0};
+    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx, NULL);
 
     dss_block_ctrl_t *block_ctrl = NULL;
     dss_block_ctrl_t *block_ctrl_prev = NULL;
-    dss_common_block_t *block = NULL;
-    char *meta_addr = NULL;
+    dss_block_ctrl_t *block_ctrl_next = NULL;
 
-    ga_obj_id_t id_curr = {0};
-    dss_block_ctrl_t *block_ctrl_curr = NULL;
+    ga_obj_id_t obj_id = {0};
+    ga_obj_id_t obj_id_next = {0};
+
+    bool32 has_next = CM_FALSE;
     bool32 need_remove = CM_FALSE;
 
-    status_t status = dss_lock_shm_meta_bucket_s(session, segment_objid, &bucket->enque_lock);
-    if (status != CM_SUCCESS) {
-        return status;
+    dss_lock_shm_meta_bucket_x(session, &bucket->enque_lock);
+    if (!bucket->has_next) {
+        dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
+        return CM_SUCCESS;
     }
-    next_id = *(ga_obj_id_t *)&bucket->first;
-    has_next = bucket->has_next;
-    while (has_next) {
-        if (meta_addr == NULL) {
-            meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
-            block = DSS_GET_COMMON_BLOCK_HEAD(meta_addr);
-            block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
-        }
 
+    status_t status = CM_SUCCESS;
+    obj_id = *(ga_obj_id_t *)&bucket->first;
+    block_ctrl = dss_buffer_get_block_ctrl_addr(obj_id.pool_id, obj_id.obj_id);
+    do {
         // no recycle mem for ft block because api cache the meta_addr
-        if (block->type == DSS_BLOCK_TYPE_FT) {
+        if (block_ctrl->type == DSS_BLOCK_TYPE_FT) {
             dss_init_dss_fs_block_cache_info(&block_ctrl->fs_block_cache_info);
+            char *meta_addr = DSS_GET_META_FROM_BLOCK_CTRL(char, block_ctrl);
             status = dss_check_block_version(
-                vg_item, ((dss_common_block_t *)meta_addr)->id, block->type, meta_addr, NULL, CM_FALSE);
-            if (status != CM_SUCCESS) {
-                dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
-                return status;
-            }
+                vg_item, ((dss_common_block_t *)meta_addr)->id, block_ctrl->type, meta_addr, NULL, CM_FALSE);
+            DSS_BREAK_IF_ERROR(status);
 
-            // next may NOT be ft, need remove from the link and need the prev point info
+            // no need remove ft block, so make it to the lastest prev block ctrl for remove every time
             block_ctrl_prev = block_ctrl;
-            need_remove = CM_FALSE;
         } else {
             // cache the pool info and obj info
-            ga_append_into_queue_by_pool_id(next_id.pool_id, &obj_que[block->type], next_id.obj_id);
-            obj_pool_id[block->type] = next_id.pool_id;
+            ga_append_into_queue_by_pool_id(obj_id.pool_id, &obj_que[block_ctrl->type], obj_id.obj_id);
+            obj_pool_id[block_ctrl->type] = obj_id.pool_id;
 
-            // need remove from the link, and need cur point info
-            id_curr = next_id;
-            block_ctrl_curr = block_ctrl;
             need_remove = CM_TRUE;
         }
 
         has_next = block_ctrl->has_next;
-        next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
-
+        obj_id_next = *(ga_obj_id_t *)&block_ctrl->hash_next;
         if (has_next) {
-            meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
-            block = DSS_GET_COMMON_BLOCK_HEAD(meta_addr);
-            block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
+            block_ctrl_next = dss_buffer_get_block_ctrl_addr(obj_id_next.pool_id, obj_id_next.obj_id);
         } else {
-            meta_addr = NULL;
-            block = NULL;
-            block_ctrl = NULL;
+            block_ctrl_next = NULL;
         }
 
         if (need_remove) {
-            SHM_HASH_BUCKET_REMOVE(bucket, *(sh_mem_p *)&id_curr, block_ctrl_curr, block_ctrl_prev, block_ctrl);
+            // may has been linked to recycle meta list
+            dss_remove_recycle_meta(session, vg_item, block_ctrl);
+            SHM_HASH_BUCKET_REMOVE(bucket, *(sh_mem_p *)&obj_id, block_ctrl, block_ctrl_prev, block_ctrl_next);
         }
-    }
-    dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
 
-    return CM_SUCCESS;
+        obj_id = obj_id_next;
+        block_ctrl = block_ctrl_next;
+    } while (has_next);
+
+    dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
+    return status;
 }
 
 status_t dss_refresh_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, shm_hashmap_t *map)
@@ -936,6 +867,288 @@ void dss_init_dss_fs_block_cache_info(dss_fs_block_cache_info_t *fs_block_cache_
 void dss_init_vg_cache_node_info(dss_vg_info_item_t *vg_item)
 {
     (void)memset_s(vg_item->vg_cache_node, sizeof(vg_item->vg_cache_node), 0x00, sizeof(vg_item->vg_cache_node));
+}
+
+// do not need control concurrence
+void dss_inc_meta_ref_hot(dss_block_ctrl_t *block_ctrl)
+{
+    (void)cm_atomic_add((atomic_t *)&block_ctrl->ref_hot, DSS_RECYCLE_META_HOT_INC_STEP);
+}
+
+// do not need control concurrence
+void dss_desc_meta_ref_hot(dss_block_ctrl_t *block_ctrl)
+{
+    if (block_ctrl->ref_hot > 0) {
+        int64 ref_hot = block_ctrl->ref_hot;
+        int64 new_ref_hot = (int64)((uint64)ref_hot >> 1);
+        (void)cm_atomic_cas((atomic_t *)&block_ctrl->ref_hot, ref_hot, new_ref_hot);
+    }
+}
+
+static void dss_append_recycle_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl)
+{
+    CM_ASSERT(block_ctrl->recycle_meta_node.next == NULL);
+    CM_ASSERT(block_ctrl->recycle_meta_node.prev == NULL);
+    uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
+    dss_latch_x2(&vg_item->recycle_meta_desc.latch, sid);
+    cm_bilist_add_tail(&block_ctrl->recycle_meta_node, &vg_item->recycle_meta_desc.bilist);
+    dss_unlatch(&vg_item->recycle_meta_desc.latch);
+}
+
+static bilist_node_t *dss_pop_recycle_meta(dss_session_t *session, dss_vg_info_item_t *vg_item)
+{
+    uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
+    dss_latch_x2(&vg_item->recycle_meta_desc.latch, sid);
+    bilist_node_t *recycle_meta_node = cm_bilist_pop_first(&vg_item->recycle_meta_desc.bilist);
+    dss_unlatch(&vg_item->recycle_meta_desc.latch);
+    if (recycle_meta_node != NULL) {
+        CM_ASSERT(recycle_meta_node->next == NULL);
+        CM_ASSERT(recycle_meta_node->prev == NULL);
+    }
+    return recycle_meta_node;
+}
+
+static void dss_remove_recycle_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl)
+{
+    uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
+    dss_latch_x2(&vg_item->recycle_meta_desc.latch, sid);
+    cm_bilist_del(&block_ctrl->recycle_meta_node, &vg_item->recycle_meta_desc.bilist);
+    dss_unlatch(&vg_item->recycle_meta_desc.latch);
+    CM_ASSERT(block_ctrl->recycle_meta_node.next == NULL);
+    CM_ASSERT(block_ctrl->recycle_meta_node.prev == NULL);
+}
+
+static uint32 dss_try_find_recycle_meta_by_bucket(dss_session_t *session, dss_vg_info_item_t *vg_item,
+    shm_hashmap_bucket_t *bucket, dss_recycle_meta_args_t *recycle_meta_args)
+{
+    bool32 has_next = CM_FALSE;
+    ga_obj_id_t next_id = {0};
+    dss_block_ctrl_t *block_ctrl = NULL;
+
+    status_t status = dss_lock_shm_meta_bucket_s(session, vg_item->id, &bucket->enque_lock);
+    if (status != CM_SUCCESS) {
+        return 0;
+    }
+
+    uint32 found_num = 0;
+    uint32 fs_usage = ga_get_pool_usage(GA_16K_POOL);
+    uint32 fs_aux_usage = ga_get_pool_usage(GA_FS_AUX_POOL);
+
+    next_id = *(ga_obj_id_t *)&bucket->first;
+    has_next = bucket->has_next;
+    while (has_next) {
+        block_ctrl = dss_buffer_get_block_ctrl_addr(next_id.pool_id, next_id.obj_id);
+        if (!block_ctrl->recycle_disable &&
+            ((fs_usage >= recycle_meta_args->recyle_meta_pos->hwm && block_ctrl->type == DSS_BLOCK_TYPE_FS) ||
+                (fs_aux_usage >= recycle_meta_args->recyle_meta_pos->hwm &&
+                    block_ctrl->type == DSS_BLOCK_TYPE_FS_AUX))) {
+            dss_desc_meta_ref_hot(block_ctrl);
+            if (block_ctrl->ref_hot == 0) {
+                dss_append_recycle_meta(session, vg_item, block_ctrl);
+                found_num++;
+            }
+        }
+
+        has_next = block_ctrl->has_next;
+        next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
+    }
+    dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
+    return found_num;
+}
+
+static void dss_meta_init_owner_fs_block_cache(dss_block_ctrl_t *owner_block_ctrl)
+{
+    owner_block_ctrl->fs_block_cache_info.entry_block_addr = NULL;
+    owner_block_ctrl->fs_block_cache_info.entry_block_id = 0;
+    owner_block_ctrl->fs_block_cache_info.fs_block_addr = NULL;
+    owner_block_ctrl->fs_block_cache_info.fs_block_id = 0;
+    owner_block_ctrl->fs_block_cache_info.fs_aux_addr = NULL;
+    owner_block_ctrl->fs_block_cache_info.fs_aux_block_id = 0;
+}
+
+static bool32 dss_try_clean_cache_meta(dss_session_t *session, dss_block_ctrl_t *block_ctrl)
+{
+    if (block_ctrl->type != DSS_BLOCK_TYPE_FS && block_ctrl->type != DSS_BLOCK_TYPE_FS_AUX) {
+        return CM_FALSE;
+    }
+
+    gft_node_t *owner_node = (gft_node_t *)block_ctrl->fs_block_cache_info.owner_node_addr;
+    if (owner_node == NULL) {
+        return CM_TRUE;
+    }
+
+    bool32 need_clean = CM_FALSE;
+    dss_latch_x_node(session, owner_node, NULL);
+    // not cached, clean the owner info
+    if (DSS_ID_TO_U64(owner_node->id) != block_ctrl->fs_block_cache_info.owner_node_id) {
+        need_clean = CM_TRUE;
+    } else {
+        // cached
+        dss_block_ctrl_t *owner_block_ctrl = dss_get_block_ctrl_by_node(owner_node);
+        // the owner has been deleted, clean the owner's cache info, and then clean the owner info
+        if (dss_is_node_deleted(owner_node)) {
+            dss_meta_init_owner_fs_block_cache(owner_block_ctrl);
+            need_clean = CM_TRUE;
+            // the onwer is ok, but not cache this block, clean the onwer info
+        } else if (owner_block_ctrl->fs_block_cache_info.entry_block_id != DSS_ID_TO_U64(block_ctrl->block_id) &&
+                   owner_block_ctrl->fs_block_cache_info.fs_block_id != DSS_ID_TO_U64(block_ctrl->block_id) &&
+                   owner_block_ctrl->fs_block_cache_info.fs_aux_block_id != DSS_ID_TO_U64(block_ctrl->block_id)) {
+            need_clean = CM_TRUE;
+        }
+    }
+    dss_unlatch_node(owner_node);
+
+    if (need_clean) {
+        block_ctrl->fs_block_cache_info.owner_node_addr = NULL;
+        block_ctrl->fs_block_cache_info.owner_node_id = 0;
+    }
+    return need_clean;
+}
+
+static void dss_try_recycle_meta_batch(dss_session_t *session, dss_vg_info_item_t *vg_item, bool32 trigger_enable)
+{
+    dss_block_ctrl_t *block_ctrl = NULL;
+    uint32 fs_recyle_cnt = 0;
+    uint32 fs_aux_recyle_cnt = 0;
+
+    if (vg_item->recycle_meta_desc.bilist.count == 0) {
+        return;
+    }
+
+    dss_enter_shm_x(session, vg_item);
+    bilist_node_t *recycle_meta_node = dss_pop_recycle_meta(session, vg_item);
+    while (recycle_meta_node) {
+        block_ctrl = BILIST_NODE_OF(dss_block_ctrl_t, recycle_meta_node, recycle_meta_node);
+        // only the ref_hot is 0, and not in syn meta, and clean the invalid cache info
+        if (!block_ctrl->recycle_disable && block_ctrl->ref_hot == 0 && dss_try_clean_cache_meta(session, block_ctrl)) {
+            if (block_ctrl->type == DSS_BLOCK_TYPE_FS) {
+                fs_recyle_cnt++;
+                LOG_DEBUG_INF("recycle fs meta pool item id:%s", dss_display_metaid(block_ctrl->block_id));
+            } else {
+                fs_aux_recyle_cnt++;
+                LOG_DEBUG_INF("recycle fs aux meta pool item id:%s", dss_display_metaid(block_ctrl->block_id));
+            }
+
+            dss_unregister_buffer_cache(session, vg_item, block_ctrl->block_id);
+            ga_free_object(block_ctrl->my_obj_id.pool_id, block_ctrl->my_obj_id.obj_id);
+        }
+        recycle_meta_node = dss_pop_recycle_meta(session, vg_item);
+    }
+    dss_leave_shm(session, vg_item);
+
+    LOG_DEBUG_INF("recycle fs meta pool item count:%u", fs_recyle_cnt);
+    LOG_DEBUG_INF("recycle fs aux meta pool item count:%u", fs_aux_recyle_cnt);
+}
+
+static inline uint32 dss_recycle_meta_batch_num(bool32 trigger_enable)
+{
+    return trigger_enable ? DSS_RECYCLE_META_TRIGGER_CLEAN_BATCH_NUM : DSS_RECYCLE_META_TIME_CLEAN_BATCH_NUM;
+}
+
+static void dss_recycle_meta_by_vg(dss_session_t *session, dss_vg_info_item_t *vg_item,
+    dss_recycle_meta_args_t *recycle_meta_args, bool32 trigger_enable)
+{
+    shm_hashmap_t *map = vg_item->buffer_cache;
+    if (map == NULL) {
+        return;
+    }
+
+    shm_hash_ctrl_t *hash_ctrl = &map->hash_ctrl;
+    // hash_ctrl->max_bucket may change
+    uint32 cur_map_num = hash_ctrl->max_bucket;
+    if (cur_map_num == 0) {
+        return;
+    }
+
+    shm_hashmap_bucket_t *bucket = NULL;
+    uint32 found_num = 0;
+    uint32 bucket_id = recycle_meta_args->last_bucket_id[vg_item->id];
+    if (bucket_id >= cur_map_num || bucket_id >= hash_ctrl->max_bucket) {
+        bucket_id = 0;
+    }
+
+    for (; (bucket_id < cur_map_num && bucket_id < hash_ctrl->max_bucket); bucket_id++) {
+        bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_id, NULL);
+        if (bucket == NULL || !bucket->has_next) {
+            continue;
+        }
+
+        found_num += dss_try_find_recycle_meta_by_bucket(session, vg_item, bucket, recycle_meta_args);
+        uint32 batch_num = dss_recycle_meta_batch_num(trigger_enable);
+        if ((found_num == batch_num) || ((bucket_id + 1) == cur_map_num)) {
+            dss_try_recycle_meta_batch(session, vg_item, trigger_enable);
+            found_num = 0;
+        }
+
+        // check the recycle end
+        uint32 fs_usage = ga_get_pool_usage(GA_16K_POOL);
+        uint32 fs_aux_usage = ga_get_pool_usage(GA_FS_AUX_POOL);
+        if (fs_usage <= recycle_meta_args->recyle_meta_pos->lwm &&
+            fs_aux_usage <= recycle_meta_args->recyle_meta_pos->lwm) {
+            break;
+        }
+    }
+    recycle_meta_args->last_bucket_id[vg_item->id] = bucket_id;
+
+    if (found_num > 0) {
+        dss_try_recycle_meta_batch(session, vg_item, trigger_enable);
+    }
+}
+
+void dss_recycle_meta(dss_session_t *session, dss_bg_task_info_t *bg_task_info, date_t *clean_time)
+{
+    dss_recycle_meta_args_t *recycle_meta_args = (dss_recycle_meta_args_t *)bg_task_info->task_args;
+
+    (void)cm_wait_cond(&recycle_meta_args->trigger_cond, recycle_meta_args->trigger_clean_wait_time);
+    bool32 trigger_enable = recycle_meta_args->trigger_enable;
+    if (!trigger_enable) {
+        uint64 time_now = (uint64)cm_now();
+        if ((time_now - (*clean_time)) < (recycle_meta_args->time_clean_wait_time * MICROSECS_PER_SECOND)) {
+            return;
+        }
+    } else {
+        recycle_meta_args->trigger_enable = CM_FALSE;
+    }
+
+    // check wheather need to recycle meta first
+    uint32 fs_usage = ga_get_pool_usage(GA_16K_POOL);
+    uint32 fs_aux_usage = ga_get_pool_usage(GA_FS_AUX_POOL);
+    if ((fs_usage <= recycle_meta_args->recyle_meta_pos->hwm) &&
+        (fs_aux_usage <= recycle_meta_args->recyle_meta_pos->hwm)) {
+        return;
+    }
+
+    LOG_DEBUG_INF("try recycle meta, trigger_enable:%u", (uint32)trigger_enable);
+    // do recycle meta for vg one by one
+    for (uint32_t i = bg_task_info->vg_id_beg; i < bg_task_info->vg_id_end; i++) {
+        dss_recycle_meta_by_vg(session, &g_vgs_info->volume_group[i], recycle_meta_args, trigger_enable);
+    }
+
+    if (!trigger_enable) {
+        *clean_time = cm_now();
+    }
+
+    (void)cm_wait_cond(&recycle_meta_args->trigger_cond, recycle_meta_args->trigger_clean_wait_time);
+}
+
+void dss_buffer_recycle_disable(dss_block_ctrl_t *block_ctrl, bool8 recycle_disable)
+{
+    block_ctrl->recycle_disable = recycle_disable;
+}
+
+void dss_set_recycle_meta_args_to_vg(dss_bg_task_info_t *bg_task_info)
+{
+    // do recycle meta for vg one by one
+    for (uint32_t i = bg_task_info->vg_id_beg; i < bg_task_info->vg_id_end; i++) {
+        g_vgs_info->volume_group[i].recycle_meta_desc.task_args = bg_task_info->task_args;
+    }
+}
+
+void dss_trigger_recycle_meta(dss_vg_info_item_t *vg_item)
+{
+    dss_recycle_meta_args_t *recycle_meta_args = (dss_recycle_meta_args_t *)vg_item->recycle_meta_desc.task_args;
+    recycle_meta_args->trigger_enable = CM_TRUE;
+    cm_release_cond(&recycle_meta_args->trigger_cond);
 }
 
 #ifdef __cplusplus

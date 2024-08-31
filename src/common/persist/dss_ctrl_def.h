@@ -336,7 +336,8 @@ typedef struct st_dss_vg_info_item_t {
     dss_from_type_e from_type;
     dss_block_ctrl_task_desc_t syn_meta_desc;
     dss_vg_cache_node_t vg_cache_node[DSS_VG_ITEM_CACHE_NODE_MAX];
-    dss_log_file_ctrl_t log_file_ctrl;  // redo log ctrl
+    dss_log_file_ctrl_t log_file_ctrl;             // redo log ctrl
+    dss_block_ctrl_task_desc_t recycle_meta_desc;  // for recycle meta
     uint32 objectid;
 } dss_vg_info_item_t;
 

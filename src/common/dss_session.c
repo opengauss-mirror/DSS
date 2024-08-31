@@ -36,7 +36,7 @@
 extern "C" {
 #endif
 
-dss_session_ctrl_t g_dss_session_ctrl = {0, 0, 0, 0, 0, NULL};
+dss_session_ctrl_t g_dss_session_ctrl = {0};
 
 status_t dss_extend_session(uint32 extend_num)
 {
@@ -117,12 +117,12 @@ uint32 dss_get_recover_task_idx(void)
     return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM);
 }
 
-uint32 dss_get_delay_clean_task_idx(void)
+uint32 dss_get_hashmap_dynamic_extend_task_idx(void)
 {
     return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_DELAY_CLEAN_BACKGROUND_TASK;
 }
 
-uint32 dss_get_hashmap_dynamic_extend_task_idx(void)
+uint32 dss_get_delay_clean_task_idx(void)
 {
     return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_HASHMAP_DYNAMIC_EXTEND_TASK;
 }
@@ -135,6 +135,11 @@ uint32 dss_get_bg_task_set_idx(uint32 task_id_base, uint32 idx)
 uint32 dss_get_meta_syn_task_idx(uint32 idx)
 {
     return dss_get_bg_task_set_idx(DSS_META_SYN_BG_TASK_BASE, idx);
+}
+
+uint32 dss_get_recycle_meta_task_idx(uint32 idx)
+{
+    return dss_get_bg_task_set_idx(DSS_RECYCLE_META_TASK_BASE, idx);
 }
 
 static status_t dss_init_session(dss_session_t *session, const cs_pipe_t *pipe)
@@ -529,6 +534,7 @@ void dss_lock_shm_meta_ix2x(dss_session_t *session, dss_shared_latch_t *shared_l
 
 void dss_lock_shm_meta_degrade(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
+    CM_ASSERT(session != NULL);
     cm_panic_log(dss_is_server(), "can not op x latch degradation in client.");
     uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
     cm_panic_log(sid == shared_latch->latch.sid && shared_latch->latch.stat == LATCH_STATUS_X,
