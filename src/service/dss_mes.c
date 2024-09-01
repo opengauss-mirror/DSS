@@ -601,47 +601,58 @@ static status_t dss_register_proc(void)
     return CM_SUCCESS;
 }
 
-// buf_attr[pool_idx].count except not smaller than DSS_MSG_BUFFER_QUEUE_NUM
 #define DSS_MES_PRIO_CNT 2
-static status_t dss_set_mes_buffer_pool(unsigned long long recv_msg_buf_size, mes_profile_t *profile)
+static status_t dss_set_mes_message_pool(unsigned long long recv_msg_buf_size, mes_profile_t *profile)
 {
-    unsigned long long fourth_pool_total_size = DSS_FOURTH_BUFFER_LENGTH * DSS_MSG_BUFFER_QUEUE_NUM;
-    recv_msg_buf_size = recv_msg_buf_size - fourth_pool_total_size;
-    uint32 pool_idx;
-    for (uint32 i = 0; i < profile->priority_cnt; i++) {
-        pool_idx = 0;
-        profile->buffer_pool_attr[i].pool_count = DSS_BUFFER_POOL_NUM;
-        profile->buffer_pool_attr[i].queue_count = DSS_MSG_BUFFER_QUEUE_NUM;
-        // 64 buffer pool
-        profile->buffer_pool_attr[i].buf_attr[pool_idx].count =
-            (uint32)(recv_msg_buf_size * DSS_FIRST_BUFFER_RATIO) / DSS_FIRST_BUFFER_LENGTH;
-        profile->buffer_pool_attr[i].buf_attr[pool_idx].size = DSS_FIRST_BUFFER_LENGTH;
-        LOG_RUN_INF("First buffer pool count is %u, pool size is %u.",
-            profile->buffer_pool_attr[i].buf_attr[pool_idx].count,
-            profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
-        // 128 buffer pool
-        pool_idx++;
-        profile->buffer_pool_attr[i].buf_attr[pool_idx].count =
-            (uint32)(recv_msg_buf_size * DSS_SECOND_BUFFER_RATIO) / DSS_SECOND_BUFFER_LENGTH;
-        profile->buffer_pool_attr[i].buf_attr[pool_idx].size = DSS_SECOND_BUFFER_LENGTH;
-        LOG_RUN_INF("Second buffer pool count is %u, pool size is %u.",
-            profile->buffer_pool_attr[i].buf_attr[pool_idx].count,
-            profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
-        // 32k buffer pool
-        pool_idx++;
-        profile->buffer_pool_attr[i].buf_attr[pool_idx].count =
-            (uint32)(recv_msg_buf_size * DSS_THIRDLY_BUFFER_RATIO) / DSS_THIRD_BUFFER_LENGTH;
-        profile->buffer_pool_attr[i].buf_attr[pool_idx].size = DSS_THIRD_BUFFER_LENGTH;
-        LOG_RUN_INF("Third buffer pool count is %u, pool size is %u.",
-            profile->buffer_pool_attr[i].buf_attr[pool_idx].count,
-            profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
-        pool_idx++;
-        profile->buffer_pool_attr[i].buf_attr[pool_idx].count = DSS_MSG_BUFFER_QUEUE_NUM;
-        profile->buffer_pool_attr[i].buf_attr[pool_idx].size = DSS_FOURTH_BUFFER_LENGTH;
-        LOG_RUN_INF("Third buffer pool count is %u, pool size is %u.",
-            profile->buffer_pool_attr[i].buf_attr[pool_idx].count,
-            profile->buffer_pool_attr[i].buf_attr[pool_idx].size);
+    LOG_DEBUG_INF("mes message pool size:%llu", recv_msg_buf_size);
+    int ret = CM_SUCCESS;
+    mes_msg_pool_attr_t *mpa = &profile->msg_pool_attr;
+    mpa->total_size = recv_msg_buf_size;
+    mpa->enable_inst_dimension = CM_FALSE;
+    mpa->buf_pool_count = DSS_MSG_BUFFER_NO_CEIL;
+
+    mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_0].buf_size = DSS_FIRST_BUFFER_LENGTH;
+    mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_1].buf_size = DSS_SECOND_BUFFER_LENGTH;
+    mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_2].buf_size = DSS_THIRD_BUFFER_LENGTH;
+    mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_3].buf_size = DSS_FOURTH_BUFFER_LENGTH;
+
+    mes_msg_buffer_pool_attr_t *buf_pool_attr;
+    buf_pool_attr = &mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_3];
+    buf_pool_attr->shared_pool_attr.queue_num = DSS_MSG_FOURTH_BUFFER_QUEUE_NUM;
+    for (uint32 prio = 0; prio < profile->priority_cnt; prio++) {
+        buf_pool_attr->priority_pool_attr[prio].queue_num = DSS_MSG_FOURTH_BUFFER_QUEUE_NUM;
     }
+
+    for (uint8 buf_pool_no = 0; buf_pool_no < mpa->buf_pool_count; buf_pool_no++) {
+        buf_pool_attr = &mpa->buf_pool_attr[buf_pool_no];
+        buf_pool_attr->shared_pool_attr.queue_num = DSS_MSG_BUFFER_QUEUE_NUM;
+        for (uint32 prio = 0; prio < profile->priority_cnt; prio++) {
+            buf_pool_attr->priority_pool_attr[prio].queue_num = DSS_MSG_BUFFER_QUEUE_NUM;
+        }
+    }
+
+    for (uint32 prio = 0; prio < profile->priority_cnt; prio++) {
+        mpa->max_buf_size[prio] = mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_3].buf_size;
+    }
+
+    mes_msg_pool_minimum_info_t minimum_info ={0};
+    ret = mes_get_message_pool_minimum_info(profile, CM_FALSE, &minimum_info);
+    if (ret != CM_SUCCESS) {
+        LOG_RUN_ERR("[DSS] set mes message pool, get message pool minimum info failed");
+        return ret;
+    }
+    // want fourth buf_pool smallest
+    double fourth_ratio = ((double)(minimum_info.buf_pool_minimum_size[DSS_MSG_BUFFER_NO_3]) /
+                              (mpa->total_size - minimum_info.metadata_size)) +
+                          DBL_EPSILON;
+    mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_3].proportion = fourth_ratio;
+
+    double left_ratio = 1 - fourth_ratio;
+    mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_0].proportion = DSS_FIRST_BUFFER_RATIO * left_ratio;
+    mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_1].proportion = DSS_SECOND_BUFFER_RATIO * left_ratio;
+    mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_2].proportion =
+        1 - (mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_0].proportion + mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_1].proportion +
+                mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_3].proportion);
     return CM_SUCCESS;
 }
 
@@ -704,11 +715,11 @@ static status_t dss_set_mes_profile(mes_profile_t *profile)
     profile->connect_timeout = (int)CM_CONNECT_TIMEOUT;
     profile->socket_timeout = (int)CM_NETWORK_IO_TIMEOUT;
 
-    status_t status = dss_set_mes_buffer_pool(inst_cfg->params.mes_pool_size, profile);
+    dss_set_group_task_num(inst_cfg, profile);
+    status_t status = dss_set_mes_message_pool(inst_cfg->params.mes_pool_size, profile);
     if (status != CM_SUCCESS) {
         return status;
     }
-    dss_set_group_task_num(inst_cfg, profile);
     profile->tpool_attr.enable_threadpool = CM_FALSE;
     return CM_SUCCESS;
 }
