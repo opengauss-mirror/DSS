@@ -93,6 +93,10 @@ typedef struct st_dss_instance {
     bool32 is_join_cluster;
     dss_session_t *handle_session;
     dss_bg_task_info_t syn_meta_task[DSS_META_SYN_BG_TASK_NUM_MAX];
+
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+    void *fi_run_ctx;
+#endif
 } dss_instance_t;
 
 status_t dss_lock_instance(void);
