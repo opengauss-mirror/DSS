@@ -88,6 +88,7 @@ static inline void dss_latch(latch_t *latch, dss_latch_mode_e latch_mode, uint32
 void dss_latch_s2(latch_t *latch, uint32 sid, bool32 is_force, latch_statis_t *stat);
 void dss_latch_x2ix(latch_t *latch, uint32 sid, latch_statis_t *stat);
 void dss_latch_ix2x(latch_t *latch, uint32 sid, latch_statis_t *stat);
+void dss_latch_degrade(latch_t *latch, uint32 sid, latch_statis_t *stat);
 
 void dss_set_latch_extent(dss_latch_extent_t *latch_extent, uint16 stat, uint16 shared_count);
 

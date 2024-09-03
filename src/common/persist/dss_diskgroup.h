@@ -101,6 +101,7 @@ void dss_lock_vg_mem_x2ix(dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_ix2x(dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_s(dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_s_force(dss_vg_info_item_t *vg_item);
+void dss_lock_vg_mem_degrade(dss_vg_info_item_t *vg_item);
 void dss_unlock_vg_mem(dss_vg_info_item_t *vg_item);
 
 status_t dss_file_lock_vg_w(dss_config_t *inst_cfg);

@@ -661,6 +661,11 @@ void dss_lock_vg_mem_s(dss_vg_info_item_t *vg_item)
     dss_latch_s(&vg_item->disk_latch);
 }
 
+void dss_lock_vg_mem_degrade(dss_vg_info_item_t *vg_item)
+{
+    dss_latch_degrade(&vg_item->disk_latch, DSS_DEFAULT_SESSIONID, NULL);
+}
+
 void dss_lock_vg_mem_s_force(dss_vg_info_item_t *vg_item)
 {
     dss_latch_s2(&vg_item->disk_latch, DSS_DEFAULT_SESSIONID, CM_TRUE, NULL);

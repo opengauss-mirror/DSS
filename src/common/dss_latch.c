@@ -68,6 +68,11 @@ void dss_latch_ix2x(latch_t *latch, uint32 sid, latch_statis_t *stat)
     cm_latch_ix2x(latch, sid, stat);
 }
 
+void dss_latch_degrade(latch_t *latch, uint32 sid, latch_statis_t *stat)
+{
+    cm_latch_degrade(latch, sid, stat);
+}
+
 void dss_set_latch_extent(dss_latch_extent_t *latch_extent, uint16 stat, uint16 shared_count)
 {
     latch_extent->stat_bak = stat;
