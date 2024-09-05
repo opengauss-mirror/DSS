@@ -52,15 +52,6 @@ dss_instance_t g_dss_instance;
 
 static const char *const g_dss_lock_file = "dss.lck";
 
-dss_log_def_t g_dss_instance_log[] = {
-    {LOG_DEBUG, "debug/dssinstance.dlog"},
-    {LOG_OPER, "oper/dssinstance.olog"},
-    {LOG_RUN, "run/dssinstance.rlog"},
-    {LOG_ALARM, "alarm/dssinstance.alog"},
-    {LOG_AUDIT, "audit/dssinstance.aud"},
-    {LOG_BLACKBOX, "blackbox/dssinstance.blog"},
-};
-
 static void instance_set_pool_def(ga_pool_id_e pool_id, uint32 obj_count, uint32 obj_size, uint32 ex_max)
 {
     ga_pool_def_t pool_def;
@@ -340,18 +331,14 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
     regist_get_instance_status_proc(dss_get_instance_status);
     status = dss_set_cfg_dir(dss_args.dss_home, &inst->inst_cfg);
     DSS_RETURN_IFERR2(status, (void)printf("Environment variant DSS_HOME not found!\n"));
+    status = cm_start_timer(g_timer());
+    DSS_RETURN_IFERR2(status, (void)printf("Aborted due to starting timer thread.\n"));
     status = dss_load_config(&inst->inst_cfg);
     DSS_RETURN_IFERR2(status, (void)printf("%s\nFailed to load parameters!\n", cm_get_errormsg(cm_get_error_code())));
 
 #ifdef DISABLE_SYN_META
     dss_set_syn_meta_enable(CM_FALSE);
 #endif
-
-    status = cm_start_timer(g_timer());
-    DSS_RETURN_IFERR2(status, (void)printf("Aborted due to starting timer thread.\n"));
-    status = dss_init_loggers(
-        &inst->inst_cfg, g_dss_instance_log, sizeof(g_dss_instance_log) / sizeof(dss_log_def_t), "dssserver");
-    DSS_RETURN_IFERR2(status, (void)printf("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code())));
     dss_init_maintain(inst, dss_args);
     LOG_RUN_INF("DSS instance begin to initialize.");
     status = instance_init(inst);

@@ -99,7 +99,10 @@ typedef struct st_dss_audit_assist {
 extern const char *g_dss_error_desc[DSS_ERROR_COUNT];
 status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32 log_def_count, char *name);
 void sql_record_audit_log(void *sess, status_t status, uint8 cmd_type);
-
+dss_log_def_t *dss_get_instance_log_def();
+dss_log_def_t *dss_get_cmd_log_def();
+uint32 dss_get_instance_log_def_count();
+uint32 dss_get_cmd_log_def_count();
 #ifdef __cplusplus
 }
 #endif

@@ -782,7 +782,11 @@ status_t dss_load_config(dss_config_t *inst_cfg)
 
     status_t status = cm_load_config(g_dss_params, DSS_PARAM_COUNT, file_name, &inst_cfg->config, CM_FALSE);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load config"));
-
+    if (dss_is_server()) {
+        status = dss_init_loggers(
+            inst_cfg, dss_get_instance_log_def(), dss_get_instance_log_def_count(), "dssserver");
+        DSS_RETURN_IFERR2(status, (void)printf("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code())));
+    }
     CM_RETURN_IFERR(dss_load_path(inst_cfg));
     CM_RETURN_IFERR(dss_load_instance_id(inst_cfg));
     CM_RETURN_IFERR(dss_load_storage_mode(inst_cfg));
