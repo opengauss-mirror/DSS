@@ -463,48 +463,32 @@ void dss_lock_shm_meta_bucket_x(dss_shared_latch_t *shared_latch)
     dss_lock_shm_meta_x(NULL, shared_latch);
 }
 
-void dss_unlock_shm_meta_s_without_stack(dss_session_t *session, dss_shared_latch_t *shared_latch)
-{
-    cm_panic_log(dss_is_server(), "can not op shared latch without session latch stack in client");
-    CM_ASSERT(shared_latch->latch.shared_count > 0);
-    spin_statis_t *stat_spin = NULL;
-    uint32 sid = (session != NULL ? DSS_SESSIONID_IN_LOCK(session->id) : DSS_DEFAULT_SESSIONID);
-    cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, stat_spin);
-
-    if (shared_latch->latch.shared_count > 0) {
-        shared_latch->latch.shared_count--;
-    }
-    if (shared_latch->latch.shared_count == 0) {
-        if (shared_latch->latch.stat == LATCH_STATUS_S) {
-            shared_latch->latch.stat = LATCH_STATUS_IDLE;
-        }
-        shared_latch->latch.sid = 0;
-    }
-    shared_latch->latch_extent.shared_sid_count -= sid;
-    cm_spin_unlock(&shared_latch->latch.lock);
-}
-
-void dss_unlock_shm_meta_x(dss_session_t *session, dss_shared_latch_t *shared_latch)
-{
-    cm_panic_log(dss_is_server(), "can not op x latch in client");
-    CM_ASSERT(shared_latch->latch.stat == LATCH_STATUS_X);
-    spin_statis_t *stat_spin = NULL;
-    uint32 sid = (session != NULL ? DSS_SESSIONID_IN_LOCK(session->id) : DSS_DEFAULT_SESSIONID);
-    cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, stat_spin);
-    shared_latch->latch.stat = LATCH_STATUS_IDLE;
-    shared_latch->latch.sid = 0;
-    cm_spin_unlock(&shared_latch->latch.lock);
-}
-
+// only used by dssserver
 void dss_unlock_shm_meta_without_stack(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
     cm_panic_log(dss_is_server(), "can not op shared latch without session latch stack in client");
     CM_ASSERT(shared_latch->latch.stat != LATCH_STATUS_IDLE);
+
+    spin_statis_t *stat_spin = NULL;
+    uint32 sid = (session != NULL ? DSS_SESSIONID_IN_LOCK(session->id) : DSS_DEFAULT_SESSIONID);
+    cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, stat_spin);
+
     if (shared_latch->latch.stat == LATCH_STATUS_S || shared_latch->latch.stat == LATCH_STATUS_IX) {
-        dss_unlock_shm_meta_s_without_stack(session, shared_latch);
-        return;
+        CM_ASSERT(shared_latch->latch.shared_count > 0);
+        shared_latch->latch.shared_count--;
+        if (shared_latch->latch.shared_count == 0) {
+            if (shared_latch->latch.stat == LATCH_STATUS_S) {
+                shared_latch->latch.stat = LATCH_STATUS_IDLE;
+            }
+            shared_latch->latch.sid = 0;
+        }
+        shared_latch->latch_extent.shared_sid_count -= sid;
+    } else if (shared_latch->latch.stat == LATCH_STATUS_X) {
+        CM_ASSERT(shared_latch->latch.shared_count == 0);
+        shared_latch->latch.stat = LATCH_STATUS_IDLE;
+        shared_latch->latch.sid = 0;
     }
-    dss_unlock_shm_meta_x(session, shared_latch);
+    cm_spin_unlock(&shared_latch->latch.lock);
 }
 
 // only used by api-client or by clean
