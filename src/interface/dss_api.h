@@ -138,7 +138,7 @@ typedef struct st_dss_stat *dss_stat_info_t;
 
 typedef void (*dss_log_output)(dss_log_id_t log_type, dss_log_level_t log_level, const char *code_file_name,
     unsigned int code_line_num, const char *module_name, const char *format, ...);
-
+typedef void (*dss_exit_callback_t)(int exit_code);
 // dir
 DSS_DECLARE int dss_dmake(const char *dir_name);
 DSS_DECLARE int dss_dremove(const char *dir);
@@ -208,6 +208,8 @@ DSS_DECLARE int dss_getcfg(const char *name, char *value, int value_size);
 // version
 DSS_DECLARE int dss_get_lib_version(void);
 DSS_DECLARE void dss_show_version(char *version);
+DSS_DECLARE void dss_show_version(char *version);
+DSS_DECLARE void dss_register_exit_callback(dss_exit_callback_t dss_exit_proc);
 
 #ifdef __cplusplus
 }

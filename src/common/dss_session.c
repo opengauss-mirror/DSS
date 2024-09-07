@@ -28,6 +28,7 @@
 #include "dss_file.h"
 #include "dss_redo.h"
 #include "cm_system.h"
+#include "dss_thv.h"
 #include "dss_session.h"
 
 #ifdef __cplusplus
@@ -341,7 +342,7 @@ status_t dss_cli_lock_shm_meta_s(
             DSS_THROW_ERROR(ERR_DSS_SHM_LOCK, "uds connection is closed.");
             LOG_RUN_ERR("[DSS] ABORT INFO: Failed to lock vg share memery because uds connection is closed.");
             cm_fync_logfile();
-            _exit(1);
+            dss_exit(1);
         }
         if (dss_lock_shm_meta_s_with_stack(session, offset, shared_latch, SPIN_WAIT_FOREVER) == CM_SUCCESS) {
             return CM_SUCCESS;

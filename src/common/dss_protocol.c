@@ -24,6 +24,7 @@
 
 #include "dss_errno.h"
 #include "dss_log.h"
+#include "dss_thv.h"
 #include "dss_protocol.h"
 
 typedef status_t (*recv_func_t)(void *link, char *buf, uint32 size, int32 *recv_size);
@@ -230,7 +231,7 @@ status_t dss_call_ex(cs_pipe_t *pipe, dss_packet_t *req, dss_packet_t *ack)
         LOG_RUN_ERR("[DSS] ABORT INFO: dss call server failed, ack command type:%d, application exit.", ack->head->cmd);
         cs_disconnect(pipe);
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
     return ret;
 }

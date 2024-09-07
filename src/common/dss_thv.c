@@ -53,6 +53,21 @@ static __thread pointer_t g_thv_addr[MAX_THV_TYPE] = {0};
 static __thread bool32 g_thv_spec = CM_FALSE;
 static pthread_key_t g_thv_key;
 
+dss_exit_proc_t g_dss_exit_proc = NULL;
+void regist_exit_proc(dss_exit_proc_t proc)
+{
+    g_dss_exit_proc = proc;
+}
+void dss_exit(int32 exit_code)
+{
+    LOG_RUN_INF("Try to exit.");
+    if (g_dss_exit_proc != NULL) {
+        LOG_RUN_INF("Try to exit by callback.");
+        g_dss_exit_proc(exit_code);
+    }
+    LOG_RUN_INF("Try to exit no callback.");
+    _exit(1);
+}
 // destroy all thread variable content when thread exit
 static void cm_destroy_thv(pointer_t thread_var)
 {

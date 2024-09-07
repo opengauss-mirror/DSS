@@ -223,7 +223,7 @@ static status_t dss_get_conn(dss_conn_t **conn)
         if (dss_conn_sync(NULL, *conn) != CM_SUCCESS) {
             LOG_RUN_ERR("[DSS API] ABORT INFO: dss server stoped, application need restart.");
             cm_fync_logfile();
-            _exit(1);
+            dss_exit(1);
         }
         (*conn)->conn_pid = getpid();
     }
@@ -232,7 +232,7 @@ static status_t dss_get_conn(dss_conn_t **conn)
     if ((*conn)->pipe.link.uds.closed) {
         LOG_RUN_ERR("[DSS API] ABORT INFO : dss server stoped, application need restart.");
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
     return CM_SUCCESS;
 }
@@ -781,7 +781,10 @@ void dss_register_log_callback(dss_log_output cb_log_output, unsigned int log_le
     cm_log_param_instance()->log_write = (usr_cb_log_output_t)cb_log_output;
     cm_log_param_instance()->log_level = log_level;
 }
-
+void dss_register_exit_callback(dss_exit_callback_t dss_exit_proc)
+{
+    regist_exit_proc((dss_exit_proc_t)dss_exit_proc);
+}
 void dss_set_log_level(unsigned int log_level)
 {
     cm_log_param_instance()->log_level = log_level;

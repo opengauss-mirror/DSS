@@ -684,7 +684,7 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
         if (status != CM_SUCCESS) {
             LOG_RUN_ERR("[RECOVERY]ABORT INFO: Failed to get vg info when instance start.");
             cm_fync_logfile();
-            _exit(1);
+            dss_exit(1);
         }
     }
 
@@ -696,19 +696,19 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
     if (ret != CM_SUCCESS) {
         LOG_RUN_ERR("[RECOVERY]ABORT INFO: Recover failed when get cm lock.");
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
     if (!first_start) {
         dss_session_t *session = NULL;
         if (dss_create_session(NULL, &session) != CM_SUCCESS) {
             LOG_RUN_ERR("[RECOVERY]ABORT INFO: Refresh meta info failed when create session.");
             cm_fync_logfile();
-            _exit(1);
+            dss_exit(1);
         }
         if (dss_refresh_meta_info(session) != CM_SUCCESS) {
             LOG_RUN_ERR("[RECOVERY]ABORT INFO: Refresh meta info failed after recovery.");
             cm_fync_logfile();
-            _exit(1);
+            dss_exit(1);
         }
         dss_destroy_session(session);
         dss_set_session_running(inst);
