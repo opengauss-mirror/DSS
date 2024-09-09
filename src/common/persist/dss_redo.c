@@ -161,7 +161,7 @@ void dss_put_log(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_t
     batch->size += entry->size;
     batch->count++;
     LOG_DEBUG_INF("[REDO]after put log, batch size is %u, count is %d.", batch->size, batch->count);
-    if(batch->size + sizeof(dss_redo_batch_t) + DSS_DISK_UNIT_SIZE >= DSS_VG_LOG_SPLIT_SIZE) {
+    if (batch->size + sizeof(dss_redo_batch_t) + DSS_DISK_UNIT_SIZE >= DSS_VG_LOG_SPLIT_SIZE) {
         LOG_RUN_ERR("failed to put batch, for batch size is %u, log_buf size is %u.", batch->size, batch->count);
     }
     // 'dss_redo_batch_t' will be putted at batch tail also
@@ -233,14 +233,14 @@ status_t dss_flush_log_inner(dss_vg_info_item_t *vg_item, char *log_buf, uint32 
         }
         uint64 log_start_next = dss_get_vg_au_size(dss_ctrl) * redo_au_next.au;
         LOG_DEBUG_INF("Begin to flush redo log, offset is %lld, size is %llu.", offset, flush_size_1);
-        status = dss_write_redolog_to_disk(
-            vg_item, redo_au.volume, (int64)log_offset, log_buf, (uint32)flush_size_1);
+        status = dss_write_redolog_to_disk(vg_item, redo_au.volume, (int64)log_offset, log_buf, (uint32)flush_size_1);
         if (status != CM_SUCCESS) {
             LOG_RUN_ERR("Failed to flush redo log, offset is %lld, size is %u.", log_offset, (uint32)flush_size_1);
             return status;
         }
         LOG_DEBUG_INF("Begin to flush redo log, offset is %d, size is %llu.", 0, flush_size_2);
-        status = dss_write_redolog_to_disk(vg_item, redo_au_next.volume, (int64)log_start_next, log_buf + flush_size_1, (uint32)flush_size_2);
+        status = dss_write_redolog_to_disk(
+            vg_item, redo_au_next.volume, (int64)log_start_next, log_buf + flush_size_1, (uint32)flush_size_2);
         if (status != CM_SUCCESS) {
             LOG_RUN_ERR("Failed to flush redo log, offset is %d, size is %u.", 0, (uint32)flush_size_2);
             return status;
@@ -291,7 +291,7 @@ status_t dss_flush_log(dss_vg_info_item_t *vg_item, char *log_buf)
     return status;
 }
 
-static status_t rp_redo_update_volhead(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rp_redo_update_volhead(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
 #ifndef WIN32
     char align_buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_DISK_UNIT_SIZE)));
@@ -313,7 +313,8 @@ static status_t rp_redo_update_volhead(dss_vg_info_item_t *vg_item, dss_redo_ent
     return status;
 }
 
-static status_t rp_redo_add_or_remove_volume(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rp_redo_add_or_remove_volume(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     errno_t errcode = 0;
     dss_redo_volop_t *redo = (dss_redo_volop_t *)entry->data;
@@ -363,12 +364,13 @@ static status_t rp_redo_add_or_remove_volume(dss_vg_info_item_t *vg_item, dss_re
     return CM_SUCCESS;
 }
 
-static status_t rb_redo_update_volhead(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rb_redo_update_volhead(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     // no need to update volume head.
     return CM_SUCCESS;
 }
-static status_t rb_redo_add_or_remove_volume(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rb_redo_add_or_remove_volume(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     bool32 remote = CM_FALSE;
     dss_redo_volop_t *redo = (dss_redo_volop_t *)entry->data;
@@ -378,7 +380,7 @@ static status_t rb_redo_add_or_remove_volume(dss_vg_info_item_t *vg_item, dss_re
         (int32)(DSS_CORE_CTRL_SIZE + DSS_VOLUME_CTRL_SIZE), &remote);
 }
 
-static status_t rp_update_core_ctrl(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rp_update_core_ctrl(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     errno_t errcode = 0;
     dss_core_ctrl_t *data = (dss_core_ctrl_t *)entry->data;
@@ -394,7 +396,7 @@ static status_t rp_update_core_ctrl(dss_vg_info_item_t *vg_item, dss_redo_entry_
     return CM_SUCCESS;
 }
 
-static status_t rb_update_core_ctrl(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rb_update_core_ctrl(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     bool32 remote = CM_FALSE;
     DSS_LOG_DEBUG_OP(
@@ -429,8 +431,8 @@ bool32 rp_check_block_addr(const dss_block_addr_his_t *addr_his, const void *blo
     }
     return CM_FALSE;
 }
-static status_t rp_redo_alloc_ft_node_core(
-    dss_vg_info_item_t *vg_item, dss_redo_alloc_ft_node_t *data, dss_root_ft_block_t *ft_block, bool32 check_version)
+static status_t rp_redo_alloc_ft_node_core(dss_session_t *session, dss_vg_info_item_t *vg_item,
+    dss_redo_alloc_ft_node_t *data, dss_root_ft_block_t *ft_block, bool32 check_version)
 {
     bool32 cmp;
     status_t status;
@@ -444,7 +446,7 @@ static status_t rp_redo_alloc_ft_node_core(
         if (cmp) {
             continue;
         }
-        node = dss_get_ft_node_by_ftid(NULL, vg_item, data->node[i].id, check_version, CM_FALSE);
+        node = dss_get_ft_node_by_ftid(session, vg_item, data->node[i].id, check_version, CM_FALSE);
         if (node == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
         }
@@ -469,7 +471,7 @@ static status_t rp_redo_alloc_ft_node_core(
     return CM_SUCCESS;
 }
 
-static status_t rp_redo_alloc_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rp_redo_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -496,12 +498,13 @@ static status_t rp_redo_alloc_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entr
 
     status = dss_update_ft_root(vg_item);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_REDO_ILL, "Failed to update file table root."));
-    DSS_RETURN_IF_ERROR(rp_redo_alloc_ft_node_core(vg_item, data, ft_block, check_version));
+    DSS_RETURN_IF_ERROR(rp_redo_alloc_ft_node_core(session, vg_item, data, ft_block, check_version));
     LOG_DEBUG_INF("[REDO] Succeed to replay alloc ft node, vg name:%s.", vg_item->vg_name);
     return CM_SUCCESS;
 }
 
-static status_t rb_rollback_ft_block(dss_vg_info_item_t *vg_item, gft_node_t *node, uint32 node_num)
+static status_t rb_rollback_ft_block(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, uint32 node_num)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(node != NULL);
@@ -524,7 +527,7 @@ static status_t rb_rollback_ft_block(dss_vg_info_item_t *vg_item, gft_node_t *no
         if (cmp) {
             continue;
         }
-        cur_node = dss_get_ft_node_by_ftid(NULL, vg_item, node[i].id, check_version, CM_FALSE);
+        cur_node = dss_get_ft_node_by_ftid(session, vg_item, node[i].id, check_version, CM_FALSE);
         if (!cur_node) {
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
         }
@@ -540,7 +543,7 @@ static status_t rb_rollback_ft_block(dss_vg_info_item_t *vg_item, gft_node_t *no
     return CM_SUCCESS;
 }
 
-static status_t rb_redo_alloc_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rb_redo_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -550,7 +553,7 @@ static status_t rb_redo_alloc_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entr
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_REDO_ILL, "invalid entry log size 0."));
     }
 
-    return rb_rollback_ft_block(vg_item, data->node, DSS_REDO_ALLOC_FT_NODE_NUM);
+    return rb_rollback_ft_block(session, vg_item, data->node, DSS_REDO_ALLOC_FT_NODE_NUM);
 }
 
 static status_t dss_update_ft_info(dss_vg_info_item_t *vg_item, dss_ft_block_t *block, dss_redo_format_ft_t *data)
@@ -566,7 +569,7 @@ static status_t dss_update_ft_info(dss_vg_info_item_t *vg_item, dss_ft_block_t *
     return CM_SUCCESS;
 }
 
-static status_t rp_redo_format_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rp_redo_format_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL && entry != NULL);
 
@@ -577,7 +580,7 @@ static status_t rp_redo_format_ft_node(dss_vg_info_item_t *vg_item, dss_redo_ent
         status = dss_refresh_root_ft(vg_item, CM_TRUE, CM_FALSE);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO]Failed to refresh file table root, vg:%s.", vg_item->vg_name));
         // note:first load
-        block = (dss_ft_block_t *)dss_get_ft_block_by_ftid(vg_item, data->old_last_block);
+        block = (dss_ft_block_t *)dss_get_ft_block_by_ftid(session, vg_item, data->old_last_block);
         if (block == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("[REDO]Failed to get last file table block, blockid: %s.",
                                             dss_display_metaid(data->old_last_block)));
@@ -585,13 +588,13 @@ static status_t rp_redo_format_ft_node(dss_vg_info_item_t *vg_item, dss_redo_ent
         dss_root_ft_block_t *root_block = DSS_GET_ROOT_BLOCK(vg_item->dss_ctrl);
         root_block->ft_root.free_list = data->old_free_list;
         root_block->ft_root.last = data->old_last_block;
-        status = dss_format_ft_node(NULL, vg_item, data->auid);
+        status = dss_format_ft_node(session, vg_item, data->auid);
         DSS_RETURN_IFERR2(
             status, LOG_DEBUG_ERR("[REDO] Failed to format file table node, %s.", dss_display_metaid(data->auid)));
     }
     // when recover, has load old last block.
     if (vg_item->status != DSS_VG_STATUS_RECOVERY) {  // just find the block, it has already in memory.
-        block = (dss_ft_block_t *)dss_get_ft_block_by_ftid(vg_item, data->old_last_block);
+        block = (dss_ft_block_t *)dss_get_ft_block_by_ftid(session, vg_item, data->old_last_block);
         if (block == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("[REDO] Failed to get last file table block, blockid: %s.",
                                             dss_display_metaid(data->old_last_block)));
@@ -600,7 +603,7 @@ static status_t rp_redo_format_ft_node(dss_vg_info_item_t *vg_item, dss_redo_ent
     CM_RETURN_IFERR(dss_update_ft_info(vg_item, block, data));
     dss_block_id_t first = data->auid;
     ga_obj_id_t obj_id;
-    status = dss_find_block_objid_in_shm(vg_item, first, DSS_BLOCK_TYPE_FT, &obj_id);
+    status = dss_find_block_objid_in_shm(session, vg_item, first, DSS_BLOCK_TYPE_FT, &obj_id);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO] Failed to find block: %s.", dss_display_metaid(first)));
     status = dss_update_au_disk(vg_item, data->auid, GA_8K_POOL, obj_id.obj_id, data->count, DSS_BLOCK_SIZE);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO] Failed to update au to disk, %s.", dss_display_metaid(data->auid)));
@@ -610,13 +613,13 @@ static status_t rp_redo_format_ft_node(dss_vg_info_item_t *vg_item, dss_redo_ent
     return CM_SUCCESS;
 }
 
-static status_t rb_redo_format_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rb_redo_format_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     // format file table node only when new au, if fail, just free the memory, no need to rollback.
     return CM_SUCCESS;
 }
 
-static status_t rp_redo_free_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rp_redo_free_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -629,7 +632,7 @@ static status_t rp_redo_free_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entr
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
         ga_obj_id_t obj_id;
         block = (dss_fs_block_t *)dss_find_block_in_shm(
-            NULL, vg_item, log_block->head.common.id, DSS_BLOCK_TYPE_FS, CM_TRUE, &obj_id, CM_FALSE);
+            session, vg_item, log_block->head.common.id, DSS_BLOCK_TYPE_FS, CM_TRUE, &obj_id, CM_FALSE);
         if (block == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
         }
@@ -639,7 +642,7 @@ static status_t rp_redo_free_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entr
         dss_set_auid(&block->head.ftid, DSS_BLOCK_ID_INIT);
         status = dss_update_fs_bitmap_block_disk(vg_item, block, DSS_DISK_UNIT_SIZE, CM_FALSE);
         DSS_RETURN_IF_ERROR(status);
-        dss_unregister_buffer_cache(vg_item, log_block->head.common.id);
+        dss_unregister_buffer_cache(session, vg_item, log_block->head.common.id);
         ga_free_object(obj_id.pool_id, obj_id.obj_id);
         return CM_SUCCESS;
     }
@@ -652,7 +655,7 @@ static status_t rp_redo_free_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entr
     return CM_SUCCESS;
 }
 
-status_t rb_redo_free_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_free_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -660,10 +663,10 @@ status_t rb_redo_free_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *en
     dss_redo_free_fs_block_t *data = (dss_redo_free_fs_block_t *)entry->data;
     dss_fs_block_t *log_block = (dss_fs_block_t *)data->head;
 
-    return dss_load_fs_block_by_blockid(vg_item, log_block->head.common.id, (int32)DSS_FILE_SPACE_BLOCK_SIZE);
+    return dss_load_fs_block_by_blockid(session, vg_item, log_block->head.common.id, (int32)DSS_FILE_SPACE_BLOCK_SIZE);
 }
 
-static status_t rp_redo_alloc_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rp_redo_alloc_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -677,7 +680,7 @@ static status_t rp_redo_alloc_fs_block(dss_vg_info_item_t *vg_item, dss_redo_ent
         status = dss_check_refresh_core(vg_item);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO] Failed to refresh vg core:%s.", vg_item->vg_name));
         block = (dss_fs_block_t *)dss_find_block_in_shm(
-            NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
+            session, vg_item, data->id, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
         if (block == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
         }
@@ -693,7 +696,7 @@ static status_t rp_redo_alloc_fs_block(dss_vg_info_item_t *vg_item, dss_redo_ent
 
     if (block == NULL) {
         block = (dss_fs_block_t *)dss_find_block_in_shm(
-            NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, CM_FALSE, NULL, CM_FALSE);
+            session, vg_item, data->id, DSS_BLOCK_TYPE_FS, CM_FALSE, NULL, CM_FALSE);
     }
 
     if (block == NULL) {
@@ -708,7 +711,7 @@ static status_t rp_redo_alloc_fs_block(dss_vg_info_item_t *vg_item, dss_redo_ent
     return CM_SUCCESS;
 }
 
-static status_t rb_redo_alloc_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rb_redo_alloc_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -719,9 +722,9 @@ static status_t rb_redo_alloc_fs_block(dss_vg_info_item_t *vg_item, dss_redo_ent
 
     ga_obj_id_t obj_id;
     dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
-        NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, CM_FALSE, &obj_id, CM_FALSE);
+        session, vg_item, data->id, DSS_BLOCK_TYPE_FS, CM_FALSE, &obj_id, CM_FALSE);
     CM_ASSERT(block != NULL);
-    dss_unregister_buffer_cache(vg_item, block->head.common.id);
+    dss_unregister_buffer_cache(session, vg_item, block->head.common.id);
     ga_free_object(obj_id.pool_id, obj_id.obj_id);
     status = dss_load_vg_ctrl_part(
         vg_item, (int64)DSS_CTRL_CORE_OFFSET, vg_item->dss_ctrl->core_data, DSS_DISK_UNIT_SIZE, &remote);
@@ -729,7 +732,7 @@ static status_t rb_redo_alloc_fs_block(dss_vg_info_item_t *vg_item, dss_redo_ent
     return status;
 }
 
-status_t rp_redo_init_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_init_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -741,7 +744,7 @@ status_t rp_redo_init_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *en
 
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
         block = (dss_fs_block_t *)dss_find_block_in_shm(
-            NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
+            session, vg_item, data->id, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
         if (block == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
         }
@@ -751,7 +754,7 @@ status_t rp_redo_init_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *en
 
     if (block == NULL) {
         block = (dss_fs_block_t *)dss_find_block_in_shm(
-            NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, CM_FALSE, NULL, CM_FALSE);
+            session, vg_item, data->id, DSS_BLOCK_TYPE_FS, CM_FALSE, NULL, CM_FALSE);
         if (block == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
         }
@@ -765,15 +768,15 @@ status_t rp_redo_init_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *en
     return CM_SUCCESS;
 }
 
-status_t rb_redo_init_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_init_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
 
     dss_redo_init_fs_block_t *data = (dss_redo_init_fs_block_t *)entry->data;
 
-    dss_fs_block_t *block =
-        (dss_fs_block_t *)dss_find_block_in_shm(NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, CM_FALSE, NULL, CM_FALSE);
+    dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
+        session, vg_item, data->id, DSS_BLOCK_TYPE_FS, CM_FALSE, NULL, CM_FALSE);
     if (block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
     }
@@ -784,7 +787,7 @@ status_t rb_redo_init_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *en
     return CM_SUCCESS;
 }
 
-status_t rp_redo_rename_file(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_rename_file(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -803,7 +806,7 @@ status_t rp_redo_rename_file(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid node 0xFFFFFFFF"));
     }
 
-    gft_node_t *node = dss_get_ft_node_by_ftid(NULL, vg_item, data->node.id, check_version, CM_FALSE);
+    gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, data->node.id, check_version, CM_FALSE);
     if (!node) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid node"));
     }
@@ -819,7 +822,8 @@ status_t rp_redo_rename_file(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
     }
 
     status_t status = dss_update_ft_block_disk(vg_item, cur_block, data->node.id);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO] Failed to update fs block: %s to disk.", dss_display_metaid(data->node.id)));
+    DSS_RETURN_IFERR2(
+        status, LOG_DEBUG_ERR("[REDO] Failed to update fs block: %s to disk.", dss_display_metaid(data->node.id)));
 
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(cur_block);
     dss_add_syn_meta(vg_item, block_ctrl, cur_block->common.version);
@@ -828,7 +832,7 @@ status_t rp_redo_rename_file(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
         "Succeed to replay rename file:%s, old_name:%s, name:%s.", data->name, data->old_name, vg_item->vg_name);
     return CM_SUCCESS;
 }
-status_t rb_redo_rename_file(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_rename_file(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -847,7 +851,7 @@ status_t rb_redo_rename_file(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid node 0xFFFFFFFF"));
     }
 
-    gft_node_t *node = dss_get_ft_node_by_ftid(NULL, vg_item, data->node.id, check_version, CM_FALSE);
+    gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, data->node.id, check_version, CM_FALSE);
     if (!node) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid node"));
     }
@@ -857,7 +861,7 @@ status_t rb_redo_rename_file(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
     return CM_SUCCESS;
 }
 
-status_t rp_redo_set_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_set_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -871,7 +875,7 @@ status_t rp_redo_set_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
     }
 
     dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
-        NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
+        session, vg_item, data->id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
     if (block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
     }
@@ -891,7 +895,7 @@ status_t rp_redo_set_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
     return CM_SUCCESS;
 }
 
-status_t rb_redo_set_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_set_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -902,7 +906,7 @@ status_t rb_redo_set_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
     bool32 check_version = CM_FALSE;
 
     block = (dss_fs_block_t *)dss_find_block_in_shm(
-        NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
+        session, vg_item, data->id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
     if (block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
     }
@@ -913,8 +917,8 @@ status_t rb_redo_set_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
     return CM_SUCCESS;
 }
 
-static status_t rp_redo_free_ft_node_core(
-    dss_vg_info_item_t *vg_item, dss_root_ft_block_t *ft_block, dss_redo_free_ft_node_t *data, bool32 check_version)
+static status_t rp_redo_free_ft_node_core(dss_session_t *session, dss_vg_info_item_t *vg_item,
+    dss_root_ft_block_t *ft_block, dss_redo_free_ft_node_t *data, bool32 check_version)
 {
     status_t status = dss_update_ft_root(vg_item);
     if (status != CM_SUCCESS) {
@@ -933,7 +937,7 @@ static status_t rp_redo_free_ft_node_core(
         if (cmp) {
             continue;
         }
-        node = dss_get_ft_node_by_ftid(NULL, vg_item, data->node[i].id, check_version, CM_FALSE);
+        node = dss_get_ft_node_by_ftid(session, vg_item, data->node[i].id, check_version, CM_FALSE);
         if (!node) {
             return CM_ERROR;
         }
@@ -965,7 +969,7 @@ static status_t rp_redo_free_ft_node_core(
     return CM_SUCCESS;
 }
 
-status_t rp_redo_free_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_free_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -985,10 +989,10 @@ status_t rp_redo_free_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
         *gft = data->ft_root;
         check_version = CM_TRUE;
     }
-    return rp_redo_free_ft_node_core(vg_item, ft_block, data, check_version);
+    return rp_redo_free_ft_node_core(session, vg_item, ft_block, data, check_version);
 }
 
-status_t rb_redo_free_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_free_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -999,10 +1003,10 @@ status_t rb_redo_free_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_REDO_ILL, "invalid entry log size 0."));
     }
 
-    return rb_rollback_ft_block(vg_item, data->node, DSS_REDO_FREE_FT_NODE_NUM);
+    return rb_rollback_ft_block(session, vg_item, data->node, DSS_REDO_FREE_FT_NODE_NUM);
 }
 
-status_t rp_redo_recycle_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_recycle_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1028,7 +1032,7 @@ status_t rp_redo_recycle_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *
         if (dss_cmp_auid(data->node[i].id, CM_INVALID_ID64)) {
             continue;
         }
-        node = dss_get_ft_node_by_ftid(NULL, vg_item, data->node[i].id, check_version, CM_FALSE);
+        node = dss_get_ft_node_by_ftid(session, vg_item, data->node[i].id, check_version, CM_FALSE);
         if (node == NULL) {
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
         }
@@ -1048,7 +1052,7 @@ status_t rp_redo_recycle_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *
     return CM_SUCCESS;
 }
 
-status_t rb_redo_recycle_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_recycle_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1069,7 +1073,7 @@ status_t rb_redo_recycle_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *
         if (cmp) {
             continue;
         }
-        node = dss_get_ft_node_by_ftid(NULL, vg_item, data->node[i].id, check_version, CM_FALSE);
+        node = dss_get_ft_node_by_ftid(session, vg_item, data->node[i].id, check_version, CM_FALSE);
         if (!node) {
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
         }
@@ -1083,7 +1087,8 @@ status_t rb_redo_recycle_ft_node(dss_vg_info_item_t *vg_item, dss_redo_entry_t *
     return CM_SUCCESS;
 }
 
-static status_t rp_redo_set_file_size_inner(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry, ftid_t *ftid)
+static status_t rp_redo_set_file_size_inner(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry, ftid_t *ftid)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1098,7 +1103,7 @@ static status_t rp_redo_set_file_size_inner(dss_vg_info_item_t *vg_item, dss_red
     dss_ft_block_t *cur_block = NULL;
     dss_redo_set_file_size_t *set_file_size = (dss_redo_set_file_size_t *)entry->data;
     *ftid = set_file_size->ftid;
-    node = dss_get_ft_node_by_ftid(NULL, vg_item, *ftid, check_version, CM_FALSE);
+    node = dss_get_ft_node_by_ftid(session, vg_item, *ftid, check_version, CM_FALSE);
     if (!node) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
     }
@@ -1129,10 +1134,10 @@ static status_t rp_redo_set_file_size_inner(dss_vg_info_item_t *vg_item, dss_red
     return CM_SUCCESS;
 }
 
-status_t rp_redo_set_file_size(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_set_file_size(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     ftid_t ftid;
-    if (rp_redo_set_file_size_inner(vg_item, entry, &ftid) != CM_SUCCESS) {
+    if (rp_redo_set_file_size_inner(session, vg_item, entry, &ftid) != CM_SUCCESS) {
         return CM_ERROR;
     }
     DSS_LOG_DEBUG_OP(
@@ -1141,32 +1146,32 @@ status_t rp_redo_set_file_size(dss_vg_info_item_t *vg_item, dss_redo_entry_t *en
 }
 
 static status_t rb_redo_get_ft_node(
-    dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry, ftid_t ftid, gft_node_t **node)
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry, ftid_t ftid, gft_node_t **node)
 {
     bool32 check_version = CM_FALSE;
     if (entry->size == 0) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_REDO_ILL, "invalid entry log size 0."));
     }
 
-    *node = dss_get_ft_node_by_ftid(NULL, vg_item, ftid, check_version, CM_FALSE);
+    *node = dss_get_ft_node_by_ftid(session, vg_item, ftid, check_version, CM_FALSE);
     if (!(*node)) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
     }
     return CM_SUCCESS;
 }
 
-status_t rb_redo_set_file_size(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_set_file_size(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
     dss_redo_set_file_size_t *data = (dss_redo_set_file_size_t *)entry->data;
     gft_node_t *node;
-    DSS_RETURN_IF_ERROR(rb_redo_get_ft_node(vg_item, entry, data->ftid, &node));
+    DSS_RETURN_IF_ERROR(rb_redo_get_ft_node(session, vg_item, entry, data->ftid, &node));
     node->size = data->oldsize;
     return CM_SUCCESS;
 }
 
-status_t rp_redo_format_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_format_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1179,7 +1184,7 @@ status_t rp_redo_format_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO] Failed to refresh vg core:%s.", vg_item->vg_name));
         dss_fs_block_root_t *block_root = DSS_GET_FS_BLOCK_ROOT(vg_item->dss_ctrl);
         block_root->free = data->old_free_list;
-        status = dss_format_bitmap_node(NULL, vg_item, data->auid);
+        status = dss_format_bitmap_node(session, vg_item, data->auid);
         DSS_RETURN_IFERR2(
             status, LOG_DEBUG_ERR("[REDO] Fail to format file space node: %s.", dss_display_metaid(data->auid)));
     }
@@ -1188,7 +1193,7 @@ status_t rp_redo_format_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO] Fail to write ctrl to disk, vg:%s.", vg_item->vg_name));
     dss_block_id_t first = data->auid;
     ga_obj_id_t obj_id;
-    status = dss_find_block_objid_in_shm(vg_item, first, DSS_BLOCK_TYPE_FS, &obj_id);
+    status = dss_find_block_objid_in_shm(session, vg_item, first, DSS_BLOCK_TYPE_FS, &obj_id);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO] Fail to find block:%s.", dss_display_metaid(first)));
 
     status =
@@ -1199,7 +1204,8 @@ status_t rp_redo_format_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *
     return CM_SUCCESS;
 }
 
-void rb_redo_clean_resource(dss_vg_info_item_t *item, auid_t auid, ga_pool_id_e pool_id, uint32 first, uint32 count)
+void rb_redo_clean_resource(
+    dss_session_t *session, dss_vg_info_item_t *item, auid_t auid, ga_pool_id_e pool_id, uint32 first, uint32 count)
 {
     dss_fs_block_header *block;
     uint32 obj_id = first;
@@ -1208,7 +1214,7 @@ void rb_redo_clean_resource(dss_vg_info_item_t *item, auid_t auid, ga_pool_id_e 
     for (uint32 i = 0; i < count; i++) {
         block = (dss_fs_block_header *)ga_object_addr(pool_id, obj_id);
         CM_ASSERT(block != NULL);
-        dss_unregister_buffer_cache(item, block->common.id);
+        dss_unregister_buffer_cache(session, item, block->common.id);
         if (i == count - 1) {
             last = obj_id;
         }
@@ -1221,7 +1227,7 @@ void rb_redo_clean_resource(dss_vg_info_item_t *item, auid_t auid, ga_pool_id_e 
     ga_free_object_list(pool_id, &queue);
 }
 
-status_t rb_redo_format_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_format_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1232,16 +1238,16 @@ status_t rb_redo_format_fs_block(dss_vg_info_item_t *vg_item, dss_redo_entry_t *
 
     dss_block_id_t first = data->auid;
     ga_obj_id_t obj_id;
-    status = dss_find_block_objid_in_shm(vg_item, first, DSS_BLOCK_TYPE_FS, &obj_id);
+    status = dss_find_block_objid_in_shm(session, vg_item, first, DSS_BLOCK_TYPE_FS, &obj_id);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to find block: %s.", dss_display_metaid(first)));
-    rb_redo_clean_resource(vg_item, data->auid, GA_16K_POOL, obj_id.obj_id, data->count);
+    rb_redo_clean_resource(session, vg_item, data->auid, GA_16K_POOL, obj_id.obj_id, data->count);
     status = dss_load_vg_ctrl_part(
         vg_item, (int64)DSS_CTRL_CORE_OFFSET, vg_item->dss_ctrl->core_data, DSS_DISK_UNIT_SIZE, &remote);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to load vg:%s.", vg_item->vg_name));
     return CM_SUCCESS;
 }
 
-static status_t rp_redo_set_node_flag(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rp_redo_set_node_flag(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1257,7 +1263,7 @@ static status_t rp_redo_set_node_flag(dss_vg_info_item_t *vg_item, dss_redo_entr
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
         check_version = CM_TRUE;
     }
-    node = dss_get_ft_node_by_ftid(NULL, vg_item, file_flag->ftid, check_version, CM_FALSE);
+    node = dss_get_ft_node_by_ftid(session, vg_item, file_flag->ftid, check_version, CM_FALSE);
     if (!node) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
     }
@@ -1281,7 +1287,7 @@ static status_t rp_redo_set_node_flag(dss_vg_info_item_t *vg_item, dss_redo_entr
     return CM_SUCCESS;
 }
 
-static status_t rb_redo_set_node_flag(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rb_redo_set_node_flag(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1293,7 +1299,7 @@ static status_t rb_redo_set_node_flag(dss_vg_info_item_t *vg_item, dss_redo_entr
     dss_ft_block_t *cur_block = NULL;
     dss_redo_set_file_flag_t *file_flag = (dss_redo_set_file_flag_t *)entry->data;
 
-    node = dss_get_ft_node_by_ftid(NULL, vg_item, file_flag->ftid, CM_FALSE, CM_FALSE);
+    node = dss_get_ft_node_by_ftid(session, vg_item, file_flag->ftid, CM_FALSE, CM_FALSE);
     if (!node) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
     }
@@ -1311,7 +1317,7 @@ static status_t rb_redo_set_node_flag(dss_vg_info_item_t *vg_item, dss_redo_entr
     return CM_SUCCESS;
 }
 
-status_t rp_redo_set_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_set_fs_block_batch(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1327,7 +1333,7 @@ status_t rp_redo_set_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_
     }
 
     block = (dss_fs_block_t *)dss_find_block_in_shm(
-        NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
+        session, vg_item, data->id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
     if (block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
     }
@@ -1349,7 +1355,7 @@ status_t rp_redo_set_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_
     return CM_SUCCESS;
 }
 
-status_t rb_redo_set_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_set_fs_block_batch(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1359,7 +1365,7 @@ status_t rb_redo_set_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_
     bool32 check_version = CM_FALSE;
 
     block = (dss_fs_block_t *)dss_find_block_in_shm(
-        NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
+        session, vg_item, data->id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
     if (block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
     }
@@ -1369,8 +1375,8 @@ status_t rb_redo_set_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_
     block->head.used_num = data->old_used_num;
     return CM_SUCCESS;
 }
-status_t rp_redo_set_fs_aux_block_batch_in_recovery(
-    dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry, dss_fs_block_t *second_block, gft_node_t *node)
+status_t rp_redo_set_fs_aux_block_batch_in_recovery(dss_session_t *session, dss_vg_info_item_t *vg_item,
+    dss_redo_entry_t *entry, dss_fs_block_t *second_block, gft_node_t *node)
 {
     dss_redo_set_fs_aux_block_batch_t *data = (dss_redo_set_fs_aux_block_batch_t *)entry->data;
     status_t status = dss_check_refresh_core(vg_item);
@@ -1388,7 +1394,7 @@ status_t rp_redo_set_fs_aux_block_batch_in_recovery(
         index = (uint16)j;
         block_id = data->id_set[i];
         fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
-            NULL, vg_item, block_id, DSS_BLOCK_TYPE_FS_AUX, CM_TRUE, NULL, CM_FALSE);
+            session, vg_item, block_id, DSS_BLOCK_TYPE_FS_AUX, CM_TRUE, NULL, CM_FALSE);
         if (fs_aux == NULL) {
             LOG_RUN_ERR("[REDO][FS AUX]Failed to find fs_aux %s.", dss_display_metaid(block_id));
             return CM_ERROR;
@@ -1406,7 +1412,7 @@ status_t rp_redo_set_fs_aux_block_batch_in_recovery(
             dss_display_metaid(batch_first));
         status = dss_update_fs_aux_bitmap2disk(vg_item, fs_aux, DSS_FS_AUX_SIZE, CM_FALSE);
         DSS_RETURN_IFERR2(
-            status, LOG_RUN_ERR("[REDO][FS AUX]Failed to update fs aux bitmap fs_aux:%s to disk, vg name:%s.", 
+            status, LOG_RUN_ERR("[REDO][FS AUX]Failed to update fs aux bitmap fs_aux:%s to disk, vg name:%s.",
                         dss_display_metaid(block_id), vg_item->vg_name));
         LOG_RUN_INF("[REDO][FS AUX]Succeed to replay alloc fs aux:%s, vg name:%s.", dss_display_metaid(block_id),
             vg_item->vg_name);
@@ -1417,8 +1423,8 @@ status_t rp_redo_set_fs_aux_block_batch_in_recovery(
     return CM_SUCCESS;
 }
 
-status_t rp_redo_set_fs_aux_block_batch_inner(
-    dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry, dss_fs_block_t *second_block, gft_node_t *node)
+status_t rp_redo_set_fs_aux_block_batch_inner(dss_session_t *session, dss_vg_info_item_t *vg_item,
+    dss_redo_entry_t *entry, dss_fs_block_t *second_block, gft_node_t *node)
 {
     status_t status;
     dss_redo_set_fs_aux_block_batch_t *data = (dss_redo_set_fs_aux_block_batch_t *)entry->data;
@@ -1428,22 +1434,22 @@ status_t rp_redo_set_fs_aux_block_batch_inner(
     for (uint32 i = 0; i < batch_count; i++) {
         block_id = data->id_set[i];
         fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
-            NULL, vg_item, block_id, DSS_BLOCK_TYPE_FS_AUX, CM_FALSE, NULL, CM_FALSE);
+            session, vg_item, block_id, DSS_BLOCK_TYPE_FS_AUX, CM_FALSE, NULL, CM_FALSE);
         if (fs_aux == NULL) {
             LOG_RUN_ERR("[REDO][FS AUX]Failed to find fs_aux %s.", dss_display_metaid(block_id));
             return CM_ERROR;
         }
-    status = dss_update_fs_aux_bitmap2disk(vg_item, fs_aux, DSS_FS_AUX_SIZE, CM_FALSE);
-    DSS_RETURN_IFERR2(
-        status, LOG_RUN_ERR("[REDO][FS AUX]Failed to update fs aux bitmap fs_aux:%s to disk, vg name:%s.", 
-                dss_display_metaid(block_id), vg_item->vg_name));
-    LOG_DEBUG_INF("[REDO][FS AUX]Succeed to replay alloc fs aux:%s, vg name:%s.", dss_display_metaid(block_id),
-        vg_item->vg_name);
+        status = dss_update_fs_aux_bitmap2disk(vg_item, fs_aux, DSS_FS_AUX_SIZE, CM_FALSE);
+        DSS_RETURN_IFERR2(
+            status, LOG_RUN_ERR("[REDO][FS AUX]Failed to update fs aux bitmap fs_aux:%s to disk, vg name:%s.",
+                        dss_display_metaid(block_id), vg_item->vg_name));
+        LOG_DEBUG_INF("[REDO][FS AUX]Succeed to replay alloc fs aux:%s, vg name:%s.", dss_display_metaid(block_id),
+            vg_item->vg_name);
     }
     return CM_SUCCESS;
 }
 
-status_t rp_redo_set_fs_aux_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_set_fs_aux_block_batch(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1455,18 +1461,18 @@ status_t rp_redo_set_fs_aux_block_batch(dss_vg_info_item_t *vg_item, dss_redo_en
         check_version = CM_TRUE;
     }
     dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(
-        NULL, vg_item, data->fs_block_id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
+        session, vg_item, data->fs_block_id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
     if (block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
     }
-    gft_node_t *node = dss_get_ft_node_by_ftid(NULL, vg_item, data->node_id, check_version, CM_FALSE);
+    gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, data->node_id, check_version, CM_FALSE);
     if (node == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node"));
     }
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
-        status = rp_redo_set_fs_aux_block_batch_in_recovery(vg_item, entry, block, node);
+        status = rp_redo_set_fs_aux_block_batch_in_recovery(session, vg_item, entry, block, node);
     } else {
-        status = rp_redo_set_fs_aux_block_batch_inner(vg_item, entry, block, node);
+        status = rp_redo_set_fs_aux_block_batch_inner(session, vg_item, entry, block, node);
     }
     DSS_RETURN_IF_ERROR(status);
     status = dss_update_core_ctrl_disk(vg_item);
@@ -1481,18 +1487,18 @@ status_t rp_redo_set_fs_aux_block_batch(dss_vg_info_item_t *vg_item, dss_redo_en
     return CM_SUCCESS;
 }
 
-status_t rb_redo_set_fs_aux_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_set_fs_aux_block_batch(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
 
     dss_redo_set_fs_aux_block_batch_t *data = (dss_redo_set_fs_aux_block_batch_t *)entry->data;
     dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_from_disk_and_refresh_shm(
-        NULL, vg_item, data->fs_block_id, DSS_BLOCK_TYPE_FS, NULL);
+        session, vg_item, data->fs_block_id, DSS_BLOCK_TYPE_FS, NULL);
     if (block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
     }
-    gft_node_t *node = dss_get_ft_node_by_ftid_from_disk_and_refresh_shm(NULL, vg_item, data->node_id);
+    gft_node_t *node = dss_get_ft_node_by_ftid_from_disk_and_refresh_shm(session, vg_item, data->node_id);
     if (node == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
     }
@@ -1503,8 +1509,8 @@ status_t rb_redo_set_fs_aux_block_batch(dss_vg_info_item_t *vg_item, dss_redo_en
         block_id = data->id_set[i];
         LOG_RUN_INF("[REDO][FS AUX]begin to rollback fs_aux %s in shm.", dss_display_metaid(block_id));
         fs_aux = (dss_fs_aux_t *)dss_find_block_from_disk_and_refresh_shm(
-            NULL, vg_item, block_id, DSS_BLOCK_TYPE_FS_AUX, NULL);
-            CM_ASSERT(fs_aux != NULL);
+            session, vg_item, block_id, DSS_BLOCK_TYPE_FS_AUX, NULL);
+        CM_ASSERT(fs_aux != NULL);
         (void)memset_s(&fs_aux->bitmap[0], fs_aux->head.bitmap_num, 0xFF, fs_aux->head.bitmap_num);
         LOG_RUN_INF("[REDO][FS AUX]end to rollback fs_aux %s in shm.", dss_display_metaid(block_id));
     }
@@ -1515,7 +1521,7 @@ status_t rb_redo_set_fs_aux_block_batch(dss_vg_info_item_t *vg_item, dss_redo_en
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[REDO][FS AUX]Failed to update fs aux root fs aux id disk."));
     return CM_SUCCESS;
 }
-status_t rp_redo_truncate_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_truncate_fs_block_batch(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1530,12 +1536,12 @@ status_t rp_redo_truncate_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_e
     }
 
     dss_fs_block_t *src_block = (dss_fs_block_t *)dss_find_block_in_shm(
-        NULL, vg_item, redo->src_id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
+        session, vg_item, redo->src_id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
     if (src_block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
     }
     dss_fs_block_t *dst_block = (dss_fs_block_t *)dss_find_block_in_shm(
-        NULL, vg_item, redo->dst_id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
+        session, vg_item, redo->dst_id, DSS_BLOCK_TYPE_FS, check_version, NULL, CM_FALSE);
     if (dst_block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
     }
@@ -1570,19 +1576,19 @@ status_t rp_redo_truncate_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_e
     return CM_SUCCESS;
 }
 
-status_t rb_redo_truncate_fs_block_batch(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_truncate_fs_block_batch(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
 
     dss_redo_truncate_fs_block_batch_t *redo = (dss_redo_truncate_fs_block_batch_t *)entry->data;
     dss_fs_block_t *src_block = (dss_fs_block_t *)dss_find_block_from_disk_and_refresh_shm(
-        NULL, vg_item, redo->src_id, DSS_BLOCK_TYPE_FS, NULL);
+        session, vg_item, redo->src_id, DSS_BLOCK_TYPE_FS, NULL);
     if (src_block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
     }
     dss_fs_block_t *dst_block = (dss_fs_block_t *)dss_find_block_from_disk_and_refresh_shm(
-        NULL, vg_item, redo->dst_id, DSS_BLOCK_TYPE_FS, NULL);
+        session, vg_item, redo->dst_id, DSS_BLOCK_TYPE_FS, NULL);
     if (dst_block == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid block"));
     }
@@ -1630,18 +1636,18 @@ static dss_redo_handler_t g_dss_handlers[] = {
     {DSS_RT_TRUNCATE_FS_BLOCK_BATCH, rp_redo_truncate_fs_block_batch, rb_redo_truncate_fs_block_batch},
 };
 
-static status_t dss_replay(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t dss_replay(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     DSS_LOG_DEBUG_OP("[REDO][REPLAY] Replay redo, type:%u.", entry->type);
     dss_redo_handler_t *handler = &g_dss_handlers[entry->type];
     if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
         return CM_SUCCESS;
     }
-    return handler->replay(vg_item, entry);
+    return handler->replay(session, vg_item, entry);
 }
 
 // apply log to update meta
-status_t dss_apply_log(dss_vg_info_item_t *vg_item, char *log_buf)
+status_t dss_apply_log(dss_session_t *session, dss_vg_info_item_t *vg_item, char *log_buf)
 {
     dss_redo_entry_t *entry = NULL;
     dss_redo_batch_t *batch = NULL;
@@ -1653,7 +1659,7 @@ status_t dss_apply_log(dss_vg_info_item_t *vg_item, char *log_buf)
     offset = 0;
     while (offset < data_size) {
         entry = (dss_redo_entry_t *)(batch->data + offset);
-        status = dss_replay(vg_item, entry);
+        status = dss_replay(session, vg_item, entry);
         DSS_RETURN_IF_ERROR(status);
         offset += entry->size;
     }
@@ -1667,7 +1673,7 @@ static status_t dss_recover_core_ctrlinfo(dss_vg_info_item_t *vg_item)
     uint32 checksum;
     bool32 remote = CM_FALSE;
     status = dss_load_vg_ctrl_part(
-    vg_item, (int64)DSS_CTRL_CORE_OFFSET, &vg_item->dss_ctrl->core, (int32)DSS_CORE_CTRL_SIZE, &remote);
+        vg_item, (int64)DSS_CTRL_CORE_OFFSET, &vg_item->dss_ctrl->core, (int32)DSS_CORE_CTRL_SIZE, &remote);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Load dss ctrl core failed."));
     checksum = dss_get_checksum(&vg_item->dss_ctrl->core, DSS_CORE_CTRL_SIZE);
     if (checksum != vg_item->dss_ctrl->core.checksum) {
@@ -2090,12 +2096,12 @@ void dss_set_vg_status_open()
     }
 }
 
-status_t dss_recover_from_slot_inner(dss_vg_info_item_t *vg_item, char *log_buf)
+status_t dss_recover_from_slot_inner(dss_session_t *session, dss_vg_info_item_t *vg_item, char *log_buf)
 {
     LOG_RUN_INF("[RECOVERY]Set vg status recovery.");
     dss_set_vg_status_recovery();
     LOG_RUN_INF("[RECOVERY]Begin recovering.");
-    status_t status = dss_apply_log(vg_item, log_buf);
+    status_t status = dss_apply_log(session, vg_item, log_buf);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("[RECOVERY]Failed to do recovery.");
         return status;
@@ -2105,12 +2111,12 @@ status_t dss_recover_from_slot_inner(dss_vg_info_item_t *vg_item, char *log_buf)
     LOG_RUN_INF("[RECOVERY]Succeed to recovery.");
     return CM_SUCCESS;
 }
-status_t dss_recover_from_offset_inner(dss_vg_info_item_t *vg_item, char *log_buf)
+status_t dss_recover_from_offset_inner(dss_session_t *session, dss_vg_info_item_t *vg_item, char *log_buf)
 {
     LOG_RUN_INF("[RECOVERY]Set vg status recovery.");
     dss_set_vg_status_recovery();
     LOG_RUN_INF("[RECOVERY]Begin recovering.");
-    status_t status = dss_apply_log(vg_item, log_buf);
+    status_t status = dss_apply_log(session, vg_item, log_buf);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("[RECOVERY]Failed to do recovery.");
         return status;
@@ -2134,7 +2140,7 @@ status_t dss_update_redo_info(dss_vg_info_item_t *vg_item, char *log_buf)
     dss_log_file_ctrl_t *log_ctrl = &vg_item->log_file_ctrl;
     status_t status = dss_update_redo_ctrl(vg_item, log_ctrl->index, log_ctrl->offset, log_ctrl->lsn);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to update redo info, index:%u, offset:%llu, lsn:%llu.",
-                                log_ctrl->index, log_ctrl->offset, log_ctrl->lsn));
+                                  log_ctrl->index, log_ctrl->offset, log_ctrl->lsn));
     LOG_DEBUG_INF("Succeed to update redo info, vg_name: %s, index:%u, offset:%llu, lsn:%llu.", vg_item->vg_name,
         log_ctrl->index, log_ctrl->offset, log_ctrl->lsn);
     return status;
@@ -2157,7 +2163,7 @@ status_t dss_process_redo_log_inner(dss_session_t *session, dss_vg_info_item_t *
     }
     status_t status = dss_flush_log(vg_item, log_buf);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[REDO][REFLUSH]Failed to flush log,errcode:%d.", cm_get_error_code()));
-    status = dss_apply_log(vg_item, log_buf);
+    status = dss_apply_log(session, vg_item, log_buf);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("[REDO] Failed to apply log,errcode:%d.", cm_get_error_code());
         return status;
@@ -2182,14 +2188,14 @@ status_t dss_process_redo_log(dss_session_t *session, dss_vg_info_item_t *vg_ite
     return status;
 }
 
-static status_t dss_rollback(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t dss_rollback(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     DSS_LOG_DEBUG_OP("[REDO][ROLLBACK] rollback redo, type:%u.", entry->type);
     dss_redo_handler_t *handler = &g_dss_handlers[entry->type];
-    return handler->rollback(vg_item, entry);
+    return handler->rollback(session, vg_item, entry);
 }
 
-status_t dss_rollback_log(dss_vg_info_item_t *vg_item, char *log_buf)
+status_t dss_rollback_log(dss_session_t *session, dss_vg_info_item_t *vg_item, char *log_buf)
 {
     dss_redo_entry_t *entry = NULL;
     dss_redo_batch_t *batch = NULL;
@@ -2208,7 +2214,7 @@ status_t dss_rollback_log(dss_vg_info_item_t *vg_item, char *log_buf)
     }
     for (int32 i = log_num; i > 0; i--) {
         entry = (dss_redo_entry_t *)(batch->data + undo_offset[i - 1]);
-        status = dss_rollback(vg_item, entry);
+        status = dss_rollback(session, vg_item, entry);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("[REDO][ROLLBACK] rollback failed!");
             return status;
@@ -2234,7 +2240,7 @@ void dss_rollback_mem_update(dss_session_t *session, dss_vg_info_item_t *vg_item
     LOG_RUN_INF("Try to rollback!!!");
     status_t status;
     vg_item->status = DSS_VG_STATUS_ROLLBACK;
-    status = dss_rollback_log(vg_item, log_buf);
+    status = dss_rollback_log(session, vg_item, log_buf);
     CM_ASSERT(status == CM_SUCCESS);
     dss_log_file_ctrl_t *log_file_ctrl = &vg_item->log_file_ctrl;
     cm_spin_lock(&log_file_ctrl->lock, NULL);

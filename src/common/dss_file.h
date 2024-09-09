@@ -50,12 +50,16 @@ status_t dss_make_dir(dss_session_t *session, const char *parent, const char *di
 status_t dss_open_dir(dss_session_t *session, const char *dir_path, bool32 is_refresh, dss_find_node_t *find_info);
 void dss_close_dir(dss_session_t *session, char *vg_name, uint64 ftid);
 status_t dss_find_vg_by_dir(const char *dir_path, char *name, dss_vg_info_item_t **vg_item);
+
 void dss_lock_vg_mem_s_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_and_shm_x2ix(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_and_shm_ix2x(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item);
+void dss_lock_vg_mem_and_shm_s_force(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_unlock_vg_mem_and_shm(dss_session_t *session, dss_vg_info_item_t *vg_item);
+void dss_lock_vg_mem_and_shm_ex_s(dss_session_t *session, char *vg_name);
+void dss_unlock_vg_mem_and_shm_ex(dss_session_t *session, char *vg_name);
 
 status_t dss_create_file(dss_session_t *session, const char *parent, const char *name, int32_t flag);
 status_t dss_exist_item(dss_session_t *session, const char *item, bool32 *result, gft_item_type_t *output_type);
@@ -103,7 +107,7 @@ gft_node_t *dss_get_ft_node_by_ftid_from_disk_and_refresh_shm(
 gft_node_t *dss_get_ft_node_by_ftid_no_refresh(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id);
 status_t dss_update_ft_block_disk(dss_vg_info_item_t *vg_item, dss_ft_block_t *block, ftid_t id);
 int64 dss_get_ft_block_offset(dss_vg_info_item_t *vg_item, ftid_t id);
-char *dss_get_ft_block_by_ftid(dss_vg_info_item_t *vg_item, ftid_t id);
+char *dss_get_ft_block_by_ftid(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t id);
 status_t dss_refresh_root_ft(dss_vg_info_item_t *vg_item, bool32 check_version, bool32 active_refresh);
 
 status_t dss_update_au_disk(
@@ -111,7 +115,7 @@ status_t dss_update_au_disk(
 // for tool or instance
 void dss_init_ft_root(dss_ctrl_t *dss_ctrl, gft_node_t **out_node);
 status_t dss_update_ft_root(dss_vg_info_item_t *vg_item);
-status_t dss_refresh_ft(dss_vg_info_item_t *vg_item);
+status_t dss_refresh_ft(dss_session_t *session, dss_vg_info_item_t *vg_item);
 status_t dss_check_refresh_ft(dss_vg_info_item_t *vg_item);
 status_t dss_alloc_ft_au(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t *id);
 
@@ -135,7 +139,8 @@ status_t dss_format_bitmap_node(dss_session_t *session, dss_vg_info_item_t *vg_i
 status_t dss_check_refresh_fs_block(
     dss_vg_info_item_t *vg_item, dss_block_id_t blockid, char *block, bool32 *is_changed);
 void dss_init_root_fs_block(dss_ctrl_t *dss_ctrl);
-status_t dss_load_fs_block_by_blockid(dss_vg_info_item_t *vg_item, dss_block_id_t blockid, int32 size);
+status_t dss_load_fs_block_by_blockid(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t blockid, int32 size);
 
 void dss_init_fs_block_head(dss_fs_block_t *fs_block);
 dss_fs_block_t *dss_find_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node,

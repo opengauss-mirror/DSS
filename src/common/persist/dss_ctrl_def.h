@@ -267,8 +267,8 @@ typedef struct st_dss_ctrl {
         dss_redo_ctrl_t redo_ctrl;  // 512
         char redo_ctrl_data[DSS_DISK_UNIT_SIZE];
     };
-    char reserve1[DSS_CTRL_RESERVE_SIZE1];   // 727K
-    char lock[DSS_DISK_LOCK_LEN];     // align with 16K
+    char reserve1[DSS_CTRL_RESERVE_SIZE1];  // 727K
+    char lock[DSS_DISK_LOCK_LEN];           // align with 16K
     char reserve2[DSS_CTRL_RESERVE_SIZE2];
     union {
         dss_group_global_ctrl_t global_ctrl;
@@ -336,7 +336,7 @@ typedef struct st_dss_vg_info_item_t {
     dss_from_type_e from_type;
     dss_block_ctrl_task_desc_t syn_meta_desc;
     dss_vg_cache_node_t vg_cache_node[DSS_VG_ITEM_CACHE_NODE_MAX];
-    dss_log_file_ctrl_t log_file_ctrl;  // redo log ctrl 
+    dss_log_file_ctrl_t log_file_ctrl;  // redo log ctrl
 } dss_vg_info_item_t;
 
 typedef struct st_dss_vg_info_t {

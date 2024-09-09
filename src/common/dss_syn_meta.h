@@ -33,7 +33,6 @@
 extern "C" {
 #endif
 
-#define DSS_LOCK_SHM_META_TIMEOUT 200
 typedef struct st_dss_meta_syn_msg {
     uint64 ftid;
     uint64 fid;       // it's the owner's gft_node_t.fid
@@ -57,7 +56,7 @@ void dss_set_syn_meta_enable(bool32 is_enable_syn_meta);
 
 void dss_add_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl, uint64 version);
 void dss_del_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl, int64 syn_meta_ref_cnt);
-bool32 dss_syn_buffer_cache(dss_vg_info_item_t *vg_item);
+bool32 dss_syn_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item);
 status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, uint32 size, bool32 *ack);
 status_t dss_invalidate_meta_remote(
     dss_session_t *session, dss_invalidate_meta_msg_t *invalidate_meta_msg, uint32 size, bool32 *invalid_ack);
