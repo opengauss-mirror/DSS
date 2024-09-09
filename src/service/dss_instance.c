@@ -311,6 +311,39 @@ static status_t dss_init_fi_ctx(dss_instance_t *inst)
 }
 #endif
 
+static status_t dss_save_process_pid(dss_config_t *inst_cfg)
+{
+#ifndef WIN32
+    char file_name[CM_FILE_NAME_BUFFER_SIZE] = {0};
+    char dir_name[CM_FILE_NAME_BUFFER_SIZE] = {0};
+    PRTS_RETURN_IFERR(
+        snprintf_s(dir_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/process", inst_cfg->home));
+    if (!cm_dir_exist(dir_name)) {
+        DSS_RETURN_IF_ERROR(cm_create_dir(dir_name));
+    }
+    PRTS_RETURN_IFERR(snprintf_s(
+        file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/%s", dir_name, "dss.process"));
+    pid_t pid = getpid();
+    if (strlen(file_name) == 0) {
+        LOG_RUN_ERR("dssserver process path not existed");
+        return CM_ERROR;
+    }
+    FILE *fp;
+    CM_RETURN_IFERR(cm_fopen(file_name, "w+", S_IRUSR | S_IWUSR, &fp));
+    (void)cm_truncate_file(fp->_fileno, 0);
+    (void)cm_seek_file(fp->_fileno, 0, SEEK_SET);
+    int32 size = fprintf(fp, "%d", pid);
+    (void)fflush(stdout);
+    if (size < 0) {
+        LOG_RUN_ERR("write dssserver process failed, write size is %d.", size);
+        (void)fclose(fp);
+        return CM_ERROR;
+    }
+    (void)fclose(fp);
+#endif
+    return CM_SUCCESS;
+}
+
 status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
 {
     status_t status;
@@ -335,7 +368,8 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
     DSS_RETURN_IFERR2(status, (void)printf("Aborted due to starting timer thread.\n"));
     status = dss_load_config(&inst->inst_cfg);
     DSS_RETURN_IFERR2(status, (void)printf("%s\nFailed to load parameters!\n", cm_get_errormsg(cm_get_error_code())));
-
+    status = dss_save_process_pid(&inst->inst_cfg);
+    DSS_RETURN_IFERR2(status, (void)printf("Save dssserver pid failed!\n"));
 #ifdef DISABLE_SYN_META
     dss_set_syn_meta_enable(CM_FALSE);
 #endif
