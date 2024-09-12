@@ -269,6 +269,8 @@ config_item_t g_dss_admin_parameters[] = {
         NULL, NULL, NULL, NULL},
     {"CLUSTER_RUN_MODE", CM_TRUE, ATTR_NONE, "cluster_primary", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 10,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "LOG_COMPRESSED",  CM_TRUE, ATTR_READONLY, "FALSE", NULL, NULL, "-", "[FALSE,TRUE]",  "GS_TYPE_BOOLEAN", NULL,
+        11, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 static status_t dss_load_local_server_config_core(
