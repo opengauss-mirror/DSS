@@ -28,6 +28,7 @@
 #include "dss_mes.h"
 #include "dss_srv_proc.h"
 #include "dss_instance.h"
+#include "dss_thv.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -110,7 +111,7 @@ status_t dss_rename_file_put_redo_log(dss_session_t *session, gft_node_t *out_no
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
     return CM_SUCCESS;
 }
@@ -262,7 +263,7 @@ static status_t dss_rm_dir_file(dss_session_t *session, const char *dir_name, gf
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
 
     LOG_RUN_INF("Succeed to rm dir or file:%s in vg:%s.", dir_name, vg_item->vg_name);
@@ -398,7 +399,7 @@ static status_t dss_make_dir_file_core(dss_session_t *session, const char *paren
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
     LOG_DEBUG_ERR("[FT][ALLOC] Succeed to mkdir or file, fid:%llu, ftid: %s for file:%s.", out_node->fid,
         dss_display_metaid(out_node->id), dir_name);

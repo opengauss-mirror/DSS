@@ -41,6 +41,7 @@
 #include "cm_utils.h"
 #include "dss_meta_buf.h"
 #include "dss_syn_meta.h"
+#include "dss_thv.h"
 
 #ifndef _NSIG
 #define MAX_SIG_NUM 32

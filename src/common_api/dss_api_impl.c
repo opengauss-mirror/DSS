@@ -2377,7 +2377,7 @@ void dss_get_api_volume_error(void)
     if (code == ERR_DSS_VOLUME_SYSTEM_IO) {
         LOG_RUN_ERR("[DSS API] ABORT INFO : volume operate failed for I/O ERROR, errcode:%d.", code);
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
     return;
 }

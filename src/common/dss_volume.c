@@ -28,6 +28,7 @@
 #include <fcntl.h>
 #endif  // !WIN32
 #include "dss_file.h"
+#include "dss_thv.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,7 +66,7 @@ status_t dss_open_volume(const char *name, const char *code, int flags, dss_volu
             LOG_RUN_ERR("[DSS] ABORT OPEN VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
             cm_fync_logfile();
-            _exit(1);
+            dss_exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_OPEN, name, cm_get_os_error());
         }
@@ -90,7 +91,7 @@ status_t dss_open_simple_volume(const char *name, int flags, dss_simple_volume_t
             LOG_RUN_ERR("[DSS] ABORT OPEN SIMPLE VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
             cm_fync_logfile();
-            _exit(1);
+            dss_exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_OPEN, name, cm_get_os_error());
         }
@@ -140,7 +141,7 @@ static status_t dss_seek_volume(dss_volume_t *volume, uint64 offset)
             LOG_RUN_ERR("[DSS] ABORT SEEK VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
             cm_fync_logfile();
-            _exit(1);
+            dss_exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SEEK, volume->name_p, volume->id, cm_get_os_error());
         }
@@ -162,7 +163,7 @@ static status_t dss_try_read_volume(dss_volume_t *volume, char *buffer, int32 si
             LOG_RUN_ERR("[DSS] ABORT READ VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
             cm_fync_logfile();
-            _exit(1);
+            dss_exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_READ, volume->name_p, volume->id, cm_get_os_error());
         }
@@ -180,7 +181,7 @@ static status_t dss_try_write_volume(dss_volume_t *volume, char *buffer, int32 s
             LOG_RUN_ERR("[DSS] ABORT WRITE VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
             cm_fync_logfile();
-            _exit(1);
+            dss_exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_WRITE, volume->name_p, volume->id, cm_get_os_error());
         }
@@ -198,7 +199,7 @@ static inline void dss_open_fail(const char *name)
         LOG_RUN_ERR("[DSS] ABORT OPEN VOLUME RAW, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
             strerror(cm_get_os_error()));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     } else {
         DSS_THROW_ERROR(ERR_DSS_VOLUME_OPEN, name, cm_get_os_error());
     }
@@ -278,7 +279,7 @@ uint64 dss_get_volume_size_raw(dss_volume_t *volume)
             LOG_RUN_ERR("[DSS] ABORT GET VOLUME SIZE, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
             cm_fync_logfile();
-            _exit(1);
+            dss_exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SEEK, volume->name_p, volume->id, cm_get_os_error());
         }
@@ -296,7 +297,7 @@ static status_t dss_try_pread_volume_raw(dss_volume_t *volume, int64 offset, cha
             LOG_RUN_ERR("[DSS] ABORT PREAD VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                 strerror(cm_get_os_error()));
             cm_fync_logfile();
-            _exit(1);
+            dss_exit(1);
         } else {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_READ, volume->name_p, volume->id, cm_get_os_error());
         }
@@ -319,7 +320,7 @@ static int32 dss_try_pwrite_volume_raw(
                 LOG_RUN_ERR("[DSS] ABORT ALIGNED PWRITE VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                     strerror(cm_get_os_error()));
                 cm_fync_logfile();
-                _exit(1);
+                dss_exit(1);
             } else {
                 DSS_THROW_ERROR(ERR_DSS_VOLUME_WRITE, volume->name_p, volume->id, cm_get_os_error());
             }
@@ -333,7 +334,7 @@ static int32 dss_try_pwrite_volume_raw(
                 LOG_RUN_ERR("[DSS] ABORT UNALIGNED PWRITE VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
                     strerror(cm_get_os_error()));
                 cm_fync_logfile();
-                _exit(1);
+                dss_exit(1);
             } else {
                 DSS_THROW_ERROR(ERR_DSS_VOLUME_WRITE, volume->name_p, volume->id, cm_get_os_error());
             }

@@ -23,6 +23,7 @@
  */
 
 #include "dss_interaction.h"
+#include "dss_thv.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,7 +37,7 @@ void dss_cli_get_err(dss_packet_t *pack, int32 *errcode, char **errmsg)
     if (*errcode == ERR_DSS_MES_ILL) {
         LOG_RUN_ERR("[DSS API] ABORT INFO : server broadcast failed, errcode:%d, errmsg:%s.", *errcode, *errmsg);
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
 }
 

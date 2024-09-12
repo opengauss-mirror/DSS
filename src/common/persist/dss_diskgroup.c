@@ -1362,7 +1362,7 @@ status_t dss_add_volume_core(
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
     return CM_SUCCESS;
 }
@@ -1494,7 +1494,7 @@ status_t dss_remove_volume_core(
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
     return CM_SUCCESS;
 }

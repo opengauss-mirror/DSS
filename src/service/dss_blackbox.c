@@ -413,6 +413,18 @@ static void sig_print_excep_info(box_excp_item_t *excep_info, int32 sig_num, sig
 }
 
 uint32 g_sign_mutex = 0;
+void dss_exit_proc(int32 exit_code)
+{
+    while (CM_TRUE) {
+        CM_MFENCE;
+        if (g_sign_mutex == 0) {
+            _exit(exit_code);
+        }
+        cm_sleep(CM_SLEEP_500_FIXED);
+    }
+    _exit(exit_code);
+}
+
 void dss_proc_sign_func_core(int32 sig_num, siginfo_t *sig_info, void *context, bool32 *dump)
 {
     box_excp_item_t *excep_info = &g_excep_info;
@@ -425,10 +437,10 @@ void dss_proc_sign_func_core(int32 sig_num, siginfo_t *sig_info, void *context, 
         return;
     }
     g_sign_mutex = 1;
+    CM_MFENCE;
     (void)sigprocmask(0, NULL, &sign_old_mask);
     (void)sigfillset(&sign_mask);
     (void)sigprocmask(SIG_SETMASK, &sign_mask, NULL);
-
     if (!need_dump(sig_num)) {
         loc_id = excep_info->loc_id;
         dss_get_signal_info(sig_num, signal_name, sizeof(signal_name) - 1);
@@ -449,7 +461,6 @@ void dss_proc_sign_func_core(int32 sig_num, siginfo_t *sig_info, void *context, 
         sig_print_excep_info(excep_info, sig_num, sig_info, context);
     }
     cm_fync_logfile();
-    g_sign_mutex = 0;
     *dump = CM_TRUE;
 }
 

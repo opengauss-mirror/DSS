@@ -39,6 +39,7 @@
 #include "dss_fs_aux.h"
 #include "dss_zero.h"
 #include "dss_syn_meta.h"
+#include "dss_thv.h"
 
 dss_env_t g_dss_env;
 dss_env_t *dss_get_env(void)
@@ -1297,7 +1298,7 @@ static status_t dss_open_file_core(
         LOG_RUN_ERR("[DSS] ABORT INFO : redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
     dss_unlock_vg_mem_and_shm(session, vg_item);
     return CM_SUCCESS;
@@ -2948,7 +2949,7 @@ status_t dss_extend_batch_inner(dss_session_t *session, dss_vg_info_item_t *vg_i
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
     LOG_DEBUG_INF("Finish to batch extend ftid:%s to size:%llu from offset:%llu with au_size:%llu.",
         dss_display_metaid(node->id), node->size, (uint64)align_beg, align_end);
@@ -3120,7 +3121,7 @@ status_t dss_extend_inner(dss_session_t *session, dss_node_data_t *node_data)
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
 
     LOG_DEBUG_INF("Finish to extend ftid:%s to size:%llu from offset:%llu with au_size:%llu.",
@@ -3240,7 +3241,7 @@ static status_t dss_extend_with_updt_written_size(
             LOG_RUN_ERR("[DSS] ABORT INFO: update ft block to disk failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
                 cm_get_error_code(), errno, strerror(errno));
             cm_fync_logfile();
-            _exit(1);
+            dss_exit(1);
         }
 
         dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(block);
@@ -3568,7 +3569,7 @@ static status_t dss_init_trunc_ftn(dss_session_t *session, dss_vg_info_item_t *v
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
     return CM_SUCCESS;
 }
@@ -3644,7 +3645,7 @@ void dss_validate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, g
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
     LOG_DEBUG_INF("[FS] Try validate file:%s fid:%llu, %s in vg:%s done.", node->name, node->fid,
         dss_display_metaid(node->id), vg_item->vg_name);
@@ -3685,7 +3686,7 @@ status_t dss_invalidate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_i
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
 
     if (invalidate_other_nodes_proc != NULL) {
@@ -3813,7 +3814,7 @@ status_t dss_truncate_inner(dss_session_t *session, uint64 fid, ftid_t ftid, int
         LOG_RUN_ERR("[DSS] ABORT INFO:truncate small init tail failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
 
     /* Truncating file space block completed. */
@@ -3822,7 +3823,7 @@ status_t dss_truncate_inner(dss_session_t *session, uint64 fid, ftid_t ftid, int
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
 
     // update the file ver for entry block
@@ -4305,7 +4306,7 @@ static status_t dss_clean_delay_node(
         LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
             cm_get_error_code(), errno, strerror(errno));
         cm_fync_logfile();
-        _exit(1);
+        dss_exit(1);
     }
     LOG_DEBUG_INF("[DELAY_CLEAN]Delay File clean success.");
     return CM_SUCCESS;
