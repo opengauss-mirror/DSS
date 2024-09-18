@@ -33,15 +33,22 @@
 extern "C" {
 #endif
 
+#define DSS_LOCK_SHM_META_TIMEOUT 200
+
+void dss_enter_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item);
+bool32 dss_enter_shm_time_x(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks);
+void dss_enter_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item, bool32 is_force, int32 timeout);
+void dss_leave_shm(dss_session_t *session, dss_vg_info_item_t *vg_item);
+
 uint32 dss_buffer_cache_get_block_size(uint32_t block_type);
 dss_block_ctrl_t *dss_buffer_cache_get_block_ctrl(uint32_t block_type, char *addr);
 bool32 dss_buffer_cache_key_compare(void *key, void *key2);
 
-status_t dss_register_buffer_cache(dss_vg_info_item_t *vg_item, const dss_block_id_t block_id, ga_obj_id_t obj_id,
-    dss_block_ctrl_t *block_ctrl, dss_block_type_t type);
-void dss_unregister_buffer_cache(dss_vg_info_item_t *vg_item, dss_block_id_t block_id);
-status_t dss_find_block_objid_in_shm(
-    dss_vg_info_item_t *vg_item, dss_block_id_t block_id, dss_block_type_t type, ga_obj_id_t *objid);
+status_t dss_register_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, const dss_block_id_t block_id,
+    ga_obj_id_t obj_id, dss_block_ctrl_t *block_ctrl, dss_block_type_t type);
+void dss_unregister_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id);
+status_t dss_find_block_objid_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
+    dss_block_type_t type, ga_obj_id_t *objid);
 char *dss_find_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
     dss_block_type_t type, bool32 check_version, ga_obj_id_t *out_obj_id, bool32 active_refresh);
 char *dss_find_block_from_disk_and_refresh_shm(dss_session_t *session, dss_vg_info_item_t *vg_item,
@@ -52,7 +59,7 @@ char *dss_find_block_in_shm_no_refresh(
 char *dss_find_block_in_shm_no_refresh_ex(
     dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id, ga_obj_id_t *out_obj_id);
 
-status_t dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *map);
+status_t dss_refresh_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, shm_hashmap_t *map);
 status_t dss_get_block_from_disk(
     dss_vg_info_item_t *vg_item, dss_block_id_t block_id, char *buf, int64_t offset, int32 size, bool32 calc_checksum);
 status_t dss_check_block_version(dss_vg_info_item_t *vg_item, dss_block_id_t block_id, dss_block_type_t type,

@@ -129,7 +129,7 @@ status_t dss_check_vg_ctrl_valid(dss_vg_info_item_t *vg_item)
     return CM_SUCCESS;
 }
 
-status_t dss_recover_from_offset(dss_vg_info_item_t *vg_item)
+status_t dss_recover_from_offset(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
     bool8 need_recovery = CM_FALSE;
     /* 1、load offset batch 2、check batch valid 3、if batch valid, used 4、if batch invalid,just end */
@@ -139,7 +139,7 @@ status_t dss_recover_from_offset(dss_vg_info_item_t *vg_item)
     }
     if (need_recovery) {
         char *log_buf = vg_item->log_file_ctrl.log_buf;
-        status_t status = dss_recover_from_offset_inner(vg_item, log_buf);
+        status_t status = dss_recover_from_offset_inner(session, vg_item, log_buf);
         if (status != CM_SUCCESS) {
             return CM_ERROR;
         }
@@ -147,7 +147,7 @@ status_t dss_recover_from_offset(dss_vg_info_item_t *vg_item)
     return CM_SUCCESS;
 }
 
-status_t dss_recover_from_slot(dss_vg_info_item_t *vg_item)
+status_t dss_recover_from_slot(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
     bool8 need_recovery = CM_FALSE;
     if (dss_load_log_buffer_from_slot(vg_item, &need_recovery) != CM_SUCCESS) {
@@ -155,7 +155,7 @@ status_t dss_recover_from_slot(dss_vg_info_item_t *vg_item)
     }
     if (need_recovery) {
         char *log_buf = vg_item->log_file_ctrl.log_buf;
-        status_t status = dss_recover_from_slot_inner(vg_item, log_buf);
+        status_t status = dss_recover_from_slot_inner(session, vg_item, log_buf);
         if (status != CM_SUCCESS) {
             return CM_ERROR;
         }
@@ -164,7 +164,7 @@ status_t dss_recover_from_slot(dss_vg_info_item_t *vg_item)
     return CM_SUCCESS;
 }
 
-status_t dss_recover_from_instance(dss_instance_t *inst)
+status_t dss_recover_from_instance(dss_session_t *session, dss_instance_t *inst)
 {
     status_t status;
     for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
@@ -175,7 +175,7 @@ status_t dss_recover_from_instance(dss_instance_t *inst)
         }
         uint32 software_version = dss_get_software_version(&vg_item->dss_ctrl->vg_info);
         if (software_version < DSS_SOFTWARE_VERSION_2) {
-            status = dss_recover_from_slot(vg_item);
+            status = dss_recover_from_slot(session, vg_item);
             if (status != CM_SUCCESS) {
                 LOG_RUN_ERR("[RECOVERY]Failed to recover from vg %s.", vg_item->vg_name);
                 return CM_ERROR;
@@ -186,7 +186,7 @@ status_t dss_recover_from_instance(dss_instance_t *inst)
                 LOG_RUN_ERR("[RECOVERY]Failed to load redo ctrl of vg %s.", vg_item->vg_name);
                 return CM_ERROR;
             }
-            status = dss_recover_from_offset(vg_item);
+            status = dss_recover_from_offset(session, vg_item);
             if (status != CM_SUCCESS) {
                 LOG_RUN_ERR("[RECOVERY]Failed to recover from vg %s.", vg_item->vg_name);
                 return CM_ERROR;
@@ -684,7 +684,7 @@ status_t dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 t
     return CM_SUCCESS;
 }
 
-void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab_lock)
+void dss_recovery_when_primary(dss_session_t *session, dss_instance_t *inst, uint32 curr_id, bool32 grab_lock)
 {
     bool32 first_start = CM_FALSE;
     if (!grab_lock) {
@@ -713,25 +713,18 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
         dss_wait_session_pause(inst);
     }
     dss_wait_background_pause(inst);
-    status_t ret = dss_recover_from_instance(inst);
+    status_t ret = dss_recover_from_instance(session, inst);
     if (ret != CM_SUCCESS) {
         LOG_RUN_ERR("[RECOVERY]ABORT INFO: Recover failed when get cm lock.");
         cm_fync_logfile();
         dss_exit(1);
     }
     if (!first_start) {
-        dss_session_t *session = NULL;
-        if (dss_create_session(NULL, &session) != CM_SUCCESS) {
-            LOG_RUN_ERR("[RECOVERY]ABORT INFO: Refresh meta info failed when create session.");
-            cm_fync_logfile();
-            dss_exit(1);
-        }
         if (dss_refresh_meta_info(session) != CM_SUCCESS) {
             LOG_RUN_ERR("[RECOVERY]ABORT INFO: Refresh meta info failed after recovery.");
             cm_fync_logfile();
             dss_exit(1);
         }
-        dss_destroy_session(session);
         dss_set_session_running(inst);
     }
 
@@ -745,7 +738,7 @@ void dss_recovery_when_primary(dss_instance_t *inst, uint32 curr_id, bool32 grab
     inst->status = DSS_STATUS_OPEN;
 }
 
-void dss_recovery_when_standby(dss_instance_t *inst, uint32 curr_id, uint32 master_id)
+void dss_recovery_when_standby(dss_session_t *session, dss_instance_t *inst, uint32 curr_id, uint32 master_id)
 {
     uint32 old_master_id = dss_get_master_id();
     int32 old_status = dss_get_server_status_flag();
@@ -779,7 +772,7 @@ void dss_recovery_when_standby(dss_instance_t *inst, uint32 curr_id, uint32 mast
     1、old_master_id == master_id, just return;
     2、old_master_id != master_id, just indicates that the master has been reselected.so to judge whether recover.
 */
-void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
+void dss_get_cm_lock_and_recover_inner(dss_session_t *session, dss_instance_t *inst)
 {
     cm_latch_x(&g_dss_instance.switch_latch, DSS_DEFAULT_SESSIONID, LATCH_STAT(LATCH_SWITCH));
     uint32 old_master_id = dss_get_master_id();
@@ -811,13 +804,13 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
     }
     // standby is started or masterid has been changed
     if (master_id != curr_id) {
-        dss_recovery_when_standby(inst, curr_id, master_id);
+        dss_recovery_when_standby(session, inst, curr_id, master_id);
         cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
         return;
     }
     /*1、grab lock success 2、set main,other switch lock 3、restart, lock no transfer*/
     dss_set_recover_thread_id(dss_get_current_thread_id());
-    dss_recovery_when_primary(inst, curr_id, grab_lock);
+    dss_recovery_when_primary(session, inst, curr_id, grab_lock);
     dss_set_recover_thread_id(0);
     cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
 }
@@ -827,9 +820,11 @@ void dss_get_cm_lock_and_recover_inner(dss_instance_t *inst)
 void dss_get_cm_lock_and_recover(thread_t *thread)
 {
     cm_set_thread_name("recovery");
+    uint32 work_idx = dss_get_recover_task_idx();
+    dss_session_t *session = dss_get_reserv_session(work_idx);
     dss_instance_t *inst = (dss_instance_t *)thread->argument;
     while (!thread->closed) {
-        dss_get_cm_lock_and_recover_inner(inst);
+        dss_get_cm_lock_and_recover_inner(session, inst);
         if (inst->status == DSS_STATUS_PREPARE) {
             LOG_RUN_WAR("[RECOVERY]Try to sleep when in prepare status.\n");
             cm_sleep(DSS_SHORT_RECOVER_INTERVAL);

@@ -89,12 +89,13 @@ void dss_del_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl,
     dss_unlatch(&vg_item->syn_meta_desc.latch);
 }
 
-void dss_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl, dss_common_block_t *block)
+void dss_syn_meta(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl, dss_common_block_t *block)
 {
     if (dss_need_exec_local() && dss_is_readwrite()) {
         dss_meta_syn_t meta_syn;
         // too many place to change the value of block_ctrl->data
-        dss_lock_vg_mem_and_shm_s(NULL, vg_item);
+        dss_lock_vg_mem_and_shm_s(session, vg_item);
         char *addr = (char *)block_ctrl;
         block = (dss_common_block_t *)(addr - dss_buffer_cache_get_block_size(block_ctrl->type));
         meta_syn.ftid = block_ctrl->ftid;
@@ -107,11 +108,11 @@ void dss_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl, dss
         meta_syn.meta_len = dss_buffer_cache_get_block_size(block_ctrl->type);
         errno_t errcode = memcpy_s(meta_syn.meta, meta_syn.meta_len, (char *)block, meta_syn.meta_len);
         if (SECUREC_UNLIKELY(errcode != EOK)) {
-            dss_unlock_vg_mem_and_shm(NULL, vg_item);
+            dss_unlock_vg_mem_and_shm(session, vg_item);
             DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
             return;
         }
-        dss_unlock_vg_mem_and_shm(NULL, vg_item);
+        dss_unlock_vg_mem_and_shm(session, vg_item);
 
         (void)meta_syn2other_nodes_proc(
             vg_item, (char *)&meta_syn, (OFFSET_OF(dss_meta_syn_t, meta) + meta_syn.meta_len), NULL);
@@ -121,7 +122,7 @@ void dss_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl, dss
 }
 
 // if primary, syn meta, if not, just clean the link
-bool32 dss_syn_buffer_cache(dss_vg_info_item_t *vg_item)
+bool32 dss_syn_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
     if (!enable_syn_meta || meta_syn2other_nodes_proc == NULL) {
         return CM_TRUE;
@@ -178,7 +179,7 @@ bool32 dss_syn_buffer_cache(dss_vg_info_item_t *vg_item)
             continue;
         }
 
-        dss_syn_meta(vg_item, block_ctrl, block);
+        dss_syn_meta(session, vg_item, block_ctrl, block);
 
         if (bilist_node_tail != bilist_node) {
             bilist_node_next = BINODE_NEXT(bilist_node);
@@ -247,7 +248,7 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
         node = dss_get_node_by_block_ctrl(block_ctrl, 0);
     }
 
-    if (!dss_lock_shm_meta_timed_x(session, vg_item->vg_latch, DSS_LOCK_SHM_META_TIMEOUT)) {
+    if (!dss_enter_shm_time_x(session, vg_item, DSS_LOCK_SHM_META_TIMEOUT)) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_SHM_LOCK_TIMEOUT));
     }
     if ((block_ctrl->fid != meta_syn->fid) ||
@@ -262,13 +263,13 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
     } else {
         errno_t errcode = memcpy_s(block, meta_len, meta_syn->meta, meta_syn->meta_len);
         if (SECUREC_UNLIKELY(errcode != EOK)) {
-            dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);
+            dss_leave_shm(session, vg_item);
             DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
             return CM_ERROR;
         }
     }
 
-    dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);
+    dss_leave_shm(session, vg_item);
     *ack = CM_TRUE;
     LOG_DEBUG_INF(
         "syn ack:%u when notify syn meta file:%llu, file_ver:%llu, vg :%u, block: %llu type:%u, with version:%llu.",
@@ -290,7 +291,7 @@ status_t dss_invalidate_meta_remote(
             LOG_DEBUG_ERR("Failed to find vg id, %u.", invalidate_meta_msg->vg_id));
     }
 
-    if (!dss_lock_shm_meta_timed_x(session, vg_item->vg_latch, DSS_LOCK_SHM_META_TIMEOUT)) {
+    if (!dss_enter_shm_time_x(session, vg_item, DSS_LOCK_SHM_META_TIMEOUT)) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_SHM_LOCK_TIMEOUT));
     }
 
@@ -315,7 +316,7 @@ status_t dss_invalidate_meta_remote(
         }
     }
 
-    dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);
+    dss_leave_shm(session, vg_item);
 
     *invalid_ack = CM_TRUE;
     LOG_DEBUG_INF("End to invalidate meta vg id:%u, meta type:%u, meta id:%llu, ack:%u.", invalidate_meta_msg->vg_id,

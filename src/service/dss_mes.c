@@ -1186,34 +1186,6 @@ status_t dss_send2standby(big_packets_ctrl_t *ack, const char *buf)
     return ret;
 }
 
-static void dss_loaddisk_lock(char *vg_name)
-{
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
-    if (vg_item != NULL) {
-        dss_lock_vg_mem_s_force(vg_item);
-    }
-}
-
-static void dss_loaddisk_unlock(char *vg_name)
-{
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
-    if (vg_item != NULL) {
-        dss_unlock_vg_mem(vg_item);
-    }
-}
-
-static void dss_load_shm_lock_s_force(dss_session_t *session, dss_vg_info_item_t *vg_item)
-{
-    dss_lock_vg_mem_s_force(vg_item);
-    (void)dss_lock_shm_meta_s_without_stack(session, vg_item->vg_latch, CM_TRUE, SPIN_WAIT_FOREVER);
-}
-
-static void dss_load_shm_unlock(dss_session_t *session, dss_vg_info_item_t *vg_item)
-{
-    dss_unlock_vg_mem(vg_item);
-    dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);
-}
-
 static int32 dss_batch_load_core(dss_session_t *session, dss_loaddisk_req_t *req, char *read_buff, uint32 version)
 {
     uint32 remain = req->size;
@@ -1268,9 +1240,9 @@ int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, uint32 ver
                 DSS_READ4STANDBY_ERR, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_LOADDISK_BUFFER_SIZE, "g_thv_read_buf"));
         }
     }
-    dss_loaddisk_lock(req->vg_name);
+    dss_lock_vg_mem_and_shm_ex_s(session, req->vg_name);
     int32 ret = dss_batch_load_core(session, req, g_thv_read_buf, version);
-    dss_loaddisk_unlock(req->vg_name);
+    dss_unlock_vg_mem_and_shm_ex(session, req->vg_name);
     return ret;
 }
 
@@ -1649,9 +1621,9 @@ static status_t dss_proc_get_ft_block_req_core(
     if (file_vg_item->id != (*vg_item)->id) {
         LOG_DEBUG_INF("Change shm lock when get link path :%s, src vg id:%u, dst vg id:%u.", req->path, (*vg_item)->id,
             file_vg_item->id);
-        dss_load_shm_unlock(session, *vg_item);
+        dss_unlock_vg_mem_and_shm(session, *vg_item);
         *vg_item = file_vg_item;
-        dss_load_shm_lock_s_force(session, *vg_item);
+        dss_lock_vg_mem_and_shm_s_force(session, *vg_item);
     }
     ack->node_id = out_node->id;
     DSS_LOG_DEBUG_OP("[MES] Req out node, v:%u,au:%llu,block:%u,item:%u,type:%d,path:%s.", out_node->id.volume,
@@ -1730,9 +1702,9 @@ void dss_proc_get_ft_block_req(dss_session_t *session, mes_msg_t *msg)
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
         return;
     }
-    dss_load_shm_lock_s_force(session, vg_item);
+    dss_lock_vg_mem_and_shm_s_force(session, vg_item);
     status = dss_proc_get_ft_block_req_core(session, req, &ack, &vg_item);
-    dss_load_shm_unlock(session, vg_item);
+    dss_unlock_vg_mem_and_shm(session, vg_item);
     if (status != CM_SUCCESS) {
         dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_GET_FT_BLOCK, status);
         return;

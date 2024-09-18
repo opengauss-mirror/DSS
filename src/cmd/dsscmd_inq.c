@@ -113,7 +113,7 @@ static status_t dss_modify_cluster_node_info(
     }
 
     bool32 remote = CM_FALSE;
-    dss_group_global_ctrl_t *global_ctrl  = &vg_item->dss_ctrl->global_ctrl;
+    dss_group_global_ctrl_t *global_ctrl = &vg_item->dss_ctrl->global_ctrl;
     LOG_RUN_INF("old cluster_node_info is %llu.", global_ctrl->cluster_node_info);
     status_t status =
         dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_GLOBAL_CTRL_OFFSET, global_ctrl, DSS_DISK_UNIT_SIZE, &remote);
@@ -160,8 +160,8 @@ status_t dss_get_vg_non_entry_info(
     LOG_DEBUG_INF("Begin to load vg ctrl when get non entry info, is_lock is %d.", is_lock);
     if (is_lock) {
         if (dss_lock_vg_storage_r(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
-          LOG_DEBUG_ERR("Failed to lock vg:%s.", vg_item->entry_path);
-           return CM_ERROR;
+            LOG_DEBUG_ERR("Failed to lock vg:%s.", vg_item->entry_path);
+            return CM_ERROR;
         }
     }
 
@@ -184,7 +184,7 @@ status_t dss_get_vg_non_entry_info(
             if (status != CM_SUCCESS) {
                 LOG_DEBUG_ERR("Failed to check recover redo log.");
             }
-        }        
+        }
     } while (CM_FALSE);
 
     if (is_lock) {

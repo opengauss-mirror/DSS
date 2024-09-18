@@ -213,7 +213,7 @@ status_t dss_format_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, 
         dss_format_fs_aux_inner(dss_ctrl, block, i, auid);
 
         ga_obj_id.obj_id = obj_id;
-        status = dss_register_buffer_cache(vg_item, block->head.common.id, ga_obj_id,
+        status = dss_register_buffer_cache(session, vg_item, block->head.common.id, ga_obj_id,
             (dss_block_ctrl_t *)((char *)block + DSS_FS_AUX_SIZE), DSS_BLOCK_TYPE_FS_AUX);
         if (status != CM_SUCCESS) {
             LOG_RUN_ERR("[FS AUX]Failed to register fs aux, id:%s, obj id:%u.",
@@ -566,13 +566,13 @@ status_t dss_updt_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, gf
     dss_fs_block_t *entry_block = NULL;
     status_t status = dss_get_entry_block_with_cache(session, vg_item, node, &entry_block);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[FS AUX]Failed to find entry block:%s.", dss_display_metaid(node->entry)));
-    bool32 result  = (bool32)(entry_block != NULL);
+    bool32 result = (bool32)(entry_block != NULL);
     DSS_RETURN_IF_FALSE2(
         result, LOG_RUN_ERR("[FS AUX]Failed to find entry block:%s.", dss_display_metaid(node->entry)));
 
     int64 cur_size = 0;
-    int64 left_size = size; 
-    int64 top_size = (node->size > (offset + size)) ? (offset + size) : node->size;   
+    int64 left_size = size;
+    int64 top_size = (node->size > (offset + size)) ? (offset + size) : node->size;
     do {
         int64 align_size = (int64)CM_CALC_ALIGN((uint64)(offset + 1), au_size);
         if (offset + left_size > align_size) {
@@ -997,7 +997,7 @@ status_t dss_get_fs_aux_with_cache(dss_session_t *session, dss_vg_info_item_t *v
 }
 
 // for redo
-status_t rp_redo_format_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_format_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1010,7 +1010,7 @@ status_t rp_redo_format_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *en
         DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[REDO][FS AUX]Failed to refresh vg core:%s.", vg_item->vg_name));
         dss_fs_aux_root_t *block_root = DSS_GET_FS_AUX_ROOT(vg_item->dss_ctrl);
         block_root->free = data->old_free_list;
-        status = dss_format_fs_aux(NULL, vg_item, data->auid);
+        status = dss_format_fs_aux(session, vg_item, data->auid);
         DSS_RETURN_IFERR2(status,
             LOG_RUN_ERR("[REDO][FS AUX]Fail to format file space aux node, auid:%s.", dss_display_metaid(data->auid)));
     }
@@ -1019,7 +1019,7 @@ status_t rp_redo_format_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *en
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[REDO][FS AUX]Fail to write ctrl to disk, vg:%s.", vg_item->vg_name));
     dss_block_id_t first = data->auid;
     ga_obj_id_t obj_id;
-    status = dss_find_block_objid_in_shm(vg_item, first, DSS_BLOCK_TYPE_FS_AUX, &obj_id);
+    status = dss_find_block_objid_in_shm(session, vg_item, first, DSS_BLOCK_TYPE_FS_AUX, &obj_id);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[REDO][FS AUX]Fail to find block:%s.", dss_display_metaid(first)));
 
     status = dss_update_au_disk(vg_item, data->auid, GA_FS_AUX_POOL, obj_id.obj_id, data->count, DSS_FS_AUX_SIZE);
@@ -1029,7 +1029,7 @@ status_t rp_redo_format_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *en
     return CM_SUCCESS;
 }
 
-status_t rb_redo_format_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_format_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1040,9 +1040,9 @@ status_t rb_redo_format_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *en
 
     dss_block_id_t first = data->auid;
     ga_obj_id_t obj_id;
-    status = dss_find_block_objid_in_shm(vg_item, first, DSS_BLOCK_TYPE_FS_AUX, &obj_id);
+    status = dss_find_block_objid_in_shm(session, vg_item, first, DSS_BLOCK_TYPE_FS_AUX, &obj_id);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[REDO][FS AUX]Failed to find block:%s.", dss_display_metaid(first)));
-    rb_redo_clean_resource(vg_item, data->auid, GA_FS_AUX_POOL, obj_id.obj_id, data->count);
+    rb_redo_clean_resource(session, vg_item, data->auid, GA_FS_AUX_POOL, obj_id.obj_id, data->count);
     status = dss_load_vg_ctrl_part(
         vg_item, (int64)DSS_CTRL_CORE_OFFSET, vg_item->dss_ctrl->core_data, DSS_DISK_UNIT_SIZE, &remote);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[REDO][FS AUX]Failed to load vg:%s.", vg_item->vg_name));
@@ -1050,7 +1050,7 @@ status_t rb_redo_format_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *en
 }
 
 static status_t rp_updt_fs_aux_root_base(
-    dss_vg_info_item_t *vg_item, dss_fs_aux_root_t *root_expect, bool32 check_version)
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_fs_aux_root_t *root_expect, bool32 check_version)
 {
     status_t status;
     dss_fs_aux_root_t *root = DSS_GET_FS_AUX_ROOT(vg_item->dss_ctrl);
@@ -1076,7 +1076,7 @@ status_t rb_reload_fs_aux_root(dss_vg_info_item_t *vg_item)
     return CM_SUCCESS;
 }
 
-status_t rp_redo_alloc_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_alloc_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1090,12 +1090,12 @@ status_t rp_redo_alloc_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
         check_version = CM_TRUE;
     }
 
-    status = rp_updt_fs_aux_root_base(vg_item, &data->root, check_version);
+    status = rp_updt_fs_aux_root_base(session, vg_item, &data->root, check_version);
     DSS_RETURN_IFERR2(
         status, LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux root, fs aux fs aux id:%s.", dss_display_metaid(data->id)));
 
     fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
-        NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, check_version, NULL, CM_FALSE);
+        session, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, check_version, NULL, CM_FALSE);
     bool32 result = (bool32)(fs_aux != NULL);
     DSS_RETURN_IF_FALSE2(
         result, LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));
@@ -1112,7 +1112,7 @@ status_t rp_redo_alloc_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
     return CM_SUCCESS;
 }
 
-status_t rb_redo_alloc_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_alloc_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1124,11 +1124,11 @@ status_t rb_redo_alloc_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
     // reload the fs_aux
     ga_obj_id_t obj_id;
     dss_fs_aux_t *fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
-        NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, CM_TRUE, &obj_id, CM_FALSE);
+        session, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, CM_TRUE, &obj_id, CM_FALSE);
     CM_ASSERT(fs_aux != NULL);
 
     // release the mem
-    dss_unregister_buffer_cache(vg_item, fs_aux->head.common.id);
+    dss_unregister_buffer_cache(session, vg_item, fs_aux->head.common.id);
     ga_free_object(obj_id.pool_id, obj_id.obj_id);
 
     // reload the root
@@ -1139,7 +1139,7 @@ status_t rb_redo_alloc_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *ent
     return CM_SUCCESS;
 }
 
-status_t rp_redo_free_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_free_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1155,14 +1155,14 @@ status_t rp_redo_free_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
     }
 
     // replay the root
-    status = rp_updt_fs_aux_root_base(vg_item, &data->root, check_version);
+    status = rp_updt_fs_aux_root_base(session, vg_item, &data->root, check_version);
     DSS_RETURN_IFERR2(
         status, LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux root, fs aux fs aux id:%s.", dss_display_metaid(data->id)));
 
     // free the fs aux fs_aux
     ga_obj_id_t obj_id;
     fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
-        NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, check_version, &obj_id, CM_FALSE);
+        session, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, check_version, &obj_id, CM_FALSE);
     bool32 result = (bool32)(fs_aux != NULL);
     DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid fs_aux"));
 
@@ -1178,7 +1178,7 @@ status_t rp_redo_free_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
         LOG_RUN_ERR("[REDO][FS AUX]Failed to update fs aux bitmap fs_aux:%s to disk.", dss_display_metaid(data->id)));
 
     // release the mem
-    dss_unregister_buffer_cache(vg_item, fs_aux->head.common.id);
+    dss_unregister_buffer_cache(session, vg_item, fs_aux->head.common.id);
     ga_free_object(obj_id.pool_id, obj_id.obj_id);
 
     LOG_DEBUG_INF("[REDO][FS AUX]Succeed to replay free fs aux fs_aux:%s, vg name:%s.", dss_display_metaid(data->id),
@@ -1187,7 +1187,7 @@ status_t rp_redo_free_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
     return CM_SUCCESS;
 }
 
-status_t rb_redo_free_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_free_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1195,8 +1195,8 @@ status_t rb_redo_free_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
     dss_redo_free_fs_aux_t *data = (dss_redo_free_fs_aux_t *)entry->data;
 
     // recover the fs aux
-    dss_fs_aux_t *fs_aux =
-        (dss_fs_aux_t *)dss_find_block_in_shm(NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, CM_TRUE, NULL, CM_FALSE);
+    dss_fs_aux_t *fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
+        session, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, CM_TRUE, NULL, CM_FALSE);
     bool32 result = (bool32)(fs_aux != NULL);
     DSS_RETURN_IF_FALSE2(
         result, LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));
@@ -1209,7 +1209,7 @@ status_t rb_redo_free_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
     return CM_SUCCESS;
 }
 
-status_t rp_redo_init_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_init_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
@@ -1222,7 +1222,7 @@ status_t rp_redo_init_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
 
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
         fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
-            NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, CM_TRUE, NULL, CM_FALSE);
+            session, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, CM_TRUE, NULL, CM_FALSE);
         result = (bool32)(fs_aux != NULL);
         DSS_RETURN_IF_FALSE2(
             result, LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));
@@ -1231,7 +1231,7 @@ status_t rp_redo_init_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
         fs_aux->head.ftid = data->ftid;
     } else {
         fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
-            NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, CM_FALSE, NULL, CM_FALSE);
+            session, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, CM_FALSE, NULL, CM_FALSE);
         result = (bool32)(fs_aux != NULL);
         DSS_RETURN_IF_FALSE2(
             result, LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));
@@ -1245,15 +1245,15 @@ status_t rp_redo_init_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entr
     return CM_SUCCESS;
 }
 
-status_t rb_redo_init_fs_aux(dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_init_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
 
     dss_redo_init_fs_aux_t *data = (dss_redo_init_fs_aux_t *)entry->data;
 
-    dss_fs_aux_t *fs_aux =
-        (dss_fs_aux_t *)dss_find_block_in_shm(NULL, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, CM_TRUE, NULL, CM_FALSE);
+    dss_fs_aux_t *fs_aux = (dss_fs_aux_t *)dss_find_block_in_shm(
+        session, vg_item, data->id, DSS_BLOCK_TYPE_FS_AUX, CM_TRUE, NULL, CM_FALSE);
     bool32 result = (bool32)(fs_aux != NULL);
     DSS_RETURN_IF_FALSE2(
         result, LOG_RUN_ERR("[REDO][FS AUX]Failed to fs aux fs aux id:%s.", dss_display_metaid(data->id)));

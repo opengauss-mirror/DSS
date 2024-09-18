@@ -32,6 +32,43 @@
 extern "C" {
 #endif
 
+void dss_enter_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item)
+{
+    dss_lock_shm_meta_x(session, vg_item->vg_latch);
+}
+
+bool32 dss_enter_shm_time_x(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks)
+{
+    if (!dss_lock_shm_meta_timed_x(session, vg_item->vg_latch, DSS_LOCK_SHM_META_TIMEOUT)) {
+        return CM_FALSE;
+    }
+    return CM_TRUE;
+}
+
+void dss_enter_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item, bool32 is_force, int32 timeout)
+{
+    CM_ASSERT(session != NULL);
+    if (dss_is_server()) {
+        (void)dss_lock_shm_meta_s_without_stack(session, vg_item->vg_latch, is_force, timeout);
+        return;
+    }
+
+    dss_latch_offset_t latch_offset;
+    latch_offset.type = DSS_LATCH_OFFSET_SHMOFFSET;
+    latch_offset.offset.shm_offset = dss_get_vg_latch_shm_offset(vg_item);
+    (void)dss_lock_shm_meta_s_with_stack(session, &latch_offset, vg_item->vg_latch, timeout);
+}
+
+void dss_leave_shm(dss_session_t *session, dss_vg_info_item_t *vg_item)
+{
+    CM_ASSERT(session != NULL);
+    if (dss_is_server()) {
+        dss_unlock_shm_meta_without_stack(session, vg_item->vg_latch);
+    } else {
+        (void)dss_unlock_shm_meta_s_with_stack(session, vg_item->vg_latch, CM_FALSE);
+    }
+}
+
 #define DSS_BUFFER_CACHE_HASH(block_id) cm_hash_int64((int64)DSS_BLOCK_ID_IGNORE_UNINITED((block_id)))
 
 bool32 dss_buffer_cache_key_compare(void *key, void *key2)
@@ -75,7 +112,7 @@ dss_block_ctrl_t *dss_buffer_cache_get_block_ctrl(uint32_t block_type, char *add
 }
 
 static void dss_register_buffer_cache_inner(
-    shm_hashmap_bucket_t *bucket, ga_obj_id_t obj_id, dss_block_ctrl_t *block_ctrl, uint32 hash)
+    dss_session_t *session, shm_hashmap_bucket_t *bucket, ga_obj_id_t obj_id, dss_block_ctrl_t *block_ctrl, uint32 hash)
 {
     CM_ASSERT(bucket != NULL);
     CM_ASSERT(block_ctrl != NULL);
@@ -93,8 +130,8 @@ static void dss_register_buffer_cache_inner(
     SHM_HASH_BUCKET_INSERT(bucket, *(sh_mem_p *)&obj_id, block_ctrl, first_block_ctrl);
 }
 
-status_t dss_register_buffer_cache(dss_vg_info_item_t *vg_item, const dss_block_id_t block_id, ga_obj_id_t obj_id,
-    dss_block_ctrl_t *block_ctrl, dss_block_type_t type)
+status_t dss_register_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, const dss_block_id_t block_id,
+    ga_obj_id_t obj_id, dss_block_ctrl_t *block_ctrl, dss_block_type_t type)
 {
     uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
     shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(vg_item->buffer_cache->buckets);
@@ -105,18 +142,18 @@ status_t dss_register_buffer_cache(dss_vg_info_item_t *vg_item, const dss_block_
             (uint64)block_id.au, block_id.block, block_id.item);
         return CM_ERROR;
     }
-    dss_lock_shm_meta_bucket_x(&bucket->enque_lock);
+    dss_lock_shm_meta_bucket_x(session, &bucket->enque_lock);
     DSS_LOG_DEBUG_OP("Register block id, v:%u,au:%llu,block:%u,item:%u.", block_id.volume, (uint64)block_id.au,
         block_id.block, block_id.item);
     cm_latch_init(&block_ctrl->latch);
     block_ctrl->type = type;
     block_ctrl->block_id = block_id;
-    dss_register_buffer_cache_inner(bucket, obj_id, block_ctrl, hash);
-    dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+    dss_register_buffer_cache_inner(session, bucket, obj_id, block_ctrl, hash);
+    dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
     return CM_SUCCESS;
 }
 
-void dss_unregister_buffer_cache(dss_vg_info_item_t *vg_item, dss_block_id_t block_id)
+void dss_unregister_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id)
 {
     char *addr = NULL;
     dss_block_ctrl_t *block_ctrl = NULL;
@@ -127,7 +164,7 @@ void dss_unregister_buffer_cache(dss_vg_info_item_t *vg_item, dss_block_id_t blo
     uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
     shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(vg_item->buffer_cache->buckets);
     shm_hashmap_bucket_t *bucket = &buckets[hash % vg_item->buffer_cache->num];
-    dss_lock_shm_meta_bucket_x(&bucket->enque_lock);
+    dss_lock_shm_meta_bucket_x(session, &bucket->enque_lock);
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     while (has_next) {
@@ -150,13 +187,13 @@ void dss_unregister_buffer_cache(dss_vg_info_item_t *vg_item, dss_block_id_t blo
                 next_block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
             }
             SHM_HASH_BUCKET_REMOVE(bucket, *(sh_mem_p *)&next_id, block_ctrl, prev_block_ctrl, next_block_ctrl);
-            dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+            dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
             return;
         }
         has_next = block_ctrl->has_next;
         next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
     }
-    dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+    dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
     LOG_DEBUG_ERR("Key to remove not found");
 }
 
@@ -233,8 +270,8 @@ status_t dss_check_block_version(dss_vg_info_item_t *vg_item, dss_block_id_t blo
     return CM_SUCCESS;
 }
 
-static status_t dss_load_buffer_cache(
-    dss_vg_info_item_t *vg_item, auid_t block_id, dss_block_type_t type, char **block_addr, ga_obj_id_t *out_obj_id)
+static status_t dss_load_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_t block_id,
+    dss_block_type_t type, char **block_addr, ga_obj_id_t *out_obj_id)
 {
     char *addr = NULL;
     dss_block_ctrl_t *block_ctrl = NULL;
@@ -244,7 +281,7 @@ static status_t dss_load_buffer_cache(
     shm_hashmap_t *map = vg_item->buffer_cache;
     shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
     shm_hashmap_bucket_t *bucket = &buckets[hash % map->num];
-    dss_lock_shm_meta_bucket_x(&bucket->enque_lock);
+    dss_lock_shm_meta_bucket_x(session, &bucket->enque_lock);
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     while (has_next) {
@@ -254,7 +291,7 @@ static status_t dss_load_buffer_cache(
         block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
         block_id_tmp = ((dss_common_block_t *)addr)->id;
         if ((block_ctrl->hash == hash) && (dss_buffer_cache_key_compare(&block_id_tmp, &block_id) == CM_TRUE)) {
-            dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+            dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
             status_t status = dss_check_block_version(vg_item, block_id, type, addr, NULL, CM_FALSE);
             if (status != CM_SUCCESS) {
                 return status;
@@ -275,14 +312,14 @@ static status_t dss_load_buffer_cache(
     int64_t offset = dss_get_block_offset(vg_item, (uint64)size, block_id.block, block_id.au);
     uint32 obj_id = ga_alloc_object(pool_id, CM_INVALID_ID32);
     if (obj_id == CM_INVALID_ID32) {
-        dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+        dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
         return CM_ERROR;
     }
     addr = ga_object_addr(pool_id, obj_id);
 
     status_t status = dss_get_block_from_disk(vg_item, block_id, addr, offset, (int32)size, CM_TRUE);
     if (status != CM_SUCCESS) {
-        dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+        dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
         ga_free_object(pool_id, obj_id);
         LOG_DEBUG_ERR("Failed to get block from disk, v:%u,au:%llu,block:%u,item:%u,type:%d.", block_id.volume,
             (uint64)block_id.au, block_id.block, block_id.item, type);
@@ -294,7 +331,7 @@ static status_t dss_load_buffer_cache(
     block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
     errno_t errcode = memset_s(block_ctrl, sizeof(dss_block_ctrl_t), 0, sizeof(dss_block_ctrl_t));
     if (errcode != EOK) {
-        dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+        dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
         ga_free_object(pool_id, obj_id);
         LOG_DEBUG_ERR("Failed to memset block ctrl, v:%u,au:%llu,block:%u,item:%u,type:%d.", block_id.volume,
             (uint64)block_id.au, block_id.block, block_id.item, type);
@@ -307,8 +344,8 @@ static status_t dss_load_buffer_cache(
     ga_obj_id_t ga_obj_id;
     ga_obj_id.pool_id = pool_id;
     ga_obj_id.obj_id = obj_id;
-    dss_register_buffer_cache_inner(bucket, ga_obj_id, block_ctrl, hash);
-    dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+    dss_register_buffer_cache_inner(session, bucket, ga_obj_id, block_ctrl, hash);
+    dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
     if (out_obj_id) {
         *out_obj_id = ga_obj_id;
     }
@@ -437,20 +474,20 @@ static void *dss_find_block_in_bucket_ex(dss_session_t *session, dss_vg_info_ite
     return NULL;
 }
 
-status_t dss_find_block_objid_in_shm(
-    dss_vg_info_item_t *vg_item, dss_block_id_t block_id, dss_block_type_t type, ga_obj_id_t *objid)
+status_t dss_find_block_objid_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
+    dss_block_type_t type, ga_obj_id_t *objid)
 {
     char *addr = NULL;
     uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
-    addr = dss_find_block_in_bucket(NULL, vg_item, hash, (uint64 *)&block_id, CM_FALSE, objid);
+    addr = dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, objid);
     if (addr != NULL) {
         return CM_SUCCESS;
     }
     return CM_ERROR;
 }
 
-static status_t dss_add_buffer_cache_inner(
-    shm_hashmap_bucket_t *bucket, auid_t add_block_id, dss_block_type_t type, char *refresh_buf, char **shm_buf)
+static status_t dss_add_buffer_cache_inner(dss_session_t *session, shm_hashmap_bucket_t *bucket, auid_t add_block_id,
+    dss_block_type_t type, char *refresh_buf, char **shm_buf)
 {
     ga_pool_id_e pool_id = dss_buffer_cache_get_pool_id(type);
     uint32 size = dss_buffer_cache_get_block_size(type);
@@ -493,7 +530,7 @@ static status_t dss_add_buffer_cache_inner(
     ga_obj_id_t ga_obj_id;
     ga_obj_id.pool_id = pool_id;
     ga_obj_id.obj_id = obj_id;
-    dss_register_buffer_cache_inner(bucket, ga_obj_id, block_ctrl, hash);
+    dss_register_buffer_cache_inner(session, bucket, ga_obj_id, block_ctrl, hash);
 
     DSS_LOG_DEBUG_OP("Succeed to load meta block, v:%u,au:%llu,block:%u,item:%u,type:%d.", add_block_id.volume,
         (uint64)add_block_id.au, add_block_id.block, add_block_id.item, type);
@@ -501,8 +538,8 @@ static status_t dss_add_buffer_cache_inner(
     return CM_SUCCESS;
 }
 
-static status_t dss_add_buffer_cache(
-    dss_vg_info_item_t *vg_item, auid_t add_block_id, dss_block_type_t type, char *refresh_buf, char **shm_buf)
+static status_t dss_add_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_t add_block_id,
+    dss_block_type_t type, char *refresh_buf, char **shm_buf)
 {
     char *addr = NULL;
     dss_block_ctrl_t *block_ctrl = NULL;
@@ -512,13 +549,13 @@ static status_t dss_add_buffer_cache(
     shm_hashmap_t *map = vg_item->buffer_cache;
     shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
     shm_hashmap_bucket_t *bucket = &buckets[hash % map->num];
-    dss_lock_shm_meta_bucket_x(&bucket->enque_lock);
+    dss_lock_shm_meta_bucket_x(session, &bucket->enque_lock);
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     while (has_next) {
         addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
         if (addr == NULL) {
-            dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+            dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
             DSS_THROW_ERROR(ERR_DSS_GA_GET_ADDR, next_id.pool_id, next_id.obj_id);
             return CM_ERROR;
         }
@@ -527,7 +564,7 @@ static status_t dss_add_buffer_cache(
         block_id_tmp = ((dss_common_block_t *)addr)->id;
         block_ctrl->type = type;
         if ((block_ctrl->hash == hash) && (dss_buffer_cache_key_compare(&block_id_tmp, &add_block_id) == CM_TRUE)) {
-            dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+            dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
             if (((dss_common_block_t *)addr)->type != type) {
                 DSS_THROW_ERROR(ERR_DSS_INVALID_BLOCK_TYPE, type, ((dss_common_block_t *)addr)->type);
                 return ERR_DSS_INVALID_BLOCK_TYPE;
@@ -543,8 +580,8 @@ static status_t dss_add_buffer_cache(
         has_next = block_ctrl->has_next;
         next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
     }
-    status_t ret = dss_add_buffer_cache_inner(bucket, add_block_id, type, refresh_buf, shm_buf);
-    dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+    status_t ret = dss_add_buffer_cache_inner(session, bucket, add_block_id, type, refresh_buf, shm_buf);
+    dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
     return ret;
 }
 
@@ -567,7 +604,7 @@ status_t dss_refresh_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg
         *shm_buf = addr;
         return CM_SUCCESS;
     }
-    return dss_add_buffer_cache(vg_item, block_id, type, buf, shm_buf);
+    return dss_add_buffer_cache(session, vg_item, block_id, type, buf, shm_buf);
 }
 
 char *dss_find_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
@@ -593,7 +630,7 @@ char *dss_find_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item,
         return addr;
     }
 
-    status = dss_load_buffer_cache(vg_item, block_id, type, &addr, out_obj_id);
+    status = dss_load_buffer_cache(session, vg_item, block_id, type, &addr, out_obj_id);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load meta block, block_id: %s.", dss_display_metaid(block_id));
         return NULL;
@@ -601,25 +638,25 @@ char *dss_find_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item,
     return addr;
 }
 
-char *dss_find_block_from_disk_and_refresh_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
-    dss_block_type_t type, ga_obj_id_t *out_obj_id)
+char *dss_find_block_from_disk_and_refresh_shm(dss_session_t *session, dss_vg_info_item_t *vg_item,
+    dss_block_id_t block_id, dss_block_type_t type, ga_obj_id_t *out_obj_id)
 {
     status_t status;
     char *addr = NULL;
     uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
     addr = dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
     if (addr != NULL) {
-            status = dss_check_block_version(vg_item, block_id, type, addr, NULL, CM_TRUE);
-            if (status != CM_SUCCESS) {
-                return NULL;
-            }
+        status = dss_check_block_version(vg_item, block_id, type, addr, NULL, CM_TRUE);
+        if (status != CM_SUCCESS) {
+            return NULL;
+        }
         return addr;
     }
 
     if (!dss_is_server()) {
         return NULL;
     }
-    if (dss_load_buffer_cache(vg_item, block_id, type, &addr, out_obj_id) != CM_SUCCESS) {
+    if (dss_load_buffer_cache(session, vg_item, block_id, type, &addr, out_obj_id) != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load meta block, block_id: %s.", dss_display_metaid(block_id));
         return NULL;
     }
@@ -641,8 +678,8 @@ char *dss_find_block_in_shm_no_refresh_ex(
     return dss_find_block_in_bucket_ex(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
 }
 
-static status_t dss_refresh_buffer_cache_inner(
-    dss_vg_info_item_t *vg_item, shm_hashmap_bucket_t *bucket, ga_queue_t *obj_que, ga_pool_id_e *obj_pool_id)
+static status_t dss_refresh_buffer_cache_inner(dss_session_t *session, dss_vg_info_item_t *vg_item,
+    shm_hashmap_bucket_t *bucket, ga_queue_t *obj_que, ga_pool_id_e *obj_pool_id)
 {
     bool32 has_next = CM_FALSE;
     ga_obj_id_t next_id = {0};
@@ -656,7 +693,7 @@ static status_t dss_refresh_buffer_cache_inner(
     dss_block_ctrl_t *block_ctrl_curr = NULL;
     bool32 need_remove = CM_FALSE;
 
-    status_t status = dss_lock_shm_meta_bucket_s(NULL, vg_item->id, &bucket->enque_lock);
+    status_t status = dss_lock_shm_meta_bucket_s(session, vg_item->id, &bucket->enque_lock);
     if (status != CM_SUCCESS) {
         return status;
     }
@@ -675,7 +712,7 @@ static status_t dss_refresh_buffer_cache_inner(
             status =
                 dss_check_block_version(vg_item, ((dss_common_block_t *)addr)->id, block->type, addr, NULL, CM_FALSE);
             if (status != CM_SUCCESS) {
-                dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+                dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
                 return status;
             }
 
@@ -710,12 +747,12 @@ static status_t dss_refresh_buffer_cache_inner(
             SHM_HASH_BUCKET_REMOVE(bucket, *(sh_mem_p *)&id_curr, block_ctrl_curr, block_ctrl_prev, block_ctrl);
         }
     }
-    dss_unlock_shm_meta_bucket(NULL, &bucket->enque_lock);
+    dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
 
     return CM_SUCCESS;
 }
 
-status_t dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *map)
+status_t dss_refresh_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, shm_hashmap_t *map)
 {
     shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
     shm_hashmap_bucket_t *bucket = NULL;
@@ -725,7 +762,7 @@ status_t dss_refresh_buffer_cache(dss_vg_info_item_t *vg_item, shm_hashmap_t *ma
 
     for (uint32_t i = 0; i < map->num; i++) {
         bucket = &buckets[i];
-        status_t status = dss_refresh_buffer_cache_inner(vg_item, bucket, obj_que, obj_pool_id);
+        status_t status = dss_refresh_buffer_cache_inner(session, vg_item, bucket, obj_que, obj_pool_id);
         if (status != CM_SUCCESS) {
             return status;
         }
