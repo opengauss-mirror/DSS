@@ -522,7 +522,9 @@ char *ga_object_addr(ga_pool_id_e pool_id, uint32 object_id)
         offset = CM_ALIGN_512((ga_offset_t)pool->def.object_count * (ga_offset_t)sizeof(ga_object_map_t));
         offset += (ga_offset_t)(object_id % pool->def.object_count) * (ga_offset_t)pool->def.object_size;
         ex_pool_id = object_id / pool->def.object_count - 1;
-
+        if (ex_pool_id >= pool->ctrl->ex_count) {
+            return NULL;
+        }
         if (pool->ex_pool_addr[ex_pool_id] == NULL) {
             cm_spin_lock(&g_ga_attach_mutex, NULL);
             if (pool->ex_pool_addr[ex_pool_id] == NULL) {
