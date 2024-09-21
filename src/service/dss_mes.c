@@ -542,7 +542,7 @@ static void dss_process_message(uint32 work_idx, ruid_type ruid, mes_msg_t *msg)
         (uint32)(dss_head->src_inst), (uint32)(dss_head->dst_inst));
 
     dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
-    dss_session_t *session = &session_ctrl->sessions[work_idx];
+    dss_session_t *session = session_ctrl->sessions[work_idx];
     status_t ret;
     if (dss_head->size < DSS_MES_MSG_HEAD_SIZE) {
         LOG_DEBUG_ERR("Invalid message size");
@@ -724,11 +724,11 @@ static status_t dss_create_mes_session(void)
             LOG_RUN_ERR("dss_create_mes_session failed, mes must occupy first %u sessions.", mes_sess_cnt),
             cm_spin_unlock(&session_ctrl->lock));
     }
-
     for (uint32 i = 0; i < mes_sess_cnt; i++) {
-        session_ctrl->sessions[i].is_direct = CM_TRUE;
-        session_ctrl->sessions[i].is_closed = CM_FALSE;
-        session_ctrl->sessions[i].is_used = CM_FALSE;
+        dss_session_t *session = session_ctrl->sessions[i];
+        session->is_direct = CM_TRUE;
+        session->is_closed = CM_FALSE;
+        session->is_used = CM_FALSE;
     }
     session_ctrl->used_count = mes_sess_cnt;
     cm_spin_unlock(&session_ctrl->lock);

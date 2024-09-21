@@ -61,7 +61,6 @@ vglock_fp_t g_fp_list[DSS_MAX_OPEN_VG];
 #endif
 
 dss_vg_info_t *g_vgs_info = NULL;
-dss_share_vg_info_t *g_dss_share_vg_info = NULL;
 
 bool32 g_is_dss_server = DSS_FALSE;
 static dss_rdwr_type_e g_is_dss_readwrite = DSS_STATUS_NORMAL;
@@ -399,10 +398,10 @@ status_t dss_load_vg_info_and_recover(bool8 need_recovery)
     return CM_SUCCESS;
 }
 
-static void dss_free_shm_hashmap_memory(dss_share_vg_info_t *share_vg_info, uint32 num)
+static void dss_free_shm_hashmap_memory(uint32 num)
 {
     for (uint32 i = 0; i <= num; i++) {
-        shm_hashmap_destroy(&share_vg_info->vg[i].buffer_cache, i);
+        shm_hashmap_destroy(g_vgs_info->volume_group[i].buffer_cache, i);
     }
 }
 
@@ -421,19 +420,45 @@ status_t dss_alloc_vg_item_redo_log_buf(dss_vg_info_item_t *vg_item)
     return CM_SUCCESS;
 }
 
-status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **info)
+static dss_share_vg_item_t *dss_get_vg_item_by_id(bool32 is_server, uint32 id)
+{
+    dss_share_vg_item_t *vg_item = NULL;
+    if (is_server) {
+        uint32 objectid = ga_alloc_object(GA_INSTANCE_POOL, CM_INVALID_ID32);
+        if (objectid == CM_INVALID_ID32) {
+            LOG_RUN_ERR("Failed to alloc vg_item object.");
+            return NULL;
+        }
+        vg_item = (dss_share_vg_item_t *)ga_object_addr(GA_INSTANCE_POOL, objectid);
+        vg_item->objectid = objectid;
+        return vg_item;
+    }
+    for (uint32 i = 0; i < DSS_MAX_VOLUME_GROUP_NUM; i++) {
+        vg_item = (dss_share_vg_item_t *)ga_object_addr(GA_INSTANCE_POOL, i);
+        if (vg_item != NULL && vg_item->id == id && vg_item->objectid == i) {
+            return vg_item;
+        }
+    }
+    return NULL;
+}
+status_t dss_get_vg_info()
 {
     bool32 is_server = dss_is_server();
     dss_config_t *inst_cfg = dss_get_inst_cfg();
-
-    // initialize g_vgs_info
     status_t status = dss_load_vg_conf_info(&g_vgs_info, inst_cfg);
     DSS_RETURN_IF_ERROR(status);
-
     for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
-        g_vgs_info->volume_group[i].buffer_cache = &share_vg_info->vg[i].buffer_cache;
-        g_vgs_info->volume_group[i].dss_ctrl = &share_vg_info->vg[i].dss_ctrl;
-        g_vgs_info->volume_group[i].vg_latch = &share_vg_info->vg[i].vg_latch;
+        dss_share_vg_item_t *vg_item = dss_get_vg_item_by_id(is_server, i);
+        if (vg_item == NULL) {
+            LOG_RUN_ERR("Failed to get vg_item %u from shm!", i);
+            DSS_THROW_ERROR(ERR_DSS_GA_INIT, "failed to get vg_item %u from shm!", i);
+            return CM_ERROR;
+        }
+        g_vgs_info->volume_group[i].objectid = vg_item->objectid;
+        g_vgs_info->volume_group[i].buffer_cache = &vg_item->buffer_cache;
+        g_vgs_info->volume_group[i].dss_ctrl = &vg_item->dss_ctrl;
+        g_vgs_info->volume_group[i].vg_latch = &vg_item->vg_latch;
+        vg_item->id = g_vgs_info->volume_group[i].id;
         if (!is_server) {
             continue;
         }
@@ -444,10 +469,10 @@ status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **inf
 
         g_vgs_info->volume_group[i].stack.size = DSS_MAX_STACK_BUF_SIZE;
         int32 ret =
-            shm_hashmap_init(&share_vg_info->vg[i].buffer_cache, DSS_BLOCK_HASH_SIZE, i, dss_buffer_cache_key_compare);
+            shm_hashmap_init(&vg_item->buffer_cache, i, dss_buffer_cache_key_compare);
         if (ret != CM_SUCCESS) {
             if (i != 0) {
-                dss_free_shm_hashmap_memory(share_vg_info, i - 1);
+                dss_free_shm_hashmap_memory(i - 1);
             }
             DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
             LOG_RUN_ERR("DSS instance failed to initialize buffer cache, %d!", ret);
@@ -459,14 +484,11 @@ status_t dss_get_vg_info(dss_share_vg_info_t *share_vg_info, dss_vg_info_t **inf
         status = dss_alloc_vg_item_redo_log_buf(&g_vgs_info->volume_group[i]);
         if (status != CM_SUCCESS) {
             if (i != 0) {
-                dss_free_shm_hashmap_memory(share_vg_info, i - 1);
+                dss_free_shm_hashmap_memory(i - 1);
             }
             DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
             return CM_ERROR;
         }
-    }
-    if (info) {
-        *info = g_vgs_info;
     }
     LOG_RUN_INF("DSS succeed to init vgs in memory.");
     return status;
@@ -1694,7 +1716,7 @@ status_t dss_refresh_meta_info(dss_session_t *session)
 
 uint64 dss_get_vg_latch_shm_offset(dss_vg_info_item_t *vg_item)
 {
-    cm_shm_key_t key = cm_shm_key_of(SHM_TYPE_FIXED, SHM_ID_APP_GA);
+    cm_shm_key_t key = ga_object_key(GA_INSTANCE_POOL, vg_item->objectid);
     sh_mem_p offset = cm_trans_shm_offset(key, vg_item->vg_latch);
     return offset;
 }

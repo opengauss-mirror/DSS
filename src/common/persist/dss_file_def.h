@@ -26,7 +26,7 @@
 #define __DSS_FILE_DEF_H__
 
 #include "dss_ctrl_def.h"
-
+#include "dss_session.h"
 // gft_node_t flag
 #define DSS_FT_NODE_FLAG_SYSTEM 0x00000001
 #define DSS_FT_NODE_FLAG_DEL 0x00000002
@@ -231,27 +231,35 @@ typedef struct st_dss_file_context {
     dss_file_mode_e mode;
 } dss_file_context_t;
 
+typedef struct st_dss_file_context_group_t {
+    dss_file_context_t *files_group[DSS_MAX_FILE_CONTEXT_GROUP_NUM];
+    uint32_t group_num;
+} dss_file_context_group_t;
+
 typedef struct st_dss_ft_au_list_t {
     void *au_addr[DSS_MAX_FT_AU_NUM];
     uint32_t count;
 } dss_ft_au_list_t;
 
+typedef struct st_dss_file_run_ctx {
+    uint32 max_open_file;
+    uint32 has_opened_files;
+    uint32 file_free_first;  // the first free file context.
+    dss_file_context_group_t files;
+} dss_file_run_ctx_t;
+
 typedef struct st_dss_env {
     latch_t latch;
     bool32 initialized;
     uint32 instance_id;
-    uint32 max_open_file;
-    uint32 has_opened_files;
-    uint32 file_free_first;  // the first free file context.
     latch_t conn_latch;
     uint32 conn_count;
-    dss_file_context_t *files;
-    void *session;
     thread_t thread_heartbeat;
     dss_config_t inst_cfg;
 #ifdef ENABLE_DSSTEST
     pid_t inittor_pid;
 #endif
+    dss_file_run_ctx_t file_run_ctx;
 } dss_env_t;
 
 typedef struct st_dss_dir_t {

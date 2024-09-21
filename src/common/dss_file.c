@@ -4263,7 +4263,7 @@ void dss_clean_all_sessions_latch()
     // check all used && connected session may occopy latch by dead client
     dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
     CM_ASSERT(session_ctrl != NULL);
-    while (sid < session_ctrl->total) {
+    while (sid < session_ctrl->alloc_sessions && sid < session_ctrl->total) {
         session = dss_get_session(sid);
         CM_ASSERT(session != NULL);
         // ready next session
@@ -4284,8 +4284,8 @@ void dss_clean_all_sessions_latch()
         if (cli_pid_alived) {
             continue;
         }
-        LOG_RUN_INF("[CLEAN_LATCH]session id %u, pid %llu, start_time %lld, process name:%s.", session->id, cli_pid,
-            start_time, session->cli_info.process_name);
+        LOG_RUN_INF("[CLEAN_LATCH]session id %u, pid %llu, start_time %lld, process name:%s, objectid %u.", session->id, cli_pid,
+            start_time, session->cli_info.process_name, session->objectid);
         // clean the session lock and latch
         dss_clean_session_latch(session, CM_TRUE);
     }

@@ -29,6 +29,7 @@
 #include "cm_defs.h"
 #include "cm_spinlock.h"
 #include "cm_error.h"
+#include "dss_shm.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,13 +38,14 @@ extern "C" {
 #define GA_NULL (ulong)0
 #define GA_MAX_EXTENDED_POOLS 1024
 #define GA_MAX_8K_EXTENDED_POOLS 16
+#define GA_MAX_SESSION_EXTENDED_POOLS (uint32)(DSS_MAX_SESSIONS / DSS_SESSION_NUM_PER_GROUP)
 
 #define GA_SYS_AREA ((uint32)0x01000000) /* no extended pools */
 #define GA_APP_AREA ((uint32)0x02000000) /* including extended pools */
 
 #define GA_EXT_SHM_POOLID(id) ((id) - (GA_APP_AREA))
 
-#define GA_APP_POOL_COUNT 5
+#define GA_APP_POOL_COUNT 6
 
 #define GA_INSTANCE_POOL_SIZE (uint32)(1048576) /* 1M */
 
@@ -55,6 +57,7 @@ typedef enum tagga_pool_name {
     GA_8K_POOL = (GA_APP_AREA + 2),
     GA_16K_POOL = (GA_APP_AREA + 3),
     GA_FS_AUX_POOL = (GA_APP_AREA + 4),
+    GA_SEGMENT_POOL = (GA_APP_AREA + 5),
 } ga_pool_id_e;
 
 typedef struct tagga_object_map {
@@ -136,7 +139,7 @@ int32 ga_alloc_object_list(ga_pool_id_e pool_id, uint32 count, ga_queue_t *list)
 void ga_free_object(ga_pool_id_e pool_id, uint32 object_id);
 void ga_free_object_list(ga_pool_id_e pool_id, ga_queue_t *list);
 char *ga_object_addr(ga_pool_id_e pool_id, uint32 object_id);
-
+cm_shm_key_t ga_object_key(ga_pool_id_e pool_id, uint32 object_id);
 uint32 ga_next_object(ga_pool_id_e pool_id, uint32 object_id);
 
 #ifdef __cplusplus

@@ -87,11 +87,11 @@ status_t dss_reopen_volume_handle(dss_conn_t *conn, dss_file_context_t *context,
 status_t dss_apply_extending_file(dss_conn_t *conn, int32 handle, int64 size, int64 offset)
 {
     dss_env_t *dss_env = dss_get_env();
-    if (handle >= (int32)dss_env->max_open_file || handle < 0) {
+    dss_file_run_ctx_t *file_run_ctx = &dss_env->file_run_ctx;
+    if (handle >= (int32)file_run_ctx->max_open_file || handle < 0) {
         return CM_ERROR;
     }
-
-    dss_file_context_t *context = &dss_env->files[handle];
+    dss_file_context_t *context = dss_get_file_context_by_handle(file_run_ctx, handle);
     if (context->flag == DSS_FILE_CONTEXT_FLAG_FREE) {
         return CM_ERROR;
     }
@@ -111,11 +111,11 @@ status_t dss_apply_extending_file(dss_conn_t *conn, int32 handle, int64 size, in
 status_t dss_apply_fallocate_file(dss_conn_t *conn, int32 handle, int32 mode, int64 offset, int64 size)
 {
     dss_env_t *dss_env = dss_get_env();
-    if (handle >= (int32)dss_env->max_open_file || handle < 0) {
+    dss_file_run_ctx_t *file_run_ctx = &dss_env->file_run_ctx;
+    if (handle >= (int32)file_run_ctx->max_open_file || handle < 0) {
         return CM_ERROR;
     }
-
-    dss_file_context_t *context = &dss_env->files[handle];
+    dss_file_context_t *context = dss_get_file_context_by_handle(file_run_ctx, handle);
     if (context->flag == DSS_FILE_CONTEXT_FLAG_FREE) {
         return CM_ERROR;
     }
@@ -580,26 +580,29 @@ status_t dss_init_vol_handle_sync(dss_conn_t *conn)
     return CM_SUCCESS;
 }
 
-status_t dss_set_session_id(dss_conn_t *conn, uint32 sid)
+status_t dss_set_session_id(dss_conn_t *conn, uint32 objectid)
 {
-    dss_env_t *dss_env = dss_get_env();
-
-    if (sid >= dss_get_max_total_session_cnt()) {
-        LOG_DEBUG_ERR("sid error");
+    if (objectid >= dss_get_max_total_session_cnt()) {
+        LOG_RUN_ERR(
+            "objectid error, objectid is %u, max session cnt is %u.", objectid, dss_get_max_total_session_cnt());
         return ERR_DSS_SESSION_INVALID_ID;
     }
-    dss_session_t *sessions = (dss_session_t *)(dss_env->session);
-    conn->session = &(sessions[sid]);
+    conn->session = (dss_session_t *)ga_object_addr(GA_SESSION_POOL, objectid);
+    if (conn->session == NULL) {
+        LOG_RUN_ERR("Failed to get session, object id is %u.", objectid);
+        return ERR_DSS_SESSION_INVALID_ID;
+    }
+    LOG_RUN_INF("dss set session id is %u, objectid is %u.", ((dss_session_t *)conn->session)->id, objectid);
     dss_set_thv_run_ctx_item(DSS_THV_RUN_CTX_ITEM_SESSION, conn->session);
     return CM_SUCCESS;
 }
 
-static status_t dss_set_server_info(dss_conn_t *conn, char *home, uint32 sid, uint32 max_open_file)
+static status_t dss_set_server_info(dss_conn_t *conn, char *home, uint32 objectid, uint32 max_open_file)
 {
     status_t status = dss_init(max_open_file, home);
     DSS_RETURN_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client init failed."), dss_disconnect(conn));
 
-    status = dss_set_session_id(conn, sid);
+    status = dss_set_session_id(conn, objectid);
     DSS_RETURN_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client failed to initialize session."),
         dss_disconnect(conn));
     return CM_SUCCESS;
@@ -631,7 +634,7 @@ status_t dss_cli_handshake(dss_conn_t *conn, uint32 max_open_file)
         DSS_THROW_ERROR(ERR_DSS_SERVER_REBOOT);
         return ERR_DSS_SERVER_REBOOT;
     }
-    return dss_set_server_info(conn, output_info.home, output_info.sid, max_open_file);
+    return dss_set_server_info(conn, output_info.home, output_info.objectid, max_open_file);
 }
 
 // NOTE:just for dsscmd because not support many threads in one process.
@@ -937,26 +940,76 @@ status_t dss_init_file_context(
     return CM_SUCCESS;
 }
 
+/*  
+1 after extend success, will generate new linked list
+context[file_run_ctx->files->group_num - 1] [0]->context[file_run_ctx->files->group_num - 1] 
+[1]->...->context[file_run_ctx->files->group_num - 1] [DSS_OPEN_FILES_NUM - 1]
+2 insert new linked list head into the old linked list
+*/
+status_t dss_extend_files_context(dss_file_run_ctx_t *file_run_ctx)
+{
+    if (file_run_ctx->files.group_num == DSS_MAX_FILE_CONTEXT_GROUP_NUM) {
+        DSS_THROW_ERROR(ERR_INVALID_VALUE, "file group num", file_run_ctx->files.group_num);
+        LOG_RUN_ERR("file context group exceeds upper limit %d", DSS_MAX_FILE_CONTEXT_GROUP_NUM);
+        return CM_ERROR;
+    }
+    uint32 context_size = DSS_FILE_CONTEXT_PER_GROUP * (uint32)sizeof(dss_file_context_t);
+    uint32 i = file_run_ctx->files.group_num;
+    file_run_ctx->files.files_group[i] = (dss_file_context_t *)cm_malloc(context_size);
+    if (file_run_ctx->files.files_group[i] == NULL) {
+        DSS_THROW_ERROR(ERR_ALLOC_MEMORY, context_size, "dss extend files context");
+        return CM_ERROR;
+    }
+    errno_t rc = memset_s(file_run_ctx->files.files_group[i], context_size, 0, context_size);
+    if (rc != EOK) {
+        DSS_FREE_POINT(file_run_ctx->files.files_group[i]);
+        CM_THROW_ERROR(ERR_SYSTEM_CALL, rc);
+        return CM_ERROR;
+    }
+    file_run_ctx->files.group_num++;
+    dss_file_context_t *context = NULL;
+    for (uint32 j = 0; j < DSS_FILE_CONTEXT_PER_GROUP; j++) {
+        context = &file_run_ctx->files.files_group[i][j];
+        context->id = i * DSS_FILE_CONTEXT_PER_GROUP + j;
+        if (j == DSS_FILE_CONTEXT_PER_GROUP - 1) {
+            context->next = CM_INVALID_ID32;
+        } else {
+            context->next = context->id + 1;
+        }
+    }
+    file_run_ctx->file_free_first = (&file_run_ctx->files.files_group[file_run_ctx->files.group_num - 1][0])->id;
+    LOG_RUN_INF("Succeed to extend alloc open files, group num is %u, file free first is %u.",
+        file_run_ctx->files.group_num, file_run_ctx->file_free_first);
+    return CM_SUCCESS;
+}
+
 status_t dss_open_file_inner(dss_vg_info_item_t *vg_item, gft_node_t *ft_node, dss_file_mode_e mode, int *handle)
 {
     dss_env_t *dss_env = dss_get_env();
     dss_latch_x(&dss_env->latch);
-    if (dss_env->has_opened_files >= dss_env->max_open_file) {
+    dss_file_run_ctx_t *file_run_ctx = &dss_env->file_run_ctx;
+    if (file_run_ctx->has_opened_files >= file_run_ctx->max_open_file) {
         dss_unlatch(&dss_env->latch);
-        LOG_DEBUG_ERR("The opened files has exceeded the max open file number.%u,%u.", dss_env->has_opened_files,
-            dss_env->max_open_file);
+        LOG_RUN_ERR("The opened files %u has exceeded the max open file number %u.", file_run_ctx->has_opened_files,
+            file_run_ctx->max_open_file);
         return CM_ERROR;
     }
 
-    *handle = (int)dss_env->file_free_first;
-    cm_assert(dss_env->file_free_first != DSS_INVALID_ID32);
-    dss_file_context_t *context = &dss_env->files[*handle];
+    if (file_run_ctx->file_free_first == DSS_INVALID_ID32) {
+        status_t status = dss_extend_files_context(file_run_ctx);
+        if (status != CM_SUCCESS) {
+            dss_unlatch(&dss_env->latch);
+            LOG_RUN_ERR("Failed to extend files context.");
+            return CM_ERROR;
+        }
+    }
+    *handle = (int)file_run_ctx->file_free_first;
+    dss_file_context_t *context = dss_get_file_context_by_handle(file_run_ctx, *handle);
     uint32 next = context->next;
-
     status_t ret = dss_init_file_context(context, ft_node, vg_item, mode);
     DSS_RETURN_IFERR2(ret, dss_unlatch(&dss_env->latch));
-    dss_env->file_free_first = next;
-    dss_env->has_opened_files++;
+    file_run_ctx->file_free_first = next;
+    file_run_ctx->has_opened_files++;
     dss_unlatch(&dss_env->latch);
     return CM_SUCCESS;
 }
@@ -1017,16 +1070,15 @@ status_t dss_latch_context_by_handle(
         LOG_DEBUG_ERR("dss env not initialized.");
         return CM_ERROR;
     }
-
-    if (handle >= (int32)dss_env->max_open_file || handle < 0) {
+    dss_file_run_ctx_t *file_run_ctx = &dss_env->file_run_ctx;
+    if (handle >= (int32)file_run_ctx->max_open_file || handle < 0) {
         DSS_THROW_ERROR(
             ERR_DSS_INVALID_PARAM, "value of handle must be a positive integer and less than max_open_file.");
         LOG_DEBUG_ERR("File handle is invalid:%d.", handle);
         return CM_ERROR;
     }
 
-    dss_file_context_t *file_cxt = &dss_env->files[handle];
-
+    dss_file_context_t *file_cxt = dss_get_file_context_by_handle(file_run_ctx, handle);
     dss_latch(&file_cxt->latch, latch_mode, ((dss_session_t *)conn->session)->id);
     if (file_cxt->flag == DSS_FILE_CONTEXT_FLAG_FREE) {
         dss_unlatch(&file_cxt->latch);
@@ -1072,9 +1124,10 @@ status_t dss_close_file_impl(dss_conn_t *conn, int handle)
     /* release file context to freelist */
     dss_env_t *dss_env = dss_get_env();
     dss_latch_x(&dss_env->latch);
-    context->next = dss_env->file_free_first;
-    dss_env->file_free_first = context->id;
-    dss_env->has_opened_files--;
+    dss_file_run_ctx_t *file_run_ctx = &dss_env->file_run_ctx;
+    context->next = file_run_ctx->file_free_first;
+    file_run_ctx->file_free_first = context->id;
+    file_run_ctx->has_opened_files--;
     dss_unlatch(&dss_env->latch);
     return CM_SUCCESS;
 }
@@ -1838,7 +1891,7 @@ static status_t dss_init_err_proc(
     if (destroy == CM_TRUE) {
         cm_destroy_shm();
     }
-
+    DSS_FREE_POINT(dss_env->file_run_ctx.files.files_group[0]);
     dss_unlatch(&dss_env->latch);
 
     if (errmsg != NULL) {
@@ -1871,40 +1924,23 @@ static status_t dss_init_shm(dss_env_t *dss_env, char *home)
     if (status != CM_SUCCESS) {
         return dss_init_err_proc(dss_env, CM_FALSE, CM_TRUE, "Failed to attach shared area", status);
     }
-
     return CM_SUCCESS;
 }
 
 static status_t dss_init_files(dss_env_t *dss_env, uint32 max_open_files)
 {
-    dss_env->max_open_file = max_open_files;
-    // sizeof(zfs_file_context_t) is 24, and max_open_files is limited.
-    // so context_size will not exceed the max value of uint32
-    uint32 context_size = max_open_files * (uint32)sizeof(dss_file_context_t);
-    if (context_size == 0) {
-        return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "max_open_files error", CM_ERROR);
-    }
-    dss_env->files = (dss_file_context_t *)cm_malloc(context_size);
-    if (dss_env->files == NULL) {
-        return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "alloc memory failed", CM_ERROR);
-    }
-    errno_t rc = memset_s(dss_env->files, context_size, 0, context_size);
+    dss_file_run_ctx_t *file_run_ctx = &dss_env->file_run_ctx;
+    file_run_ctx->max_open_file = max_open_files;
+    errno_t rc = memset_s(&file_run_ctx->files, sizeof(dss_file_context_group_t), 0, sizeof(dss_file_context_group_t));
     if (rc != EOK) {
-        DSS_FREE_POINT(dss_env->files);
         CM_THROW_ERROR(ERR_SYSTEM_CALL, rc);
         return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "memory init failed", CM_ERROR);
     }
-    dss_file_context_t *context = dss_env->files;
-    for (uint32 i = 0; i < dss_env->max_open_file; i++) {
-        context = &dss_env->files[i];
-        if (i == dss_env->max_open_file - 1) {
-            context->next = CM_INVALID_ID32;
-        } else {
-            context->next = i + 1;
-        }
-        context->id = i;
+    status_t status = dss_extend_files_context(file_run_ctx);
+    if (status != CM_SUCCESS) {
+        return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "extend file context failed", status);
     }
-    return CM_SUCCESS;
+    return status;
 }
 
 status_t dss_init(uint32 max_open_files, char *home)
@@ -1938,20 +1974,10 @@ status_t dss_init(uint32 max_open_files, char *home)
         }
 #endif
     }
-
     CM_RETURN_IFERR(dss_init_shm(dss_env, home));
-
-    dss_share_vg_info_t *share_vg_info = (dss_share_vg_info_t *)ga_object_addr(GA_INSTANCE_POOL, 0);
-    if (share_vg_info == NULL) {
-        return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "Failed to attach shared vg info", CM_ERROR);
-    }
-    status_t status = dss_get_vg_info(share_vg_info, NULL);
+    status_t status = dss_get_vg_info();
     if (status != CM_SUCCESS) {
         return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "Failed to get shared vg info", status);
-    }
-    dss_env->session = (dss_session_t *)ga_object_addr(GA_SESSION_POOL, 0);
-    if (dss_env->session == NULL) {
-        return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "Failed to attach shared session info", CM_ERROR);
     }
     CM_RETURN_IFERR(dss_init_files(dss_env, max_open_files));
 
@@ -2001,9 +2027,9 @@ void dss_destroy(void)
     }
 
     cm_close_thread_nowait(&dss_env->thread_heartbeat);
-
-    if (dss_env->files) {
-        DSS_FREE_POINT(dss_env->files);
+    dss_file_run_ctx_t *file_run_ctx = &dss_env->file_run_ctx;
+    for (uint32 i = 0; i < file_run_ctx->files.group_num; i++) {
+        DSS_FREE_POINT(file_run_ctx->files.files_group[i]);
     }
     dss_destroy_vg_info(dss_env);
     dss_env->initialized = 0;
@@ -2075,7 +2101,8 @@ status_t dss_get_fname_impl(int handle, char *fname, int fname_size)
         DSS_THROW_ERROR(ERR_DSS_ENV_NOT_INITIALIZED);
         return CM_ERROR;
     }
-    if (handle < 0 || (uint32)handle >= dss_env->max_open_file) {
+    dss_file_run_ctx_t *file_run_ctx = &dss_env->file_run_ctx;
+    if (handle < 0 || (uint32)handle >= file_run_ctx->max_open_file) {
         DSS_THROW_ERROR(
             ERR_DSS_INVALID_PARAM, "value of handle must be a positive integer and less than max_open_file.");
         return CM_ERROR;
@@ -2084,7 +2111,7 @@ status_t dss_get_fname_impl(int handle, char *fname, int fname_size)
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "value of fname_size is a positive number.");
         return CM_ERROR;
     }
-    dss_file_context_t *context = &dss_env->files[handle];
+    dss_file_context_t *context = dss_get_file_context_by_handle(file_run_ctx, handle);
     DSS_RETURN_IF_NULL(context->node);
     int len = (fname_size > DSS_MAX_NAME_LEN) ? DSS_MAX_NAME_LEN : fname_size;
     errno_t errcode = strcpy_s(fname, (size_t)len, context->node->name);
@@ -2668,7 +2695,7 @@ static status_t dss_decode_handshake(dss_packet_t *ack_pack, void *ack)
     }
     dss_get_server_info_t *output_info = (dss_get_server_info_t *)ack;
     output_info->home = ack_info.str;
-    CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&output_info->sid));
+    CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&output_info->objectid));
     CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&output_info->server_pid));
     return CM_SUCCESS;
 }

@@ -34,7 +34,7 @@ extern "C" {
 #endif
 
 #define DSS_LOCK_SHM_META_TIMEOUT 200
-
+#define DSS_BUFFER_CACHE_HASH(block_id) cm_hash_int64((int64)DSS_BLOCK_ID_IGNORE_UNINITED((block_id)))
 void dss_enter_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item);
 bool32 dss_enter_shm_time_x(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks);
 void dss_enter_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item, bool32 is_force, int32 timeout);
@@ -55,7 +55,7 @@ char *dss_find_block_from_disk_and_refresh_shm(dss_session_t *session, dss_vg_in
     dss_block_id_t block_id, dss_block_type_t type, ga_obj_id_t *out_obj_id);
 char *dss_find_block_in_shm_no_refresh(
     dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id, ga_obj_id_t *out_obj_id);
-// do not care content change, just care aout exist
+// do not care content change, just care about exist
 char *dss_find_block_in_shm_no_refresh_ex(
     dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id, ga_obj_id_t *out_obj_id);
 
@@ -73,6 +73,10 @@ static inline int64 dss_get_block_offset(dss_vg_info_item_t *vg_item, uint64 blo
 
 void dss_init_dss_fs_block_cache_info(dss_fs_block_cache_info_t *fs_block_cache_info);
 void dss_init_vg_cache_node_info(dss_vg_info_item_t *vg_item);
+status_t dss_hashmap_extend_and_redistribute(dss_session_t *session, shm_hash_ctrl_t *hash_ctrl);
+status_t dss_hashmap_extend_and_redistribute_batch(
+    dss_session_t *session, shm_hash_ctrl_t *hash_ctrl, uint32 extend_num);
+void dss_hashmap_dynamic_extend_and_redistribute_per_vg(dss_vg_info_item_t *vg_item, dss_session_t *session);
 
 #ifdef __cplusplus
 }

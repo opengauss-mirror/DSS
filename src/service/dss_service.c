@@ -542,8 +542,10 @@ static status_t dss_process_handshake(dss_session_t *session)
     errcode = memcpy_s(&session->cli_info, sizeof(dss_cli_info), cli_info, sizeof(dss_cli_info));
     cm_spin_unlock(&session->lock);
     securec_check_ret(errcode);
-    LOG_RUN_INF("[DSS_CONNECT]The client has connected, session id:%u, pid:%llu, process name:%s.st_time:%lld",
-        session->id, session->cli_info.cli_pid, session->cli_info.process_name, session->cli_info.start_time);
+    LOG_RUN_INF(
+        "[DSS_CONNECT]The client has connected, session id:%u, pid:%llu, process name:%s.st_time:%lld, objectid:%u",
+        session->id, session->cli_info.cli_pid, session->cli_info.process_name, session->cli_info.start_time,
+        session->objectid);
     char *server_home = dss_get_cfg_dir(ZFS_CFG);
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", server_home));
     LOG_RUN_INF("[DSS_CONNECT]Server home is %s, when get home.", server_home);
@@ -552,7 +554,7 @@ static status_t dss_process_handshake(dss_session_t *session)
     cm_str2text(server_home, &data);
     data.len++;  // for keeping the '\0'
     DSS_RETURN_IF_ERROR(dss_put_text(&session->send_pack, &data));
-    DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, session->id));
+    DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, session->objectid));
     DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, server_pid));
     return CM_SUCCESS;
 }
@@ -772,7 +774,6 @@ static status_t dss_process_get_inst_status(dss_session_t *session)
     DSS_LOG_DEBUG_OP("Server status is %s.", dss_status->instance_status);
     return CM_SUCCESS;
 }
-
 static status_t dss_process_get_time_stat(dss_session_t *session)
 {
     uint64 size = sizeof(dss_stat_item_t) * DSS_EVT_COUNT;
@@ -781,23 +782,24 @@ static status_t dss_process_get_time_stat(dss_session_t *session)
 
     errno_t errcode = memset_s(time_stat, (size_t)size, 0, (size_t)size);
     securec_check_ret(errcode);
-    uint32 max_cfg_sess = g_dss_instance.inst_cfg.params.cfg_session_num;
     dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
+    dss_session_t *tmp_session = NULL;
     cm_spin_lock(&session_ctrl->lock, NULL);
-    for (uint32 i = 0; i < max_cfg_sess; i++) {
-        if (session_ctrl->sessions[i].is_used && !session_ctrl->sessions[i].is_closed) {
+    for (uint32 i = 0; i < session_ctrl->alloc_sessions; i++) {
+        tmp_session = session_ctrl->sessions[i];
+        if (tmp_session->is_used && !tmp_session->is_closed) {
             for (uint32 j = 0; j < DSS_EVT_COUNT; j++) {
-                int64 count = (int64)session_ctrl->sessions[i].dss_session_stat[j].wait_count;
-                int64 total_time = (int64)session_ctrl->sessions[i].dss_session_stat[j].total_wait_time;
-                int64 max_sgl_time = (int64)session_ctrl->sessions[i].dss_session_stat[j].max_single_time;
+                int64 count = (int64)tmp_session->dss_session_stat[j].wait_count;
+                int64 total_time = (int64)tmp_session->dss_session_stat[j].total_wait_time;
+                int64 max_sgl_time = (int64)tmp_session->dss_session_stat[j].max_single_time;
 
                 time_stat[j].wait_count += count;
                 time_stat[j].total_wait_time += total_time;
                 time_stat[j].max_single_time = (atomic_t)MAX((int64)time_stat[j].max_single_time, max_sgl_time);
 
-                (void)cm_atomic_add(&session_ctrl->sessions[i].dss_session_stat[j].wait_count, -count);
-                (void)cm_atomic_add(&session_ctrl->sessions[i].dss_session_stat[j].total_wait_time, -total_time);
-                (void)cm_atomic_cas(&session_ctrl->sessions[i].dss_session_stat[j].max_single_time, max_sgl_time, 0);
+                (void)cm_atomic_add(&tmp_session->dss_session_stat[j].wait_count, -count);
+                (void)cm_atomic_add(&tmp_session->dss_session_stat[j].total_wait_time, -total_time);
+                (void)cm_atomic_cas(&tmp_session->dss_session_stat[j].max_single_time, max_sgl_time, 0);
             }
         }
     }

@@ -186,8 +186,8 @@ static void dss_sig_collect_background_bt(void)
 static void dss_sig_collect_work_session_bt(void)
 {
     dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
-    for (uint32 i = 0; i < session_ctrl->total; i++) {
-        dss_session_t *session = &session_ctrl->sessions[i];
+    for (uint32 i = 0; i < session_ctrl->alloc_sessions; i++) {
+        dss_session_t *session = session_ctrl->sessions[i];
         if (session == NULL || session->is_closed) {
             continue;
         }
@@ -224,9 +224,6 @@ void dss_print_effect_param(void)
 
 void dss_write_block_pool(int32 handle, int64 *length, ga_pool_id_e pool_id)
 {
-    if (pool_id != GA_8K_POOL && pool_id != GA_16K_POOL && pool_id != GA_FS_AUX_POOL) {
-        return;
-    }
     ga_pool_t *pool = &g_app_pools[GA_POOL_IDX((uint32)pool_id)];
     if (pool == NULL) {
         LOG_BLACKBOX_INF("Failed to get ga pool\n.");
@@ -312,7 +309,7 @@ void dss_write_share_vg_info(int32 handle)
 }
 
 // length|
-// vg_num|vg_name|size|buckets|map->num|vg_name|size|buckets|map->num|...|pool_size|pool->addr|pool->ex_pool_addr[0]|...|pool->ex_pool_addr[excount-1]|...
+// vg_num|vg_name|size|dirs|vg_name|size|dirs|...|pool_size|pool->addr|pool->ex_pool_addr[0]|...|pool->ex_pool_addr[excount-1]|...
 void dss_write_hashmap_and_pool_info(int32 handle)
 {
     int64 length = 0;
@@ -328,31 +325,28 @@ void dss_write_hashmap_and_pool_info(int32 handle)
     if (ret != CM_SUCCESS) {
         LOG_BLACKBOX_INF("Failed to write vg num %u\n.", g_vgs_info->group_num);
     }
+    uint64 dir_size = DSS_MAX_SEGMENT_NUM * (uint32)sizeof(uint32_t);
     for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
         dss_vg_info_item_t *vg = &g_vgs_info->volume_group[i];
         ret = dss_write_shm_memory_file_inner(handle, &length, vg->dss_ctrl->vg_info.vg_name, DSS_MAX_NAME_LEN);
         if (ret != CM_SUCCESS) {
             LOG_BLACKBOX_INF("Failed to write vg name %s\n.", vg->dss_ctrl->vg_info.vg_name);
         }
-        shm_hashmap_t *map = vg->buffer_cache;
-        uint64 size = map->num * (uint32)sizeof(shm_hashmap_bucket_t);
-        shm_hashmap_bucket_t *buckets = (shm_hashmap_bucket_t *)OFFSET_TO_ADDR(map->buckets);
-        ret = dss_write_shm_memory_file_inner(handle, &length, &size, sizeof(uint64_t));
+        ret = dss_write_shm_memory_file_inner(handle, &length, vg->buffer_cache, sizeof(shm_hashmap_t));
         if (ret != CM_SUCCESS) {
-            LOG_BLACKBOX_INF("Failed to write bucket size %llu\n.", size);
+            LOG_BLACKBOX_INF("Failed to write vg buffer cache %s\n.", vg->dss_ctrl->vg_info.vg_name);
         }
-        ret = dss_write_shm_memory_file_inner(handle, &length, (char *)buckets, (int32)size);
+        shm_hash_ctrl_t *hash_ctrl = &vg->buffer_cache->hash_ctrl;
+        uint32 *dirs = (uint32 *)OFFSET_TO_ADDR(hash_ctrl->dirs);
+        ret = dss_write_shm_memory_file_inner(handle, &length, (char *)dirs, (int32)dir_size);
         if (ret != CM_SUCCESS) {
-            LOG_BLACKBOX_INF("Failed to write shm hashmap of vg %u\n.", i);
-        }
-        ret = dss_write_shm_memory_file_inner(handle, &length, &map->num, sizeof(uint32_t));
-        if (ret != CM_SUCCESS) {
-            LOG_BLACKBOX_INF("Failed to write map_num %u of vg %u\n.", map->num, i);
+            LOG_BLACKBOX_INF("Failed to write hashmap dir of vg %u\n.", i);
         }
     }
     dss_write_block_pool(handle, &length, GA_8K_POOL);
     dss_write_block_pool(handle, &length, GA_16K_POOL);
     dss_write_block_pool(handle, &length, GA_FS_AUX_POOL);
+    dss_write_block_pool(handle, &length, GA_SEGMENT_POOL);
     dss_update_shm_memory_length(handle, length, begin);
 }
 

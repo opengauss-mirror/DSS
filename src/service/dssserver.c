@@ -134,6 +134,7 @@ static void dss_clean_server()
     CM_FREE_PTR(cm_log_param_instance()->log_compress_buf);
     dss_destory_shm_memory();
     dss_uninit_zero_buf();
+    CM_FREE_PTR(g_dss_session_ctrl.sessions);
 }
 
 static void handle_main_wait(void)
@@ -177,6 +178,15 @@ static status_t dss_delay_clean_background_task(dss_instance_t *inst)
     uint32 delay_clean_idx = dss_get_delay_clean_task_idx();
     status_t status =
         cm_create_thread(dss_delay_clean_proc, 0, &g_dss_instance, &(g_dss_instance.threads[delay_clean_idx]));
+    return status;
+}
+
+static status_t dss_hashmap_dynamic_extend_background_task(dss_instance_t *inst)
+{
+    LOG_RUN_INF("create dss hashmap extend background task.");
+    uint32 hashmap_extend_idx = dss_get_hashmap_dynamic_extend_task_idx();
+    status_t status =
+        cm_create_thread(dss_hashmap_dynamic_extend_and_redistribute_proc, 0, &g_dss_instance, &(g_dss_instance.threads[hashmap_extend_idx]));
     return status;
 }
 
@@ -250,6 +260,11 @@ static status_t dss_init_background_tasks(void)
     status = dss_create_meta_syn_bg_task_set(&g_dss_instance);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Create dss syn meta background task failed.");
+        return status;
+    }
+    status = dss_hashmap_dynamic_extend_background_task(&g_dss_instance);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Create hashmap_extend meta background task failed.");
         return status;
     }
     return CM_SUCCESS;
@@ -357,6 +372,7 @@ int main(int argc, char **argv)
     sigset_t sign_old_mask;
     (void)sigprocmask(0, NULL, &sign_old_mask);
     (void)sigprocmask(SIG_UNBLOCK, &sign_old_mask, NULL);
+    regist_exit_proc(dss_exit_proc);
 #endif
     if (dss_startup(&g_dss_instance, dss_args) != CM_SUCCESS) {
         (void)printf("dss failed to startup.\n");

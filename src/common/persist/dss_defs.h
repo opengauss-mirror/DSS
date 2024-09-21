@@ -141,6 +141,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_MIN_BUFFER_BLOCKS 32
 #define DSS_MIN_SESSIONID 0
 #define DSS_MAX_SESSIONS 16320
+#define DSS_SESSION_NUM_PER_GROUP 128
 #define DSS_MIN_SESSIONID_CFG 16  // allow config min sessionid in dss_inst.ini
 #define DSS_MIN_INST_ID 0
 #define DSS_MAX_INST_ID DSS_MAX_INSTANCES
@@ -178,7 +179,8 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 
 #define DSS_MAX_OPEN_FILES 1000000
 #define DSS_DEFAULT_OPEN_FILES_NUM 10000
-#define DSS_OPEN_FILES_NUM 100
+#define DSS_FILE_CONTEXT_PER_GROUP 1000
+#define DSS_MAX_FILE_CONTEXT_GROUP_NUM 1000
 
 #define DSS_STATIC_ASSERT(condition) ((void)sizeof(char[1 - 2 * (int32)(!(condition))]))
 

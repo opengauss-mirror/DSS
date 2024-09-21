@@ -23,7 +23,6 @@
  */
 
 #include "cm_defs.h"
-#include "dss_shm.h"
 #include "dss_defs.h"
 #include "dss_errno.h"
 #include "dss_ga.h"
@@ -42,6 +41,7 @@ ga_pool_t g_app_pools[GA_APP_POOL_COUNT] = {
     {"meta 8k",      NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                  /* 8k pool */
     {"meta 16k",     NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                 /* 16k pool */
     {"fs aux",     NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                 /* fs aux */
+    {"hash segment",     NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                 /* hash segment */
 };
 
 ga_pool_t g_app_pools_initial[GA_APP_POOL_COUNT] = {
@@ -50,6 +50,7 @@ ga_pool_t g_app_pools_initial[GA_APP_POOL_COUNT] = {
     {"meta 8k",      NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                  /* 8k pool */
     {"meta 16k",     NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                 /* 16k pool */
     {"fs aux",     NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},                 /* fs aux */
+    {"hash segment",  NULL, NULL, NULL, NULL, {NULL}, {0, 0, 0}, 0, 0},              /* hash segment */
 };
 
 void ga_reset_app_pools()
@@ -71,6 +72,8 @@ void ga_set_pool_def(ga_pool_id_e pool_id, const ga_pool_def_t *def)
     pool->def = *def;
     pool->capacity = CM_ALIGN_512((uint32)sizeof(ga_pool_ctrl_t));
     pool->capacity += CM_ALIGN_512(((ulong)def->object_size + (uint32)sizeof(ga_object_map_t)) * def->object_count);
+    LOG_RUN_INF("Succeed to init pool %s, object count is %u, object size is %u, ex_max is %u.", pool->pool_name,
+        pool->def.object_count, pool->def.object_size, pool->def.ex_max);
 }
 
 static inline ga_object_map_t *ga_object_map(ga_pool_t *pool, uint32 object_id)
@@ -331,8 +334,8 @@ static status_t ga_extend_pool(ga_pool_id_e pool_id)
     uint32 pool_shm_id = GA_EXT_SHM_POOLID(pool_id) * GA_MAX_EXTENDED_POOLS + pool->ctrl->ex_count;
 
     if (pool->def.ex_max <= pool->ctrl->ex_count) {
-        DSS_RETURN_IFERR2(
-            CM_ERROR, LOG_RUN_ERR("the extended number of %s pool reach to limitation.", pool->pool_name));
+        DSS_RETURN_IFERR2(CM_ERROR,
+            LOG_RUN_ERR("the extended number of %s pool reach to limitation %u.", pool->pool_name, pool->def.ex_max));
     }
 
     object_cost = pool->def.object_size + (uint32)sizeof(ga_object_map_t);
@@ -541,4 +544,14 @@ char *ga_object_addr(ga_pool_id_e pool_id, uint32 object_id)
 
         return pool->ex_pool_addr[ex_pool_id] + offset;
     }
+}
+
+cm_shm_key_t ga_object_key(ga_pool_id_e pool_id, uint32 object_id)
+{
+    ga_pool_t *pool = ga_get_pool((uint32)pool_id);
+    if (object_id < pool->def.object_count) {
+        return cm_shm_key_of(SHM_TYPE_FIXED, SHM_ID_APP_GA);
+    }
+    uint32 ex_pool_id = object_id / pool->def.object_count - 1;
+    return cm_shm_key_of(SHM_TYPE_GA, (uint32)pool->ctrl->ex_shm_id[ex_pool_id]);
 }

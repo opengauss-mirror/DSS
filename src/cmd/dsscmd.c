@@ -2812,29 +2812,25 @@ static status_t dss_load_dss_ctrl_from_file(int32 file_fd, dss_vg_info_item_t *v
 
 static status_t dss_load_buffer_cache_from_file(int32 file_fd, dss_vg_info_item_t *vg_item, int64 *offset)
 {
-    uint64 bucket_size;
     int32 read_size;
     char *buffer = NULL;
-    uint32 map_num;
-    status_t status = cm_read_file(file_fd, &bucket_size, sizeof(uint64), &read_size);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
-    buffer = cm_malloc(sizeof(shm_hashmap_t) + bucket_size);
+    uint64 dir_size = DSS_MAX_SEGMENT_NUM * (uint32)sizeof(uint32_t);
+    buffer = cm_malloc(sizeof(shm_hashmap_t) + dir_size);
     if (buffer == NULL) {
         LOG_DEBUG_ERR("Malloc failed.\n");
         return CM_ERROR;
     }
+    status_t status = cm_read_file(file_fd, buffer, sizeof(shm_hashmap_t), &read_size);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
     uint32 id = vg_item->id;
     uint32 shm_key = cm_shm_key_of(SHM_TYPE_HASH, id);
     vg_item->buffer_cache = (shm_hashmap_t *)buffer;
-    vg_item->buffer_cache->buckets = cm_trans_shm_offset_from_malloc(shm_key, buffer + sizeof(shm_hashmap_t));
+    vg_item->buffer_cache->hash_ctrl.dirs = cm_trans_shm_offset_from_malloc(shm_key, buffer + sizeof(shm_hashmap_t));
     vg_item->buffer_cache->shm_id = id;
-    vg_item->buffer_cache->func = cm_oamap_uint64_compare;
-    status = cm_read_file(file_fd, buffer + sizeof(shm_hashmap_t), (int32)bucket_size, &read_size);
+    vg_item->buffer_cache->hash_ctrl.func = cm_oamap_uint64_compare;
+    status = cm_read_file(file_fd, buffer + sizeof(shm_hashmap_t), (int32)dir_size, &read_size);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
-    status = cm_read_file(file_fd, &map_num, sizeof(uint32), &read_size);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
-    vg_item->buffer_cache->num = map_num;
-    *offset = *offset + (int64)sizeof(uint64) + (int64)bucket_size + (int64)sizeof(uint32);
+    *offset = *offset + (int64)sizeof(shm_hashmap_t) + (int64)dir_size;
     return CM_SUCCESS;
 }
 
@@ -2873,7 +2869,6 @@ status_t dss_load_buffer_cache_group_from_file(
     uint32 group_num = 0;
     int64 offset = *length;
     int32 read_size = 0;
-    uint64 bucket_size;
     bool32 result;
     status_t status = cm_read_file(file_fd, length, sizeof(int64), &read_size);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
@@ -2887,9 +2882,9 @@ status_t dss_load_buffer_cache_group_from_file(
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
         offset += DSS_MAX_NAME_LEN;
         if (strcmp(vg_name, read_vg_name) != 0) {
-            status = cm_read_file(file_fd, &bucket_size, sizeof(uint64), &read_size);
-            DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to read file."));
-            offset = offset + (int64)sizeof(uint64) + (int64)bucket_size + (int64)sizeof(uint32);
+            uint64 bucket_size = DSS_MAX_SEGMENT_NUM * (uint32)sizeof(uint32_t);
+            uint64 hashmap_size = sizeof(shm_hashmap_t) + bucket_size;
+            offset = offset + (int64)hashmap_size;
             result = (bool32)(cm_seek_file(file_fd, offset, SEEK_SET) != -1);
             DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Failed to seek file %d", file_fd));
             continue;
@@ -2904,6 +2899,7 @@ status_t dss_load_buffer_cache_group_from_file(
     DSS_RETURN_IF_ERROR(dss_load_buffer_pool_from_file(file_fd, GA_8K_POOL));
     DSS_RETURN_IF_ERROR(dss_load_buffer_pool_from_file(file_fd, GA_16K_POOL));
     DSS_RETURN_IF_ERROR(dss_load_buffer_pool_from_file(file_fd, GA_FS_AUX_POOL));
+    DSS_RETURN_IF_ERROR(dss_load_buffer_pool_from_file(file_fd, GA_SEGMENT_POOL));
     return CM_SUCCESS;
 }
 

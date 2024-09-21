@@ -444,6 +444,7 @@ status_t cm_init_shm(uint32 shm_key)
     }
 }
 
+// todo 客户端不能加载共享内存
 static void *cm_do_get_shm(cm_shm_key_t key, uint64 size, uint32 flag)
 {
     void *result = cm_do_attach_shm(key, size, flag, CM_FALSE);
