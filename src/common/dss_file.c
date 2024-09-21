@@ -278,6 +278,12 @@ void dss_lock_vg_mem_and_shm_ix2x(dss_session_t *session, dss_vg_info_item_t *vg
     dss_lock_shm_meta_ix2x(session, vg_item->vg_latch);
 }
 
+void dss_lock_vg_mem_and_shm_degrade(dss_session_t *session, dss_vg_info_item_t *vg_item)
+{
+    dss_lock_vg_mem_degrade(vg_item);
+    dss_lock_shm_meta_degrade(session, vg_item->vg_latch);
+}
+
 void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
     dss_lock_vg_mem_s(vg_item);
@@ -4002,6 +4008,7 @@ static status_t dss_refresh_file_core(
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to find fs data block by offset:%lld.", offset));
 
     if (DSS_IS_FILE_INNER_INITED(node->flags) && fs_pos.is_valid && fs_pos.is_exist_aux) {
+        dss_lock_vg_mem_and_shm_degrade(session, vg_item);
         status = dss_try_find_data_au_batch(session, vg_item, node, fs_pos.second_fs_block, fs_pos.block_au_count);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to find fs data batch block by offset:%lld.", offset));
     }

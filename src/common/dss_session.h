@@ -164,6 +164,7 @@ status_t dss_cli_lock_shm_meta_s(dss_session_t *session, dss_latch_offset_t *off
 void dss_lock_shm_meta_x(const dss_session_t *session, dss_shared_latch_t *shared_latch);
 void dss_lock_shm_meta_x2ix(dss_session_t *session, dss_shared_latch_t *shared_latch);
 void dss_lock_shm_meta_ix2x(dss_session_t *session, dss_shared_latch_t *shared_latch);
+void dss_lock_shm_meta_degrade(dss_session_t *session, dss_shared_latch_t *shared_latch);
 // only used by dssserver
 void dss_unlock_shm_meta_without_stack(dss_session_t *session, dss_shared_latch_t *shared_latch);
 // only used by api-client or by clean

@@ -477,6 +477,20 @@ void dss_lock_shm_meta_ix2x(dss_session_t *session, dss_shared_latch_t *shared_l
     dss_latch_ix2x(&shared_latch->latch, sid, stat);
 }
 
+void dss_lock_shm_meta_degrade(dss_session_t *session, dss_shared_latch_t *shared_latch)
+{
+    cm_panic_log(dss_is_server(), "can not op x latch degradation in client.");
+    uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
+    cm_panic_log(sid == shared_latch->latch.sid && shared_latch->latch.stat == LATCH_STATUS_X,
+        "Invalid degradation: sid:%u, sid on latch:%u, latch status:%u.", sid, shared_latch->latch.sid,
+        shared_latch->latch.stat);
+    cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, NULL);
+    shared_latch->latch.stat = LATCH_STATUS_S;
+    shared_latch->latch.shared_count = 1;
+    shared_latch->latch_extent.shared_sid_count += sid;
+    cm_spin_unlock(&shared_latch->latch.lock);
+}
+
 void dss_lock_shm_meta_bucket_x(dss_session_t *session, dss_shared_latch_t *shared_latch)
 {
     CM_ASSERT(session != NULL);
