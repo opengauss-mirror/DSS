@@ -305,7 +305,8 @@ status_t dss_lock_shm_meta_s_with_stack(
     dss_session_t *session, dss_latch_offset_t *offset, dss_shared_latch_t *shared_latch, int32 timeout)
 {
     cm_panic_log(!(dss_is_server()), "can not op shared latch with session latch stack in server");
-    CM_ASSERT(session->latch_stack.stack_top < DSS_MAX_LATCH_STACK_DEPTH);
+    DSS_ASSERT_LOG(session != NULL, "session ptr is NULL");
+    DSS_ASSERT_LOG(session->latch_stack.stack_top < DSS_MAX_LATCH_STACK_DEPTH, "latch_stack overflow");
 
     session->latch_stack.stack_top_bak = session->latch_stack.stack_top;
     session->latch_stack.op = LATCH_SHARED_OP_LATCH_S;

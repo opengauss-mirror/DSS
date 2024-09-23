@@ -144,16 +144,16 @@ static status_t dss_alloc_au_from_one_recycle_file(dss_session_t *session, dss_v
     LOG_DEBUG_INF("[AU][ALLOC] Begin to alloc au from recycle file %s.", ft_node->name);
     *found = DSS_FALSE;
     ga_obj_id_t entry_objid;
-    dss_fs_block_header *entry_block = (dss_fs_block_header *)dss_find_block_in_shm(
+    dss_fs_block_t *entry_fs_block = (dss_fs_block_t *)dss_find_block_in_shm(
         session, vg_item, ft_node->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, &entry_objid, CM_FALSE);
-    if (entry_block == NULL) {
+    if (entry_fs_block == NULL) {
         LOG_DEBUG_ERR("[AU][ALLOC] Failed to get fs block: %s.", dss_display_metaid(ft_node->entry));
         return CM_ERROR;
     }
+    dss_fs_block_header *entry_block = (dss_fs_block_header *)(&entry_fs_block->head);
     CM_ASSERT(entry_block->used_num > 0);
     dss_check_fs_block_affiliation(entry_block, ft_node->id, DSS_ENTRY_FS_INDEX);
     ga_obj_id_t sec_objid;
-    dss_fs_block_t *entry_fs_block = (dss_fs_block_t *)entry_block;
     uint16 entry_fs_tail_idx = (uint16)(entry_block->used_num - 1);
     dss_block_id_t sec_block_id = entry_fs_block->bitmap[entry_fs_tail_idx];
     dss_fs_block_t *block = (dss_fs_block_t *)dss_find_block_in_shm(

@@ -3668,7 +3668,7 @@ static status_t getstatus_proc(void)
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to get server status.\n");
     } else {
-        DSS_PRINT_INF("Server status of instance %d is %s and %s.\nMaster id is %d .\nDSS_MAINTAIN is %s.\n",
+        DSS_PRINT_INF("Server status of instance %u is %s and %s.\nMaster id is %u .\nDSS_MAINTAIN is %s.\n",
             dss_status.local_instance_id, dss_status.instance_status, dss_status.server_status, dss_status.master_id,
             (dss_status.is_maintain ? "TRUE" : "FALSE"));
     }
