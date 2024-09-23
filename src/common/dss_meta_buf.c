@@ -155,8 +155,8 @@ status_t shm_hashmap_move_bucket_node(
     dss_session_t *session, shm_hash_ctrl_t *hash_ctrl, uint32 old_bucket_idx, uint32 new_bucket_idx)
 {
     LOG_DEBUG_INF("[HASHMAP]Begin to move some entry from bucket %u to bucket %u.", old_bucket_idx, new_bucket_idx);
-    shm_hashmap_bucket_t *old_bucket = shm_hashmap_get_bucket(hash_ctrl, old_bucket_idx);
-    shm_hashmap_bucket_t *new_bucket = shm_hashmap_get_bucket(hash_ctrl, new_bucket_idx);
+    shm_hashmap_bucket_t *old_bucket = shm_hashmap_get_bucket(hash_ctrl, old_bucket_idx, NULL);
+    shm_hashmap_bucket_t *new_bucket = shm_hashmap_get_bucket(hash_ctrl, new_bucket_idx, NULL);
     DSS_ASSERT_LOG(old_bucket != NULL, "[HASHMAP]Expect bucket %u is not null.", old_bucket_idx);
     DSS_ASSERT_LOG(new_bucket != NULL, "[HASHMAP]Expect bucket %u is not null.", new_bucket_idx);
     ga_obj_id_t tmp_id = *(ga_obj_id_t *)&old_bucket->first;
@@ -288,7 +288,7 @@ status_t dss_register_buffer_cache(dss_session_t *session, dss_vg_info_item_t *v
     shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
     uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
     uint32 bucket_idx = shm_hashmap_calc_bucket_idx(hash_ctrl, hash);
-    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx);
+    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx, NULL);
     if (bucket == NULL) {
         return CM_ERROR;
     }
@@ -318,7 +318,7 @@ void dss_unregister_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_
     uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
     shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
     uint32 bucket_idx = shm_hashmap_calc_bucket_idx(hash_ctrl, hash);
-    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx);
+    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx, NULL);
     cm_panic(bucket != NULL);
     dss_lock_shm_meta_bucket_x(session, &bucket->enque_lock);
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
@@ -426,7 +426,7 @@ static status_t dss_load_buffer_cache(dss_session_t *session, dss_vg_info_item_t
     shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
     uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
     uint32 bucket_idx = shm_hashmap_calc_bucket_idx(hash_ctrl, hash);
-    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx);
+    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx, NULL);
     if (bucket == NULL) {
         LOG_RUN_ERR("Failed to find bucket %u.", bucket_idx);
         return CM_ERROR;
@@ -523,7 +523,8 @@ void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_it
     dss_common_block_t *block = NULL;
     auid_t block_id_tmp = {0};
     uint32 bucket_idx = shm_hashmap_calc_bucket_idx(hash_ctrl, hash);
-    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx);
+    uint32 segment_objid = DSS_INVALID_ID32;
+    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx, &segment_objid);
     if (bucket == NULL) {
         if (is_print_error_log) {
             LOG_DEBUG_ERR("Pointer to bucket %u is NULL.", bucket_idx);
@@ -531,7 +532,7 @@ void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_it
         return NULL;
     }
     if (vg_item->from_type == FROM_SHM) {
-        dss_lock_shm_meta_bucket_s(session, vg_item->id, &bucket->enque_lock);
+        dss_lock_shm_meta_bucket_s(session, segment_objid, &bucket->enque_lock);
     }
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
@@ -578,14 +579,15 @@ static void *dss_find_block_in_bucket_ex(dss_session_t *session, dss_vg_info_ite
     auid_t block_id_tmp = {0};
     shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
     uint32 bucket_idx = shm_hashmap_calc_bucket_idx(hash_ctrl, hash);
-    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx);
+    uint32 segment_objid = DSS_INVALID_ID32;
+    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx, &segment_objid);
     if (bucket == NULL) {
         if (is_print_error_log) {
             LOG_DEBUG_ERR("Pointer to bucket %u is NULL.", bucket_idx);
         }
         return NULL;
     }
-    (void)dss_lock_shm_meta_bucket_s(session, vg_item->id, &bucket->enque_lock);
+    (void)dss_lock_shm_meta_bucket_s(session, segment_objid, &bucket->enque_lock);
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     if (has_next) {
@@ -699,7 +701,7 @@ static status_t dss_add_buffer_cache(dss_session_t *session, dss_vg_info_item_t 
     uint32 hash = DSS_BUFFER_CACHE_HASH(add_block_id);
     shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
     uint32 bucket_idx = shm_hashmap_calc_bucket_idx(hash_ctrl, hash);
-    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx);
+    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx, NULL);
     if (bucket == NULL) {
         return CM_ERROR;
     }
@@ -838,8 +840,11 @@ char *dss_find_block_in_shm_no_refresh_ex(
 }
 
 static status_t dss_refresh_buffer_cache_inner(dss_session_t *session, dss_vg_info_item_t *vg_item,
-    shm_hashmap_bucket_t *bucket, ga_queue_t *obj_que, ga_pool_id_e *obj_pool_id)
+    uint32 bucket_idx, ga_queue_t *obj_que, ga_pool_id_e *obj_pool_id)
 {
+    shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
+    uint32 segment_objid = DSS_INVALID_ID32;
+    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx, &segment_objid);
     bool32 has_next = CM_FALSE;
     ga_obj_id_t next_id = {0};
 
@@ -852,7 +857,7 @@ static status_t dss_refresh_buffer_cache_inner(dss_session_t *session, dss_vg_in
     dss_block_ctrl_t *block_ctrl_curr = NULL;
     bool32 need_remove = CM_FALSE;
 
-    status_t status = dss_lock_shm_meta_bucket_s(session, vg_item->id, &bucket->enque_lock);
+    status_t status = dss_lock_shm_meta_bucket_s(session, segment_objid, &bucket->enque_lock);
     if (status != CM_SUCCESS) {
         return status;
     }
@@ -913,13 +918,11 @@ static status_t dss_refresh_buffer_cache_inner(dss_session_t *session, dss_vg_in
 
 status_t dss_refresh_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, shm_hashmap_t *map)
 {
-    shm_hashmap_bucket_t *bucket = NULL;
     ga_queue_t obj_que[DSS_BLOCK_TYPE_MAX] = {0};
     ga_pool_id_e obj_pool_id[DSS_BLOCK_TYPE_MAX] = {0};
-    shm_hash_ctrl_t *hash_ctrl = &map->hash_ctrl;
-    for (uint32_t i = 0; i < hash_ctrl->max_bucket; i++) {
-        bucket = shm_hashmap_get_bucket(hash_ctrl, i);
-        status_t status = dss_refresh_buffer_cache_inner(session, vg_item, bucket, obj_que, obj_pool_id);
+    shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
+    for (uint32_t i = 0; i <= hash_ctrl->max_bucket; i++) {
+        status_t status = dss_refresh_buffer_cache_inner(session, vg_item, i, obj_que, obj_pool_id);
         if (status != CM_SUCCESS) {
             return status;
         }

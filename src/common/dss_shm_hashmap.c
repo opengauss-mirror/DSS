@@ -44,8 +44,8 @@ bool32 shm_hashmap_need_extend_and_redistribute(shm_hash_ctrl_t *hash_ctrl)
     }
     uint32 max_bucket = hash_ctrl->max_bucket;
     uint64 enums = 0;
-    for (uint32 i = 0; i < max_bucket; i++) {
-        shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, i);
+    for (uint32 i = 0; i <= max_bucket; i++) {
+        shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, i, NULL);
         if (bucket != NULL) {
             enums += bucket->entry_num;
         }
@@ -80,7 +80,7 @@ status_t shm_hashmap_extend_segment(shm_hash_ctrl_t *hash_ctrl)
     return CM_SUCCESS;
 }
 
-shm_hashmap_bucket_t *shm_hashmap_get_bucket(shm_hash_ctrl_t *hash_ctrl, uint32 bucket_idx)
+shm_hashmap_bucket_t *shm_hashmap_get_bucket(shm_hash_ctrl_t *hash_ctrl, uint32 bucket_idx, uint32 *segment_objid)
 {
     uint32 *dirs = (uint32 *)OFFSET_TO_ADDR(hash_ctrl->dirs);
     uint32 segment_idx = bucket_idx / DSS_BUCKETS_PER_SEGMENT;
@@ -91,6 +91,9 @@ shm_hashmap_bucket_t *shm_hashmap_get_bucket(shm_hash_ctrl_t *hash_ctrl, uint32 
     if (segment == NULL) {
         DSS_THROW_ERROR(ERR_DSS_GA_GET_ADDR, GA_SEGMENT_POOL, objectid);
         return NULL;
+    }
+    if (segment_objid != NULL) {
+        *segment_objid = objectid;
     }
     uint32 sub_bucket_idx = bucket_idx % DSS_BUCKETS_PER_SEGMENT;
     return &segment[sub_bucket_idx];

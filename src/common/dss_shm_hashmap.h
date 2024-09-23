@@ -98,7 +98,7 @@ typedef struct st_shm_oamap_param {
 
 int32 shm_hashmap_init(shm_hashmap_t *map, uint32 id, cm_oamap_compare_t compare_func);
 void shm_hashmap_destroy(shm_hashmap_t *map, uint32 id);
-shm_hashmap_bucket_t *shm_hashmap_get_bucket(shm_hash_ctrl_t *hash_ctrl, uint32 bucket_idx);
+shm_hashmap_bucket_t *shm_hashmap_get_bucket(shm_hash_ctrl_t *hash_ctrl, uint32 bucket_idx, uint32 *segment_objid);
 status_t shm_hashmap_extend_segment(shm_hash_ctrl_t *hash_ctrl);
 bool32 shm_hashmap_need_extend_and_redistribute(shm_hash_ctrl_t *hash_ctrl);
 uint32 shm_hashmap_calc_bucket_idx(shm_hash_ctrl_t *hash_ctrl, uint32 hash);
