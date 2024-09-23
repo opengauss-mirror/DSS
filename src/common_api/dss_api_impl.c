@@ -626,13 +626,15 @@ status_t dss_cli_handshake(dss_conn_t *conn, uint32 max_open_file)
         return CM_ERROR;
     }
 
-    dss_get_server_info_t output_info = {NULL, DSS_INVALID_SESSIONID};
+    dss_get_server_info_t output_info = {NULL, DSS_INVALID_SESSIONID, 0};
     CM_RETURN_IFERR(dss_msg_interact(conn, DSS_CMD_HANDSHAKE, (void *)&cli_info, (void *)&output_info));
-    if (g_dss_server_pid == 0) {
-        g_dss_server_pid = output_info.server_pid;
-    } else if (g_dss_server_pid != output_info.server_pid) {
-        DSS_THROW_ERROR(ERR_DSS_SERVER_REBOOT);
-        return ERR_DSS_SERVER_REBOOT;
+    if (conn->pack.head->version >= DSS_VERSION_2) {
+        if (g_dss_server_pid == 0) {
+            g_dss_server_pid = output_info.server_pid;
+        } else if (g_dss_server_pid != output_info.server_pid) {
+            DSS_THROW_ERROR(ERR_DSS_SERVER_REBOOT);
+            return ERR_DSS_SERVER_REBOOT;
+        }
     }
     return dss_set_server_info(conn, output_info.home, output_info.objectid, max_open_file);
 }
@@ -2729,7 +2731,9 @@ static status_t dss_decode_handshake(dss_packet_t *ack_pack, void *ack)
     dss_get_server_info_t *output_info = (dss_get_server_info_t *)ack;
     output_info->home = ack_info.str;
     CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&output_info->objectid));
-    CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&output_info->server_pid));
+    if (ack_pack->head->version >= DSS_VERSION_2) {
+        CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&output_info->server_pid));
+    }
     return CM_SUCCESS;
 }
 

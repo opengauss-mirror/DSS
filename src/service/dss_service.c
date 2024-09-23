@@ -566,7 +566,9 @@ static status_t dss_process_handshake(dss_session_t *session)
     data.len++;  // for keeping the '\0'
     DSS_RETURN_IF_ERROR(dss_put_text(&session->send_pack, &data));
     DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, session->objectid));
-    DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, server_pid));
+    if (session->proto_version >= DSS_VERSION_2) {
+        DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, server_pid));
+    }
     return CM_SUCCESS;
 }
 

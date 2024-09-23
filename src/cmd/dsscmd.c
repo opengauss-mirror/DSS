@@ -4283,7 +4283,7 @@ static void print_dss_hp_info_view(const dss_hp_info_view_t *hp_info_view)
 
 static status_t query_hotpatch_proc(void)
 {
-    dss_conn_t *connection = dss_get_connection_opt(cmd_query_hotpatch_args[DSS_CMD_HOTPATCH_ARGS_UDS].input_args);
+    dss_conn_t *connection = dss_get_connection_opt(cmd_query_hotpatch_args[0].input_args);
     if (connection == NULL) {
         DSS_PRINT_ERROR("Failed to get uds connection.\n");
         return CM_ERROR;
