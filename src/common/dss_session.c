@@ -22,6 +22,7 @@
  * -------------------------------------------------------------------------
  */
 
+#include "dss_session.h"
 #include "cm_utils.h"
 #include "dss_diskgroup.h"
 #include "dss_malloc.h"
@@ -29,7 +30,7 @@
 #include "dss_redo.h"
 #include "cm_system.h"
 #include "dss_thv.h"
-#include "dss_session.h"
+#include "dss_hp_interface.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -63,13 +64,14 @@ status_t dss_extend_session(uint32 extend_num)
         g_dss_session_ctrl.sessions[i]->is_closed = CM_TRUE;
         g_dss_session_ctrl.sessions[i]->put_log = CM_FALSE;
         g_dss_session_ctrl.sessions[i]->objectid = objectid;
+        g_dss_session_ctrl.sessions[i]->is_holding_hotpatch_latch = CM_FALSE;
         g_dss_session_ctrl.alloc_sessions++;
     }
     LOG_RUN_INF("Succeed to extend sessions to %u.", g_dss_session_ctrl.alloc_sessions);
     return CM_SUCCESS;
 }
 
-status_t dss_init_session(uint32 max_session_num)
+status_t dss_init_session_pool(uint32 max_session_num)
 {
     uint32 dss_session_size = (uint32)(max_session_num * sizeof(dss_session_t *));
     g_dss_session_ctrl.sessions = cm_malloc(dss_session_size);
@@ -135,6 +137,29 @@ uint32 dss_get_meta_syn_task_idx(uint32 idx)
     return dss_get_bg_task_set_idx(DSS_META_SYN_BG_TASK_BASE, idx);
 }
 
+static status_t dss_init_session(dss_session_t *session, const cs_pipe_t *pipe)
+{
+    dss_latch_stack_t *latch_stack = &session->latch_stack;
+    errno_t errcode = memset_s(latch_stack, sizeof(dss_latch_stack_t), 0, sizeof(dss_latch_stack_t));
+    securec_check_ret(errcode);
+    session->is_direct = CM_TRUE;
+    session->connected = CM_FALSE;
+    if (pipe != NULL) {
+        session->pipe = *pipe;
+        session->connected = CM_TRUE;
+    }
+    session->is_closed = CM_FALSE;
+    session->proto_type = PROTO_TYPE_UNKNOWN;
+    session->status = DSS_SESSION_STATUS_IDLE;
+    session->client_version = DSS_PROTO_VERSION;
+    session->proto_version = DSS_PROTO_VERSION;
+    errcode = memset_s(
+        session->dss_session_stat, DSS_EVT_COUNT * sizeof(dss_stat_item_t), 0, DSS_EVT_COUNT * sizeof(dss_stat_item_t));
+    securec_check_ret(errcode);
+    session->is_holding_hotpatch_latch = CM_FALSE;
+    return CM_SUCCESS;
+}
+
 dss_session_t *dss_get_reserv_session(uint32 idx)
 {
     dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
@@ -182,22 +207,7 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
     (*session)->is_used = CM_TRUE;
     cm_spin_unlock(&(*session)->lock);
     cm_spin_unlock(&g_dss_session_ctrl.lock);
-    dss_latch_stack_t *latch_stack = &(*session)->latch_stack;
-    (void)memset_s(latch_stack, sizeof(dss_latch_stack_t), 0, sizeof(dss_latch_stack_t));
-
-    (*session)->is_direct = CM_TRUE;
-    (*session)->connected = CM_FALSE;
-    if (pipe != NULL) {
-        (*session)->pipe = *pipe;
-        (*session)->connected = CM_TRUE;
-    }
-    (*session)->is_closed = CM_FALSE;
-    (*session)->proto_type = PROTO_TYPE_UNKNOWN;
-    (*session)->status = DSS_SESSION_STATUS_IDLE;
-    (*session)->client_version = DSS_PROTO_VERSION;
-    (*session)->proto_version = DSS_PROTO_VERSION;
-    (void)memset_s((*session)->dss_session_stat, DSS_EVT_COUNT * sizeof(dss_stat_item_t), 0,
-        DSS_EVT_COUNT * sizeof(dss_stat_item_t));
+    DSS_RETURN_IF_ERROR(dss_init_session(*session, pipe));
     return CM_SUCCESS;
 }
 
@@ -217,6 +227,7 @@ void dss_destroy_session(dss_session_t *session)
     session->client_version = DSS_PROTO_VERSION;
     session->proto_version = DSS_PROTO_VERSION;
     session->put_log = CM_FALSE;
+    session->is_holding_hotpatch_latch = CM_FALSE;
     cm_spin_unlock(&session->lock);
     cm_spin_unlock(&g_dss_session_ctrl.lock);
 }

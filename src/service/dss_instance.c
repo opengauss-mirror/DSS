@@ -42,6 +42,7 @@
 #include "dss_zero.h"
 #include "cm_utils.h"
 #include "dss_thv.h"
+#include "dss_hp_interface.h"
 #ifdef ENABLE_DSSTEST
 #include "dss_simulation_cm.h"
 #endif
@@ -218,7 +219,7 @@ static status_t instance_init_core(dss_instance_t *inst)
 {
     status_t status = dss_get_vg_info();
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to get vg info."));
-    status = dss_init_session(dss_get_max_total_session_cnt());
+    status = dss_init_session_pool(dss_get_max_total_session_cnt());
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to initialize sessions."));
     status = dss_init_thread(inst);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to initialize thread."));
@@ -366,6 +367,17 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
 #endif
     dss_init_maintain(inst, dss_args);
     LOG_RUN_INF("DSS instance begin to initialize.");
+#ifndef OPENGAUSS
+    if (dss_hp_init(inst->inst_cfg.home) != CM_SUCCESS) {
+        LOG_RUN_WAR("[HotPatch] hotpatch module failed to be initialized");
+    }
+    if (dss_hp_is_inited()) {
+        if (dss_hp_patched_load() != CM_SUCCESS) {
+            LOG_RUN_ERR("[HotPatch] Failed to restore hotpatches during startup, please check patch files.");
+            return CM_ERROR;
+        }
+    }
+#endif
     status = instance_init(inst);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to initialized!"));
     cm_set_shm_ctrl_flag(CM_SHM_CTRL_FLAG_TRUE);

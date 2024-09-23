@@ -530,6 +530,9 @@ static status_t dss_proc_sign_init()
     return CM_SUCCESS;
 }
 
+// 37 is occupied by hotpatch
+#define SIG_HOTPATCH (37)
+
 status_t dss_sigcap_handle_reg()
 {
     cm_init_backtrace_handle();
@@ -542,7 +545,7 @@ status_t dss_sigcap_handle_reg()
         }
     }
     for (uint32 sig_num = SIGRTMIN; sig_num <= SIGRTMAX; sig_num++) {
-        if (sig_num == SIG_BACKTRACE) {
+        if (sig_num == SIG_BACKTRACE || sig_num == SIG_HOTPATCH) {
             continue;
         }
         if (dss_sigcap_reg_proc(sig_num) != CM_SUCCESS) {

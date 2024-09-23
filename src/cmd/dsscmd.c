@@ -4130,6 +4130,180 @@ static status_t enable_grab_lock_proc(void)
     return status;
 }
 
+#define DSS_CMD_HOTPATCH_ARGS_OPERATION 0
+#define DSS_CMD_HOTPATCH_ARGS_PATCH_PATH 1
+#define DSS_CMD_HOTPATCH_ARGS_UDS 2
+static status_t cmd_check_hotpatch_operation(const char *operation)
+{
+    if (dss_hp_str_to_operation(operation) == DSS_HP_OP_INVALID) {
+        DSS_PRINT_ERROR("Invalid operation: %s.\n", operation);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t cmd_check_patch_path(const char *patch_path)
+{
+    CM_CHECK_NULL_PTR(patch_path);
+    if (strlen(patch_path) > DSS_HP_FILE_PATH_MAX_LEN) {
+        DSS_PRINT_ERROR("Length of parameter -p cannot be longger than %u.\n", DSS_HP_FILE_PATH_MAX_LEN);
+        return CM_ERROR;
+    }
+    if (patch_path[0] != '/') {
+        DSS_PRINT_ERROR("Path of patch file must be absolute.\n");
+        return CM_ERROR;
+    }
+    return dss_check_path(patch_path);
+}
+
+static dss_args_t cmd_hotpatch_args[] = {
+    {'o', "operation", CM_TRUE, CM_TRUE, cmd_check_hotpatch_operation, NULL, NULL, 0, NULL, NULL, 0},
+    {'p', "patch", CM_FALSE, CM_TRUE, cmd_check_patch_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
+        0},
+};
+
+static status_t cmd_check_hotpatch_args(dss_args_t *cmd_args_set, int set_size)
+{
+    if (!cmd_args_set[DSS_CMD_HOTPATCH_ARGS_OPERATION].inputed) {
+        DSS_PRINT_ERROR("hotpatch operation must be specified with -o.\n");
+        return CM_ERROR;
+    }
+    const char *operation = cmd_args_set[DSS_CMD_HOTPATCH_ARGS_OPERATION].input_args;
+    dss_hp_operation_cmd_e hp_cmd = dss_hp_str_to_operation(operation);
+    if (dss_hp_cmd_need_patch_file(hp_cmd)) {
+        if (!cmd_args_set[DSS_CMD_HOTPATCH_ARGS_PATCH_PATH].inputed ||
+            cmd_args_set[DSS_CMD_HOTPATCH_ARGS_PATCH_PATH].input_args == NULL) {
+            DSS_PRINT_ERROR("For dsscmd hotpatch -o %s, path of patch file must be specified with -p.\n", operation);
+            return CM_ERROR;
+        }
+        return CM_SUCCESS;
+    }
+
+    if (cmd_args_set[DSS_CMD_HOTPATCH_ARGS_PATCH_PATH].inputed) {
+        DSS_PRINT_ERROR("For dsscmd hotpatch -o %s, -p option is redundant.\n", operation);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static dss_args_set_t cmd_hotpatch_args_set = {
+    cmd_hotpatch_args,
+    sizeof(cmd_hotpatch_args) / sizeof(dss_args_t),
+    cmd_check_hotpatch_args,
+};
+
+static void hotpatch_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:%s hotpatch <-o operation> [-p path_of_patch] [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("[client command] load/unload/active/deactive/refresh hotpatch.\n");
+    (void)printf("-o/--operation <operation>, <required>, the operation to do on hotpatch, valid values: "
+                 "load/unload/active/deactive/refresh.\n");
+    (void)printf("-p/--patch [patch_file_path], [optional], required for load/unload/active/deactive, not required for "
+                 "refresh.\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    help_param_uds();
+}
+
+static status_t hotpatch_proc(void)
+{
+    dss_conn_t *connection = dss_get_connection_opt(cmd_hotpatch_args[DSS_CMD_HOTPATCH_ARGS_UDS].input_args);
+    if (connection == NULL) {
+        DSS_PRINT_ERROR("Failed to get uds connection.\n");
+        return CM_ERROR;
+    }
+    const char *cmd_str = cmd_hotpatch_args[DSS_CMD_HOTPATCH_ARGS_OPERATION].input_args;
+    const char *patch_path = cmd_hotpatch_args[DSS_CMD_HOTPATCH_ARGS_PATCH_PATH].inputed ?
+                                 cmd_hotpatch_args[DSS_CMD_HOTPATCH_ARGS_PATCH_PATH].input_args :
+                                 NULL;
+    status_t status = dss_hotpatch_impl(connection, cmd_str, patch_path);
+    if (status == CM_SUCCESS) {
+        if (patch_path == NULL) {
+            // for refresh
+            DSS_PRINT_INF("Success to %s hotpatch in dssserver.\n", cmd_str);
+        } else {
+            // for load/unload/active/deactive
+            DSS_PRINT_INF("Success to %s hotpatch %s in dssserver.\n", cmd_str, patch_path);
+        }
+    } else {
+        if (patch_path == NULL) {
+            // for refresh
+            DSS_PRINT_ERROR("Fail to %s hotpatch in dssserver.\n", cmd_str);
+        } else {
+            // for load/unload/active/deactive
+            DSS_PRINT_ERROR("Fail to %s hotpatch %s in dssserver.\n", cmd_str, patch_path);
+        }
+    }
+    dss_disconnect_ex(connection);
+    return status;
+}
+
+static void query_hotpatch_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:%s query_hotpatch [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("[client command] query status of all hotpatches.\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    help_param_uds();
+}
+
+static dss_args_t cmd_query_hotpatch_args[] = {
+    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
+        0},
+};
+
+static dss_args_set_t cmd_query_hotpatch_args_set = {
+    cmd_query_hotpatch_args,
+    sizeof(cmd_query_hotpatch_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+static void print_dss_hp_info_view(const dss_hp_info_view_t *hp_info_view)
+{
+    if (hp_info_view == NULL) {
+        return;
+    }
+    (void)printf("There are %u patches in dssserver.\n", hp_info_view->count);
+    if (hp_info_view->count == 0) {
+        return;
+    }
+    // print headers
+    (void)printf("%-4s%-96s %-14s%-10s%-12s%-11s%-20s\n", "ID", "NAME", "PATCH_NUMBER", "STATUS", "LIB_STATUS",
+        "COMMIT_ID", "DSSSERVER_VERSION");
+    // print contents
+    for (uint32 i = 0; i < hp_info_view->count; ++i) {
+        const dss_hp_info_view_row_t *row = &hp_info_view->info_list[i];
+        (void)printf("%-4u%-96s %-14u%-10s%-12s%-11s%-20s\n", i, row->patch_name, row->patch_number,
+            dss_hp_state_to_str(row->patch_state), row->patch_lib_state, row->patch_commit, row->patch_bin_version);
+    }
+}
+
+static status_t query_hotpatch_proc(void)
+{
+    dss_conn_t *connection = dss_get_connection_opt(cmd_query_hotpatch_args[DSS_CMD_HOTPATCH_ARGS_UDS].input_args);
+    if (connection == NULL) {
+        DSS_PRINT_ERROR("Failed to get uds connection.\n");
+        return CM_ERROR;
+    }
+    dss_hp_info_view_t *hp_info_list = (dss_hp_info_view_t *)cm_malloc(sizeof(dss_hp_info_view_t));
+    if (hp_info_list == NULL) {
+        (void)printf("Failed to query hotpatch: memory allocation error.\n");
+        return CM_ERROR;
+    }
+    status_t status = dss_query_hotpatch_impl(connection, hp_info_list);
+    if (status == CM_SUCCESS) {
+        print_dss_hp_info_view(hp_info_list);
+    } else {
+        DSS_PRINT_ERROR("Failed to query hotpatch.\n");
+    }
+    dss_disconnect_ex(connection);
+    cm_free(hp_info_list);
+    return status;
+}
+
 // clang-format off
 dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set, true},
                                       {"lsvg", lsvg_help, lsvg_proc, &cmd_lsvg_args_set, false},
@@ -4175,7 +4349,9 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set,
                                         &cmd_disable_grab_lock_args_set, true},
                                       {"en_grab_lock", enable_grab_lock_help, enable_grab_lock_proc,
                                         &cmd_enable_grab_lock_args_set, true},
-};
+                                      {"hotpatch", hotpatch_help, hotpatch_proc, &cmd_hotpatch_args_set, true},
+                                      {"query_hotpatch", query_hotpatch_help, query_hotpatch_proc,
+                                          &cmd_query_hotpatch_args_set, false}};
 
 void clean_cmd()
 {

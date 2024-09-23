@@ -62,6 +62,7 @@ static char *g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_SWITCH_LOCK)] = "switch cm lock",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_DISABLE_GRAB_LOCK)] = "disable grab cm lock",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_ENABLE_GRAB_LOCK)] = "enable grab cm lock",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_HOTPATCH)] = "hotpatch operation",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_HANDSHAKE)] = "handshake with server",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST)] = "exist item",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_READLINK)] = "readlink",
@@ -70,6 +71,7 @@ static char *g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_INST_STATUS)] = "get inst status",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_TIME_STAT)] = "get time stat",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXEC_REMOTE)] = "exec remote",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_QUERY_HOTPATCH)] = "query status of hotpatch",
 };
 
 char *dss_get_cmd_desc(dss_cmd_type_e cmd_type)

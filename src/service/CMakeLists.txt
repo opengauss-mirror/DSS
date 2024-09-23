@@ -5,6 +5,7 @@ include_directories(${DSS_COMMON_PATH}/persist)
 include_directories(${DSS_LOG_PATH})
 include_directories(${DSS_PARAMS_PATH})
 include_directories(${DSS_INTERFACE_PATH})
+include_directories(${DSS_HOTPATCH_PATH})
 
 option(ENABLE_FUZZASAN OFF)
 if (ENABLE_FUZZASAN)
@@ -29,12 +30,13 @@ set(COMMON_ALL_SRC
         ${PARAMS_SRC}
         ${SER_SRC}
         ${CEPH_SRC}
+        ${HOT_PATCH_SRC}
         )
 
 ADD_EXECUTABLE(dssserver ${COMMON_ALL_SRC})
 
 if (ENABLE_FUZZASAN)
-    target_link_libraries(dssserver pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${3rd_libssl} ${libz} ${lz4} ${3rd_libccb} ${vpp_libipsi_crypto} ${fuzz_lib} -Wl,--no-whole-archive)
+    target_link_libraries(dssserver pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${HOTPATCH_DEPENDENCY_LIB} ${HOTPATCH_LDS} ${3rd_libssl} ${libz} ${lz4} ${3rd_libccb} ${vpp_libipsi_crypto} ${fuzz_lib} -Wl,--no-whole-archive)
 else()
-    target_link_libraries(dssserver pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${3rd_libssl} ${libz} ${lz4} ${3rd_libccb} ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
+    target_link_libraries(dssserver pthread dl rt -Wl,--whole-archive ${vpp_libsecurec} ${HOTPATCH_DEPENDENCY_LIB} ${HOTPATCH_LDS} ${3rd_libssl} ${libz} ${lz4} ${3rd_libccb} ${vpp_libipsi_crypto} -Wl,--no-whole-archive)
 endif(ENABLE_FUZZASAN)

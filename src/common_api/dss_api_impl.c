@@ -832,6 +832,39 @@ status_t dss_close_dir_impl(dss_conn_t *conn, dss_dir_t *dir)
     return status;
 }
 
+status_t dss_hotpatch_impl(dss_conn_t *conn, const char *hp_cmd_str, const char *patch_path)
+{
+    LOG_RUN_INF("[HotPatch] cmd: %s, path:%s", hp_cmd_str, (patch_path == NULL ? "NULL" : patch_path));
+    dss_hotpatch_cmd_info_t send_info;
+    send_info.operation_cmd = (uint32)dss_hp_str_to_operation(hp_cmd_str);
+    send_info.patch_path = patch_path;
+    status_t status = dss_msg_interact(conn, DSS_CMD_HOTPATCH, (void *)&send_info, NULL);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[HotPatch] Failed to %s hotpatch.", hp_cmd_str);
+    }
+    return status;
+}
+
+status_t dss_query_hotpatch_impl(dss_conn_t *conn, dss_hp_info_view_t *hp_info_view)
+{
+    CM_CHECK_NULL_PTR(conn);
+    CM_CHECK_NULL_PTR(hp_info_view);
+    hp_info_view->count = 0;
+    uint32 start_patch_number = hp_info_view->count + 1;  // patch_number starts from 1.
+    dss_query_hotpatch_recv_info_t recv_info;
+    recv_info.hp_info_view = hp_info_view;
+    CM_RETURN_IFERR(dss_msg_interact(conn, DSS_CMD_QUERY_HOTPATCH, (void *)&start_patch_number, (void *)&recv_info));
+    // If items of hotpatch info are not fully transmitted in the first interaction, continue to transmit residue until
+    // done.
+    while (hp_info_view->count < recv_info.total_count) {
+        start_patch_number = hp_info_view->count + 1;
+        CM_RETURN_IFERR(
+            dss_msg_interact(conn, DSS_CMD_QUERY_HOTPATCH, (void *)&start_patch_number, (void *)&recv_info));
+    }
+    LOG_RUN_INF("[HotPatch] Success to query hotpatch, %u patch status received.", hp_info_view->count);
+    return CM_SUCCESS;
+}
+
 status_t dss_create_file_impl(dss_conn_t *conn, const char *file_path, int flag)
 {
     LOG_DEBUG_INF("dss create file entry, file path:%s, flag:%d", file_path, flag);
@@ -2971,6 +3004,75 @@ static status_t dss_encode_fallocate_file(dss_conn_t *conn, dss_packet_t *pack, 
     return CM_SUCCESS;
 }
 
+static status_t dss_encode_hotpatch(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    if (conn->proto_version < DSS_VERSION_2) {
+        DSS_THROW_ERROR(ERR_DSS_UNSUPPORTED_CMD, "hotpatch");
+        return CM_ERROR;
+    }
+    dss_hotpatch_cmd_info_t *info = (dss_hotpatch_cmd_info_t *)send_info;
+    CM_RETURN_IFERR(dss_put_int32(pack, info->operation_cmd));
+    if (info->patch_path != NULL) {
+        CM_RETURN_IFERR(dss_put_str(pack, info->patch_path));
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_encode_query_hotpatch(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    if (conn->proto_version < DSS_VERSION_2) {
+        DSS_THROW_ERROR(ERR_DSS_UNSUPPORTED_CMD, "query_hotpatch");
+        return CM_ERROR;
+    }
+    CM_RETURN_IFERR(dss_put_int32(pack, *((uint32 *)send_info)));
+    return CM_SUCCESS;
+}
+
+static status_t dss_decode_query_hotpatch(dss_packet_t *ack_pack, void *ack)
+{
+    dss_query_hotpatch_recv_info_t *recv_info = (dss_query_hotpatch_recv_info_t *)ack;
+    CM_CHECK_NULL_PTR(recv_info->hp_info_view);
+    CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&recv_info->total_count));
+    CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&recv_info->cur_batch_count));
+    dss_hp_info_view_t *hp_info_view = recv_info->hp_info_view;
+    if (recv_info->total_count > DSS_MAX_HOT_PATCH_NUMBER ||
+        recv_info->cur_batch_count + hp_info_view->count > recv_info->total_count) {
+        LOG_RUN_ERR("[HotPatch] Invalid hotpatch info count: "
+                    "total_count=%u, cur_batch_count=%u, recved_count=%u, max_total_count=%u",
+            recv_info->total_count, recv_info->cur_batch_count, recv_info->hp_info_view->count,
+            DSS_MAX_HOT_PATCH_NUMBER);
+        return CM_ERROR;
+    }
+    for (uint32 i = 0; i < recv_info->cur_batch_count; ++i) {
+        dss_hp_info_view_row_t *hp_info_view_row = &hp_info_view->info_list[hp_info_view->count];
+        // 1. patch_number
+        CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&hp_info_view_row->patch_number));
+        // 2. patch_name
+        char *patch_name = NULL;
+        CM_RETURN_IFERR(dss_get_str(ack_pack, &patch_name));
+        securec_check_ret(strcpy_sp(hp_info_view_row->patch_name, sizeof(hp_info_view_row->patch_name), patch_name));
+        // 3. patch_state
+        CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&hp_info_view_row->patch_state));
+        // 4. patch_lib_state
+        char *patch_lib_state = NULL;
+        CM_RETURN_IFERR(dss_get_str(ack_pack, &patch_lib_state));
+        securec_check_ret(
+            strcpy_sp(hp_info_view_row->patch_lib_state, sizeof(hp_info_view_row->patch_lib_state), patch_lib_state));
+        // 5. patch_commit
+        char *patch_commit = NULL;
+        CM_RETURN_IFERR(dss_get_str(ack_pack, &patch_commit));
+        securec_check_ret(
+            strcpy_sp(hp_info_view_row->patch_commit, sizeof(hp_info_view_row->patch_commit), patch_commit));
+        // 6. patch_bin_version
+        char *patch_bin_version = NULL;
+        CM_RETURN_IFERR(dss_get_str(ack_pack, &patch_bin_version));
+        securec_check_ret(strcpy_sp(
+            hp_info_view_row->patch_bin_version, sizeof(hp_info_view_row->patch_bin_version), patch_bin_version));
+        ++(hp_info_view->count);
+    }
+    return CM_SUCCESS;
+}
+
 typedef status_t (*dss_encode_packet_proc_t)(dss_conn_t *conn, dss_packet_t *pack, void *send_info);
 typedef status_t (*dss_decode_packet_proc_t)(dss_packet_t *ack_pack, void *ack);
 typedef struct st_dss_packet_proc {
@@ -3007,12 +3109,14 @@ dss_packet_proc_t g_dss_packet_proc[DSS_CMD_END] = {[DSS_CMD_MKDIR] = {dss_encod
     [DSS_CMD_ENABLE_GRAB_LOCK] = {NULL, NULL, "enable grab lock"},
     [DSS_CMD_HANDSHAKE] = {dss_encode_handshake, dss_decode_handshake, "handshake with server"},
     [DSS_CMD_FALLOCATE_FILE] = {dss_encode_fallocate_file, NULL, "fallocate file"},
+    [DSS_CMD_HOTPATCH] = {dss_encode_hotpatch, NULL, "hotpatch"},
     [DSS_CMD_EXIST] = {dss_encode_exist, dss_decode_exist, "exist"},
     [DSS_CMD_READLINK] = {dss_encode_readlink, dss_decode_readlink, "read link"},
     [DSS_CMD_GET_FTID_BY_PATH] = {dss_encode_get_ft_id_by_path, dss_decode_get_ft_id_by_path, "get ftid by path"},
     [DSS_CMD_GETCFG] = {dss_encode_getcfg, dss_decode_getcfg, "getcfg"},
     [DSS_CMD_GET_INST_STATUS] = {NULL, dss_decode_get_inst_status, "get inst status"},
-    [DSS_CMD_GET_TIME_STAT] = {NULL, dss_decode_get_time_stat, "get time stat"}};
+    [DSS_CMD_GET_TIME_STAT] = {NULL, dss_decode_get_time_stat, "get time stat"},
+    [DSS_CMD_QUERY_HOTPATCH] = {dss_encode_query_hotpatch, dss_decode_query_hotpatch, "query hotpatch"}};
 
 status_t dss_decode_packet(dss_packet_proc_t *make_proc, dss_packet_t *ack_pack, void *ack)
 {
