@@ -49,12 +49,20 @@ typedef enum en_dss_mes_command {
     DSS_CMD_CEIL,
 } dss_mes_command_t;
 
+typedef enum en_dss_msg_buffer_number {
+    DSS_MSG_BUFFER_NO_0 = 0,
+    DSS_MSG_BUFFER_NO_1,
+    DSS_MSG_BUFFER_NO_2,
+    DSS_MSG_BUFFER_NO_3,
+    DSS_MSG_BUFFER_NO_CEIL
+} dss_msg_buffer_number_e;
+
 #define DSS_MES_THREAD_NUM 2
 #define DSS_MES_TRY_TIMES 100
 #define DSS_BROADCAST_WAIT_INFINITE (0xFFFFFFFF)
 #define DSS_IS_INST_SEND(bits, id) (((bits) >> (id)) & 0x1)
-#define DSS_BUFFER_POOL_NUM (4)
 #define DSS_MSG_BUFFER_QUEUE_NUM (8)
+#define DSS_MSG_FOURTH_BUFFER_QUEUE_NUM (1)
 #define DSS_FIRST_BUFFER_LENGTH (256)
 #define DSS_SECOND_BUFFER_LENGTH (SIZE_K(1) + 256)
 #define DSS_THIRD_BUFFER_LENGTH (SIZE_K(32) + 256)
@@ -63,9 +71,9 @@ typedef enum en_dss_mes_command {
 #define DSS_CLEAN_EDP_TASK_RATIO (1.0f / 4)
 #define DSS_TXN_INFO_TASK_RATIO (1.0f / 16)
 #define DSS_RECV_WORK_THREAD_RATIO (1.0f / 4)
-#define DSS_FIRST_BUFFER_RATIO (1.0f / 8)
-#define DSS_SECOND_BUFFER_RATIO (3.0f / 8)
-#define DSS_THIRDLY_BUFFER_RATIO (1.0f / 2)
+#define DSS_FIRST_BUFFER_RATIO ((double)1.0 / 8)
+#define DSS_SECOND_BUFFER_RATIO ((double)3.0 / 8)
+#define DSS_THIRDLY_BUFFER_RATIO ((double)1.0 / 2)
 
 typedef void (*dss_message_proc_t)(dss_session_t *session, mes_msg_t *msg);
 typedef struct st_processor_func {
