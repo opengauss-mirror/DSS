@@ -30,11 +30,10 @@
 #include "dss_meta_buf.h"
 #include "dss_file.h"
 #include "dss_fs_aux.h"
+#include "dss_defs_print.h"
 
 #define DSS_DEFAULT_NODE_ID 0
 #define DSS_SECOND_PRINT_LEVEL 2
-
-static uint8 g_print_level = 0;
 
 static void printf_dss_volume_type(const dss_volume_type_t *vol_type)
 {
@@ -88,74 +87,6 @@ static status_t dss_printf_vg_header(const dss_vg_info_item_t *vg_item, dss_volu
         DSS_FREE_POINT(vg_header);
     }
     return status;
-}
-
-static void printf_auid(const auid_t *first)
-{
-    char *tab = dss_get_print_tab(g_print_level);
-    (void)printf("%s    auid = %llu\n", tab, *(uint64 *)first);
-    (void)printf("%s      volume = %llu\n", tab, (uint64)first->volume);
-    (void)printf("%s      au = %llu\n", tab, (long long unsigned int)(first->au));
-    (void)printf("%s      block = %llu\n", tab, (uint64)first->block);
-    (void)printf("%s      item = %llu\n", tab, (uint64)first->item);
-}
-
-static void printf_dss_fs_block_list(dss_fs_block_list_t *free)
-{
-    (void)printf("      count = %llu\n", free->count);
-
-    auid_t *first = &free->first;
-    (void)printf("      first = {\n");
-    printf_auid(first);
-    (void)printf("      }\n");
-
-    auid_t *last = &free->last;
-    (void)printf("      last = {\n");
-    printf_auid(last);
-    (void)printf("      }\n");
-}
-
-static void printf_dss_fs_block_root(dss_fs_block_root_t *root)
-{
-    (void)printf("    version = %llu\n", root->version);
-
-    dss_fs_block_list_t *free = &root->free;
-    (void)printf("    free = {\n");
-    printf_dss_fs_block_list(free);
-    (void)printf("    }\n");
-}
-
-static void printf_dss_au_list(dss_au_list_t *free_list)
-{
-    (void)printf("      count = %u\n", free_list->count);
-    (void)printf("      frist = {\n");
-    printf_auid(&free_list->first);
-    (void)printf("      }\n");
-    (void)printf("      last = {\n");
-    printf_auid(&free_list->last);
-    (void)printf("      }\n");
-}
-
-static void printf_dss_au_root(dss_au_root_t *au_root)
-{
-    (void)printf("    version = %llu\n", au_root->version);
-    (void)printf("    free_root = %llu\n", au_root->free_root);
-    (void)printf("    count = %llu\n", au_root->count);
-    (void)printf("    free_vol_id = %u\n", au_root->free_vol_id);
-    (void)printf("    count = %u\n", au_root->reserve);
-
-    dss_au_list_t *free_list = &au_root->free_list;
-    (void)printf("    free_list = {\n");
-    printf_dss_au_list(free_list);
-    (void)printf("    }\n");
-}
-
-static void printf_dss_volume_attr(const dss_volume_attr_t *volume_attrs)
-{
-    (void)printf("    id = %llu\n", (uint64)volume_attrs->id);
-    (void)printf("    size = %llu\n", volume_attrs->size);
-    (void)printf("    hwm = %llu\n", volume_attrs->hwm);
-    (void)printf("    free = %llu\n", volume_attrs->free);
 }
 
 status_t dss_printf_core_ctrl(dss_vg_info_item_t *vg_item, dss_volume_t *volume)
@@ -298,46 +229,6 @@ static void printf_ft_block(dss_ft_block_t *ft_block)
 
     dss_block_id_t *next = &ft_block->next;
     printf_auid(next);
-    (void)printf("    }\n");
-}
-
-static void printf_gft_list(gft_list_t *items)
-{
-    (void)printf("      count = %u\n", items->count);
-    (void)printf("      first = {\n");
-
-    ftid_t *first = &items->first;
-    printf_auid(first);
-    (void)printf("      }\n");
-    (void)printf("      last = {\n");
-
-    ftid_t *last = &items->last;
-    printf_auid(last);
-    (void)printf("      }\n");
-}
-
-static void printf_gft_root(gft_root_t *ft_root)
-{
-    (void)printf("    ft_root_free_list = {\n");
-
-    gft_list_t *free_list = &ft_root->free_list;
-    printf_gft_list(free_list);
-    (void)printf("    }\n");
-    (void)printf("    ft_root_items = {\n");
-
-    gft_list_t *items = &ft_root->items;
-    printf_gft_list(items);
-    (void)printf("    }\n");
-    (void)printf("    fid = %llu\n", ft_root->fid);
-    (void)printf("    block_id_first = {\n");
-
-    dss_block_id_t *block_id_first = &ft_root->first;
-    printf_auid(block_id_first);
-    (void)printf("    }\n");
-    (void)printf("    block_id_last = {\n");
-
-    dss_block_id_t *block_id_last = &ft_root->last;
-    printf_auid(block_id_last);
     (void)printf("    }\n");
 }
 
@@ -617,55 +508,6 @@ status_t dss_print_entry_fs_block_detail(
         (void)printf("  }\n");
     }
     return CM_SUCCESS;
-}
-
-static void printf_gft_node(gft_node_t *gft_node)
-{
-    if (gft_node->type == GFT_PATH) {
-        (void)printf("  type = GFT_PATH\n");
-        gft_list_t *items = &gft_node->items;
-        (void)printf("  items = {\n");
-        printf_gft_list(items);
-        (void)printf("  }\n");
-    } else if (gft_node->type == GFT_FILE) {
-        (void)printf("  type = GFT_FILE\n");
-        dss_block_id_t *entry = &gft_node->entry;
-        (void)printf("  entry = {\n");
-        printf_auid(entry);
-        (void)printf("  }\n");
-    } else if (gft_node->type == GFT_LINK) {
-        (void)printf("  type = GFT_LINK\n");
-        dss_block_id_t *entry = &gft_node->entry;
-        (void)printf("  entry = {\n");
-        printf_auid(entry);
-        (void)printf("  }\n");
-    }
-
-    (void)printf("  name = %s\n", gft_node->name);
-    (void)printf("  fid = %llu\n", gft_node->fid);
-    (void)printf("  flags = %u\n", gft_node->flags);
-    (void)printf("  size = %lld\n", gft_node->size);
-
-    char time[512];
-    (void)cm_time2str(gft_node->create_time, "YYYY-MM-DD HH24:mi:ss", time, sizeof(time));
-    (void)printf("  create_time = %s\n", time);
-    (void)cm_time2str(gft_node->update_time, "YYYY-MM-DD HH24:mi:ss", time, sizeof(time));
-    (void)printf("  update_time = %s\n", time);
-
-    auid_t *id = &gft_node->id;
-    (void)printf("  id = {\n");
-    printf_auid(id);
-    (void)printf("  }\n");
-
-    auid_t *next = &gft_node->next;
-    (void)printf("  next= {\n");
-    printf_auid(next);
-    (void)printf("  }\n");
-
-    auid_t *prev = &gft_node->prev;
-    (void)printf("  prev = {\n");
-    printf_auid(prev);
-    (void)printf("  }\n");
 }
 
 static status_t dss_print_ftn_by_id(char *block, uint64 node_id)

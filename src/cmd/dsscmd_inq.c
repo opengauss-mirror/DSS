@@ -24,7 +24,7 @@
 
 #include "dss_malloc.h"
 #include "dss_latch.h"
-#include "dss_redo.h"
+#include "dss_redo_recovery.h"
 #include "dsscmd_inq.h"
 
 #ifdef __cplusplus

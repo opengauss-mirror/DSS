@@ -243,10 +243,6 @@ static inline uint64 dss_get_redo_log_v0_start(dss_ctrl_t *dss_ctrl, uint32 vg_i
     uint64 redo_start = CM_CALC_ALIGN(DSS_VOLUME_HEAD_SIZE, au_size) + vg_id * DSS_INSTANCE_LOG_SPLIT_SIZE;
     return redo_start;
 }
-typedef struct st_dss_sort_handle {
-    uint64 offset;
-    uint64 lsn;
-} dss_sort_handle_t;
 
 #define DSS_REDO_BATCH_HEAD_SIZE OFFSET_OF(dss_redo_batch_t, data)
 #define DSS_REDO_PRINT_HEAD "dss redo detail:"
@@ -254,11 +250,13 @@ typedef struct st_dss_sort_handle {
 typedef status_t (*dss_replay_proc)(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry);
 typedef status_t (*dss_rollback_proc)(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry);
 typedef status_t (*dss_flush_proc)(dss_session_t *session, dss_vg_info_item_t *vg_item, void *data, uint32 size);
+typedef void (*dss_print_proc)(dss_redo_entry_t *entry);
 
 typedef struct st_dss_redo_handler {
     dss_redo_type_t type;
     dss_replay_proc replay;
     dss_rollback_proc rollback;  // only rollback memory operation.
+    dss_print_proc print;
 } dss_redo_handler_t;
 
 #define DSS_MAX_BLOCK_ADDR_NUM 10
@@ -273,8 +271,6 @@ bool32 rp_check_block_addr(const dss_block_addr_his_t *addr_his, const void *blo
 status_t dss_write_redolog_to_disk(dss_vg_info_item_t *item, uint32 volume_id, int64 offset, char *buf, uint32 size);
 void dss_put_log(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_type_t type, void *data, uint32 size);
 status_t dss_flush_log(dss_vg_info_item_t *vg_item, char *log_buf);
-status_t dss_recover_from_slot(dss_session_t *session, dss_vg_info_item_t *vg_item);
-status_t dss_recover_ctrlinfo(dss_vg_info_item_t *vg_item);
 status_t dss_apply_log(dss_session_t *session, dss_vg_info_item_t *vg_item, char *log_buf);
 status_t dss_process_redo_log(dss_session_t *session, dss_vg_info_item_t *vg_item);
 status_t dss_reset_log_slot_head(uint32 vg_id, char *log_buf);
@@ -283,14 +279,8 @@ char *dss_get_log_buf_from_vg(dss_session_t *session, dss_vg_info_item_t *vg_ite
 status_t dss_set_log_buf(const char *vg_name, dss_vg_info_item_t *vg_item);
 void rb_redo_clean_resource(
     dss_session_t *session, dss_vg_info_item_t *item, auid_t auid, ga_pool_id_e pool_id, uint32 first, uint32 count);
-status_t dss_check_recover_redo_log(dss_vg_info_item_t *vg_item, bool8 *recover_redo);
-bool32 dss_check_redo_batch_complete(dss_redo_batch_t *batch, dss_redo_batch_t *tail);
 status_t dss_update_redo_info(dss_vg_info_item_t *vg_item, char *log_buf);
-status_t dss_recover_from_offset_inner(dss_session_t *session, dss_vg_info_item_t *vg_item, char *log_buf);
-status_t dss_recover_from_slot_inner(dss_session_t *session, dss_vg_info_item_t *vg_item, char *log_buf);
-status_t dss_load_log_buffer_from_offset(dss_vg_info_item_t *vg_item, bool8 *need_recovery);
-status_t dss_load_log_buffer_from_slot(dss_vg_info_item_t *vg_item, bool8 *need_recovery);
-status_t dss_read_redolog_from_disk(dss_vg_info_item_t *vg_item, uint32 volume_id, int64 offset, char *buf, int32 size);
+void dss_print_redo_entry(dss_redo_entry_t *entry);
 
 #ifdef __cplusplus
 }

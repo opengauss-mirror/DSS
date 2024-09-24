@@ -24,7 +24,7 @@
 
 #include "dsscmd_volume.h"
 #include "dss_file.h"
-#include "dss_redo.h"
+#include "dss_redo_recovery.h"
 #include "dss_malloc.h"
 #include "dsscmd_inq.h"
 #include "dsscmd_encrypt.h"

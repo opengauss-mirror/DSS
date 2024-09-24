@@ -121,11 +121,6 @@ static status_t cmd_check_zero_or_one(const char *zero_or_one_str)
     return CM_SUCCESS;
 }
 
-static status_t cmd_check_dss_home(const char *dss_home)
-{
-    return dss_check_path(dss_home);
-}
-
 static status_t cmd_check_uds(const char *uds)
 {
     const char *uds_prefix = "UDS:";
@@ -134,44 +129,6 @@ static status_t cmd_check_uds(const char *uds)
         return CM_ERROR;
     }
     return dss_check_path(uds + strlen(uds_prefix));
-}
-
-static status_t cmd_realpath_home(const char *input_args, char **convert_result, int *convert_size)
-{
-    uint32 len = (uint32)strlen(input_args);
-    if (len == 0 || len >= CM_FILE_NAME_BUFFER_SIZE) {
-        DSS_PRINT_ERROR("the len of path is invalid.\n");
-        return CM_ERROR;
-    }
-    *convert_result = (char *)malloc(CM_FILE_NAME_BUFFER_SIZE);
-    if (*convert_result == NULL) {
-        DSS_PRINT_ERROR("Malloc failed.\n");
-        return CM_ERROR;
-    }
-    status_t status = realpath_file(input_args, *convert_result, CM_FILE_NAME_BUFFER_SIZE);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("path is insecure, home: %s.\n", input_args);
-        free(*convert_result);
-        *convert_result = NULL;
-        return status;
-    }
-    *convert_size = (int)CM_FILE_NAME_BUFFER_SIZE;
-    return status;
-}
-
-static status_t cmd_check_convert_dss_home(const char *input_args, void **convert_result, int *convert_size)
-{
-    if (input_args == NULL) {
-        *convert_result = NULL;
-        *convert_size = 0;
-        return CM_SUCCESS;
-    }
-    status_t status = cmd_realpath_home(input_args, (char **)convert_result, convert_size);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("home realpth failed, home: %s.\n", input_args);
-        return status;
-    }
-    return CM_SUCCESS;
 }
 
 static status_t dss_fetch_uds_path(char *server_path, char *path, char **file)
@@ -230,13 +187,6 @@ static status_t cmd_check_convert_uds_home(const char *input_args, void **conver
         return CM_ERROR;
     }
     return CM_SUCCESS;
-}
-
-void cmd_clean_check_convert(char *convert_result, int convert_size)
-{
-    if (convert_result != NULL) {
-        CM_FREE_PTR(convert_result);
-    }
 }
 
 static status_t cmd_check_struct_name(const char *struct_name)
@@ -1966,23 +1916,6 @@ static status_t get_examine_opt_parameter(int32 *read_size)
     return CM_SUCCESS;
 }
 
-static status_t set_config_info(char *home, dss_config_t *inst_cfg)
-{
-    status_t status;
-    status = dss_set_cfg_dir(home, inst_cfg);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Environment variant DSS_HOME not found!\n");
-        return status;
-    }
-
-    status = dss_load_config(inst_cfg);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to load parameters!\n");
-        return status;
-    }
-    return CM_SUCCESS;
-}
-
 static status_t print_file_proc(dss_conn_t *conn, int32 handle, int64 offset, int32 read_size, char fmt)
 {
 #ifndef WIN32
@@ -2232,17 +2165,6 @@ static void showdisk_help(const char *prog_name, int print_flag)
     (void)printf("-b/--block_id <block_id>, <required>, fs block id or ft block id\n");
     (void)printf("-n/--node_id <node_id>, <required>, node id in block\n");
     help_param_dsshome();
-}
-
-static status_t dss_get_vg_item(dss_vg_info_item_t **vg_item, const char *vg_name)
-{
-    dss_vg_info_item_t *tmp_vg_item = dss_find_vg_item(vg_name);
-    if (tmp_vg_item == NULL) {
-        LOG_DEBUG_ERR("vg_name %s is not exist.\n", vg_name);
-        return CM_ERROR;
-    }
-    *vg_item = tmp_vg_item;
-    return CM_SUCCESS;
 }
 
 static status_t dss_print_struct_name(dss_vg_info_item_t *vg_item, const char *struct_name)
