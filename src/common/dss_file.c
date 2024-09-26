@@ -1516,7 +1516,7 @@ status_t dss_update_au_disk(
     int64_t block_offset = offset;
     uint32 obj_id = first;
     for (uint32 i = 0; i < count; i++) {
-        buf = ga_object_addr(pool_id, obj_id);
+        buf = dss_buffer_get_meta_addr(pool_id, obj_id);
         DSS_ASSERT_LOG(buf != NULL, "buf is NULL when update au disk, auid:%s", dss_display_metaid(auid));
         dss_common_block_t *block = (dss_common_block_t *)buf;
         block->version++;
@@ -1546,7 +1546,7 @@ status_t dss_format_ft_node_core(
     dss_ft_block_t *block = (dss_ft_block_t *)dss_get_ft_block_by_ftid(session, vg_item, gft->last);
     block->next = auid;
     for (uint32 i = 0; i < block_num; i++) {
-        block = (dss_ft_block_t *)ga_object_addr(GA_8K_POOL, obj_id);
+        block = (dss_ft_block_t *)dss_buffer_get_meta_addr(GA_8K_POOL, obj_id);
         errno_t err = memset_sp((char *)block, DSS_BLOCK_SIZE, 0, DSS_BLOCK_SIZE);
         cm_panic(err == EOK);
         block->common.id = auid;
@@ -1561,8 +1561,8 @@ status_t dss_format_ft_node_core(
 
         ga_obj_id.obj_id = obj_id;
         do {
-            status = dss_register_buffer_cache(session, vg_item, block->common.id, ga_obj_id,
-                (dss_block_ctrl_t *)((char *)block + DSS_BLOCK_SIZE), DSS_BLOCK_TYPE_FT);
+            status = dss_register_buffer_cache(
+                session, vg_item, block->common.id, ga_obj_id, (char *)block, DSS_BLOCK_TYPE_FT);
             if (status != CM_SUCCESS) {
                 rollback_count = i;
                 DSS_BREAK_IFERR2(status,
@@ -1640,14 +1640,14 @@ status_t dss_format_bitmap_node(dss_session_t *session, dss_vg_info_item_t *vg_i
     ga_obj_id_t ga_obj_id;
     ga_obj_id.pool_id = GA_16K_POOL;
     for (uint32 i = 0; i < block_num; i++) {
-        block = (dss_fs_block_header *)ga_object_addr(GA_16K_POOL, obj_id);
+        block = (dss_fs_block_header *)dss_buffer_get_meta_addr(GA_16K_POOL, obj_id);
         block->common.id = auid;
         block->common.id.block = i;
         block->common.id.item = 0;
         ga_obj_id.obj_id = obj_id;
 
-        status = dss_register_buffer_cache(session, vg_item, block->common.id, ga_obj_id,
-            (dss_block_ctrl_t *)((char *)block + DSS_FILE_SPACE_BLOCK_SIZE), DSS_BLOCK_TYPE_FS);
+        status =
+            dss_register_buffer_cache(session, vg_item, block->common.id, ga_obj_id, (char *)block, DSS_BLOCK_TYPE_FS);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("[FS][FORMAT] Failed to register block:%s, obj is %u.",
                                       dss_display_metaid(block->common.id), obj_id));
 
@@ -3262,7 +3262,7 @@ static status_t dss_extend_with_updt_written_size(
             dss_exit(1);
         }
 
-        dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(block);
+        dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(block);
         dss_add_syn_meta(vg_item, block_ctrl, block->common.version);
 
         LOG_DEBUG_INF("Try to extend ftid:%s to size:%llu, written_size:%llu.", dss_display_metaid(node_data->ftid),
@@ -4194,7 +4194,7 @@ status_t dss_update_file_written_size(
     }
 
     dss_ft_block_t *cur_block = dss_get_ft_by_node(node);
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(cur_block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(cur_block);
 
     if (DSS_IS_FILE_INNER_INITED(node->flags) && node->min_inited_size < written_size) {
         bool32 is_init_tail = CM_FALSE;
@@ -4284,8 +4284,8 @@ void dss_clean_all_sessions_latch()
         if (cli_pid_alived) {
             continue;
         }
-        LOG_RUN_INF("[CLEAN_LATCH]session id %u, pid %llu, start_time %lld, process name:%s, objectid %u.", session->id, cli_pid,
-            start_time, session->cli_info.process_name, session->objectid);
+        LOG_RUN_INF("[CLEAN_LATCH]session id %u, pid %llu, start_time %lld, process name:%s, objectid %u.", session->id,
+            cli_pid, start_time, session->cli_info.process_name, session->objectid);
         // clean the session lock and latch
         dss_clean_session_latch(session, CM_TRUE);
     }

@@ -209,12 +209,12 @@ status_t dss_format_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, 
 
     dss_fs_aux_t *block = NULL;
     for (uint32 i = 0; i < block_num; i++) {
-        block = (dss_fs_aux_t *)ga_object_addr(GA_FS_AUX_POOL, obj_id);
+        block = (dss_fs_aux_t *)dss_buffer_get_meta_addr(GA_FS_AUX_POOL, obj_id);
         dss_format_fs_aux_inner(dss_ctrl, block, i, auid);
 
         ga_obj_id.obj_id = obj_id;
-        status = dss_register_buffer_cache(session, vg_item, block->head.common.id, ga_obj_id,
-            (dss_block_ctrl_t *)((char *)block + DSS_FS_AUX_SIZE), DSS_BLOCK_TYPE_FS_AUX);
+        status = dss_register_buffer_cache(
+            session, vg_item, block->head.common.id, ga_obj_id, (char *)block, DSS_BLOCK_TYPE_FS_AUX);
         if (status != CM_SUCCESS) {
             LOG_RUN_ERR("[FS AUX]Failed to register fs aux, id:%s, obj id:%u.",
                 dss_display_metaid(block->head.common.id), obj_id);
@@ -501,7 +501,7 @@ static status_t dss_updt_one_fs_aux_base(dss_session_t *session, dss_vg_info_ite
 
         dss_unlatch_fs_aux(fs_aux);
         if (has_changed) {
-            dss_block_ctrl_t *fs_aux_block_ctrl = dss_get_fs_aux_ctrl(fs_aux);
+            dss_block_ctrl_t *fs_aux_block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_aux);
             dss_add_syn_meta(vg_item, fs_aux_block_ctrl, fs_aux->head.common.version);
         }
     }

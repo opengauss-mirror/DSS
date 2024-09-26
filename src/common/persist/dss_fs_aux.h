@@ -120,14 +120,9 @@ typedef struct st_dss_redo_updt_fs_block_t {
 
 void dss_check_fs_aux_affiliation(dss_fs_aux_header_t *block, ftid_t id, uint16_t index);
 
-static inline dss_block_ctrl_t *dss_get_fs_aux_ctrl(dss_fs_aux_t *fs_aux)
-{
-    return (dss_block_ctrl_t *)((char *)fs_aux + DSS_FS_AUX_SIZE);
-}
-
 static inline bool32 dss_is_fs_aux_valid(gft_node_t *node, dss_fs_aux_t *fs_aux)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_fs_aux_ctrl(fs_aux);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_aux);
     return ((node->fid == block_ctrl->fid) && (node->file_ver == block_ctrl->file_ver) &&
             (block_ctrl->ftid == DSS_ID_TO_U64(node->id)));
 }
@@ -143,7 +138,7 @@ static inline bool32 dss_is_fs_aux_valid_all(gft_node_t *node, dss_fs_aux_t *fs_
 
 static inline void dss_updt_fs_aux_file_ver(gft_node_t *node, dss_fs_aux_t *fs_aux)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_fs_aux_ctrl(fs_aux);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_aux);
     block_ctrl->fid = node->fid;
     block_ctrl->file_ver = node->file_ver;
     block_ctrl->ftid = DSS_ID_TO_U64(node->id);
@@ -152,37 +147,37 @@ static inline void dss_updt_fs_aux_file_ver(gft_node_t *node, dss_fs_aux_t *fs_a
 
 static inline uint64 dss_get_fs_aux_fid(dss_fs_aux_t *fs_aux)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_fs_aux_ctrl(fs_aux);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_aux);
     return block_ctrl->fid;
 }
 
 static inline uint64 dss_get_fs_aux_file_ver(dss_fs_aux_t *fs_aux)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_fs_aux_ctrl(fs_aux);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_aux);
     return block_ctrl->file_ver;
 }
 
 static inline void dss_latch_fs_aux_init(dss_fs_aux_t *fs_aux)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_fs_aux_ctrl(fs_aux);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_aux);
     cm_latch_init(&block_ctrl->latch);
 }
 
 static inline void dss_latch_s_fs_aux(dss_session_t *session, dss_fs_aux_t *fs_aux, latch_statis_t *stat)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_fs_aux_ctrl(fs_aux);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_aux);
     dss_latch_s2(&block_ctrl->latch, DSS_SESSIONID_IN_LOCK(session->id), CM_FALSE, stat);
 }
 
 static inline void dss_latch_x_fs_aux(dss_session_t *session, dss_fs_aux_t *fs_aux, latch_statis_t *stat)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_fs_aux_ctrl(fs_aux);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_aux);
     cm_latch_x(&block_ctrl->latch, DSS_SESSIONID_IN_LOCK(session->id), stat);
 }
 
 static inline void dss_unlatch_fs_aux(dss_fs_aux_t *fs_aux)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_fs_aux_ctrl(fs_aux);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_aux);
     dss_unlatch(&block_ctrl->latch);
 }
 

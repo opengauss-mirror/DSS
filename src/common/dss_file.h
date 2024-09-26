@@ -187,14 +187,9 @@ static inline bool32 dss_is_fs_meta_valid(gft_node_t *node)
     return !(node->flags & DSS_FT_NODE_FLAG_INVALID_FS_META);
 }
 
-static inline dss_block_ctrl_t *dss_get_block_ctrl_by_fs(dss_fs_block_t *fs_block)
-{
-    return (dss_block_ctrl_t *)((char *)fs_block + DSS_FILE_SPACE_BLOCK_SIZE);
-}
-
 static inline bool32 dss_is_fs_block_valid(gft_node_t *node, dss_fs_block_t *fs_block)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_fs(fs_block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_block);
     return ((node->fid == block_ctrl->fid) && (node->file_ver == block_ctrl->file_ver) &&
             (block_ctrl->ftid == DSS_ID_TO_U64(node->id)));
 }
@@ -210,7 +205,7 @@ static inline bool32 dss_is_fs_block_valid_all(gft_node_t *node, dss_fs_block_t 
 
 static inline void dss_set_fs_block_file_ver(gft_node_t *node, dss_fs_block_t *fs_block)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_fs(fs_block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_block);
     block_ctrl->fid = node->fid;
     block_ctrl->ftid = DSS_ID_TO_U64(node->id);
     block_ctrl->file_ver = node->file_ver;
@@ -219,24 +214,19 @@ static inline void dss_set_fs_block_file_ver(gft_node_t *node, dss_fs_block_t *f
 
 static inline uint64 dss_get_fs_block_fid(dss_fs_block_t *fs_block)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_fs(fs_block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_block);
     return block_ctrl->fid;
 }
 
 static inline uint64 dss_get_fs_block_file_ver(dss_fs_block_t *fs_block)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_fs(fs_block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(fs_block);
     return block_ctrl->file_ver;
 }
 
 static inline int64 dss_get_fsb_offset(uint32 au_size, const dss_block_id_t *id)
 {
     return (int64)id->au * au_size + (int64)DSS_FILE_SPACE_BLOCK_SIZE * id->block;
-}
-
-static inline dss_block_ctrl_t *dss_get_block_ctrl_by_ft(dss_ft_block_t *ft_block)
-{
-    return (dss_block_ctrl_t *)((char *)ft_block + DSS_BLOCK_CTRL_SIZE);
 }
 
 static inline dss_ft_block_t *dss_get_ft_by_node(gft_node_t *node)
@@ -257,19 +247,20 @@ static inline gft_node_t *dss_get_node_by_ft(dss_ft_block_t *block, uint32 item)
 
 static inline gft_node_t *dss_get_node_by_block_ctrl(dss_block_ctrl_t *block, uint32 item)
 {
-    return (gft_node_t *)((((char *)block - DSS_BLOCK_CTRL_SIZE) + sizeof(dss_ft_block_t)) + item * sizeof(gft_node_t));
+    dss_ft_block_t *ft_block = DSS_GET_META_FROM_BLOCK_CTRL(dss_ft_block_t, block);
+    return (gft_node_t *)((((char *)ft_block) + sizeof(dss_ft_block_t)) + item * sizeof(gft_node_t));
 }
 
 static inline bool32 dss_is_ft_block_valid(gft_node_t *node, dss_ft_block_t *ft_block)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(ft_block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(ft_block);
     return ((block_ctrl->node != NULL) && (node->fid == block_ctrl->fid) && (node->file_ver == block_ctrl->file_ver) &&
             (block_ctrl->ftid == DSS_ID_TO_U64(node->id)));
 }
 
 static inline void dss_set_ft_block_file_ver(gft_node_t *node, dss_ft_block_t *ft_block)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(ft_block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(ft_block);
     block_ctrl->fid = node->fid;
     block_ctrl->ftid = DSS_ID_TO_U64(node->id);
     block_ctrl->file_ver = node->file_ver;
@@ -278,13 +269,13 @@ static inline void dss_set_ft_block_file_ver(gft_node_t *node, dss_ft_block_t *f
 
 static inline uint64 dss_get_ft_block_fid(dss_ft_block_t *ft_block)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(ft_block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(ft_block);
     return block_ctrl->fid;
 }
 
 static inline uint64 dss_get_ft_block_file_ver(dss_ft_block_t *ft_block)
 {
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(ft_block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(ft_block);
     return block_ctrl->file_ver;
 }
 
@@ -304,14 +295,14 @@ static inline bool32 dss_is_block_ctrl_valid(dss_block_ctrl_t *block_ctrl)
 static inline bool32 dss_get_is_refresh_ftid(gft_node_t *node)
 {
     dss_ft_block_t *ft_block = dss_get_ft_by_node(node);
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(ft_block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(ft_block);
     return block_ctrl->is_refresh_ftid;
 }
 
 static inline void dss_set_is_refresh_ftid(gft_node_t *node, bool32 is_refresh_ftid)
 {
     dss_ft_block_t *ft_block = dss_get_ft_by_node(node);
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(ft_block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(ft_block);
     block_ctrl->is_refresh_ftid = is_refresh_ftid;
 }
 
@@ -327,7 +318,7 @@ static inline dss_block_ctrl_t *dss_get_block_ctrl_by_node(gft_node_t *node)
     }
     dss_ft_block_t *ft_block =
         (dss_ft_block_t *)(((char *)node - node->id.item * sizeof(gft_node_t)) - sizeof(dss_ft_block_t));
-    return (dss_block_ctrl_t *)((char *)ft_block + DSS_BLOCK_CTRL_SIZE);
+    return DSS_GET_BLOCK_CTRL_FROM_META(ft_block);
 }
 
 static inline void dss_latch_node_init(gft_node_t *node)
