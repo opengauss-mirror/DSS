@@ -1007,15 +1007,18 @@ gft_node_t *dss_find_gft_node_by_fid_in_bucket_inner(dss_ft_block_t *block, uint
 }
 
 gft_node_t *dss_find_gft_node_by_fid_in_bucket(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, shm_hashmap_bucket_t *bucket, uint64 fid)
+    dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 bucket_idx, uint64 fid)
 {
+    shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
+    uint32 segment_objid = DSS_INVALID_ID32;
+    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx, &segment_objid);
     char *addr = NULL;
     dss_block_ctrl_t *block_ctrl = NULL;
     gft_node_t *node = NULL;
     dss_common_block_t *block_head = NULL;
     dss_ft_block_t *block = NULL;
     if (vg_item->from_type == FROM_SHM) {
-        (void)dss_lock_shm_meta_bucket_s(session, vg_item->id, &bucket->enque_lock);
+        (void)dss_lock_shm_meta_bucket_s(session, segment_objid, &bucket->enque_lock);
     }
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
@@ -1043,11 +1046,9 @@ gft_node_t *dss_find_gft_node_by_fid_in_bucket(
 gft_node_t *dss_get_gft_node_by_fid(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 fid)
 {
     shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
-    shm_hashmap_bucket_t *bucket = NULL;
     gft_node_t *node = NULL;
-    for (uint32 i = 0; i < hash_ctrl->bucket_num; i++) {
-        bucket = shm_hashmap_get_bucket(hash_ctrl, i);
-        node = dss_find_gft_node_by_fid_in_bucket(session, vg_item, bucket, fid);
+    for (uint32 i = 0; i <= hash_ctrl->max_bucket; i++) {
+        node = dss_find_gft_node_by_fid_in_bucket(session, vg_item, i, fid);
         if (node != NULL) {
             return node;
         }

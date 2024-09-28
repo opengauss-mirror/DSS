@@ -44,7 +44,7 @@ status_t dss_extend_session(uint32 extend_num)
     uint32_t old_alloc_sessions = g_dss_session_ctrl.alloc_sessions;
     uint32_t new_alloc_sessions = g_dss_session_ctrl.alloc_sessions + extend_num;
     if (new_alloc_sessions > g_dss_session_ctrl.total) {
-        LOG_RUN_ERR("Failed to extend session ,expect new alloc sessions %u, but max is %u.", new_alloc_sessions,
+        LOG_RUN_ERR("Failed to extend session, expect new alloc sessions %u, but max is %u.", new_alloc_sessions,
             g_dss_session_ctrl.total);
         DSS_THROW_ERROR(ERR_DSS_SESSION_EXTEND, "expect new alloc sessions %u, but max is %u.", new_alloc_sessions,
             g_dss_session_ctrl.total);
@@ -117,14 +117,14 @@ uint32 dss_get_recover_task_idx(void)
     return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM);
 }
 
-uint32 dss_get_hashmap_dynamic_extend_task_idx(void)
-{
-    return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_DELAY_CLEAN_BACKGROUND_TASK;
-}
-
 uint32 dss_get_delay_clean_task_idx(void)
 {
     return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_HASHMAP_DYNAMIC_EXTEND_TASK;
+}
+
+uint32 dss_get_hashmap_dynamic_extend_task_idx(void)
+{
+    return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_DELAY_CLEAN_BACKGROUND_TASK;
 }
 
 uint32 dss_get_bg_task_set_idx(uint32 task_id_base, uint32 idx)
@@ -391,10 +391,9 @@ status_t dss_lock_shm_meta_bucket_s(dss_session_t *session, uint32 id, dss_share
     if (dss_is_server()) {
         return dss_lock_shm_meta_s_without_stack(session, shared_latch, CM_FALSE, SPIN_WAIT_FOREVER);
     }
-
     dss_latch_offset_t latch_offset;
     latch_offset.type = DSS_LATCH_OFFSET_SHMOFFSET;
-    cm_shm_key_t key = cm_shm_key_of(SHM_TYPE_HASH, id);
+    cm_shm_key_t key = ga_object_key(GA_SEGMENT_POOL, id);
     latch_offset.offset.shm_offset = cm_trans_shm_offset(key, &shared_latch->latch);
     return dss_lock_shm_meta_s_with_stack(session, &latch_offset, shared_latch, SPIN_WAIT_FOREVER);
 }
