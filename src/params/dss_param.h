@@ -33,7 +33,7 @@
 #include "mes_interface.h"
 #include "dss_errno.h"
 #include "dss_api.h"
-
+#include "dss_nodes_list.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -79,10 +79,7 @@ typedef struct st_dss_params {
     uint32 dlock_retry_count;
 
     uint64 mes_pool_size;
-    uint32 inst_cnt;
-    uint64 inst_map;
-    char nodes[DSS_MAX_INSTANCES][CM_MAX_IP_LEN];
-    uint16 ports[DSS_MAX_INSTANCES];
+    dss_nodes_list_t nodes_list;
     uint32 channel_num;
     uint32 work_thread_cnt;
     cs_pipe_type_t pipe_type;

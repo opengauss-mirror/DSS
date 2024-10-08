@@ -85,11 +85,11 @@ static config_item_t g_dss_params[] = {
     {"_SHM_KEY", CM_TRUE, ATTR_READONLY, "1", NULL, NULL, "-", "[1,64]", "GS_TYPE_INTEGER", NULL, 17, EFFECT_REBOOT,
         CFG_INS, NULL, NULL, NULL, NULL},
 #ifdef OPENGAUSS
-    {"DSS_NODES_LIST", CM_TRUE, ATTR_READONLY, "0:127.0.0.1:1611", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 18,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"DSS_NODES_LIST", CM_TRUE, ATTR_NONE, "0:127.0.0.1:1611", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 18,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_nodes_list, dss_notify_dss_nodes_list, NULL, NULL},
 #else
-    {"DSS_NODES_LIST", CM_TRUE, ATTR_READONLY, "0|127.0.0.1|1611", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 18,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"DSS_NODES_LIST", CM_TRUE, ATTR_NONE, "0|127.0.0.1|1611", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 18,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_nodes_list, dss_notify_dss_nodes_list, NULL, NULL},
 #endif
     {"INTERCONNECT_TYPE", CM_TRUE, ATTR_READONLY, "TCP", NULL, NULL, "-", "TCP,RDMA", "GS_TYPE_VARCHAR", NULL, 19,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
@@ -282,18 +282,7 @@ static status_t dss_load_mes_pool_size(dss_config_t *inst_cfg)
 static status_t dss_load_mes_url(dss_config_t *inst_cfg)
 {
     char *value = cm_get_config_value(&inst_cfg->config, "DSS_NODES_LIST");
-    status_t status = cm_split_mes_urls(inst_cfg->params.nodes, inst_cfg->params.ports, value);
-    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DSS_NODES_LIST"));
-    int32 node_cnt = 0;
-    for (int i = 0; i < DSS_MAX_INSTANCES; i++) {
-        if (inst_cfg->params.ports[i] != 0) {
-            inst_cfg->params.inst_map |= ((uint64)1 << i);
-            node_cnt++;
-        }
-    }
-    inst_cfg->params.inst_cnt = (uint32)node_cnt;
-    LOG_RUN_INF("Cluster Raid mode, node count = %d.", node_cnt);
-    return CM_SUCCESS;
+    return dss_extract_nodes_list(value, &inst_cfg->params.nodes_list);
 }
 
 static status_t dss_load_mes_conn_type(dss_config_t *inst_cfg)
@@ -942,6 +931,7 @@ static status_t dss_set_cfg_param_core(text_t *text, char *value, dss_def_t *def
     return CM_SUCCESS;
 }
 
+static latch_t g_dss_set_cfg_latch = {0, 0, 0, 0, 0};
 status_t dss_set_cfg_param(char *name, char *value, char *scope)
 {
     CM_ASSERT(name != NULL);
@@ -966,8 +956,10 @@ status_t dss_set_cfg_param(char *name, char *value, char *scope)
     } else {
         def.scope = CONFIG_SCOPE_BOTH;
     }
-
-    return dss_set_cfg_param_core(&text, value, &def);
+    dss_latch_x(&g_dss_set_cfg_latch);
+    status_t status = dss_set_cfg_param_core(&text, value, &def);
+    dss_unlatch(&g_dss_set_cfg_latch);
+    return status;
 }
 
 status_t dss_get_cfg_param(const char *name, char **value)
