@@ -825,7 +825,7 @@ status_t rp_redo_rename_file(dss_session_t *session, dss_vg_info_item_t *vg_item
     DSS_RETURN_IFERR2(
         status, LOG_DEBUG_ERR("[REDO] Failed to update fs block: %s to disk.", dss_display_metaid(data->node.id)));
 
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(cur_block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(cur_block);
     dss_add_syn_meta(vg_item, block_ctrl, cur_block->common.version);
 
     LOG_DEBUG_INF(
@@ -888,7 +888,7 @@ status_t rp_redo_set_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_ite
     status = dss_update_fs_bitmap_block_disk(vg_item, block, DSS_FILE_SPACE_BLOCK_SIZE, CM_FALSE);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to update fs block: %s to disk.", dss_display_metaid(data->id)));
 
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_fs(block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(block);
     dss_add_syn_meta(vg_item, block_ctrl, block->head.common.version);
     LOG_DEBUG_INF("[REDO] Succeed to replay set fs block: %s, used_num:%hu, vg name:%s.", dss_display_metaid(data->id),
         block->head.used_num, vg_item->vg_name);
@@ -1128,7 +1128,7 @@ static status_t rp_redo_set_file_size_inner(
     CM_RETURN_IFERR_EX(dss_update_ft_block_disk(vg_item, cur_block, *ftid),
         LOG_DEBUG_ERR("[REDO] Failed to update ft block: %s to disk.", dss_display_metaid(*ftid)));
 
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(cur_block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(cur_block);
     dss_add_syn_meta(vg_item, block_ctrl, cur_block->common.version);
 
     return CM_SUCCESS;
@@ -1212,7 +1212,7 @@ void rb_redo_clean_resource(
     uint32 last = first;
     CM_ASSERT(count > 0);
     for (uint32 i = 0; i < count; i++) {
-        block = (dss_fs_block_header *)ga_object_addr(pool_id, obj_id);
+        block = (dss_fs_block_header *)dss_buffer_get_meta_addr(pool_id, obj_id);
         CM_ASSERT(block != NULL);
         dss_unregister_buffer_cache(session, item, block->common.id);
         if (i == count - 1) {
@@ -1278,7 +1278,7 @@ static status_t rp_redo_set_node_flag(dss_session_t *session, dss_vg_info_item_t
         LOG_DEBUG_ERR("[REDO] Failed to update ft block: %s, vg_name:%s to disk.", dss_display_metaid(file_flag->ftid),
             vg_item->vg_name));
 
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_ft(cur_block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(cur_block);
     dss_add_syn_meta(vg_item, block_ctrl, cur_block->common.version);
 
     LOG_DEBUG_INF("[REDO] Succeed to replay set file:%s, flags:%u, old_flag:%u, vg_name:%s.",
@@ -1347,7 +1347,7 @@ status_t rp_redo_set_fs_block_batch(dss_session_t *session, dss_vg_info_item_t *
     status = dss_update_fs_bitmap_block_disk(vg_item, block, DSS_FILE_SPACE_BLOCK_SIZE, CM_FALSE);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to update fs batch block:%llu to disk.", DSS_ID_TO_U64(data->id)));
 
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_fs(block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(block);
     dss_add_syn_meta(vg_item, block_ctrl, block->head.common.version);
 
     DSS_LOG_DEBUG_OP("Succeed to replay set fs batch block:%llu, used_num:%hu, vg name:%s.", DSS_ID_TO_U64(data->id),
@@ -1480,7 +1480,7 @@ status_t rp_redo_set_fs_aux_block_batch(dss_session_t *session, dss_vg_info_item
     status = dss_update_fs_bitmap_block_disk(vg_item, block, DSS_FILE_SPACE_BLOCK_SIZE, CM_FALSE);
     DSS_RETURN_IFERR2(status,
         LOG_RUN_ERR("[REDO][FS AUX]Failed to update fs batch block:%llu to disk.", DSS_ID_TO_U64(data->fs_block_id)));
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_fs(block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(block);
     dss_add_syn_meta(vg_item, block_ctrl, block->head.common.version);
     DSS_LOG_DEBUG_OP("Succeed to replay set fs batch block:%llu, used_num:%hu, vg name:%s.",
         DSS_ID_TO_U64(data->fs_block_id), block->head.used_num, vg_item->vg_name);
@@ -1566,9 +1566,9 @@ status_t rp_redo_truncate_fs_block_batch(dss_session_t *session, dss_vg_info_ite
     DSS_RETURN_IFERR2(
         status, LOG_DEBUG_ERR("Failed to update fs batch block:%llu to disk.", DSS_ID_TO_U64(redo->dst_id)));
 
-    dss_block_ctrl_t *src_block_ctrl = dss_get_block_ctrl_by_fs(src_block);
+    dss_block_ctrl_t *src_block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(src_block);
     dss_add_syn_meta(vg_item, src_block_ctrl, src_block->head.common.version);
-    dss_block_ctrl_t *dst_block_ctrl = dss_get_block_ctrl_by_fs(dst_block);
+    dss_block_ctrl_t *dst_block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(dst_block);
     dss_add_syn_meta(vg_item, dst_block_ctrl, dst_block->head.common.version);
 
     DSS_LOG_DEBUG_OP("Succeed to replay truncate fs batch block:%llu to block:%llu, count:%hu, vg name:%s.",

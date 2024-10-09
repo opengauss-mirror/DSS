@@ -69,6 +69,20 @@ void dss_leave_shm(dss_session_t *session, dss_vg_info_item_t *vg_item)
     }
 }
 
+dss_block_ctrl_t *dss_buffer_get_block_ctrl_addr(ga_pool_id_e pool_id, uint32 object_id)
+{
+    return (dss_block_ctrl_t *)ga_object_addr(pool_id, object_id);
+}
+
+char *dss_buffer_get_meta_addr(ga_pool_id_e pool_id, uint32 object_id)
+{
+    dss_block_ctrl_t *block_ctrl = dss_buffer_get_block_ctrl_addr(pool_id, object_id);
+    if (block_ctrl != NULL) {
+        return DSS_GET_META_FROM_BLOCK_CTRL(char, block_ctrl);
+    }
+    return NULL;
+}
+
 bool32 dss_buffer_cache_key_compare(void *key, void *key2)
 {
     uint64 id = DSS_BLOCK_ID_IGNORE_UNINITED(*(uint64 *)key);
@@ -98,29 +112,18 @@ uint32 dss_buffer_cache_get_block_size(uint32_t block_type)
     }
 }
 
-dss_block_ctrl_t *dss_buffer_cache_get_block_ctrl(uint32_t block_type, char *addr)
-{
-    if (block_type == DSS_BLOCK_TYPE_FT) {
-        return (dss_block_ctrl_t *)(addr + DSS_BLOCK_SIZE);
-    } else if (block_type == DSS_BLOCK_TYPE_FS) {
-        return (dss_block_ctrl_t *)(addr + DSS_FILE_SPACE_BLOCK_SIZE);
-    } else {
-        return (dss_block_ctrl_t *)(addr + DSS_FS_AUX_SIZE);
-    }
-}
-
 static void dss_register_buffer_cache_inner(dss_session_t *session, shm_hash_ctrl_t *hash_ctrl,
-    shm_hashmap_bucket_t *bucket, ga_obj_id_t obj_id, dss_block_ctrl_t *block_ctrl, uint32 hash)
+    shm_hashmap_bucket_t *bucket, ga_obj_id_t obj_id, char *meta_addr, uint32 hash)
 {
     CM_ASSERT(bucket != NULL);
-    CM_ASSERT(block_ctrl != NULL);
+    CM_ASSERT(meta_addr != NULL);
+
     dss_block_ctrl_t *first_block_ctrl = NULL;
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
     if (bucket->has_next) {
         ga_obj_id_t first_obj_id = *(ga_obj_id_t *)&bucket->first;
-        char *addr = ga_object_addr(first_obj_id.pool_id, first_obj_id.obj_id);
-        DSS_ASSERT_LOG(addr != NULL, "obj addr is NULL when register buffer cache");
-        dss_common_block_t *block = DSS_GET_COMMON_BLOCK_HEAD(addr);
-        first_block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
+        first_block_ctrl = dss_buffer_get_block_ctrl_addr(first_obj_id.pool_id, first_obj_id.obj_id);
+        DSS_ASSERT_LOG(first_block_ctrl != NULL, "obj meta_addr is NULL when register buffer cache");
     } else {
         block_ctrl->has_next = CM_FALSE;
     }
@@ -128,25 +131,19 @@ static void dss_register_buffer_cache_inner(dss_session_t *session, shm_hash_ctr
     SHM_HASH_BUCKET_INSERT(bucket, *(sh_mem_p *)&obj_id, block_ctrl, first_block_ctrl);
 }
 
-void dss_unregister_buffer_cache_inner(
-    shm_hash_ctrl_t *hash_ctrl, shm_hashmap_bucket_t *bucket, ga_obj_id_t next_id, char *block_addr)
+static void dss_unregister_buffer_cache_inner(
+    shm_hash_ctrl_t *hash_ctrl, shm_hashmap_bucket_t *bucket, ga_obj_id_t next_id, char *meta_addr)
 {
-    char *addr = NULL;
     dss_block_ctrl_t *prev_block_ctrl = NULL;
     dss_block_ctrl_t *next_block_ctrl = NULL;
-    dss_common_block_t *block = DSS_GET_COMMON_BLOCK_HEAD(block_addr);
-    dss_block_ctrl_t *block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, block_addr);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
     if (block_ctrl->has_prev) {
         ga_obj_id_t obj_id = *(ga_obj_id_t *)&block_ctrl->hash_prev;
-        addr = ga_object_addr(obj_id.pool_id, obj_id.obj_id);
-        block = DSS_GET_COMMON_BLOCK_HEAD(addr);
-        prev_block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
+        prev_block_ctrl = dss_buffer_get_block_ctrl_addr(obj_id.pool_id, obj_id.obj_id);
     }
     if (block_ctrl->has_next) {
         ga_obj_id_t obj_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
-        addr = ga_object_addr(obj_id.pool_id, obj_id.obj_id);
-        block = DSS_GET_COMMON_BLOCK_HEAD(addr);
-        next_block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
+        next_block_ctrl = dss_buffer_get_block_ctrl_addr(obj_id.pool_id, obj_id.obj_id);
     }
     SHM_HASH_BUCKET_REMOVE(bucket, *(sh_mem_p *)&next_id, block_ctrl, prev_block_ctrl, next_block_ctrl);
 }
@@ -162,19 +159,19 @@ status_t shm_hashmap_move_bucket_node(
     ga_obj_id_t tmp_id = *(ga_obj_id_t *)&old_bucket->first;
     ga_obj_id_t next_id = *(ga_obj_id_t *)&old_bucket->first;
     bool32 has_next = old_bucket->has_next;
-    char *addr = NULL;
+    char *meta_addr = NULL;
     dss_block_ctrl_t *block_ctrl = NULL;
     dss_common_block_t *block = NULL;
     auid_t block_id_tmp = {0};
     uint32 hash;
     uint32 bucket_idx;
     while (has_next) {
-        addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
-        DSS_ASSERT_LOG(addr != NULL, "[HASHMAP]Expect addr is not null, pool id is %u, object id is %u.",
+        meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
+        DSS_ASSERT_LOG(meta_addr != NULL, "[HASHMAP]Expect meta_addr is not null, pool id is %u, object id is %u.",
             next_id.pool_id, next_id.obj_id);
-        block = DSS_GET_COMMON_BLOCK_HEAD(addr);
-        block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
-        block_id_tmp = ((dss_common_block_t *)addr)->id;
+        block = DSS_GET_COMMON_BLOCK_HEAD(meta_addr);
+        block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
+        block_id_tmp = ((dss_common_block_t *)meta_addr)->id;
         hash = DSS_BUFFER_CACHE_HASH(block_id_tmp);
         has_next = block_ctrl->has_next;
         tmp_id = next_id;
@@ -183,12 +180,12 @@ status_t shm_hashmap_move_bucket_node(
         if (bucket_idx != old_bucket_idx) {
             dss_lock_shm_meta_bucket_x(session, &old_bucket->enque_lock);
             dss_lock_shm_meta_bucket_x(session, &new_bucket->enque_lock);
-            dss_unregister_buffer_cache_inner(hash_ctrl, old_bucket, tmp_id, addr);
+            dss_unregister_buffer_cache_inner(hash_ctrl, old_bucket, tmp_id, meta_addr);
             LOG_DEBUG_INF("[HASHMAP]Move block id %s from bucket %u, hash:%u, type:%u, num:%u.",
                 dss_display_metaid(block_id_tmp), old_bucket_idx, hash, block->type, old_bucket->entry_num);
             DSS_ASSERT_LOG(bucket_idx == new_bucket_idx, "Expect bucket idx is %u, but bucket idx is %u.",
                 new_bucket_idx, bucket_idx);
-            dss_register_buffer_cache_inner(session, hash_ctrl, new_bucket, tmp_id, block_ctrl, hash);
+            dss_register_buffer_cache_inner(session, hash_ctrl, new_bucket, tmp_id, meta_addr, hash);
             LOG_DEBUG_INF(
                 "[HASHMAP]Succeed to register buffer cache, bucket %u, num %u.", new_bucket_idx, new_bucket->entry_num);
             dss_unlock_shm_meta_bucket(session, &old_bucket->enque_lock);
@@ -283,8 +280,9 @@ status_t dss_hashmap_extend_and_redistribute(dss_session_t *session, shm_hash_ct
 }
 
 status_t dss_register_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, const dss_block_id_t block_id,
-    ga_obj_id_t obj_id, dss_block_ctrl_t *block_ctrl, dss_block_type_t type)
+    ga_obj_id_t obj_id, char *meta_addr, dss_block_type_t type)
 {
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
     shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
     uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
     uint32 bucket_idx = shm_hashmap_calc_bucket_idx(hash_ctrl, hash);
@@ -303,7 +301,7 @@ status_t dss_register_buffer_cache(dss_session_t *session, dss_vg_info_item_t *v
     cm_latch_init(&block_ctrl->latch);
     block_ctrl->type = type;
     block_ctrl->block_id = block_id;
-    dss_register_buffer_cache_inner(session, hash_ctrl, bucket, obj_id, block_ctrl, hash);
+    dss_register_buffer_cache_inner(session, hash_ctrl, bucket, obj_id, meta_addr, hash);
     LOG_DEBUG_INF("Succeed to register buffer cache, bucket %u, num %u.", bucket_idx, bucket->entry_num);
     dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
     return CM_SUCCESS;
@@ -311,7 +309,7 @@ status_t dss_register_buffer_cache(dss_session_t *session, dss_vg_info_item_t *v
 
 void dss_unregister_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id)
 {
-    char *addr = NULL;
+    char *meta_addr = NULL;
     dss_block_ctrl_t *block_ctrl = NULL;
     dss_common_block_t *block = NULL;
     auid_t block_id_tmp = {0};
@@ -324,13 +322,13 @@ void dss_unregister_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     while (has_next) {
-        addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
-        cm_panic(addr != NULL);
-        block = DSS_GET_COMMON_BLOCK_HEAD(addr);
-        block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
-        block_id_tmp = ((dss_common_block_t *)addr)->id;
+        meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
+        cm_panic(meta_addr != NULL);
+        block = DSS_GET_COMMON_BLOCK_HEAD(meta_addr);
+        block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
+        block_id_tmp = ((dss_common_block_t *)meta_addr)->id;
         if ((block_ctrl->hash == hash) && (dss_buffer_cache_key_compare(&block_id_tmp, &block_id) == CM_TRUE)) {
-            dss_unregister_buffer_cache_inner(hash_ctrl, bucket, next_id, addr);
+            dss_unregister_buffer_cache_inner(hash_ctrl, bucket, next_id, meta_addr);
             LOG_DEBUG_INF("Move block id %s from bucket %u, hash:%u, type:%u, num:%u.",
                 dss_display_metaid(block_id_tmp), bucket_idx, hash, block->type, bucket->entry_num);
             dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
@@ -366,7 +364,7 @@ status_t dss_get_block_from_disk(
 }
 
 status_t dss_check_block_version(dss_vg_info_item_t *vg_item, dss_block_id_t block_id, dss_block_type_t type,
-    char *addr, bool32 *is_changed, bool32 force_refresh)
+    char *meta_addr, bool32 *is_changed, bool32 force_refresh)
 {
 #ifndef WIN32
     char buf[DSS_DISK_UNIT_SIZE] __attribute__((__aligned__(DSS_DISK_UNIT_SIZE)));
@@ -378,14 +376,14 @@ status_t dss_check_block_version(dss_vg_info_item_t *vg_item, dss_block_id_t blo
         *is_changed = CM_FALSE;
     }
 
-    uint64 version = ((dss_common_block_t *)addr)->version;
+    uint64 version = ((dss_common_block_t *)meta_addr)->version;
     uint32 size = dss_buffer_cache_get_block_size(type);
     int64 offset = dss_get_block_offset(vg_item, (uint64)size, block_id.block, block_id.au);
     // just read block header
     status_t status = dss_get_block_from_disk(vg_item, block_id, buf, offset, DSS_DISK_UNIT_SIZE, CM_FALSE);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to get block: %s from disk, addr:%p, offset:%lld, size:%d.", dss_display_metaid(block_id),
-            buf, offset, DSS_DISK_UNIT_SIZE);
+        LOG_DEBUG_ERR("Failed to get block: %s from disk, meta_addr:%p, offset:%lld, size:%d.",
+            dss_display_metaid(block_id), buf, offset, DSS_DISK_UNIT_SIZE);
         return status;
     }
     uint64 disk_version = ((dss_common_block_t *)buf)->version;
@@ -395,16 +393,16 @@ status_t dss_check_block_version(dss_vg_info_item_t *vg_item, dss_block_id_t blo
             version, disk_version, dss_display_metaid(block_id), type, (uint32)force_refresh);
         // if size == DSS_DISK_UNIT_SIZE, the buf has been changed all, not need load again
         if (size == DSS_DISK_UNIT_SIZE) {
-            securec_check_ret(memcpy_s(addr, DSS_DISK_UNIT_SIZE, buf, DSS_DISK_UNIT_SIZE));
+            securec_check_ret(memcpy_s(meta_addr, DSS_DISK_UNIT_SIZE, buf, DSS_DISK_UNIT_SIZE));
         } else {
             if (force_refresh && version == 0) {
-                status = dss_get_block_from_disk(vg_item, block_id, addr, offset, (int32)size, CM_FALSE);
+                status = dss_get_block_from_disk(vg_item, block_id, meta_addr, offset, (int32)size, CM_FALSE);
             } else {
-                status = dss_get_block_from_disk(vg_item, block_id, addr, offset, (int32)size, CM_TRUE);
+                status = dss_get_block_from_disk(vg_item, block_id, meta_addr, offset, (int32)size, CM_TRUE);
             }
             if (status != CM_SUCCESS) {
-                LOG_DEBUG_ERR("Failed to get block: %s from disk, addr:%p, offset:%lld, size:%u.",
-                    dss_display_metaid(block_id), addr, offset, size);
+                LOG_DEBUG_ERR("Failed to get block: %s from disk, meta_addr:%p, offset:%lld, size:%u.",
+                    dss_display_metaid(block_id), meta_addr, offset, size);
                 return status;
             }
         }
@@ -419,7 +417,7 @@ status_t dss_check_block_version(dss_vg_info_item_t *vg_item, dss_block_id_t blo
 static status_t dss_load_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_t block_id,
     dss_block_type_t type, char **block_addr, ga_obj_id_t *out_obj_id)
 {
-    char *addr = NULL;
+    char *meta_addr = NULL;
     dss_block_ctrl_t *block_ctrl = NULL;
     dss_common_block_t *block = NULL;
     auid_t block_id_tmp = {0};
@@ -435,18 +433,18 @@ static status_t dss_load_buffer_cache(dss_session_t *session, dss_vg_info_item_t
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     while (has_next) {
-        addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
-        cm_panic(addr != NULL);
-        block = DSS_GET_COMMON_BLOCK_HEAD(addr);
-        block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
-        block_id_tmp = ((dss_common_block_t *)addr)->id;
+        meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
+        cm_panic(meta_addr != NULL);
+        block = DSS_GET_COMMON_BLOCK_HEAD(meta_addr);
+        block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
+        block_id_tmp = ((dss_common_block_t *)meta_addr)->id;
         if ((block_ctrl->hash == hash) && (dss_buffer_cache_key_compare(&block_id_tmp, &block_id) == CM_TRUE)) {
             dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
-            status_t status = dss_check_block_version(vg_item, block_id, type, addr, NULL, CM_FALSE);
+            status_t status = dss_check_block_version(vg_item, block_id, type, meta_addr, NULL, CM_FALSE);
             if (status != CM_SUCCESS) {
                 return status;
             }
-            *block_addr = addr;
+            *block_addr = meta_addr;
             if (out_obj_id) {
                 *out_obj_id = next_id;
             }
@@ -465,9 +463,9 @@ static status_t dss_load_buffer_cache(dss_session_t *session, dss_vg_info_item_t
         dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
         return CM_ERROR;
     }
-    addr = ga_object_addr(pool_id, obj_id);
+    meta_addr = dss_buffer_get_meta_addr(pool_id, obj_id);
 
-    status_t status = dss_get_block_from_disk(vg_item, block_id, addr, offset, (int32)size, CM_TRUE);
+    status_t status = dss_get_block_from_disk(vg_item, block_id, meta_addr, offset, (int32)size, CM_TRUE);
     if (status != CM_SUCCESS) {
         dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
         ga_free_object(pool_id, obj_id);
@@ -475,10 +473,10 @@ static status_t dss_load_buffer_cache(dss_session_t *session, dss_vg_info_item_t
             (uint64)block_id.au, block_id.block, block_id.item, type);
         return status;
     }
-    block = DSS_GET_COMMON_BLOCK_HEAD(addr);
+    block = DSS_GET_COMMON_BLOCK_HEAD(meta_addr);
     DSS_LOG_DEBUG_OP("DSS load buffer cache, v:%u,au:%llu,block:%u,item:%u,type:%d.", block->id.volume,
         (uint64)block->id.au, block->id.block, block->id.item, block->type);
-    block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
+    block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
     errno_t errcode = memset_s(block_ctrl, sizeof(dss_block_ctrl_t), 0, sizeof(dss_block_ctrl_t));
     if (errcode != EOK) {
         dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
@@ -494,14 +492,14 @@ static status_t dss_load_buffer_cache(dss_session_t *session, dss_vg_info_item_t
     ga_obj_id_t ga_obj_id;
     ga_obj_id.pool_id = pool_id;
     ga_obj_id.obj_id = obj_id;
-    dss_register_buffer_cache_inner(session, hash_ctrl, bucket, ga_obj_id, block_ctrl, hash);
+    dss_register_buffer_cache_inner(session, hash_ctrl, bucket, ga_obj_id, meta_addr, hash);
     LOG_DEBUG_INF("Succeed to register buffer cache, bucket %u, num %u.", bucket_idx, bucket->entry_num);
     dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
     if (out_obj_id) {
         *out_obj_id = ga_obj_id;
     }
-    *block_addr = addr;
-    DSS_LOG_DEBUG_OP("Succeed to load meta block, v:%u,au:%llu,block:%u,item:%u,type:%d.", block_id.volume,
+    *block_addr = meta_addr;
+    DSS_LOG_DEBUG_OP("Succeed to load meta_addr block, v:%u,au:%llu,block:%u,item:%u,type:%d.", block_id.volume,
         (uint64)block_id.au, block_id.block, block_id.item, type);
     return CM_SUCCESS;
 }
@@ -518,9 +516,8 @@ void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_it
         return NULL;
     }
     shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
-    char *addr = NULL;
+    char *meta_addr = NULL;
     dss_block_ctrl_t *block_ctrl = NULL;
-    dss_common_block_t *block = NULL;
     auid_t block_id_tmp = {0};
     uint32 bucket_idx = shm_hashmap_calc_bucket_idx(hash_ctrl, hash);
     uint32 segment_objid = DSS_INVALID_ID32;
@@ -537,11 +534,10 @@ void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_it
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     while (has_next) {
-        addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
-        cm_panic(addr != NULL);
-        block = DSS_GET_COMMON_BLOCK_HEAD(addr);
-        block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
-        block_id_tmp = ((dss_common_block_t *)addr)->id;
+        meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
+        cm_panic(meta_addr != NULL);
+        block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
+        block_id_tmp = ((dss_common_block_t *)meta_addr)->id;
         if ((block_ctrl->hash == hash) && (dss_buffer_cache_key_compare(&block_id_tmp, key) == CM_TRUE)) {
             if (vg_item->from_type == FROM_SHM) {
                 dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
@@ -549,7 +545,7 @@ void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_it
             if (out_obj_id != NULL) {
                 *out_obj_id = next_id;
             }
-            return addr;
+            return meta_addr;
         }
         has_next = block_ctrl->has_next;
         next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
@@ -572,10 +568,9 @@ static void *dss_find_block_in_bucket_ex(dss_session_t *session, dss_vg_info_ite
         }
         return NULL;
     }
-    char *addr = NULL;
+    char *meta_addr = NULL;
     dss_block_ctrl_t *block_ctrl = NULL;
     dss_block_ctrl_t *next_block_ctrl = NULL;
-    dss_common_block_t *block = NULL;
     auid_t block_id_tmp = {0};
     shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
     uint32 bucket_idx = shm_hashmap_calc_bucket_idx(hash_ctrl, hash);
@@ -591,11 +586,10 @@ static void *dss_find_block_in_bucket_ex(dss_session_t *session, dss_vg_info_ite
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     if (has_next) {
-        addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
-        cm_panic(addr != NULL);
-        block = DSS_GET_COMMON_BLOCK_HEAD(addr);
-        block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
-        block_id_tmp = ((dss_common_block_t *)addr)->id;
+        meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
+        cm_panic(meta_addr != NULL);
+        block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
+        block_id_tmp = ((dss_common_block_t *)meta_addr)->id;
         dss_latch_s(&block_ctrl->latch);
     }
     dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
@@ -606,16 +600,15 @@ static void *dss_find_block_in_bucket_ex(dss_session_t *session, dss_vg_info_ite
                 *out_obj_id = next_id;
             }
             dss_unlatch(&block_ctrl->latch);
-            return addr;
+            return meta_addr;
         }
         has_next = block_ctrl->has_next;
         next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
         if (has_next) {
-            addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
-            cm_panic(addr != NULL);
-            block = DSS_GET_COMMON_BLOCK_HEAD(addr);
-            next_block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
-            block_id_tmp = ((dss_common_block_t *)addr)->id;
+            meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
+            cm_panic(meta_addr != NULL);
+            next_block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
+            block_id_tmp = ((dss_common_block_t *)meta_addr)->id;
             dss_latch_s(&next_block_ctrl->latch);
         }
         dss_unlatch(&block_ctrl->latch);
@@ -629,10 +622,10 @@ static void *dss_find_block_in_bucket_ex(dss_session_t *session, dss_vg_info_ite
 status_t dss_find_block_objid_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
     dss_block_type_t type, ga_obj_id_t *objid)
 {
-    char *addr = NULL;
+    char *meta_addr = NULL;
     uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
-    addr = dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, objid);
-    if (addr != NULL) {
+    meta_addr = dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, objid);
+    if (meta_addr != NULL) {
         return CM_SUCCESS;
     }
     return CM_ERROR;
@@ -650,13 +643,13 @@ static status_t dss_add_buffer_cache_inner(dss_session_t *session, shm_hash_ctrl
         DSS_THROW_ERROR(ERR_DSS_GA_ALLOC_OBJECT, pool_id);
         return CM_ERROR;
     }
-    char *addr = ga_object_addr(pool_id, obj_id);
-    if (addr == NULL) {
+    char *meta_addr = dss_buffer_get_meta_addr(pool_id, obj_id);
+    if (meta_addr == NULL) {
         ga_free_object(pool_id, obj_id);
         DSS_THROW_ERROR(ERR_DSS_GA_GET_ADDR, pool_id, obj_id);
         return CM_ERROR;
     }
-    errno_t errcode = memcpy_s(addr, size, refresh_buf, size);
+    errno_t errcode = memcpy_s(meta_addr, size, refresh_buf, size);
     if (errcode != EOK) {
         ga_free_object(pool_id, obj_id);
         LOG_DEBUG_ERR("Failed to memcpy block, v:%u,au:%llu,block:%u,item:%u,type:%d.", add_block_id.volume,
@@ -664,10 +657,10 @@ static status_t dss_add_buffer_cache_inner(dss_session_t *session, shm_hash_ctrl
         CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
         return CM_ERROR;
     }
-    dss_common_block_t *block = DSS_GET_COMMON_BLOCK_HEAD(addr);
+    dss_common_block_t *block = DSS_GET_COMMON_BLOCK_HEAD(meta_addr);
     DSS_LOG_DEBUG_OP("Dss add buffer cache, v:%u,au:%llu,block:%u,item:%u,type:%d.", block->id.volume,
         (uint64)block->id.au, block->id.block, block->id.item, block->type);
-    block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
+    block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
     errcode = memset_s(block_ctrl, sizeof(dss_block_ctrl_t), 0, sizeof(dss_block_ctrl_t));
     if (errcode != EOK) {
         ga_free_object(pool_id, obj_id);
@@ -683,20 +676,19 @@ static status_t dss_add_buffer_cache_inner(dss_session_t *session, shm_hash_ctrl
     ga_obj_id_t ga_obj_id;
     ga_obj_id.pool_id = pool_id;
     ga_obj_id.obj_id = obj_id;
-    dss_register_buffer_cache_inner(session, hash_ctrl, bucket, ga_obj_id, block_ctrl, hash);
+    dss_register_buffer_cache_inner(session, hash_ctrl, bucket, ga_obj_id, meta_addr, hash);
 
-    DSS_LOG_DEBUG_OP("Succeed to load meta block, v:%u,au:%llu,block:%u,item:%u,type:%d.", add_block_id.volume,
+    DSS_LOG_DEBUG_OP("Succeed to load meta_addr block, v:%u,au:%llu,block:%u,item:%u,type:%d.", add_block_id.volume,
         (uint64)add_block_id.au, add_block_id.block, add_block_id.item, type);
-    *shm_buf = addr;
+    *shm_buf = meta_addr;
     return CM_SUCCESS;
 }
 
 static status_t dss_add_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, auid_t add_block_id,
     dss_block_type_t type, char *refresh_buf, char **shm_buf)
 {
-    char *addr = NULL;
+    char *meta_addr = NULL;
     dss_block_ctrl_t *block_ctrl = NULL;
-    dss_common_block_t *block = NULL;
     auid_t block_id_tmp = {0};
     uint32 hash = DSS_BUFFER_CACHE_HASH(add_block_id);
     shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
@@ -709,28 +701,28 @@ static status_t dss_add_buffer_cache(dss_session_t *session, dss_vg_info_item_t 
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     while (has_next) {
-        addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
-        if (addr == NULL) {
+        meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
+        if (meta_addr == NULL) {
             dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
             DSS_THROW_ERROR(ERR_DSS_GA_GET_ADDR, next_id.pool_id, next_id.obj_id);
             return CM_ERROR;
         }
-        block = DSS_GET_COMMON_BLOCK_HEAD(addr);
-        block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
-        block_id_tmp = ((dss_common_block_t *)addr)->id;
+
+        block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
+        block_id_tmp = ((dss_common_block_t *)meta_addr)->id;
         block_ctrl->type = type;
         if ((block_ctrl->hash == hash) && (dss_buffer_cache_key_compare(&block_id_tmp, &add_block_id) == CM_TRUE)) {
             dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
-            if (((dss_common_block_t *)addr)->type != type) {
-                DSS_THROW_ERROR(ERR_DSS_INVALID_BLOCK_TYPE, type, ((dss_common_block_t *)addr)->type);
+            if (((dss_common_block_t *)meta_addr)->type != type) {
+                DSS_THROW_ERROR(ERR_DSS_INVALID_BLOCK_TYPE, type, ((dss_common_block_t *)meta_addr)->type);
                 return ERR_DSS_INVALID_BLOCK_TYPE;
             }
             uint32 size = dss_buffer_cache_get_block_size(type);
-            securec_check_ret(memcpy_s(addr, size, refresh_buf, size));
-            dss_common_block_t *ref_block = DSS_GET_COMMON_BLOCK_HEAD(addr);
+            securec_check_ret(memcpy_s(meta_addr, size, refresh_buf, size));
+            dss_common_block_t *ref_block = DSS_GET_COMMON_BLOCK_HEAD(meta_addr);
             DSS_LOG_DEBUG_OP("Dss refresh block in shm, v:%u,au:%llu,block:%u,item:%u,type:%d.", ref_block->id.volume,
                 (uint64)ref_block->id.au, ref_block->id.block, ref_block->id.item, ref_block->type);
-            *shm_buf = addr;
+            *shm_buf = meta_addr;
             return CM_SUCCESS;
         }
         has_next = block_ctrl->has_next;
@@ -747,20 +739,20 @@ static status_t dss_add_buffer_cache(dss_session_t *session, dss_vg_info_item_t 
 status_t dss_refresh_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
     dss_block_type_t type, char *buf, char **shm_buf)
 {
-    char *addr = NULL;
+    char *meta_addr = NULL;
     uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
-    addr = dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, NULL);
-    if (addr != NULL) {
-        if (((dss_common_block_t *)addr)->type != type) {
-            DSS_THROW_ERROR(ERR_DSS_INVALID_BLOCK_TYPE, type, ((dss_common_block_t *)addr)->type);
+    meta_addr = dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, NULL);
+    if (meta_addr != NULL) {
+        if (((dss_common_block_t *)meta_addr)->type != type) {
+            DSS_THROW_ERROR(ERR_DSS_INVALID_BLOCK_TYPE, type, ((dss_common_block_t *)meta_addr)->type);
             return ERR_DSS_INVALID_BLOCK_TYPE;
         }
         uint32 size = dss_buffer_cache_get_block_size(type);
-        securec_check_ret(memcpy_s(addr, size, buf, size));
-        dss_common_block_t *block = DSS_GET_COMMON_BLOCK_HEAD(addr);
+        securec_check_ret(memcpy_s(meta_addr, size, buf, size));
+        dss_common_block_t *block = DSS_GET_COMMON_BLOCK_HEAD(meta_addr);
         DSS_LOG_DEBUG_OP("Dss refresh block in shm, v:%u,au:%llu,block:%u,item:%u,type:%d.", block->id.volume,
             (uint64)block->id.au, block->id.block, block->id.item, block->type);
-        *shm_buf = addr;
+        *shm_buf = meta_addr;
         return CM_SUCCESS;
     }
     return dss_add_buffer_cache(session, vg_item, block_id, type, buf, shm_buf);
@@ -770,15 +762,15 @@ char *dss_find_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item,
     dss_block_type_t type, bool32 check_version, ga_obj_id_t *out_obj_id, bool32 active_refresh)
 {
     status_t status;
-    char *addr = NULL;
+    char *meta_addr = NULL;
     uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
-    addr = dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
+    meta_addr = dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
     if (!dss_is_server()) {
-        return addr;
+        return meta_addr;
     }
-    if (addr != NULL) {
+    if (meta_addr != NULL) {
         if (check_version && (DSS_STANDBY_CLUSTER || !dss_is_readwrite() || active_refresh)) {
-            status = dss_check_block_version(vg_item, block_id, type, addr, NULL, CM_FALSE);
+            status = dss_check_block_version(vg_item, block_id, type, meta_addr, NULL, CM_FALSE);
             if (status != CM_SUCCESS) {
                 return NULL;
             }
@@ -786,42 +778,42 @@ char *dss_find_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item,
         if (dss_is_readwrite()) {
             DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         }
-        return addr;
+        return meta_addr;
     }
 
-    status = dss_load_buffer_cache(session, vg_item, block_id, type, &addr, out_obj_id);
+    status = dss_load_buffer_cache(session, vg_item, block_id, type, &meta_addr, out_obj_id);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to load meta block, block_id: %s.", dss_display_metaid(block_id));
+        LOG_DEBUG_ERR("Failed to load meta_addr block, block_id: %s.", dss_display_metaid(block_id));
         return NULL;
     }
-    return addr;
+    return meta_addr;
 }
 
 char *dss_find_block_from_disk_and_refresh_shm(dss_session_t *session, dss_vg_info_item_t *vg_item,
     dss_block_id_t block_id, dss_block_type_t type, ga_obj_id_t *out_obj_id)
 {
     status_t status;
-    char *addr = NULL;
+    char *meta_addr = NULL;
     uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
-    addr = dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
-    if (addr != NULL) {
-        if (((dss_common_block_t *)addr)->version != 0) {
-            status = dss_check_block_version(vg_item, block_id, type, addr, NULL, CM_TRUE);
+    meta_addr = dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
+    if (meta_addr != NULL) {
+        if (((dss_common_block_t *)meta_addr)->version != 0) {
+            status = dss_check_block_version(vg_item, block_id, type, meta_addr, NULL, CM_TRUE);
             if (status != CM_SUCCESS) {
                 return NULL;
             }
         }
-        return addr;
+        return meta_addr;
     }
 
     if (!dss_is_server()) {
         return NULL;
     }
-    if (dss_load_buffer_cache(session, vg_item, block_id, type, &addr, out_obj_id) != CM_SUCCESS) {
-        LOG_DEBUG_ERR("Failed to load meta block, block_id: %s.", dss_display_metaid(block_id));
+    if (dss_load_buffer_cache(session, vg_item, block_id, type, &meta_addr, out_obj_id) != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to load meta_addr block, block_id: %s.", dss_display_metaid(block_id));
         return NULL;
     }
-    return addr;
+    return meta_addr;
 }
 
 char *dss_find_block_in_shm_no_refresh(
@@ -851,7 +843,7 @@ static status_t dss_refresh_buffer_cache_inner(dss_session_t *session, dss_vg_in
     dss_block_ctrl_t *block_ctrl = NULL;
     dss_block_ctrl_t *block_ctrl_prev = NULL;
     dss_common_block_t *block = NULL;
-    char *addr = NULL;
+    char *meta_addr = NULL;
 
     ga_obj_id_t id_curr = {0};
     dss_block_ctrl_t *block_ctrl_curr = NULL;
@@ -864,17 +856,17 @@ static status_t dss_refresh_buffer_cache_inner(dss_session_t *session, dss_vg_in
     next_id = *(ga_obj_id_t *)&bucket->first;
     has_next = bucket->has_next;
     while (has_next) {
-        if (addr == NULL) {
-            addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
-            block = DSS_GET_COMMON_BLOCK_HEAD(addr);
-            block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
+        if (meta_addr == NULL) {
+            meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
+            block = DSS_GET_COMMON_BLOCK_HEAD(meta_addr);
+            block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
         }
 
-        // no recycle mem for ft block because api cache the addr
+        // no recycle mem for ft block because api cache the meta_addr
         if (block->type == DSS_BLOCK_TYPE_FT) {
             dss_init_dss_fs_block_cache_info(&block_ctrl->fs_block_cache_info);
-            status =
-                dss_check_block_version(vg_item, ((dss_common_block_t *)addr)->id, block->type, addr, NULL, CM_FALSE);
+            status = dss_check_block_version(
+                vg_item, ((dss_common_block_t *)meta_addr)->id, block->type, meta_addr, NULL, CM_FALSE);
             if (status != CM_SUCCESS) {
                 dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
                 return status;
@@ -898,11 +890,11 @@ static status_t dss_refresh_buffer_cache_inner(dss_session_t *session, dss_vg_in
         next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
 
         if (has_next) {
-            addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
-            block = DSS_GET_COMMON_BLOCK_HEAD(addr);
-            block_ctrl = dss_buffer_cache_get_block_ctrl(block->type, addr);
+            meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
+            block = DSS_GET_COMMON_BLOCK_HEAD(meta_addr);
+            block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
         } else {
-            addr = NULL;
+            meta_addr = NULL;
             block = NULL;
             block_ctrl = NULL;
         }

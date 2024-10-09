@@ -1023,10 +1023,10 @@ gft_node_t *dss_find_gft_node_by_fid_in_bucket(
     ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
     bool32 has_next = bucket->has_next;
     while (has_next) {
-        addr = ga_object_addr(next_id.pool_id, next_id.obj_id);
+        addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
         DSS_ASSERT_LOG(addr != NULL, "addr is NULL when find ft node by fid:%llu", fid);
         block_head = DSS_GET_COMMON_BLOCK_HEAD(addr);
-        block_ctrl = dss_buffer_cache_get_block_ctrl(block_head->type, addr);
+        block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(addr);
         if (block_head->type == DSS_BLOCK_TYPE_FT) {
             block = (dss_ft_block_t *)addr;
             node = dss_find_gft_node_by_fid_in_bucket_inner(block, fid);

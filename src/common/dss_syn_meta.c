@@ -96,8 +96,8 @@ void dss_syn_meta(
         dss_meta_syn_t meta_syn;
         // too many place to change the value of block_ctrl->data
         dss_lock_vg_mem_and_shm_s(session, vg_item);
-        char *addr = (char *)block_ctrl;
-        block = (dss_common_block_t *)(addr - dss_buffer_cache_get_block_size(block_ctrl->type));
+        char *meta_addr = (char *)block_ctrl;
+        block = (dss_common_block_t *)(meta_addr - dss_buffer_cache_get_block_size(block_ctrl->type));
         meta_syn.ftid = block_ctrl->ftid;
         meta_syn.fid = block_ctrl->fid;
         meta_syn.file_ver = block_ctrl->file_ver;
@@ -227,11 +227,10 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
                 meta_syn->syn_meta_version));
     }
 
-    char *block;
     ga_obj_id_t out_obj_id;
     dss_block_id_t meta_block_id;
     dss_set_blockid(&meta_block_id, meta_syn->meta_block_id);
-    block = dss_find_block_in_shm_no_refresh_ex(session, vg_item, meta_block_id, &out_obj_id);
+    char *block = dss_find_block_in_shm_no_refresh_ex(session, vg_item, meta_block_id, &out_obj_id);
     if (block == NULL) {
         LOG_DEBUG_INF(
             "syn meta file:%llu, file_ver:%llu, vg :%u, block:%llu  type:%u, with version:%llu not found node fail.",
@@ -241,8 +240,8 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
         return CM_SUCCESS;
     }
 
-    dss_block_ctrl_t *block_ctrl = dss_buffer_cache_get_block_ctrl(meta_syn->meta_type, block);
-    dss_common_block_t *common_block = DSS_GET_COMMON_BLOCK_HEAD(block_ctrl);
+    dss_common_block_t *common_block = DSS_GET_COMMON_BLOCK_HEAD(block);
+    dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(block);
     gft_node_t *node = NULL;
     if (common_block->type == DSS_BLOCK_TYPE_FT) {
         node = dss_get_node_by_block_ctrl(block_ctrl, 0);
@@ -305,10 +304,10 @@ status_t dss_invalidate_meta_remote(
             dss_set_node_flag(session, vg_item, node, CM_TRUE, DSS_FT_NODE_FLAG_INVALID_FS_META);
         }
     } else {
-        char *addr = dss_find_block_in_shm_no_refresh(session, vg_item, block_id, NULL);
-        if (addr != NULL) {
+        char *meta_addr = dss_find_block_in_shm_no_refresh(session, vg_item, block_id, NULL);
+        if (meta_addr != NULL) {
             LOG_DEBUG_ERR("Success to find block:%s in mem.", dss_display_metaid(block_id));
-            dss_block_ctrl_t *block_ctrl = dss_buffer_cache_get_block_ctrl(invalidate_meta_msg->meta_type, addr);
+            dss_block_ctrl_t *block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
             block_ctrl->fid = 0;
             block_ctrl->ftid = 0;
             block_ctrl->file_ver = 0;
