@@ -89,15 +89,14 @@ void dss_del_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl,
     dss_unlatch(&vg_item->syn_meta_desc.latch);
 }
 
-void dss_syn_meta(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl, dss_common_block_t *block)
+void dss_syn_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl)
 {
     if (dss_need_exec_local() && dss_is_readwrite()) {
         dss_meta_syn_t meta_syn;
         // too many place to change the value of block_ctrl->data
         dss_lock_vg_mem_and_shm_s(session, vg_item);
-        char *meta_addr = (char *)block_ctrl;
-        block = (dss_common_block_t *)(meta_addr - dss_buffer_cache_get_block_size(block_ctrl->type));
+        char *meta_addr = DSS_GET_META_FROM_BLOCK_CTRL(char, block_ctrl);
+        dss_common_block_t *block = (dss_common_block_t *)meta_addr;
         meta_syn.ftid = block_ctrl->ftid;
         meta_syn.fid = block_ctrl->fid;
         meta_syn.file_ver = block_ctrl->file_ver;
@@ -133,7 +132,6 @@ bool32 dss_syn_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item)
     }
 
     bool32 is_valid;
-    dss_common_block_t *block = NULL;
     dss_block_ctrl_t *block_ctrl = NULL;
     dss_block_ctrl_t *onwer_block_ctrl = NULL;
 
@@ -179,7 +177,7 @@ bool32 dss_syn_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item)
             continue;
         }
 
-        dss_syn_meta(session, vg_item, block_ctrl, block);
+        dss_syn_meta(session, vg_item, block_ctrl);
 
         if (bilist_node_tail != bilist_node) {
             bilist_node_next = BINODE_NEXT(bilist_node);
