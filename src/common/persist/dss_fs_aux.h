@@ -229,6 +229,10 @@ status_t rb_redo_free_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item
 status_t rp_redo_init_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry);
 status_t rb_redo_init_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry);
 status_t rb_reload_fs_aux_root(dss_vg_info_item_t *vg_item);
+void print_redo_format_fs_aux(dss_redo_entry_t *entry);
+void print_redo_alloc_fs_aux(dss_redo_entry_t *entry);
+void print_redo_free_fs_aux(dss_redo_entry_t *entry);
+void print_redo_init_fs_aux(dss_redo_entry_t *entry);
 status_t dss_update_fs_aux_bitmap2disk(dss_vg_info_item_t *item, dss_fs_aux_t *block, uint32 size, bool32 had_checksum);
 #ifdef __cplusplus
 }

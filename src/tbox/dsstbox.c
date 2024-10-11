@@ -42,6 +42,9 @@
 #include "dss_malloc.h"
 #include "dss_file.h"
 #include "dss_args_parse.h"
+#include "dss_redo.h"
+#include "dss_defs_print.h"
+#include "dsstbox_miner.h"
 #include "dsstbox.h"
 #ifndef WIN32
 #include "config.h"
@@ -527,15 +530,182 @@ static status_t repair_proc(void)
     LOG_RUN_INF("[TBOX][REPAIR] vol_path:%s type:%s, id:%s, au_size:%u, key_value:%s result:%u", input.vol_path,
         input.type, dss_display_metaid(input.block_id), input.au_size, input.key_value, status);
     if (status != CM_SUCCESS) {
-        (void)printf("[TBOX][REPAIR] Failed to execute repair meta info\n");
+        (void)printf("[TBOX][REPAIR] Failed to execute repair meta info.\n");
     } else {
-        (void)printf("[TBOX][REPAIR] Succeed to execute repair meta info\n");
+        (void)printf("[TBOX][REPAIR] Succeed to execute repair meta info.\n");
     }
     return status;
 }
 
+static dss_args_t tbox_miner_args[] = {
+    {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
+    {'s', "start_lsn", CM_TRUE, CM_TRUE, cmd_check_uint64, NULL, NULL, 0, NULL, NULL, 0},
+    {'n', "number", CM_TRUE, CM_TRUE, cmd_check_uint64, NULL, NULL, 0, NULL, NULL, 0},
+    {'i', "index", CM_TRUE, CM_TRUE, dss_check_index, NULL, NULL, 0, NULL, NULL, 0},
+    {'o', "offset", CM_TRUE, CM_TRUE, cmd_check_uint64, NULL, NULL, 0, NULL, NULL, 0},
+    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
+};
+
+static status_t miner_check_args(dss_args_t *cmd_args_set, int set_size)
+{
+    if (cmd_args_set == NULL || set_size <= 0) {
+        DSS_PRINT_ERROR("[TBOX][MINER]args error.\n");
+        return CM_ERROR;
+    }
+    if (!cmd_args_set[DSS_ARG_MINER_VG].inputed) {
+        DSS_PRINT_ERROR("[TBOX][MINER]should set the vol path to load.\n");
+        return CM_ERROR;
+    }
+    if (cmd_args_set[DSS_ARG_MINER_START_LSN].inputed && cmd_args_set[DSS_ARG_MINER_INDEX].inputed) {
+        DSS_PRINT_ERROR("[TBOX][MINER]should not set the start_lsn and index at the same time.\n");
+        return CM_ERROR;
+    }
+    if (cmd_args_set[DSS_ARG_MINER_NUMBER].inputed &&
+        (!cmd_args_set[DSS_ARG_MINER_START_LSN].inputed || !cmd_args_set[DSS_ARG_MINER_INDEX].inputed)) {
+        DSS_PRINT_ERROR("[TBOX][MINER]should set the number with start_lsn or index to show.\n");
+        return CM_ERROR;
+    }
+    if (cmd_args_set[DSS_ARG_MINER_OFFSET].inputed && !cmd_args_set[DSS_ARG_MINER_INDEX].inputed) {
+        DSS_PRINT_ERROR("[TBOX][MINER]should set the offset with index to show.\n");
+        return CM_ERROR;
+    }
+    if (cmd_args_set[DSS_ARG_MINER_NUMBER].inputed && cmd_args_set[DSS_ARG_MINER_INDEX].inputed &&
+        !cmd_args_set[DSS_ARG_MINER_OFFSET].inputed) {
+        DSS_PRINT_ERROR("[TBOX][MINER]should set the offset and number with index to show.\n");
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static dss_args_set_t tbox_miner_args_set = {
+    tbox_miner_args,
+    sizeof(tbox_miner_args) / sizeof(dss_args_t),
+    miner_check_args,
+};
+static inline void help_param_dsshome_for_box(void)
+{
+    (void)printf("-D/--DSS_HOME <DSS_HOME>, [optional], the run path of dsstbox, default value is $DSS_HOME.\n");
+}
+
+static void miner_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:");
+    (void)printf("\n%s ssminer <-g vg_name> [-D DSS_HOME]\n", prog_name);
+    (void)printf("%s ssminer <-g vg_name> <-s start_lsn> [-n number] [-D DSS_HOME]\n", prog_name);
+    (void)printf("%s ssminer <-g vg_name> <-i index> [-o offset] [-n number] [-D DSS_HOME]\n", prog_name);
+    (void)printf("[TOOl BOX] Parsing redo logs on physical disks.\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    (void)printf("-g/--vg_name <vg_name>, <required>, the volume group name.\n");
+    (void)printf("-s/--start_lsn <start_lsn>, <required>, the start lsn to parse.\n");
+    (void)printf(
+        "-n/--number <number>, [optional], the number to parse. If this parameter is used with start_lsn, "
+        "number records starting with lsn are displayed. If this parameter is used with index and offset, number"
+        "records from the specified position are displayed.\n");
+    (void)printf("-i/--index <index>, <required>, the index of redo buffer.\n");
+    (void)printf("-o/--offset <offset>, [optional], the offset to parse. This parameter should be set with index.\n");
+    help_param_dsshome_for_box();
+}
+
+static status_t miner_proc_inner(miner_run_ctx_def_t *ctx)
+{
+    status_t status;
+    if (tbox_miner_args[DSS_ARG_MINER_NUMBER].inputed) {
+        status = cm_str2uint64(tbox_miner_args[DSS_ARG_MINER_NUMBER].input_args, (uint64 *)&ctx->input.number);
+        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][MINER] number:%s is not a valid uint64.\n",
+                                      tbox_miner_args[DSS_ARG_MINER_NUMBER].input_args));
+        if (ctx->input.number == 0) {
+            if (tbox_miner_args[DSS_ARG_MINER_START_LSN].inputed) {
+                status =
+                    cm_str2uint64(tbox_miner_args[DSS_ARG_MINER_START_LSN].input_args, (uint64 *)&ctx->input.start_lsn);
+                DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][MINER] start_lsn:%s is not a valid uint64.\n",
+                                              tbox_miner_args[DSS_ARG_MINER_START_LSN].input_args));
+                if (ctx->input.start_lsn == 0) {
+                    dss_print_redo_ctrl(&ctx->vg_item->dss_ctrl->redo_ctrl);
+                    return CM_SUCCESS;
+                }
+            }
+            DSS_PRINT_ERROR("[TBOX][MINER]number should not be 0.\n");
+            return CM_ERROR;
+        }
+    }
+    if (tbox_miner_args[DSS_ARG_MINER_START_LSN].inputed) {
+        status = cm_str2uint64(tbox_miner_args[DSS_ARG_MINER_START_LSN].input_args, (uint64 *)&ctx->input.start_lsn);
+        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][MINER] start_lsn:%s is not a valid uint64.\n",
+                                      tbox_miner_args[DSS_ARG_MINER_START_LSN].input_args));
+        if (ctx->input.start_lsn == 0) {
+            DSS_PRINT_ERROR("[TBOX][MINER]start_lsn should not be 0.\n");
+            return CM_ERROR;
+        }
+        status = dss_print_redo_info_by_lsn(ctx);
+    } else if (tbox_miner_args[DSS_ARG_MINER_INDEX].inputed) {
+        status = cm_str2uint32(tbox_miner_args[DSS_ARG_MINER_INDEX].input_args, (uint32 *)&ctx->input.index);
+        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][MINER] index:%s is not a valid uint32.\n",
+                                      tbox_miner_args[DSS_ARG_MINER_START_LSN].input_args));
+        if (ctx->input.index >= ctx->count) {
+            DSS_PRINT_ERROR(
+                "[TBOX][MINER]No valid redo from index %u for count is %u.\n", ctx->input.index, ctx->count);
+            return CM_ERROR;
+        }                          
+        if (tbox_miner_args[DSS_ARG_MINER_OFFSET].inputed) {
+            status = cm_str2uint64(tbox_miner_args[DSS_ARG_MINER_OFFSET].input_args, (uint64 *)&ctx->input.offset);
+            DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][MINER] offset:%s is not a valid uint64.\n",
+                                          tbox_miner_args[DSS_ARG_MINER_OFFSET].input_args));
+            status = dss_print_redo_info_by_index(ctx);
+        } else {
+            status = dss_print_redo_info(ctx);
+        }
+    } else {
+        status = dss_print_redo_info(ctx);
+    }
+    return status;
+}
+
+static status_t miner_proc(void)
+{
+    status_t status;
+    dss_config_t inst_cfg;
+    char *home = tbox_miner_args[DSS_ARG_MINER_HOME].input_args;
+    status = set_config_info(home, &inst_cfg);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("[TBOX][MINER]Failed to set config info.\n");
+        return status;
+    }
+    status =
+        dss_init_loggers(&inst_cfg, g_dss_dsstbox_log, sizeof(g_dss_dsstbox_log) / sizeof(dss_log_def_t), "dsstbox");
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("[TBOX][MINER]DSS init loggers failed!\n");
+        return status;
+    }
+    status = dss_load_vg_conf_info(&g_vgs_info, &inst_cfg);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("[TBOX][MINER]Failed to load vg info from config, errcode is %d.\n", status);
+        return status;
+    }
+    miner_run_ctx_def_t ctx = {0};
+    ctx.input.vg_name = tbox_miner_args[DSS_ARG_MINER_VG].input_args;
+    status = dss_init_miner_run_ctx(&ctx);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("[TBOX][MINER]Failed to init miner run ctx.\n");
+        return CM_ERROR;
+    }
+    status = miner_proc_inner(&ctx);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("[TBOX][MINER]Failed to print expected redo info.\n");
+    } else {
+        DSS_PRINT_ERROR("[TBOX][MINER]Succeed to print expected redo info.\n");
+    }
+    DSS_FREE_POINT(ctx.vg_item->dss_ctrl);
+    DSS_FREE_POINT(g_vgs_info);
+    DSS_FREE_POINT(ctx.log_buf);
+    return status;
+}
+
 // clang-format off
-dss_admin_cmd_t g_dss_admin_tbox[] = {{"ssrepair", repair_help, repair_proc, &tbox_repair_args_set},
+dss_admin_cmd_t g_dss_admin_tbox[] = {{"ssrepair", repair_help, repair_proc, &tbox_repair_args_set, CM_TRUE},
+                                      {"ssminer", miner_help, miner_proc, &tbox_miner_args_set, CM_TRUE},
 };
 
 static bool32 get_tbox_idx(int argc, char **argv, uint32_t *idx)

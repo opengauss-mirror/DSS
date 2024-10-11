@@ -26,7 +26,7 @@
 #include "dss_alloc_unit.h"
 #include "dss_file.h"
 #include "dss_malloc.h"
-#include "dss_redo.h"
+#include "dss_redo_recovery.h"
 #include "cm_dlock.h"
 #include "dss_io_fence.h"
 #include "dss_open_file.h"
@@ -643,7 +643,7 @@ status_t dss_load_vg_ctrl_part(dss_vg_info_item_t *vg_item, int64 offset, void *
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(buf != NULL);
-
+    // todo close volume?
     if (vg_item->volume_handle[0].handle == DSS_INVALID_HANDLE) {
         if (dss_open_volume(vg_item->entry_path, NULL, DSS_INSTANCE_OPEN_FLAG, &vg_item->volume_handle[0]) !=
             CM_SUCCESS) {

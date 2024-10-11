@@ -34,7 +34,7 @@
 #include "dss_malloc.h"
 #include "dss_mes.h"
 #include "dss_lsnr.h"
-#include "dss_redo.h"
+#include "dss_redo_recovery.h"
 #include "dss_service.h"
 #include "dss_instance.h"
 #include "dss_reactor.h"

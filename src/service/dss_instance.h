@@ -29,7 +29,7 @@
 #include "cs_listener.h"
 #include "dss_defs.h"
 #include "dss_volume.h"
-#include "dss_redo.h"
+#include "dss_redo_recovery.h"
 #include "dss_file.h"
 #include "dss_session.h"
 #include "dss_diskgroup.h"

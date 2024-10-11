@@ -37,6 +37,7 @@
 #include "dss_defs.h"
 #include "dss_errno.h"
 #include "dss_param.h"
+#include "dss_file.h"
 #include "dss_args_parse.h"
 #ifdef __cplusplus
 extern "C" {
@@ -238,6 +239,94 @@ status_t cmd_check_au_size(const char *au_size_str)
             "au_size %u is error, au_size cannot be 0, must greater than 2MB, smaller than 64MB!\n", au_size);
         return CM_ERROR;
     }
+    return CM_SUCCESS;
+}
+
+status_t cmd_check_dss_home(const char *dss_home)
+{
+    return dss_check_path(dss_home);
+}
+
+status_t cmd_realpath_home(const char *input_args, char **convert_result, int *convert_size)
+{
+    uint32 len = (uint32)strlen(input_args);
+    if (len == 0 || len >= CM_FILE_NAME_BUFFER_SIZE) {
+        DSS_PRINT_ERROR("the len of path is invalid.\n");
+        return CM_ERROR;
+    }
+    *convert_result = (char *)malloc(CM_FILE_NAME_BUFFER_SIZE);
+    if (*convert_result == NULL) {
+        DSS_PRINT_ERROR("Malloc failed.\n");
+        return CM_ERROR;
+    }
+    status_t status = realpath_file(input_args, *convert_result, CM_FILE_NAME_BUFFER_SIZE);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("path is insecure, home: %s.\n", input_args);
+        free(*convert_result);
+        *convert_result = NULL;
+        return status;
+    }
+    *convert_size = (int)CM_FILE_NAME_BUFFER_SIZE;
+    return status;
+}
+
+status_t cmd_check_convert_dss_home(const char *input_args, void **convert_result, int *convert_size)
+{
+    if (input_args == NULL) {
+        *convert_result = NULL;
+        *convert_size = 0;
+        return CM_SUCCESS;
+    }
+    status_t status = cmd_realpath_home(input_args, (char **)convert_result, convert_size);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("home realpth failed, home: %s.\n", input_args);
+        return status;
+    }
+    return CM_SUCCESS;
+}
+
+void cmd_clean_check_convert(char *convert_result, int convert_size)
+{
+    if (convert_result != NULL) {
+        CM_FREE_PTR(convert_result);
+    }
+}
+status_t cmd_check_uint64(const char *str)
+{
+    uint64 num;
+    status_t status = cm_str2uint64(str, &num);
+    if (status == CM_ERROR) {
+        DSS_PRINT_ERROR("%s is not a valid uint64\n", str);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+status_t set_config_info(char *home, dss_config_t *inst_cfg)
+{
+    status_t status;
+    status = dss_set_cfg_dir(home, inst_cfg);
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Environment variant DSS_HOME not found!\n");
+        return status;
+    }
+
+    status = dss_load_config(inst_cfg);
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("Failed to load parameters!\n");
+        return status;
+    }
+    return CM_SUCCESS;
+}
+
+status_t dss_get_vg_item(dss_vg_info_item_t **vg_item, const char *vg_name)
+{
+    dss_vg_info_item_t *tmp_vg_item = dss_find_vg_item(vg_name);
+    if (tmp_vg_item == NULL) {
+        LOG_DEBUG_ERR("vg_name %s is not exist.\n", vg_name);
+        return CM_ERROR;
+    }
+    *vg_item = tmp_vg_item;
     return CM_SUCCESS;
 }
 

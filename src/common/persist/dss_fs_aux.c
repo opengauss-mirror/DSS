@@ -25,6 +25,7 @@
 #include "dss_fs_aux.h"
 #include "dss_zero.h"
 #include "dss_syn_meta.h"
+#include "dss_defs_print.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -1049,6 +1050,21 @@ status_t rb_redo_format_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_it
     return CM_SUCCESS;
 }
 
+void print_redo_format_fs_aux(dss_redo_entry_t *entry)
+{
+    dss_redo_format_fs_aux_t *data = (dss_redo_format_fs_aux_t *)entry->data;
+    (void)printf("format_fs_aux = {\n");
+    (void)printf(" auid = {\n");
+    printf_auid(&data->auid);
+    (void)printf("  }\n");
+    (void)printf(" obj_id = %u\n", data->obj_id);
+    (void)printf(" count = %u\n", data->count);
+    (void)printf(" old_free_list = {\n");
+    printf_dss_fs_block_list(&data->old_free_list);
+    (void)printf("  }\n");
+    (void)printf("}\n");
+}
+
 static status_t rp_updt_fs_aux_root_base(
     dss_session_t *session, dss_vg_info_item_t *vg_item, dss_fs_aux_root_t *root_expect, bool32 check_version)
 {
@@ -1139,6 +1155,22 @@ status_t rb_redo_alloc_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_ite
     return CM_SUCCESS;
 }
 
+void print_redo_alloc_fs_aux(dss_redo_entry_t *entry)
+{
+    dss_redo_alloc_fs_aux_t *data = (dss_redo_alloc_fs_aux_t *)entry->data;
+    (void)printf("alloc_fs_aux = {\n");
+    (void)printf(" id = {\n");
+    printf_auid(&data->id);
+    (void)printf("  }\n");
+    (void)printf(" ftid = {\n");
+    printf_auid(&data->ftid);
+    (void)printf("  }\n");
+    (void)printf(" index = %hu\n", data->index);
+    (void)printf(" root = {\n");
+    printf_dss_fs_aux_root(&data->root);
+    (void)printf("  }\n");
+    (void)printf("}\n");
+}
 status_t rp_redo_free_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
@@ -1208,7 +1240,21 @@ status_t rb_redo_free_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item
 
     return CM_SUCCESS;
 }
-
+void print_redo_free_fs_aux(dss_redo_entry_t *entry)
+{
+    dss_redo_free_fs_aux_t *data = (dss_redo_free_fs_aux_t *)entry->data;
+    (void)printf("free_fs_aux = {\n");
+    (void)printf(" id = {\n");
+    printf_auid(&data->id);
+    (void)printf("  }\n");
+    (void)printf(" next = {\n");
+    printf_auid(&data->next);
+    (void)printf("  }\n");
+    (void)printf(" root = {\n");
+    printf_dss_fs_aux_root(&data->root);
+    (void)printf("  }\n");
+    (void)printf("}\n");
+}
 status_t rp_redo_init_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
@@ -1263,6 +1309,24 @@ status_t rb_redo_init_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item
     return CM_SUCCESS;
 }
 
+void print_redo_init_fs_aux(dss_redo_entry_t *entry)
+{
+    dss_redo_init_fs_aux_t *data = (dss_redo_init_fs_aux_t *)entry->data;
+    (void)printf("init_fs_aux = {\n");
+    (void)printf(" id = {\n");
+    printf_auid(&data->id);
+    (void)printf("  }\n");
+    (void)printf(" data_id = {\n");
+    printf_auid(&data->data_id);
+    (void)printf("  }\n");
+    (void)printf(" ftid = {\n");
+    printf_auid(&data->ftid);
+    (void)printf("  }\n");
+    (void)printf(" parent_id = {\n");
+    printf_auid(&data->parent_id);
+    (void)printf("  }\n");
+    (void)printf("}\n");
+}
 #ifdef __cplusplus
 }
 #endif
