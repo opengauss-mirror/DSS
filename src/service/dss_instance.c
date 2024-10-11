@@ -370,11 +370,12 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
 #ifndef OPENGAUSS
     if (dss_hp_init(inst->inst_cfg.home) != CM_SUCCESS) {
         LOG_RUN_WAR("[HotPatch] hotpatch module failed to be initialized");
+        cm_reset_error();
     }
     if (dss_hp_is_inited()) {
         if (dss_hp_patched_load() != CM_SUCCESS) {
-            LOG_RUN_ERR("[HotPatch] Failed to restore hotpatches during startup, please check patch files.");
-            return CM_ERROR;
+            LOG_RUN_WAR("[HotPatch] Failed to restore hotpatches during startup, please check patch files.");
+            cm_reset_error();
         }
     }
 #endif
