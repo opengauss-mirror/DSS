@@ -86,16 +86,16 @@ static void repair_help(const char *prog_name, int print_flag)
 static status_t repair_proc(void)
 {
     repair_input_def_t input = {0};
-    input.vol_path = tbox_repair_args[DSS_ARG_IDX_0].input_args;
-    input.type = tbox_repair_args[DSS_ARG_IDX_1].input_args;
+    input.vol_path = tbox_repair_args[DSS_REPAIR_ARG_VOL_PATH].input_args;
+    input.type = tbox_repair_args[DSS_REPAIR_ARG_TYPE].input_args;
 
-    status_t status = cm_str2uint64(tbox_repair_args[DSS_ARG_IDX_2].input_args, (uint64 *)&input.block_id);
+    status_t status = cm_str2uint64(tbox_repair_args[DSS_REPAIR_ARG_META_ID].input_args, (uint64 *)&input.block_id);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][REPAIR] block_id:%s is not a valid uint64\n",
-        tbox_repair_args[DSS_ARG_IDX_2].input_args));
-    status = cm_str2uint32(tbox_repair_args[DSS_ARG_IDX_3].input_args, &input.au_size);
+        tbox_repair_args[DSS_REPAIR_ARG_META_ID].input_args));
+    status = cm_str2uint32(tbox_repair_args[DSS_REPAIR_ARG_AU_SIZE].input_args, &input.au_size);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][REPAIR] au_size:%s is not a valid uint32\n",
-        tbox_repair_args[DSS_ARG_IDX_3].input_args));
-    input.key_value = tbox_repair_args[DSS_ARG_IDX_4].input_args;
+        tbox_repair_args[DSS_REPAIR_ARG_AU_SIZE].input_args));
+    input.key_value = tbox_repair_args[DSS_REPAIR_ARG_KEY_VALUE].input_args;
     LOG_RUN_INF("[TBOX][REPAIR] vol_path:%s type:%s, id:%s, au_size:%u, key_value:%s", input.vol_path, input.type,
         dss_display_metaid(input.block_id), input.au_size, input.key_value);
 

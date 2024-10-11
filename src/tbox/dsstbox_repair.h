@@ -27,6 +27,12 @@
 
 #include "dss_defs.h"
 
+#define DSS_REPAIR_ARG_VOL_PATH 0
+#define DSS_REPAIR_ARG_TYPE 1
+#define DSS_REPAIR_ARG_META_ID 2
+#define DSS_REPAIR_ARG_AU_SIZE 3
+#define DSS_REPAIR_ARG_KEY_VALUE 4
+
 typedef struct st_repair_input_def {
     char *vol_path;
     char *type;
