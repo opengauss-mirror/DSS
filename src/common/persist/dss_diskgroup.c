@@ -483,9 +483,7 @@ status_t dss_get_vg_info()
         cm_bilist_init(&g_vgs_info->volume_group[i].syn_meta_desc.bilist);
         status = dss_alloc_vg_item_redo_log_buf(&g_vgs_info->volume_group[i]);
         if (status != CM_SUCCESS) {
-            if (i != 0) {
-                dss_free_shm_hashmap_memory(i - 1);
-            }
+            dss_free_shm_hashmap_memory(i);
             DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
             return CM_ERROR;
         }
