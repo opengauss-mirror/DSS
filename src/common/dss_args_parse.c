@@ -390,6 +390,32 @@ status_t dss_load_local_server_config(dss_config_t *inst_cfg)
         inst_cfg, g_dss_admin_parameters, sizeof(g_dss_admin_parameters) / sizeof(config_item_t));
 }
 
+status_t dss_check_meta_type(const char *type)
+{
+    if ((cm_strcmpi(type, "fs_block") != 0) && (cm_strcmpi(type, "ft_block") != 0) && (cm_strcmpi(type, "core") != 0) &&
+        (cm_strcmpi(type, "root") != 0) && (cm_strcmpi(type, "volume") != 0) && (cm_strcmpi(type, "header") != 0)) {
+        DSS_PRINT_ERROR("Invalid meta type:%s.\n", type);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+status_t dss_check_meta_id(const char *intput)
+{
+    uint64 id = 0;
+    status_t status = cm_str2uint64(intput, &id);
+    if (status == CM_ERROR) {
+        DSS_PRINT_ERROR("intput:%s is not a valid uint64 meta id\n", intput);
+        return CM_ERROR;
+    }
+    dss_block_id_t *block_id = (dss_block_id_t *)&id;
+    if (block_id->volume >= DSS_MAX_VOLUMES) {
+        DSS_PRINT_ERROR("block_id is invalid, id = %s.\n", dss_display_metaid(*block_id));
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
 #ifdef __cplusplus
 }
 #endif
