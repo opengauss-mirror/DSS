@@ -22,6 +22,7 @@
  * -------------------------------------------------------------------------
  */
 
+#include "dsstbox_repair.h"
 #ifndef WIN32
 #include <unistd.h>
 #include <sys/types.h>
@@ -33,10 +34,8 @@
 #include "dss_errno.h"
 #include "dss_malloc.h"
 #include "dss_file.h"
+#include "dss_diskgroup.h"
 #include "dss_args_parse.h"
-#include "dss_redo.h"
-#include "dss_defs_print.h"
-#include "dsstbox_repair.h"
 #ifndef WIN32
 #include "config.h"
 #endif
@@ -47,6 +46,13 @@
 #define dss_strdup strdup
 #endif
 
+typedef status_t (*repair_func_t)(char *item_ptr, text_t *key, text_t *value);
+typedef struct st_repair_items {
+    const char *name;
+    uint32 item_size;
+    uint32 item_offset;
+    repair_func_t repair_func;
+} repair_items_t;
 
 static void dss_format_tbox_key_value(text_t *key_value)
 {
@@ -146,6 +152,31 @@ static status_t repair_func_uint8_t(char *item_ptr, text_t *key, text_t *value)
     return CM_SUCCESS;
 }
 
+typedef struct st_repair_complex_meta {
+    const char *meta_name;
+    repair_items_t *repair_items;
+    uint32 repair_items_cnt;
+} repair_complex_meta_funcs_t;
+
+static status_t repair_func_complex_meta(
+    repair_complex_meta_funcs_t *repair_funcs, char *item_ptr, text_t *key, text_t *value)
+{
+    text_t part1, part2;
+    cm_split_text(key, '.', '\0', &part1, &part2);
+    cm_trim_text(&part1);
+    cm_trim_text(&part2);
+    for (uint32_t i = 0; i < repair_funcs->repair_items_cnt; i++) {
+        repair_items_t *item = &repair_funcs->repair_items[i];
+        if (cm_text_str_equal(&part1, item->name)) {
+            LOG_RUN_INF("[TBOX][REPAIR] modify %s key name : %s, offset : %u;", repair_funcs->meta_name, item->name,
+                item->item_offset);
+            return item->repair_func((void *)(((char *)item_ptr) + item->item_offset), &part2, value);
+        }
+    }
+    DSS_PRINT_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse %s;\n", part1.str, repair_funcs->meta_name);
+    return CM_ERROR;
+}
+
 #define REPAIR_ITEM(name, obj, item, type)                                                \
     {                                                                                     \
         (name), (uint32)(sizeof(type)), (uint32)(OFFSET_OF(obj, item)), repair_func_##type \
@@ -165,13 +196,6 @@ static status_t repair_func_uint8_t(char *item_ptr, text_t *key, text_t *value)
 
 typedef status_t (*repair_func_t)(char *item_ptr, text_t *key, text_t *value);
 
-typedef struct st_repair_fs_block_items {
-    const char *name;
-    uint32 item_size;
-    uint32 item_offset;
-    repair_func_t repair_func;
-} repair_items_t;
-
 #define REPAIR_COMMON_BLOCK_ITEM_COUNT (sizeof(g_repair_common_block_items_list) / sizeof(repair_items_t))
 repair_items_t g_repair_common_block_items_list[] = {
     REPAIR_ITEM("type", dss_common_block_t, type, uint32_t),
@@ -180,22 +204,11 @@ repair_items_t g_repair_common_block_items_list[] = {
     REPAIR_ITEM("flags", dss_common_block_t, flags, uint8_t),
 };
 
+repair_complex_meta_funcs_t repair_set_common_block_funcs = {
+    "common block", g_repair_common_block_items_list, REPAIR_COMMON_BLOCK_ITEM_COUNT};
 static status_t repair_set_common_block(char *item_ptr, text_t *key, text_t *value)
 {
-    text_t part1, part2;
-    cm_split_text(key, '.', '\0', &part1, &part2);
-    cm_trim_text(&part1);
-    cm_trim_text(&part2);
-    for (uint32_t i = 0; i < REPAIR_COMMON_BLOCK_ITEM_COUNT; i++) {
-        repair_items_t *item = &g_repair_common_block_items_list[i];
-        if (cm_text_str_equal(&part1, item->name)) {
-            LOG_RUN_INF(
-                "[TBOX][REPAIR] modify common block key name : %s, offset : %u;", item->name, item->item_offset);
-            return item->repair_func((void *)(((char*)item_ptr) + item->item_offset), &part2, value);
-        }
-    }
-    DSS_PRINT_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse common block;\n", part1.str);
-    return CM_ERROR;
+    return repair_func_complex_meta(&repair_set_common_block_funcs, item_ptr, key, value);
 }
 
 #define REPAIR_FS_BLOCK_HEAD_ITEM_COUNT (sizeof(g_repair_fs_block_head_items_list) / sizeof(repair_items_t))
@@ -208,22 +221,11 @@ repair_items_t g_repair_fs_block_head_items_list[] = {
     REPAIR_ITEM("index", dss_fs_block_header, index, uint16_t),
 };
 
+repair_complex_meta_funcs_t repair_set_fs_block_header_funcs = {
+    "fs block header", g_repair_fs_block_head_items_list, REPAIR_FS_BLOCK_HEAD_ITEM_COUNT};
 static status_t repair_set_fs_block_header(char *item_ptr, text_t *key, text_t *value)
 {
-    text_t part1, part2;
-    cm_split_text(key, '.', '\0', &part1, &part2);
-    cm_trim_text(&part1);
-    cm_trim_text(&part2);
-    for (uint32_t i = 0; i < REPAIR_FS_BLOCK_HEAD_ITEM_COUNT; i++) {
-        repair_items_t *item = &g_repair_fs_block_head_items_list[i];
-        if (cm_text_str_equal(&part1, item->name)) {
-            LOG_RUN_INF(
-                "[TBOX][REPAIR] modify fs block header key name : %s, offset : %u;", item->name, item->item_offset);
-            return item->repair_func((void*)(((char*)item_ptr) + item->item_offset), &part2, value);
-        }
-    }
-    DSS_PRINT_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse fs block header;\n", part1.str);
-    return CM_ERROR;
+    return repair_func_complex_meta(&repair_set_fs_block_header_funcs, item_ptr, key, value);
 }
 
 static status_t repair_set_fs_block_bitmap(char *item_ptr, text_t *key, text_t *value)
