@@ -142,6 +142,11 @@ uint32 dss_get_recycle_meta_task_idx(uint32 idx)
     return dss_get_bg_task_set_idx(DSS_RECYCLE_META_TASK_BASE, idx);
 }
 
+uint32 dss_get_alarm_check_task_idx(void)
+{
+    return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_ALARM_CHECK_TASK;
+}
+
 static status_t dss_init_session(dss_session_t *session, const cs_pipe_t *pipe)
 {
     dss_latch_stack_t *latch_stack = &session->latch_stack;

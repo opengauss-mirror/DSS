@@ -179,6 +179,12 @@ static config_item_t g_dss_params[] = {
 #endif
     {"LOG_COMPRESSED", CM_TRUE, ATTR_READONLY, "FALSE", NULL, NULL, "-", "[FALSE,TRUE]", "GS_TYPE_BOOLEAN", NULL, 56,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"LOG_ALARM_HOME", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 59, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
+    {"VG_SPACE_USAGE_HWM", CM_TRUE, ATTR_READONLY, "80", NULL, NULL, "-", "[0, 100]", "GS_TYPE_INTEGER", NULL, 60,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"VG_SPACE_USAGE_LWM", CM_TRUE, ATTR_READONLY, "75", NULL, NULL, "-", "[0, 100]", "GS_TYPE_INTEGER", NULL, 61,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 static const char *g_dss_config_file = (const char *)"dss_inst.ini";
@@ -797,6 +803,32 @@ static status_t dss_load_recycle_meta_params(dss_config_t *inst_cfg)
 }
 #endif
 
+static status_t dss_load_space_usage(dss_config_t *inst_cfg)
+{
+    char *hwm_value = cm_get_config_value(&inst_cfg->config, "VG_SPACE_USAGE_HWM");
+    char *lwm_value = cm_get_config_value(&inst_cfg->config, "VG_SPACE_USAGE_LWM");
+    int32 hwm, lwm;
+    status_t status = cm_str2int(hwm_value, &hwm);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "VG_SPACE_USAGE_HWM"));
+    status = cm_str2int(lwm_value, &lwm);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "VG_SPACE_USAGE_LWM"));
+    if (hwm > DSS_VG_USAGE_MAX) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "VG_SPACE_USAGE_HWM is greater than maximum 100"));
+    }
+    if (lwm < DSS_VG_USAGE_MIN) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "VG_SPACE_USAGE_LWM is less than minimum 0"));
+    }
+    if (lwm > hwm) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "VG_SPACE_USAGE_LWM is greater than VG_SPACE_USAGE_HWM"));
+    }
+    inst_cfg->params.space_usage_hwm = (uint32)hwm;
+    inst_cfg->params.space_usage_lwm = (uint32)lwm;
+    return CM_SUCCESS;
+}
+
 status_t dss_load_config(dss_config_t *inst_cfg)
 {
     char file_name[DSS_FILE_NAME_BUFFER_SIZE];
@@ -844,6 +876,7 @@ status_t dss_load_config(dss_config_t *inst_cfg)
         CM_RETURN_IFERR(dss_load_recycle_meta_params(inst_cfg));
     }
 #endif
+    CM_RETURN_IFERR(dss_load_space_usage(inst_cfg));
 
     return CM_SUCCESS;
 }

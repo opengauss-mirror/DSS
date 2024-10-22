@@ -4554,3 +4554,87 @@ status_t dss_try_write_zero_one_au(
 
     return CM_SUCCESS;
 }
+
+status_t dss_calculate_vg_usage(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 *usage)
+{
+    dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
+    uint64 free_size = 0;
+    uint64 total_size = 0;
+    for (uint32 j = 0; j < DSS_MAX_VOLUMES; j++) {
+        if (dss_ctrl->volume.defs[j].flag != VOLUME_OCCUPY) {
+            continue;
+        }
+        total_size += dss_ctrl->core.volume_attrs[j].size;
+        free_size += dss_ctrl->core.volume_attrs[j].free;
+    }
+    // free_size need to add recycle size
+    dss_au_root_t *dss_au_root = DSS_GET_AU_ROOT(dss_ctrl);
+    ftid_t free_root = *(ftid_t *)(&dss_au_root->free_root);
+    gft_node_t *recycle_dir = dss_get_ft_node_by_ftid(session, vg_item, free_root, CM_TRUE, CM_FALSE);
+
+    if (recycle_dir == NULL) {
+        LOG_RUN_WAR("[ALARM]Failed to find recycle_dir when calculate vg usage in vg:%s", vg_item->vg_name);
+        return CM_ERROR;
+    }
+
+    if (!dss_cmp_auid(recycle_dir->items.first, DSS_INVALID_ID64)) {
+        gft_node_t *recycle_item =
+            dss_get_ft_node_by_ftid(session, vg_item, recycle_dir->items.first, CM_TRUE, CM_FALSE);
+        while (recycle_item != NULL) {
+            free_size += (uint64)recycle_item->size;
+            // check inst status, avoid affecting switchover
+            if (get_instance_status_proc() != DSS_STATUS_OPEN) {
+                return CM_ERROR;
+            }
+            if (dss_cmp_auid(recycle_item->next, DSS_INVALID_ID64)) {
+                break;
+            }
+            recycle_item = dss_get_ft_node_by_ftid(session, vg_item, recycle_item->next, CM_TRUE, CM_FALSE);
+        }
+    }
+
+    if (total_size == 0) {
+        LOG_RUN_WAR("[ALARM]Vg_size equals 0, all volumes are free in vg:%s when calculate vg usage", vg_item->vg_name);
+        return CM_ERROR;
+    }
+    *usage = (uint32)((total_size - free_size) * DSS_VG_USAGE_MAX / total_size);
+    return CM_SUCCESS;
+}
+
+void dss_alarm_check_vg_usage(dss_session_t *session)
+{
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    dss_warn_name_t warn_name = WARN_DSS_SPACEUSAGE;
+    status_t status;
+    if (dss_need_exec_local() && dss_is_readwrite() && (get_instance_status_proc() == DSS_STATUS_OPEN)) {
+        for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+            // check inst status, avoid affecting switchover
+            if (get_instance_status_proc() != DSS_STATUS_OPEN) {
+                break;
+            }
+            dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[i];
+            uint32 usage = 0;
+            dss_lock_vg_mem_and_shm_s(session, vg_item);
+            status = dss_calculate_vg_usage(session, vg_item, &usage);
+            if (status == CM_ERROR) {
+                dss_unlock_vg_mem_and_shm(session, vg_item);
+                break;
+            }
+            if (vg_item->space_alarm != DSS_VG_SPACE_ALARM_HWM) {
+                if (usage >= inst_cfg->params.space_usage_hwm) {
+                    vg_item->space_alarm = DSS_VG_SPACE_ALARM_HWM;
+                    LOG_ALARM_EX(warn_name, g_dss_warn_id, g_dss_warn_desc, "vg:%s usage:(%u%%) hwm:(%u%%) lwm:(%u%%)",
+                        vg_item->vg_name, usage, inst_cfg->params.space_usage_hwm, inst_cfg->params.space_usage_lwm);
+                }
+            } else {
+                if (usage < inst_cfg->params.space_usage_lwm) {
+                    vg_item->space_alarm = DSS_VG_SPACE_ALARM_LWM;
+                    LOG_ALARM_RECOVER_EX(warn_name, g_dss_warn_id, g_dss_warn_desc,
+                        "vg:%s usage:(%u%%) hwm:(%u%%) lwm:(%u%%)", vg_item->vg_name, usage,
+                        inst_cfg->params.space_usage_hwm, inst_cfg->params.space_usage_lwm);
+                }
+            }
+            dss_unlock_vg_mem_and_shm(session, vg_item);
+        }
+    }
+}

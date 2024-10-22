@@ -144,16 +144,24 @@ dss_log_def_t g_dss_cmd_log[] = {
     {LOG_DEBUG, "debug/dsscmd.dlog"},
     {LOG_OPER, "oper/dsscmd.olog"},
     {LOG_RUN, "run/dsscmd.rlog"},
-    {LOG_ALARM, "alarm/dsscmd.alog"},
+    {LOG_ALARM, "dsscmd_alarm.log"},
 };
 
 dss_log_def_t g_dss_instance_log[] = {
     {LOG_DEBUG, "debug/dssinstance.dlog"},
     {LOG_OPER, "oper/dssinstance.olog"},
     {LOG_RUN, "run/dssinstance.rlog"},
-    {LOG_ALARM, "alarm/dssinstance.alog"},
+    {LOG_ALARM, "dssinstance_alarm.log"},
     {LOG_AUDIT, "audit/dssinstance.aud"},
     {LOG_BLACKBOX, "blackbox/dssinstance.blog"},
+};
+
+uint32 g_dss_warn_id[] = {
+    WARN_DSS_SPACEUSAGE_ID,
+};
+
+char *g_dss_warn_desc[] = {
+    "DSSSpaceUsageUpToHWM",
 };
 
 dss_log_def_t *dss_get_instance_log_def()
@@ -218,32 +226,46 @@ static status_t dss_init_log_file(log_param_t *log_param, dss_config_t *inst_cfg
     return CM_SUCCESS;
 }
 
-static status_t dss_init_log_home(dss_config_t *inst_cfg, log_param_t *log_param)
+static status_t dss_init_log_home_ex(dss_config_t *inst_cfg, char *log_parm_value, char *log_param_name, char *log_dir)
 {
     errno_t errcode = 0;
     bool32 verify_flag = CM_FALSE;
     // register error callback function
-    char *value = cm_get_config_value(&inst_cfg->config, "LOG_HOME");
+    char *value = cm_get_config_value(&inst_cfg->config, log_param_name);
     uint32 val_len = (value == NULL) ? 0 : (uint32)strlen(value);
     if (val_len >= CM_MAX_LOG_HOME_LEN) {
+        DSS_THROW_ERROR(ERR_INIT_LOGGER, "%s value: %s is out of range.", log_param_name, log_parm_value);
         return CM_ERROR;
     } else if (val_len > 0) {
-        errcode = strncpy_s(log_param->log_home, CM_MAX_LOG_HOME_LEN, value, CM_MAX_LOG_HOME_LEN);
-        if (errcode != EOK) {
-            DSS_THROW_ERROR(ERR_SYSTEM_CALL, (errcode));
-            return CM_ERROR;
-        }
+        errcode = strncpy_s(log_parm_value, CM_MAX_LOG_HOME_LEN, value, CM_MAX_LOG_HOME_LEN);
+        securec_check_ret(errcode);
         verify_flag = CM_TRUE;
     } else {
         char *home = dss_get_cfg_dir(inst_cfg);
-        if (snprintf_s(log_param->log_home, CM_MAX_LOG_HOME_LEN, CM_MAX_LOG_HOME_LEN - 1, "%s/log", home) == -1) {
-            cm_panic(0);
+        if (snprintf_s(log_parm_value, CM_MAX_LOG_HOME_LEN, CM_MAX_LOG_HOME_LEN - 1, "%s/%s", home, log_dir) == -1) {
+            DSS_ASSERT_LOG(0, "Init log dir:%s/%s failed.", home, log_dir);
         }
     }
-    status_t status = dss_verify_log_file_dir_name(log_param->log_home);
-    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid LOG_HOME"));
-    if (verify_flag && dss_verify_log_file_real_path(log_param->log_home) != CM_SUCCESS) {
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid LOG_HOME"));
+    status_t status = dss_verify_log_file_dir_name(log_parm_value);
+    DSS_RETURN_IFERR2(
+        status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid %s", log_param_name));
+    if (verify_flag && dss_verify_log_file_real_path(log_parm_value) != CM_SUCCESS) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid %s", log_param_name));
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_init_log_home(dss_config_t *inst_cfg, log_param_t *log_param, char *alarm_dir)
+{
+    status_t status;
+    status = dss_init_log_home_ex(inst_cfg, log_param->log_home, "LOG_HOME", "log");
+    if (status != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+    status = dss_init_log_home_ex(inst_cfg, alarm_dir, "LOG_ALARM_HOME", "log/alarm");
+    if (status != CM_SUCCESS) {
+        return CM_ERROR;
     }
     return CM_SUCCESS;
 }
@@ -332,7 +354,8 @@ status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32
     char file_name[CM_MAX_PATH_LEN];
     log_param_t *log_param = cm_log_param_instance();
     log_param->log_level = 0;
-    if (dss_init_log_home(inst_cfg, log_param) != CM_SUCCESS) {
+    char alarm_dir[CM_MAX_LOG_HOME_LEN];
+    if (dss_init_log_home(inst_cfg, log_param, alarm_dir) != CM_SUCCESS) {
         return CM_ERROR;
     }
 
@@ -347,7 +370,11 @@ status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32
     uint32 len = CM_MAX_PATH_LEN;
     int32 ret;
     for (size_t i = 0; i < log_def_count; i++) {
-        ret = snprintf_s(file_name, len, (len - 1), "%s/%s", log_param->log_home, log_def[i].log_filename);
+        if (log_def[i].log_id == LOG_ALARM) {
+            ret = snprintf_s(file_name, len, (len - 1), "%s/%s", alarm_dir, log_def[i].log_filename);
+        } else {
+            ret = snprintf_s(file_name, len, (len - 1), "%s/%s", log_param->log_home, log_def[i].log_filename);
+        }
         DSS_SECUREC_SS_RETURN_IF_ERROR(ret, CM_ERROR);
         if (cm_log_init(log_def[i].log_id, file_name) != CM_SUCCESS) {
             return CM_ERROR;

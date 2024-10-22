@@ -391,7 +391,7 @@ status_t dss_data_oper(char *op_desc, bool32 is_write, dss_vg_info_item_t *vg_it
 status_t dss_write_zero2au(char *op_desc, dss_vg_info_item_t *vg_item, uint64 fid, auid_t auid, uint32 au_offset);
 status_t dss_try_write_zero_one_au(
     char *desc, dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, int64 offset);
-
+void dss_alarm_check_vg_usage(dss_session_t *session);
 #ifdef __cplusplus
 }
 #endif
