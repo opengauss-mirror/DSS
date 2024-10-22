@@ -486,6 +486,7 @@ status_t dss_get_vg_info()
             DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
             return CM_ERROR;
         }
+        g_vgs_info->volume_group[i].space_alarm = DSS_VG_SPACE_ALARM_INIT;
     }
     LOG_RUN_INF("DSS succeed to init vgs in memory.");
     return status;

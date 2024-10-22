@@ -978,7 +978,7 @@ void dss_wait_session_pause(dss_instance_t *inst)
 void dss_wait_background_pause(dss_instance_t *inst)
 {
     LOG_DEBUG_INF("Begin to set background paused.");
-    while (inst->is_cleaning) {
+    while (inst->is_cleaning || inst->is_checking) {
         cm_sleep(1);
     }
     LOG_DEBUG_INF("Succeed to pause background task.");

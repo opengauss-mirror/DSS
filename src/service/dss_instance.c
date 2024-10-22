@@ -863,6 +863,28 @@ void dss_delay_clean_proc(thread_t *thread)
     }
 }
 
+void dss_alarm_check_proc(thread_t *thread)
+{
+    cm_set_thread_name("alarm_check");
+    uint32 sleep_times = 0;
+    uint32 work_idx = dss_get_alarm_check_task_idx();
+    dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
+    dss_session_t *session = session_ctrl->sessions[work_idx];
+    // for check other alarms
+    uint32 alarm_counts = DSS_VG_ALARM_CHECK_COUNT;
+    while (!thread->closed) {
+        // only master node need alarm
+        if (sleep_times % DSS_VG_ALARM_CHECK_COUNT == 0) {
+            g_dss_instance.is_checking = CM_TRUE;
+            dss_alarm_check_vg_usage(session);
+            g_dss_instance.is_checking = CM_FALSE;
+        }
+        cm_sleep(CM_SLEEP_500_FIXED);
+        sleep_times++;
+        sleep_times = sleep_times % alarm_counts;
+    }
+}
+
 void dss_hashmap_dynamic_extend_and_redistribute_proc(thread_t *thread)
 {
     cm_set_thread_name("hashmap_dynamic_extend_and_redistribute");

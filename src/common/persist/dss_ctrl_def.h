@@ -355,6 +355,7 @@ typedef struct st_dss_vg_info_item_t {
     dss_log_file_ctrl_t log_file_ctrl;             // redo log ctrl
     dss_block_ctrl_task_desc_t recycle_meta_desc;  // for recycle meta
     uint32 objectid;
+    uint32 space_alarm;
 } dss_vg_info_item_t;
 
 typedef struct st_dss_vg_info_t {

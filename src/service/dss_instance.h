@@ -90,6 +90,8 @@ typedef struct st_dss_instance {
     bool8 is_cleaning;
     bool8 no_grab_lock;
     bool8 is_releasing_lock;
+    bool8 is_checking;
+    bool8 reserve[3];
     bool32 is_join_cluster;
     dss_session_t *handle_session;
     dss_bg_task_info_t syn_meta_task[DSS_META_SYN_BG_TASK_NUM_MAX];
@@ -127,6 +129,7 @@ bool32 dss_check_join_cluster();
 void dss_check_unreg_volume(dss_session_t *session);
 void dss_meta_syn_proc(thread_t *thread);
 void dss_recycle_meta_proc(thread_t *thread);
+void dss_alarm_check_proc(thread_t *thread);
 
 #ifdef __cplusplus
 }
