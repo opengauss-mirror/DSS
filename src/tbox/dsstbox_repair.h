@@ -13,18 +13,29 @@
  * See the Mulan PSL v2 for more details.
  * -------------------------------------------------------------------------
  *
- * dsstbox.h
+ * dsstbox_repair.h
  *
  *
  * IDENTIFICATION
- *    src/tbox/dsstbox.h
+ *    src/tbox/dsstbox_repair.h
  *
  * -------------------------------------------------------------------------
  */
 
-#ifndef __DSSTBOX_H_
-#define __DSSTBOX_H_
+#ifndef __DSSTBOX_REPAIR_H_
+#define __DSSTBOX_REPAIR_H_
 
 #include "dss_defs.h"
+
+typedef struct st_repair_input_def {
+    char *vol_path;
+    char *type;
+    char *key_value;
+    dss_block_id_t block_id;
+    uint32_t au_size;
+} repair_input_def_t;
+
+status_t dss_repair_fs_block(repair_input_def_t *input);
+status_t dss_repair_verify_disk_version(char *vol_path);
 
 #endif

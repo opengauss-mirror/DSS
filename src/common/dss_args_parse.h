@@ -92,4 +92,6 @@ status_t cmd_realpath_home(const char *input_args, char **convert_result, int *c
 void cmd_clean_check_convert(char *convert_result, int convert_size);
 status_t set_config_info(char *home, dss_config_t *inst_cfg);
 status_t dss_get_vg_item(dss_vg_info_item_t **vg_item, const char *vg_name);
+status_t dss_check_meta_type(const char *type);
+status_t dss_check_meta_id(const char *intput);
 #endif
