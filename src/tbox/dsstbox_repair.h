@@ -33,6 +33,13 @@
 #define DSS_REPAIR_ARG_AU_SIZE 3
 #define DSS_REPAIR_ARG_KEY_VALUE 4
 
+#define DSS_REPAIR_TYPE_FS_BLOCK "fs_block"
+#define DSS_REPAIR_TYPE_FT_BLOCK "ft_block"
+#define DSS_REPAIR_TYPE_CORE_CTRL "core_ctrl"
+#define DSS_REPAIR_TYPE_ROOT "root"
+#define DSS_REPAIR_TYPE_VOLUME "volume"
+#define DSS_REPAIR_TYPE_HEADER "header"
+
 typedef struct st_repair_input_def {
     char *vol_path;
     char *type;
@@ -43,5 +50,6 @@ typedef struct st_repair_input_def {
 
 status_t dss_repair_fs_block(repair_input_def_t *input);
 status_t dss_repair_verify_disk_version(char *vol_path);
+status_t dss_repair_core_ctrl(repair_input_def_t *input);
 
 #endif

@@ -22,6 +22,7 @@
  * -------------------------------------------------------------------------
  */
 
+#include "dsstbox.h"
 #ifndef WIN32
 #include <unistd.h>
 #include <sys/types.h>
@@ -33,12 +34,10 @@
 #include "dss_errno.h"
 #include "dss_malloc.h"
 #include "dss_file.h"
-#include "dss_args_parse.h"
-#include "dss_redo.h"
-#include "dss_defs_print.h"
+#include "dss_diskgroup.h"
 #include "dsstbox_repair.h"
 #include "dsstbox_miner.h"
-#include "dsstbox.h"
+#include "dss_args_parse.h"
 #ifndef WIN32
 #include "config.h"
 #endif
@@ -54,18 +53,72 @@ dss_log_def_t g_dss_dsstbox_log[] = {
     {LOG_ALARM, "alarm/dsstbox.alog"},
 };
 
+status_t dss_check_meta_type(const char *type)
+{
+    if ((cm_strcmpi(type, DSS_REPAIR_TYPE_FS_BLOCK) != 0) && (cm_strcmpi(type, DSS_REPAIR_TYPE_FT_BLOCK) != 0) &&
+        (cm_strcmpi(type, DSS_REPAIR_TYPE_CORE_CTRL) != 0) && (cm_strcmpi(type, DSS_REPAIR_TYPE_ROOT) != 0) &&
+        (cm_strcmpi(type, DSS_REPAIR_TYPE_VOLUME) != 0) && (cm_strcmpi(type, DSS_REPAIR_TYPE_HEADER) != 0)) {
+        DSS_PRINT_ERROR("Invalid tbox ssrepair type:%s.\n", type);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+status_t dss_check_meta_id(const char *intput)
+{
+    uint64 id = 0;
+    status_t status = cm_str2uint64(intput, &id);
+    if (status == CM_ERROR) {
+        DSS_PRINT_ERROR("intput:%s is not a valid uint64 meta id\n", intput);
+        return CM_ERROR;
+    }
+    dss_block_id_t *block_id = (dss_block_id_t *)&id;
+    if (block_id->volume >= DSS_MAX_VOLUMES) {
+        DSS_PRINT_ERROR("block_id is invalid, id = %s.\n", dss_display_metaid(*block_id));
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
 static dss_args_t tbox_repair_args[] = {
     {'v', "vol_path", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
     {'t', "type", CM_TRUE, CM_TRUE, dss_check_meta_type, NULL, NULL, 0, NULL, NULL, 0},
-    {'i', "id", CM_TRUE, CM_TRUE, dss_check_meta_id, NULL, NULL, 0, NULL, NULL, 0},
-    {'s', "au_size", CM_TRUE, CM_TRUE, cmd_check_au_size, NULL, NULL, 0, NULL, NULL, 0},
+    {'i', "id", CM_FALSE, CM_TRUE, dss_check_meta_id, NULL, NULL, 0, NULL, NULL, 0},
+    {'s', "au_size", CM_FALSE, CM_TRUE, cmd_check_au_size, NULL, NULL, 0, NULL, NULL, 0},
     {'k', "key_value", CM_TRUE, CM_TRUE, NULL, NULL, NULL, 0, NULL, NULL, 0},
 };
+
+// -i and -s is needed only when "-t fs_block"
+static status_t check_repair_args(dss_args_t *cmd_args_set, int set_size)
+{
+    if (strcmp(cmd_args_set[DSS_REPAIR_ARG_TYPE].input_args, DSS_REPAIR_TYPE_FS_BLOCK) == 0) {
+        if (!cmd_args_set[DSS_REPAIR_ARG_META_ID].inputed) {
+            DSS_PRINT_ERROR("To repair %s, block_id must be specified by -i.\n", DSS_REPAIR_TYPE_FS_BLOCK);
+            return CM_ERROR;
+        }
+        if (!cmd_args_set[DSS_REPAIR_ARG_AU_SIZE].inputed) {
+            DSS_PRINT_ERROR("To repair %s, au_size must be specified by -s.\n", DSS_REPAIR_TYPE_FS_BLOCK);
+            return CM_ERROR;
+        }
+        return CM_SUCCESS;
+    } else if (strcmp(cmd_args_set[DSS_REPAIR_ARG_TYPE].input_args, DSS_REPAIR_TYPE_CORE_CTRL) == 0) {
+        if (cmd_args_set[DSS_REPAIR_ARG_META_ID].inputed) {
+            DSS_PRINT_ERROR("To repair %s, block_id specified by -i is not expected.\n", DSS_REPAIR_TYPE_CORE_CTRL);
+            return CM_ERROR;
+        }
+        if (cmd_args_set[DSS_REPAIR_ARG_AU_SIZE].inputed) {
+            DSS_PRINT_ERROR("To repair %s, au_size specified by -s is not expected.\n", DSS_REPAIR_TYPE_CORE_CTRL);
+            return CM_ERROR;
+        }
+        return CM_SUCCESS;
+    }
+    return CM_SUCCESS;
+}
 
 static dss_args_set_t tbox_repair_args_set = {
     tbox_repair_args,
     sizeof(tbox_repair_args) / sizeof(dss_args_t),
-    NULL,
+    check_repair_args,
 };
 
 static void repair_help(const char *prog_name, int print_flag)
@@ -77,35 +130,59 @@ static void repair_help(const char *prog_name, int print_flag)
     }
     (void)printf("-v/--vol_path <vol_path>, <required>, the volume path of the host need to repair\n");
     (void)printf("-t/--type <type>, <required>, repair type for meta info.\n");
-    (void)printf("-i/--id <meta_id>, <optional>, the meta id you want to repair if you want to repair fs or ft.\n");
-    (void)printf("-s/--au_size <au_size>, <optional>, the size of single alloc uint of volume, unit is KB, "
+    (void)printf(
+        "-i/--id <meta_id>, [optional], the meta id you want to repair only if you want to repair fs or ft.\n");
+    (void)printf("-s/--au_size <au_size>, [optional] the size of single alloc uint of volume, unit is KB, "
                  "at least 2MB, at max 64M\n");
     (void)printf("-k/--key_value <key_value>, <required>, the meta id you want to repair.\n");
+}
+
+static status_t collect_repair_input(repair_input_def_t *input)
+{
+    input->vol_path = tbox_repair_args[DSS_REPAIR_ARG_VOL_PATH].input_args;
+    input->type = tbox_repair_args[DSS_REPAIR_ARG_TYPE].input_args;
+
+    // block_id
+    status_t status = CM_SUCCESS;
+    if (tbox_repair_args[DSS_REPAIR_ARG_META_ID].inputed) {
+        status = cm_str2uint64(tbox_repair_args[DSS_REPAIR_ARG_META_ID].input_args, (uint64 *)&input->block_id);
+        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][REPAIR] block_id:%s is not a valid uint64\n",
+                                      tbox_repair_args[DSS_REPAIR_ARG_META_ID].input_args));
+    } else {
+        input->block_id = DSS_INVALID_BLOCK_ID;
+    }
+
+    // au_size
+    if (tbox_repair_args[DSS_REPAIR_ARG_AU_SIZE].inputed) {
+        status = cm_str2uint32(tbox_repair_args[DSS_REPAIR_ARG_AU_SIZE].input_args, &input->au_size);
+        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][REPAIR] au_size:%s is not a valid uint32\n",
+                                      tbox_repair_args[DSS_REPAIR_ARG_AU_SIZE].input_args));
+    } else {
+        input->au_size = 0;
+    }
+
+    // key_value
+    input->key_value = tbox_repair_args[DSS_REPAIR_ARG_KEY_VALUE].input_args;
+    LOG_RUN_INF("[TBOX][REPAIR] vol_path:%s type:%s, id:%s, au_size:%u, key_value:%s", input->vol_path, input->type,
+        dss_display_metaid(input->block_id), input->au_size, input->key_value);
+    return CM_SUCCESS;
 }
 
 static status_t repair_proc(void)
 {
     repair_input_def_t input = {0};
-    input.vol_path = tbox_repair_args[DSS_REPAIR_ARG_VOL_PATH].input_args;
-    input.type = tbox_repair_args[DSS_REPAIR_ARG_TYPE].input_args;
-
-    status_t status = cm_str2uint64(tbox_repair_args[DSS_REPAIR_ARG_META_ID].input_args, (uint64 *)&input.block_id);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][REPAIR] block_id:%s is not a valid uint64\n",
-        tbox_repair_args[DSS_REPAIR_ARG_META_ID].input_args));
-    status = cm_str2uint32(tbox_repair_args[DSS_REPAIR_ARG_AU_SIZE].input_args, &input.au_size);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][REPAIR] au_size:%s is not a valid uint32\n",
-        tbox_repair_args[DSS_REPAIR_ARG_AU_SIZE].input_args));
-    input.key_value = tbox_repair_args[DSS_REPAIR_ARG_KEY_VALUE].input_args;
-    LOG_RUN_INF("[TBOX][REPAIR] vol_path:%s type:%s, id:%s, au_size:%u, key_value:%s", input.vol_path, input.type,
-        dss_display_metaid(input.block_id), input.au_size, input.key_value);
+    status_t status = collect_repair_input(&input);
+    DSS_RETURN_IF_ERROR(status);
 
     DSS_RETURN_IFERR2(dss_repair_verify_disk_version(input.vol_path),
-        DSS_PRINT_ERROR("[TBOX][REPAIR] verify disk version failed %s", input.vol_path));
+        DSS_PRINT_ERROR("[TBOX][REPAIR] verify disk version failed %s.\n", input.vol_path));
 
-    if (strcmp(input.type, "fs_block") == 0) {
+    if (strcmp(input.type, DSS_REPAIR_TYPE_FS_BLOCK) == 0) {
         status = dss_repair_fs_block(&input);
+    } else if (strcmp(input.type, DSS_REPAIR_TYPE_CORE_CTRL) == 0) {
+        status = dss_repair_core_ctrl(&input);
     } else {
-        DSS_PRINT_ERROR("[TBOX][REPAIR] Only support -t fs_block, and your type is %s.", input.type);
+        DSS_PRINT_ERROR("[TBOX][REPAIR] Only support -t fs_block or -t core_ctrl, and your type is %s.", input.type);
         status = CM_ERROR;
     }
     LOG_RUN_INF("[TBOX][REPAIR] vol_path:%s type:%s, id:%s, au_size:%u, key_value:%s result:%u", input.vol_path,
