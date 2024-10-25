@@ -313,14 +313,6 @@ status_t dss_print_struct_name_inner(dss_vg_info_item_t *vg_item, dss_volume_t *
     return CM_SUCCESS;
 }
 
-static int64 dss_get_ftb_offset(const dss_core_ctrl_t *core_ctrl, const dss_block_id_t *id)
-{
-    if ((id->au) == 0) {
-        return (int64)DSS_CTRL_ROOT_OFFSET;
-    }
-    return (int64)((uint64)id->au * core_ctrl->au_size + (uint64)DSS_BLOCK_SIZE * id->block);
-}
-
 static void printf_fs_block_header(dss_fs_block_header *fs_block_header)
 {
     char *tab = dss_get_print_tab(g_print_level);
@@ -577,7 +569,7 @@ status_t dss_printf_dss_file_table_block(
         return status;
     }
 
-    offset = dss_get_ftb_offset(core_ctrl, id);
+    offset = dss_get_ftb_offset(core_ctrl->au_size, id);
     if (offset % DSS_DISK_UNIT_SIZE != 0) {
         DSS_PRINT_ERROR("offset must be align %d.\n", DSS_DISK_UNIT_SIZE);
         dss_close_volume(&volume);

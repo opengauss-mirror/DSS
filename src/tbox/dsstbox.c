@@ -128,12 +128,12 @@ static void repair_help(const char *prog_name, int print_flag)
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
-    (void)printf("-v/--vol_path <vol_path>, <required>, the volume path of the host need to repair\n");
+    (void)printf("-v/--vol_path <vol_path>, <required>, the volume path of the host need to repair.\n");
     (void)printf("-t/--type <type>, <required>, repair type for meta info.\n");
     (void)printf(
         "-i/--id <meta_id>, [optional], the meta id you want to repair only if you want to repair fs or ft.\n");
     (void)printf("-s/--au_size <au_size>, [optional] the size of single alloc uint of volume, unit is KB, "
-                 "at least 2MB, at max 64M\n");
+                 "at least 2MB, at max 64M.\n");
     (void)printf("-k/--key_value <key_value>, <required>, the meta id you want to repair.\n");
 }
 
@@ -224,9 +224,11 @@ static status_t repair_proc(void)
 
     dss_repair_confirm();
 
-    if (strcmp(input.type, DSS_REPAIR_TYPE_FS_BLOCK) == 0) {
+    if (cm_strcmpi(input.type, DSS_REPAIR_TYPE_FS_BLOCK) == 0) {
         status = dss_repair_fs_block(&input);
-    } else if (strcmp(input.type, DSS_REPAIR_TYPE_CORE_CTRL) == 0) {
+    } else if (cm_strcmpi(input.type, DSS_REPAIR_TYPE_FT_BLOCK) == 0) {
+        status = dss_repair_ft_block(&input);
+    } else if (cm_strcmpi(input.type, DSS_REPAIR_TYPE_CORE_CTRL) == 0) {
         status = dss_repair_core_ctrl(&input);
     } else {
         DSS_PRINT_ERROR("[TBOX][REPAIR] Only support -t fs_block or -t core_ctrl, and your type is %s.", input.type);

@@ -49,6 +49,7 @@ typedef struct st_repair_input_def {
 } repair_input_def_t;
 
 status_t dss_repair_fs_block(repair_input_def_t *input);
+status_t dss_repair_ft_block(repair_input_def_t *input);
 status_t dss_repair_verify_disk_version(char *vol_path);
 status_t dss_repair_core_ctrl(repair_input_def_t *input);
 
