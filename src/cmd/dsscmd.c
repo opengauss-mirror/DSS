@@ -828,8 +828,8 @@ static status_t lsvg_proc(void)
         return status;
     }
 
-    const char* input_args = cmd_lsvg_args[DSS_ARG_IDX_2].input_args;
-    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    const char *uds_path = cmd_lsvg_args[DSS_ARG_IDX_2].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(uds_path);
     if (conn == NULL) {
         DSS_PRINT_ERROR("Failed to get uds connection.\n");
         return CM_ERROR;
@@ -890,8 +890,8 @@ static status_t adv_proc(void)
         }
         return status;
     }
-    const char* input_args = cmd_adv_args[DSS_ARG_IDX_4].input_args;
-    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    const char *uds_path = cmd_adv_args[DSS_ARG_IDX_4].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(uds_path);
     if (conn == NULL) {
         DSS_PRINT_ERROR("Failed to get uds connection.\n");
         return CM_ERROR;
@@ -953,8 +953,8 @@ static status_t mkdir_proc(void)
     }
 
     const char *dir_name = cmd_mkdir_args[DSS_ARG_IDX_1].input_args;
-    const char* input_args = cmd_mkdir_args[DSS_ARG_IDX_2].input_args;
-    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    const char *uds_path = cmd_mkdir_args[DSS_ARG_IDX_2].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(uds_path);
     if (conn == NULL) {
         return CM_ERROR;
     }
@@ -4372,6 +4372,35 @@ static bool32 get_cmd_idx(int argc, char **argv, uint32_t *idx)
     return CM_FALSE;
 }
 
+bool8 cmd_check_run_interactive(int argc, char **argv)
+{
+    if (argc < CMD_ARGS_AT_LEAST) {
+        return CM_FALSE;
+    }
+    if (cm_str_equal(argv[1], "-i") || cm_str_equal(argv[1], "--interactive")) {
+        g_run_interatively = CM_TRUE;
+        return CM_TRUE;
+    }
+    return CM_FALSE;
+}
+
+bool8 cmd_version_and_help(int argc, char **argv)
+{
+    if (cm_str_equal(argv[1], VERSION_SHORT) || cm_str_equal(argv[1], VERSION_LONG)) {
+        (void)printf("dsscmd %s\n", (char *)DEF_DSS_VERSION);
+        return CM_TRUE;
+    }
+    if (cm_str_equal(argv[1], ALL_SHORT) || cm_str_equal(argv[1], ALL_LONG)) {
+        help(argv[0], DSS_HELP_DETAIL);
+        return CM_TRUE;
+    }
+    if (cm_str_equal(argv[1], HELP_SHORT) || cm_str_equal(argv[1], HELP_LONG)) {
+        help(argv[0], DSS_HELP_SIMPLE);
+        return CM_TRUE;
+    }
+    return CM_FALSE;
+}
+
 int32 execute_help_cmd(int argc, char **argv, uint32_t *idx, bool8 *go_ahead)
 {
     if (argc < CMD_ARGS_AT_LEAST) {
@@ -4383,25 +4412,8 @@ int32 execute_help_cmd(int argc, char **argv, uint32_t *idx, bool8 *go_ahead)
         *go_ahead = CM_FALSE;
         return EXIT_FAILURE;
     }
-
-    if (cm_str_equal(argv[1], VERSION_SHORT) || cm_str_equal(argv[1], VERSION_LONG)) {
-        (void)printf("dsscmd %s\n", (char *)DEF_DSS_VERSION);
+    if (cmd_version_and_help(argc, argv)) {
         *go_ahead = CM_FALSE;
-        return EXIT_SUCCESS;
-    }
-    if (cm_str_equal(argv[1], ALL_SHORT) || cm_str_equal(argv[1], ALL_LONG)) {
-        help(argv[0], DSS_HELP_DETAIL);
-        *go_ahead = CM_FALSE;
-        return EXIT_SUCCESS;
-    }
-    if (cm_str_equal(argv[1], HELP_SHORT) || cm_str_equal(argv[1], HELP_LONG)) {
-        help(argv[0], DSS_HELP_SIMPLE);
-        *go_ahead = CM_FALSE;
-        return EXIT_SUCCESS;
-    }
-    if (!g_run_interatively && (cm_str_equal(argv[1], "-i") || cm_str_equal(argv[1], "--interactive"))) {
-        g_run_interatively = CM_TRUE;
-        *go_ahead = CM_TRUE;
         return EXIT_SUCCESS;
     }
     if (!get_cmd_idx(argc, argv, idx)) {
@@ -4466,38 +4478,26 @@ static status_t dss_check_user_permit()
 
 int main(int argc, char **argv)
 {
-    status_t status = dss_check_user_permit();
-    if (status != CM_SUCCESS) {
-        return status;
-    }
-
+    DSS_RETURN_IF_ERROR(dss_check_user_permit());
     uint32 idx = 0;
-    int32 help_ret = CM_SUCCESS;
-    bool8 go_ahead = CM_FALSE;
-    help_ret = execute_help_cmd(argc, argv, &idx, &go_ahead);
-    if (!go_ahead) {
-        exit(help_ret);
+    bool8 go_ahead = CM_TRUE;
+    bool8 is_interactive = cmd_check_run_interactive(argc, argv);
+    if (!is_interactive) {
+        int32 help_ret = execute_help_cmd(argc, argv, &idx, &go_ahead);
+        if (!go_ahead) {
+            exit(help_ret);
+        }
     }
-
     dss_config_t *inst_cfg = dss_get_g_inst_cfg();
-    if (dss_set_cfg_dir(NULL, inst_cfg) != CM_SUCCESS) {
-        (void)printf("Environment variant DSS_HOME not found!\n");
-        return CM_ERROR;
-    }
-    status_t ret = dss_load_local_server_config(inst_cfg);
-    if (ret != CM_SUCCESS) {
-        (void)printf("load local server config failed during init loggers.\n");
-        return CM_ERROR;
-    }
-
-    if (cm_start_timer(g_timer()) != CM_SUCCESS) {
-        (void)printf("Aborted due to starting timer thread.\n");
-        return CM_ERROR;
-    }
-
+    status_t ret = dss_set_cfg_dir(NULL, inst_cfg);
+    DSS_RETURN_IFERR2(ret, DSS_PRINT_ERROR("Environment variant DSS_HOME not found!\n"));
+    ret = dss_load_local_server_config(inst_cfg);
+    DSS_RETURN_IFERR2(ret, DSS_PRINT_ERROR("Failed to load local server config, status(%d).\n", ret));
+    ret = cm_start_timer(g_timer());
+    DSS_RETURN_IFERR2(ret, DSS_PRINT_ERROR("Aborted due to starting timer thread.\n"));
     ret = dss_init_loggers(inst_cfg, dss_get_cmd_log_def(), dss_get_cmd_log_def_count(), "dsscmd");
     if (ret != CM_SUCCESS && is_log_necessary(argc, argv)) {
-        (void)printf("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code()));
+        DSS_PRINT_ERROR("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code()));
         return ret;
     }
 
