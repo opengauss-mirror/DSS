@@ -89,10 +89,10 @@ status_t cmd_check_convert_path(const char *input_args, void **convert_result, i
         return CM_ERROR;
     }
     convert_path = (char *)*convert_result;
-
-    (void)memcpy_s(convert_path, convert_path_len, g_cur_path, cur_path_len);
+    securec_check_ret(memcpy_s(convert_path, convert_path_len, g_cur_path, cur_path_len));
     convert_path[cur_path_len] = '/';
-    (void)memcpy_s(convert_path + cur_path_len + 1, convert_path_len - cur_path_len - 1, input_args, input_path_len);
+    securec_check_ret(
+        memcpy_s(convert_path + cur_path_len + 1, convert_path_len - cur_path_len - 1, input_args, input_path_len));
     convert_path[convert_path_len - 1] = '\0';
 
     ret = dss_check_device_path(convert_path);
@@ -181,7 +181,7 @@ status_t dss_cmd_format_path(char *org_path, char *out_path_buf, uint32 out_buf_
         DSS_PRINT_ERROR("path is too long.\n");
         return CM_ERROR;
     }
-    (void)memcpy_s(out_path_buf, out_buf_len, sub_path, sub_path_len);
+    securec_check_ret(memcpy_s(out_path_buf, out_buf_len, sub_path, sub_path_len));
     cur_len += sub_path_len;
 
     while (sub_path != NULL) {
@@ -196,7 +196,7 @@ status_t dss_cmd_format_path(char *org_path, char *out_path_buf, uint32 out_buf_
         }
         out_path_buf[cur_len] = '/';
         cur_len += 1;
-        (void)memcpy_s(out_path_buf + cur_len, out_buf_len - cur_len, sub_path, sub_path_len);
+        securec_check_ret(memcpy_s(out_path_buf + cur_len, out_buf_len - cur_len, sub_path, sub_path_len));
         cur_len += sub_path_len;
     }
 
@@ -231,6 +231,7 @@ void dss_cmd_cd_proc(int argc, char **args)
         return;
     }
 
+    errno_t err = 0;
     if (input_path[0] == '+') {
         path = format_path;
         path_len = format_path_len;
@@ -240,10 +241,18 @@ void dss_cmd_cd_proc(int argc, char **args)
             return;
         }
 
-        (void)memcpy_s(merged_path, DSS_FILE_PATH_MAX_LENGTH, g_cur_path, cur_path_len);
+        err = memcpy_s(merged_path, DSS_FILE_PATH_MAX_LENGTH, g_cur_path, cur_path_len);
+        if (err != EOK) {
+            DSS_PRINT_ERROR("Error occured when copying current working directory, error code is %d.\n", err);
+            return;
+        }
         merged_path[cur_path_len] = '/';
-        (void)memcpy_s(merged_path + cur_path_len + 1, DSS_FILE_PATH_MAX_LENGTH - cur_path_len - 1,
-                       format_path, format_path_len);
+        err = memcpy_s(
+            merged_path + cur_path_len + 1, DSS_FILE_PATH_MAX_LENGTH - cur_path_len - 1, format_path, format_path_len);
+        if (err != EOK) {
+            DSS_PRINT_ERROR("Error occured when copying relative path error code is %d.\n", err);
+            return;
+        }
         path_len = cur_path_len + format_path_len + 1;
         merged_path[path_len] = '\0';
         path = merged_path;
@@ -254,7 +263,10 @@ void dss_cmd_cd_proc(int argc, char **args)
         return;
     }
 
-    (void)memcpy_s(g_cur_path, DSS_FILE_PATH_MAX_LENGTH, path, path_len + 1);
+    err = memcpy_s(g_cur_path, DSS_FILE_PATH_MAX_LENGTH, path, path_len + 1);
+    if (err != EOK) {
+        DSS_PRINT_ERROR("Error occured when copying new working directory, error code is %d.\n", err);
+    }
 }
 
 void dss_cmd_pwd_proc(int argc, char **args)
@@ -407,7 +419,11 @@ void dss_cmd_hist_turn_up(const int *hist_count, int *list_num, uint32 *nbytes, 
     *nbytes = g_hist_list[*list_num].nbytes;
     *nwidths = g_hist_list[*list_num].nwidths;
 
-    (void)memcpy_s(cmd_buf, max_len, g_hist_list[*list_num].hist_buf, *nbytes);
+    errno_t err = memcpy_s(cmd_buf, max_len, g_hist_list[*list_num].hist_buf, *nbytes);
+    if (err != EOK) {
+        DSS_PRINT_ERROR("Error occured when copying historical command.\n");
+        return;
+    }
     dss_cmd_write(*nbytes, g_hist_list[*list_num].hist_buf);
     dss_cmd_write(2, " \b");
     dss_cmd_set_endspace(g_hist_list[*list_num], ws_col, welcome_width, spacenum, endspace);
@@ -425,7 +441,11 @@ void dss_cmd_hist_turn_down(int *list_num, uint32 *nbytes, uint32 *nwidths, uint
     *nbytes = g_hist_list[*list_num].nbytes;
     *nwidths = g_hist_list[*list_num].nwidths;
 
-    (void)memcpy_s(cmd_buf, max_len, g_hist_list[*list_num].hist_buf, *nbytes);
+    errno_t err = memcpy_s(cmd_buf, max_len, g_hist_list[*list_num].hist_buf, *nbytes);
+    if (err != EOK) {
+        DSS_PRINT_ERROR("Error occured when copying historical command.\n");
+        return;
+    }
     dss_cmd_write(*nbytes, g_hist_list[*list_num].hist_buf);
     dss_cmd_write(2, " \b");
     dss_cmd_set_endspace(g_hist_list[*list_num], ws_col, welcome_width, spacenum, endspace);
@@ -444,7 +464,11 @@ void dss_cmd_push_history(uint32 cmd_bytes, uint32 cmd_width, int *hist_count, c
         (void)memcpy_s(&g_hist_list[i], sizeof(dss_cmd_history_list_t),
                        &g_hist_list[i - 1], sizeof(dss_cmd_history_list_t));
     }
-    (void)memcpy_s(g_hist_list[1].hist_buf, MAX_CMD_LEN, cmd_buf, MAX_CMD_LEN);
+    errno_t err = memcpy_s(g_hist_list[1].hist_buf, MAX_CMD_LEN, cmd_buf, MAX_CMD_LEN);
+    if (err != EOK) {
+        DSS_PRINT_ERROR("Error occured when copying historical command.\n");
+        return;
+    }
     g_hist_list[1].nbytes = cmd_bytes;
     g_hist_list[1].nwidths = cmd_width;
     return;
@@ -461,7 +485,11 @@ void dss_cmd_set_terminal(uint32 *ws_col, struct termios *oldt)
 
     struct termios newt;
     (void)tcgetattr(STDIN_FILENO, oldt);
-    (void)memcpy_s(&newt, sizeof(newt), oldt, sizeof(newt));
+    errno_t err = memcpy_s(&newt, sizeof(newt), oldt, sizeof(newt));
+    if (err != EOK) {
+        DSS_PRINT_ERROR("Error occured when copying termios.\n");
+        return;
+    }
     newt.c_lflag &= ~(ECHO | ICANON | ECHOE | ECHOK | ECHONL | ICRNL);
     newt.c_cc[VMIN] = 1;
     newt.c_cc[VTIME] = 0;
@@ -485,7 +513,11 @@ void dss_cmd_handle_backspace(char *cmd_buf, uint32 *nbytes, uint32 *nwidths, bo
 
     (void)dss_utf8_reverse_str_bytes(cmd_buf + tmp_nbytes - 1, tmp_nbytes, &c_bytes);
     tmp_nbytes -= c_bytes;
-    (void)memcpy_s(chr, DSS_UTF8_CHR_SIZE, cmd_buf + tmp_nbytes, c_bytes);
+    errno_t err = memcpy_s(chr, DSS_UTF8_CHR_SIZE, cmd_buf + tmp_nbytes, c_bytes);
+    if (err != EOK) {
+        DSS_PRINT_ERROR("Error occured when copying command, error code is %d.\n", err);
+        return;
+    }
 
     c_widths = dss_cmd_utf8_chr_widths(chr, c_bytes);
     for (int i = c_widths; i > 0; i--) {
@@ -530,7 +562,11 @@ void dss_cmd_handle_common_key(int32 input_key_char, char *cmd_buf, uint32 *nbyt
     if (c_widths == -1) {
         return;
     }
-    (void)memcpy_s(cmd_buf + tmp_nbytes, MAX_CMD_LEN - tmp_nbytes, chr, c_bytes);
+    errno_t err = memcpy_s(cmd_buf + tmp_nbytes, MAX_CMD_LEN - tmp_nbytes, chr, c_bytes);
+    if (err != EOK) {
+        DSS_PRINT_ERROR("Error occured when copying command error code is %d.\n", err);
+        return;
+    }
     tmp_nbytes += c_bytes;
     dss_cmd_write(c_bytes, chr);
     /* UNIX console standard output requires special handling when the cursor is at the end of the line.
