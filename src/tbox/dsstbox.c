@@ -91,7 +91,7 @@ static dss_args_t tbox_repair_args[] = {
 // -i and -s is needed only when "-t fs_block"
 static status_t check_repair_args(dss_args_t *cmd_args_set, int set_size)
 {
-    if (strcmp(cmd_args_set[DSS_REPAIR_ARG_TYPE].input_args, DSS_REPAIR_TYPE_FS_BLOCK) == 0) {
+    if (cm_strcmpi(cmd_args_set[DSS_REPAIR_ARG_TYPE].input_args, DSS_REPAIR_TYPE_FS_BLOCK) == 0) {
         if (!cmd_args_set[DSS_REPAIR_ARG_META_ID].inputed) {
             DSS_PRINT_ERROR("To repair %s, block_id must be specified by -i.\n", DSS_REPAIR_TYPE_FS_BLOCK);
             return CM_ERROR;
@@ -101,7 +101,7 @@ static status_t check_repair_args(dss_args_t *cmd_args_set, int set_size)
             return CM_ERROR;
         }
         return CM_SUCCESS;
-    } else if (strcmp(cmd_args_set[DSS_REPAIR_ARG_TYPE].input_args, DSS_REPAIR_TYPE_CORE_CTRL) == 0) {
+    } else if (cm_strcmpi(cmd_args_set[DSS_REPAIR_ARG_TYPE].input_args, DSS_REPAIR_TYPE_CORE_CTRL) == 0) {
         if (cmd_args_set[DSS_REPAIR_ARG_META_ID].inputed) {
             DSS_PRINT_ERROR("To repair %s, block_id specified by -i is not expected.\n", DSS_REPAIR_TYPE_CORE_CTRL);
             return CM_ERROR;

@@ -326,8 +326,7 @@ static status_t repair_set_fs_block_root(char *item_ptr, text_t *key, text_t *va
 }
 
 repair_items_t g_repair_au_list_items_list[] = {REPAIR_ITEM("count", dss_au_list_t, count, uint64),
-    REPAIR_ITEM_WITH_FUNC("first", dss_au_list_t, first, auid_t, repair_func_auid_t),
-    REPAIR_ITEM_WITH_FUNC("last", dss_au_list_t, last, auid_t, repair_func_auid_t)};
+    REPAIR_ITEM("first", dss_au_list_t, first, auid_t), REPAIR_ITEM("last", dss_au_list_t, last, auid_t)};
 repair_complex_meta_funcs_t g_repair_au_list_funcs = {
     "au_root", g_repair_au_list_items_list, sizeof(g_repair_au_list_items_list) / sizeof(repair_items_t)};
 static status_t repair_set_au_list(char *item_ptr, text_t *key, text_t *value)
@@ -337,7 +336,7 @@ static status_t repair_set_au_list(char *item_ptr, text_t *key, text_t *value)
 
 repair_items_t g_repair_au_root_items_list[] = {
     REPAIR_ITEM("version", dss_au_root_t, version, uint64),
-    REPAIR_ITEM("free_root", dss_au_root_t, free_root, uint64),
+    REPAIR_ITEM("free_root", dss_au_root_t, free_root, auid_t),
     REPAIR_ITEM("count", dss_au_root_t, count, uint64),
     REPAIR_ITEM("free_vol_id", dss_au_root_t, free_vol_id, uint32_t),
     REPAIR_ITEM_WITH_FUNC("free_list", dss_au_root_t, free_list, dss_au_list_t, repair_set_au_list),
@@ -382,9 +381,16 @@ static status_t repair_set_volume_attr(char *item_ptr, text_t *key, text_t *valu
     return repair_func_complex_meta(&g_repair_set_volume_attr_funcs, item_ptr, key, value);
 }
 
+static status_t repair_set_au_size(char *item_ptr, text_t *key, text_t *value)
+{
+    status_t status = cmd_check_au_size(value->str);
+    DSS_RETURN_IF_ERROR(status);
+    return repair_func_uint32_t(item_ptr, key, value);
+}
+
 #define REPAIR_CORE_CTRL_ITEM_COUNT (sizeof(g_repair_core_ctrl_items_list) / sizeof(repair_items_t))
 repair_items_t g_repair_core_ctrl_items_list[] = {REPAIR_ITEM("version", dss_core_ctrl_t, version, uint64),
-    REPAIR_ITEM("au_size", dss_core_ctrl_t, au_size, uint32_t),
+    REPAIR_ITEM_WITH_FUNC("au_size", dss_core_ctrl_t, au_size, uint32_t, repair_set_au_size),
     REPAIR_ITEM("volume_count", dss_core_ctrl_t, volume_count, uint32_t),
     REPAIR_ITEM_WITH_FUNC(
         "fs_block_root", dss_core_ctrl_t, fs_block_root, dss_fs_block_root_t, repair_set_fs_block_root),
@@ -599,7 +605,7 @@ static status_t dss_repair_load_core_ctrl(dss_volume_t *volume, dss_core_ctrl_t 
         DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_CORE_CTRL_SIZE, "dss_core_ctrl_t");
         return CM_ERROR;
     }
-    status_t status = dss_read_volume(volume, (int64)(OFFSET_OF(dss_ctrl_t, core)), buf, (int32)DSS_CORE_CTRL_SIZE);
+    status_t status = dss_read_volume(volume, (int64)DSS_CTRL_CORE_OFFSET, buf, (int32)DSS_CORE_CTRL_SIZE);
     if (status != CM_SUCCESS) {
         DSS_FREE_POINT(buf);
         return status;
