@@ -157,7 +157,7 @@ status_t dss_cmd_check_path(char *path)
     dss_conn_t *conn = dss_get_connection_opt(NULL);
     if (conn == NULL) {
         DSS_PRINT_ERROR("Failed to get uds connection.\n");
-        return status;
+        return CM_ERROR;
     }
 
     status = dss_cmd_check_path_exist(conn, path);

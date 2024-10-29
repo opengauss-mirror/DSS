@@ -244,7 +244,7 @@ static status_t dss_get_vg_entry_info(const char *home, dss_config_t *inst_cfg, 
 
 status_t dss_inq_alloc_vg_info(const char *home, dss_config_t *inst_cfg, dss_vg_info_t **vg_info)
 {
-    *vg_info = dss_malloc_vg_info();
+    *vg_info = (dss_vg_info_t *)cm_malloc(sizeof(dss_vg_info_t));
     if (*vg_info == NULL) {
         DSS_PRINT_ERROR("Failed to malloc vg_info when alloc vg info.\n");
         return CM_ERROR;
