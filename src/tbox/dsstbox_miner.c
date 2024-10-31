@@ -346,7 +346,7 @@ static status_t dss_print_redo_info_base(miner_run_ctx_def_t *ctx, uint64 start_
         index++;
     }
     if (input->number != 0 && index != input->number) {
-        DSS_PRINT_ERROR("[TBOX][MINER]number %llu is not equal with %llu.\n", input->number, index);
+        DSS_PRINT_ERROR("[TBOX][MINER]number %llu must be less than or equal to %llu.\n", input->number, index);
         return CM_ERROR;
     }
     return CM_SUCCESS;

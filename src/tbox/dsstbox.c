@@ -285,7 +285,8 @@ static status_t miner_proc_inner(miner_run_ctx_def_t *ctx)
                     return CM_SUCCESS;
                 }
             }
-            DSS_PRINT_ERROR("[TBOX][MINER]number should not be 0.\n");
+            DSS_PRINT_ERROR("[TBOX][MINER]Generally, the value of number should be greater than 0. In special cases, to"
+                            " display only the redo_ctrl information, set both number and start_lsn to 0.\n");
             return CM_ERROR;
         }
     }
@@ -294,7 +295,8 @@ static status_t miner_proc_inner(miner_run_ctx_def_t *ctx)
         DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][MINER] start_lsn:%s is not a valid uint64.\n",
                                       tbox_miner_args[DSS_ARG_MINER_START_LSN].input_args));
         if (ctx->input.start_lsn == 0) {
-            DSS_PRINT_ERROR("[TBOX][MINER]start_lsn should not be 0.\n");
+            DSS_PRINT_ERROR("[TBOX][MINER]Generally, the value of start_lsn should be greater than 0. In special cases, to"
+                            " display only the redo_ctrl information, set both number and start_lsn to 0.\n");
             return CM_ERROR;
         }
         status = dss_print_redo_info_by_lsn(ctx);
@@ -353,7 +355,7 @@ static status_t miner_proc(void)
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("[TBOX][MINER]Failed to print expected redo info.\n");
     } else {
-        DSS_PRINT_ERROR("[TBOX][MINER]Succeed to print expected redo info.\n");
+        DSS_PRINT_INF("[TBOX][MINER]Succeed to print expected redo info.\n");
     }
     DSS_FREE_POINT(ctx.vg_item->dss_ctrl);
     DSS_FREE_POINT(g_vgs_info);
