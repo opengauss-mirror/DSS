@@ -168,6 +168,51 @@ static status_t collect_repair_input(repair_input_def_t *input)
     return CM_SUCCESS;
 }
 
+#define DSS_REPAIR_CONFIRM_RETRY_TIMES 3
+static void dss_repair_confirm()
+{
+#ifdef WIN32
+    return;
+#else
+    char confirm[DSS_MAX_CMD_LEN] = {'\0'};
+    char *env_quiet = getenv("DSS_REPAIR_CONFIRM_QUIET");
+    LOG_RUN_INF("DSS_REPAIR_CONFIRM_QUIET is %s.", (env_quiet == NULL ? "null" : env_quiet));
+    if (env_quiet != NULL && cm_strcmpni(env_quiet, "TRUE", sizeof("TRUE")) == 0) {
+        LOG_RUN_INF("Skip ssrepair confirmation.");
+        return;
+    }
+
+    for (int i = DSS_REPAIR_CONFIRM_RETRY_TIMES; i > 0; --i) {
+        (void)printf("Warning: ssrepair would directly modify meta data on disk, "
+                     "which might cause damage to DSS if wrongly inputted.\n"
+                     "You have to confirm that:\n"
+                     "    (1) Your input is correct.\n"
+                     "    (2) dssservers in all nodes are stopped.\n"
+                     "Confirm and continue? Type in y/yes or n/no, and you have %d chances left:",
+            i);
+        (void)fflush(stdout);
+        if (NULL == fgets(confirm, sizeof(confirm), stdin)) {
+            (void)printf("\n");
+            break;
+        }
+
+        if (cm_strcmpni(confirm, "y\n", sizeof("y\n")) == 0 || cm_strcmpni(confirm, "yes\n", sizeof("yes\n")) == 0) {
+            LOG_RUN_INF("User input %s, operation confirmed.", confirm);
+            (void)printf("Operation confirmed.\n");
+            return;
+        } else if (cm_strcmpni(confirm, "n\n", sizeof("n\n")) == 0 ||
+                   cm_strcmpni(confirm, "no\n", sizeof("no\n")) == 0) {
+            break;
+        } else {
+            (void)printf("\n");
+        }
+    }
+    LOG_RUN_ERR("Operation NOT confirmed, quit.");
+    (void)printf("Operation NOT confirmed, quit.\n");
+    _exit(1);
+#endif
+}
+
 static status_t repair_proc(void)
 {
     repair_input_def_t input = {0};
@@ -176,6 +221,8 @@ static status_t repair_proc(void)
 
     DSS_RETURN_IFERR2(dss_repair_verify_disk_version(input.vol_path),
         DSS_PRINT_ERROR("[TBOX][REPAIR] verify disk version failed %s.\n", input.vol_path));
+
+    dss_repair_confirm();
 
     if (strcmp(input.type, DSS_REPAIR_TYPE_FS_BLOCK) == 0) {
         status = dss_repair_fs_block(&input);

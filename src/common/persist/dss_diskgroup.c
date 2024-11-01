@@ -45,10 +45,7 @@ extern "C" {
 #endif
 
 #ifndef WIN32
-#define DSS_MAX_CMD_LEN (512)
-#define DSS_MAX_FILE_LEN (256)
 #define DSS_SIMUFILE_NAME "dss_vglock"
-#define DSS_MAX_OPEN_VG (DSS_MAX_VOLUME_GROUP_NUM)
 #define DSS_FP_FREE (0)
 #define DSS_FP_INUSE (1)
 typedef struct st_vglock_fp {
