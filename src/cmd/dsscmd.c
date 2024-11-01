@@ -4401,13 +4401,18 @@ bool8 cmd_version_and_help(int argc, char **argv)
     return CM_FALSE;
 }
 
+void print_help_hint()
+{
+    (void)printf("dsscmd: Try \"dsscmd -h/--help\" for help information.\n");
+    (void)printf("dsscmd: Try \"dsscmd -a/--all\" for detailed help information.\n");
+}
+
 int32 execute_help_cmd(int argc, char **argv, uint32_t *idx, bool8 *go_ahead)
 {
     if (argc < CMD_ARGS_AT_LEAST) {
         if (!g_run_interatively) {
             (void)printf("dsscmd: no operation specified.\n");
-            (void)printf("dsscmd: Try \"dsscmd -h/--help\" for help information.\n");
-            (void)printf("dsscmd: Try \"dsscmd -a/--all\" for detailed help information.\n");
+            print_help_hint();
         }
         *go_ahead = CM_FALSE;
         return EXIT_FAILURE;
@@ -4417,8 +4422,8 @@ int32 execute_help_cmd(int argc, char **argv, uint32_t *idx, bool8 *go_ahead)
         return EXIT_SUCCESS;
     }
     if (!get_cmd_idx(argc, argv, idx)) {
-        (void)printf("cmd:%s can not find.\n", argv[DSS_ARG_IDX_1]);
-        help(argv[0], DSS_HELP_SIMPLE);
+        (void)printf("dsscmd: command(%s) not found!\n", argv[DSS_ARG_IDX_1]);
+        print_help_hint();
         *go_ahead = CM_FALSE;
         return EXIT_FAILURE;
     }
