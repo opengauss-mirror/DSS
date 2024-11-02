@@ -94,4 +94,5 @@ status_t set_config_info(char *home, dss_config_t *inst_cfg);
 status_t dss_get_vg_item(dss_vg_info_item_t **vg_item, const char *vg_name);
 status_t dss_check_meta_type(const char *type);
 status_t dss_check_meta_id(const char *intput);
+status_t cmd_parse_check(dss_args_t *cmd_args_set, int set_size);
 #endif

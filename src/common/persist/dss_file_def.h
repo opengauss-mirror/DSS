@@ -133,6 +133,7 @@ typedef enum en_dss_block_flag {
     DSS_BLOCK_FLAG_RESERVE,
     DSS_BLOCK_FLAG_FREE,
     DSS_BLOCK_FLAG_USED,
+    DSS_BLOCK_FLAG_MAX,
 } dss_block_flag_e;
 
 typedef struct st_dss_common_block_t {

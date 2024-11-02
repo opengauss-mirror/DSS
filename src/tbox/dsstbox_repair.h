@@ -36,9 +36,13 @@
 #define DSS_REPAIR_TYPE_FS_BLOCK "fs_block"
 #define DSS_REPAIR_TYPE_FT_BLOCK "ft_block"
 #define DSS_REPAIR_TYPE_CORE_CTRL "core_ctrl"
-#define DSS_REPAIR_TYPE_ROOT "root"
-#define DSS_REPAIR_TYPE_VOLUME "volume"
-#define DSS_REPAIR_TYPE_HEADER "header"
+#define DSS_REPAIR_TYPE_ROOT_FT_BLOCK "root_ft_block"
+#define DSS_REPAIR_TYPE_VOLUME_CTRL "volume_ctrl"
+#define DSS_REPAIR_TYPE_VOLUME_HEADER "volume_header"
+// software_version is modified by "-t software_version -k software_version=value",
+//     rather than by "-t volume_header -k software_version=value".
+#define DSS_REPAIR_TYPE_SOFTWARE_VERSION "software_version"
+#define DSS_REPAIR_TYPE_FS_AUX_BLOCK "fs_aux_block"
 
 typedef struct st_repair_input_def {
     char *vol_path;
@@ -52,5 +56,10 @@ status_t dss_repair_fs_block(repair_input_def_t *input);
 status_t dss_repair_ft_block(repair_input_def_t *input);
 status_t dss_repair_verify_disk_version(char *vol_path);
 status_t dss_repair_core_ctrl(repair_input_def_t *input);
+status_t dss_repair_volume_header(repair_input_def_t *input);
+status_t dss_repair_software_version(repair_input_def_t *input);
+status_t dss_repair_root_ft_block(repair_input_def_t *input);
+status_t dss_repair_volume_ctrl(repair_input_def_t *input);
+status_t dss_repair_fs_aux(repair_input_def_t *input);
 
 #endif

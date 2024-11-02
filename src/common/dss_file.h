@@ -242,6 +242,11 @@ static inline int64 dss_get_ftb_offset(uint32 au_size, const dss_block_id_t *id)
     return (int64)((uint64)id->au * au_size + (uint64)DSS_BLOCK_SIZE * id->block);
 }
 
+static inline int64 dss_get_fab_offset(uint32 au_size, dss_block_id_t block_id)
+{
+    return (int64)(DSS_FS_AUX_SIZE * block_id.block + au_size * block_id.au);
+}
+
 static inline dss_ft_block_t *dss_get_ft_by_node(gft_node_t *node)
 {
     CM_ASSERT(node != NULL);

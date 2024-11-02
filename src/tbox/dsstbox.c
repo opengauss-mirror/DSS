@@ -29,7 +29,7 @@
 #endif
 #include "cm_base.h"
 #include "cm_signal.h"
-
+#include "cm_system.h"
 #include "dss_log.h"
 #include "dss_errno.h"
 #include "dss_malloc.h"
@@ -51,13 +51,108 @@ dss_log_def_t g_dss_dsstbox_log[] = {
     {LOG_OPER, "oper/dsstbox.olog"},
     {LOG_RUN, "run/dsstbox.rlog"},
     {LOG_ALARM, "alarm/dsstbox.alog"},
+    {LOG_AUDIT, "audit/dsstbox.aud"},
 };
+
+#define DSS_REPAIR_AUDIT_LOG_LEN SIZE_K(32)
+#define DSS_REPAIR_AUDIT_SOURCE_LEN SIZE_K(2)
+char g_repair_audit_source[DSS_REPAIR_AUDIT_SOURCE_LEN];
+char g_repair_audit_buff[DSS_REPAIR_AUDIT_LOG_LEN];
+typedef struct st_repair_audit_info {
+    char date[CM_MAX_TIME_STRLEN];
+    char user[CM_NAME_BUFFER_SIZE];
+} repair_audit_info_t;
+repair_audit_info_t g_audit_info;
+
+static void dss_repair_init_audit()
+{
+    // user
+    char *user_name = cm_sys_user_name();
+    MEMS_RETVOID_IFERR(strcpy_s(g_audit_info.user, CM_NAME_BUFFER_SIZE, (const char *)user_name));
+
+    // time
+    int32 tz = g_timer()->tz;
+    int32 tz_hour = TIMEZONE_GET_HOUR(tz);
+    int32 tz_min = TIMEZONE_GET_MINUTE(tz);
+    int32 ret = 0;
+    if (tz_hour >= 0) {
+        ret = snprintf_s(
+            g_audit_info.date, CM_MAX_TIME_STRLEN, CM_MAX_TIME_STRLEN - 1, "UTC+%02d:%02d ", tz_hour, tz_min);
+    } else {
+        ret =
+            snprintf_s(g_audit_info.date, CM_MAX_TIME_STRLEN, CM_MAX_TIME_STRLEN - 1, "UTC%02d:%02d ", tz_hour, tz_min);
+    }
+
+    if (ret == -1) {
+        return;
+    }
+    (void)cm_date2str(
+        g_timer()->now, "yyyy-mm-dd hh24:mi:ss.ff3", g_audit_info.date + ret, CM_MAX_TIME_STRLEN - (uint32)ret);
+}
+
+static void dss_repair_gen_audit_resource(repair_input_def_t *input)
+{
+    if (cm_strcmpi(input->type, DSS_REPAIR_TYPE_FS_BLOCK) == 0 ||
+        cm_strcmpi(input->type, DSS_REPAIR_TYPE_FT_BLOCK) == 0 ||
+        cm_strcmpi(input->type, DSS_REPAIR_TYPE_FS_AUX_BLOCK) == 0) {
+        int32 ret = snprintf_s(g_repair_audit_source, DSS_REPAIR_AUDIT_SOURCE_LEN, DSS_REPAIR_AUDIT_SOURCE_LEN - 1,
+            "volume(%s), meta_type(%s), block_id(%llu), au_size(%u)", input->vol_path, input->type,
+            *(uint64 *)&input->block_id, input->au_size);
+        if (SECUREC_UNLIKELY(ret == -1) || ret >= (int32)DSS_REPAIR_AUDIT_SOURCE_LEN) {
+            g_repair_audit_source[DSS_REPAIR_AUDIT_SOURCE_LEN - 1] = '\0';
+            return;
+        }
+    } else if (cm_strcmpi(input->type, DSS_REPAIR_TYPE_CORE_CTRL) == 0 ||
+               cm_strcmpi(input->type, DSS_REPAIR_TYPE_VOLUME_HEADER) == 0 ||
+               cm_strcmpi(input->type, DSS_REPAIR_TYPE_SOFTWARE_VERSION) == 0 ||
+               cm_strcmpi(input->type, DSS_REPAIR_TYPE_ROOT_FT_BLOCK) == 0 ||
+               cm_strcmpi(input->type, DSS_REPAIR_TYPE_VOLUME_CTRL) == 0) {
+        int32 ret = snprintf_s(g_repair_audit_source, DSS_REPAIR_AUDIT_SOURCE_LEN, DSS_REPAIR_AUDIT_SOURCE_LEN - 1,
+            "volume(%s), meta_type(%s)", input->vol_path, input->type);
+        if (SECUREC_UNLIKELY(ret == -1) || ret >= (int32)DSS_REPAIR_AUDIT_SOURCE_LEN) {
+            g_repair_audit_source[DSS_REPAIR_AUDIT_SOURCE_LEN - 1] = '\0';
+            return;
+        }
+    } else {
+        g_repair_audit_source[0] = '\0';
+    }
+    return;
+}
+
+static void dss_repair_create_audit_msg(repair_input_def_t *input, status_t result, int32 *log_len)
+{
+    dss_repair_gen_audit_resource(input);
+    int32 ret = snprintf_s(g_repair_audit_buff, DSS_REPAIR_AUDIT_LOG_LEN, DSS_REPAIR_AUDIT_LOG_LEN - 1,
+        "USER:[%u] \"%s\" "
+        "ACTION:[8] \"ssrepair\" RESOURCE:[%u] \"%s\" RESULT:[7] \"%s\" CONTEXT:[%u] \"%s\"",
+        (uint32)strlen(g_audit_info.user), g_audit_info.user,          // user
+        (uint32)strlen(g_repair_audit_source), g_repair_audit_source,  // resource
+        (result == CM_SUCCESS ? "SUCCESS" : "FAILURE"),                // result
+        (uint32)strlen(input->key_value), input->key_value);           // context
+    if (SECUREC_UNLIKELY(ret == -1) || ret >= (int32)DSS_REPAIR_AUDIT_LOG_LEN) {
+        g_repair_audit_buff[DSS_REPAIR_AUDIT_LOG_LEN - 1] = '\0';
+        return;
+    }
+
+    *log_len = ret;
+    g_repair_audit_buff[*log_len] = '\0';
+}
+
+static void dss_repair_log_audit(repair_input_def_t *input, status_t result)
+{
+    int32 log_msg_len = 0;
+    dss_repair_create_audit_msg(input, result, &log_msg_len);
+    LOG_AUDIT("%s\nLENGTH: \"%d\"\n%s\n", g_audit_info.date, log_msg_len, g_repair_audit_buff);
+}
 
 status_t dss_check_meta_type(const char *type)
 {
     if ((cm_strcmpi(type, DSS_REPAIR_TYPE_FS_BLOCK) != 0) && (cm_strcmpi(type, DSS_REPAIR_TYPE_FT_BLOCK) != 0) &&
-        (cm_strcmpi(type, DSS_REPAIR_TYPE_CORE_CTRL) != 0) && (cm_strcmpi(type, DSS_REPAIR_TYPE_ROOT) != 0) &&
-        (cm_strcmpi(type, DSS_REPAIR_TYPE_VOLUME) != 0) && (cm_strcmpi(type, DSS_REPAIR_TYPE_HEADER) != 0)) {
+        (cm_strcmpi(type, DSS_REPAIR_TYPE_CORE_CTRL) != 0) && (cm_strcmpi(type, DSS_REPAIR_TYPE_ROOT_FT_BLOCK) != 0) &&
+        (cm_strcmpi(type, DSS_REPAIR_TYPE_VOLUME_CTRL) != 0) &&
+        (cm_strcmpi(type, DSS_REPAIR_TYPE_VOLUME_HEADER) != 0) &&
+        (cm_strcmpi(type, DSS_REPAIR_TYPE_SOFTWARE_VERSION) != 0) &&
+        (cm_strcmpi(type, DSS_REPAIR_TYPE_FS_AUX_BLOCK) != 0)) {
         DSS_PRINT_ERROR("Invalid tbox ssrepair type:%s.\n", type);
         return CM_ERROR;
     }
@@ -91,23 +186,31 @@ static dss_args_t tbox_repair_args[] = {
 // -i and -s is needed only when "-t fs_block"
 static status_t check_repair_args(dss_args_t *cmd_args_set, int set_size)
 {
-    if (cm_strcmpi(cmd_args_set[DSS_REPAIR_ARG_TYPE].input_args, DSS_REPAIR_TYPE_FS_BLOCK) == 0) {
+    CM_RETURN_IFERR(cmd_parse_check(cmd_args_set, set_size));
+    const char *repair_type = cmd_args_set[DSS_REPAIR_ARG_TYPE].input_args;
+    if (cm_strcmpi(repair_type, DSS_REPAIR_TYPE_FS_BLOCK) == 0 ||
+        cm_strcmpi(repair_type, DSS_REPAIR_TYPE_FT_BLOCK) == 0 ||
+        cm_strcmpi(repair_type, DSS_REPAIR_TYPE_FS_AUX_BLOCK) == 0) {
         if (!cmd_args_set[DSS_REPAIR_ARG_META_ID].inputed) {
-            DSS_PRINT_ERROR("To repair %s, block_id must be specified by -i.\n", DSS_REPAIR_TYPE_FS_BLOCK);
+            DSS_PRINT_ERROR("To repair %s, block_id must be specified by -i.\n", repair_type);
             return CM_ERROR;
         }
         if (!cmd_args_set[DSS_REPAIR_ARG_AU_SIZE].inputed) {
-            DSS_PRINT_ERROR("To repair %s, au_size must be specified by -s.\n", DSS_REPAIR_TYPE_FS_BLOCK);
+            DSS_PRINT_ERROR("To repair %s, au_size must be specified by -s.\n", repair_type);
             return CM_ERROR;
         }
         return CM_SUCCESS;
-    } else if (cm_strcmpi(cmd_args_set[DSS_REPAIR_ARG_TYPE].input_args, DSS_REPAIR_TYPE_CORE_CTRL) == 0) {
+    } else if (cm_strcmpi(repair_type, DSS_REPAIR_TYPE_CORE_CTRL) == 0 ||
+               cm_strcmpi(repair_type, DSS_REPAIR_TYPE_VOLUME_HEADER) == 0 ||
+               cm_strcmpi(repair_type, DSS_REPAIR_TYPE_SOFTWARE_VERSION) == 0 ||
+               cm_strcmpi(repair_type, DSS_REPAIR_TYPE_ROOT_FT_BLOCK) == 0 ||
+               cm_strcmpi(repair_type, DSS_REPAIR_TYPE_VOLUME_CTRL) == 0) {
         if (cmd_args_set[DSS_REPAIR_ARG_META_ID].inputed) {
-            DSS_PRINT_ERROR("To repair %s, block_id specified by -i is not expected.\n", DSS_REPAIR_TYPE_CORE_CTRL);
+            DSS_PRINT_ERROR("To repair %s, block_id specified by -i is not expected.\n", repair_type);
             return CM_ERROR;
         }
         if (cmd_args_set[DSS_REPAIR_ARG_AU_SIZE].inputed) {
-            DSS_PRINT_ERROR("To repair %s, au_size specified by -s is not expected.\n", DSS_REPAIR_TYPE_CORE_CTRL);
+            DSS_PRINT_ERROR("To repair %s, au_size specified by -s is not expected.\n", repair_type);
             return CM_ERROR;
         }
         return CM_SUCCESS;
@@ -132,8 +235,8 @@ static void repair_help(const char *prog_name, int print_flag)
     (void)printf("-t/--type <type>, <required>, repair type for meta info.\n");
     (void)printf(
         "-i/--id <meta_id>, [optional], the meta id you want to repair only if you want to repair fs or ft.\n");
-    (void)printf("-s/--au_size <au_size>, [optional] the size of single alloc uint of volume, unit is KB, "
-                 "at least 2MB, at max 64M.\n");
+    (void)printf("-s/--au_size <au_size>, [optional], the size of single alloc unit of volume, unit is KB, "
+                 "at least is 2MB, at most is 64MB.\n");
     (void)printf("-k/--key_value <key_value>, <required>, the meta id you want to repair.\n");
 }
 
@@ -219,10 +322,16 @@ static status_t repair_proc(void)
     status_t status = collect_repair_input(&input);
     DSS_RETURN_IF_ERROR(status);
 
-    DSS_RETURN_IFERR2(dss_repair_verify_disk_version(input.vol_path),
-        DSS_PRINT_ERROR("[TBOX][REPAIR] verify disk version failed %s.\n", input.vol_path));
+    // Only for -t software_version, version check is not needed.
+    // For other types, version check is needed.
+    if (cm_strcmpi(input.type, DSS_REPAIR_TYPE_SOFTWARE_VERSION) != 0) {
+        DSS_RETURN_IFERR2(dss_repair_verify_disk_version(input.vol_path),
+            DSS_PRINT_ERROR("[TBOX][REPAIR] verify disk version failed %s.\n", input.vol_path));
+    }
 
     dss_repair_confirm();
+
+    dss_repair_init_audit();
 
     if (cm_strcmpi(input.type, DSS_REPAIR_TYPE_FS_BLOCK) == 0) {
         status = dss_repair_fs_block(&input);
@@ -230,10 +339,25 @@ static status_t repair_proc(void)
         status = dss_repair_ft_block(&input);
     } else if (cm_strcmpi(input.type, DSS_REPAIR_TYPE_CORE_CTRL) == 0) {
         status = dss_repair_core_ctrl(&input);
+    } else if (cm_strcmpi(input.type, DSS_REPAIR_TYPE_VOLUME_HEADER) == 0) {
+        status = dss_repair_volume_header(&input);
+    } else if (cm_strcmpi(input.type, DSS_REPAIR_TYPE_SOFTWARE_VERSION) == 0) {
+        status = dss_repair_software_version(&input);
+    } else if (cm_strcmpi(input.type, DSS_REPAIR_TYPE_ROOT_FT_BLOCK) == 0) {
+        status = dss_repair_root_ft_block(&input);
+    } else if (cm_strcmpi(input.type, DSS_REPAIR_TYPE_VOLUME_CTRL) == 0) {
+        status = dss_repair_volume_ctrl(&input);
+    } else if (cm_strcmpi(input.type, DSS_REPAIR_TYPE_FS_AUX_BLOCK) == 0) {
+        status = dss_repair_fs_aux(&input);
     } else {
-        DSS_PRINT_ERROR("[TBOX][REPAIR] Only support -t fs_block or -t core_ctrl, and your type is %s.", input.type);
+        DSS_PRINT_ERROR("[TBOX][REPAIR] Only support -t "
+                        "[fs_block|ft_block|core_ctrl|volume_header|software_version|"
+                        "root_ft_block|volume_ctrl|fs_aux_block], "
+                        "your type is %s.\n",
+            input.type);
         status = CM_ERROR;
     }
+    dss_repair_log_audit(&input, status);
     LOG_RUN_INF("[TBOX][REPAIR] vol_path:%s type:%s, id:%s, au_size:%u, key_value:%s result:%u", input.vol_path,
         input.type, dss_display_metaid(input.block_id), input.au_size, input.key_value, status);
     if (status != CM_SUCCESS) {

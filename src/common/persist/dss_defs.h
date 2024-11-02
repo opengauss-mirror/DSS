@@ -449,8 +449,10 @@ extern auid_t dss_invalid_auid;
 #define DSS_FS_AUX_HEAD_SIZE_MAX DSS_DISK_UNIT_SIZE
 
 #define DSS_FS_AUX_BITMAP_SIZE(au_size) (((au_size) / DSS_PAGE_SIZE) / DSS_BYTE_BITS_SIZE)
+#define DSS_MAX_FS_AUX_BITMAP_SIZE (DSS_FS_AUX_BITMAP_SIZE(DSS_MAX_AU_SIZE))
+#define DSS_MIN_FS_AUX_BITMAP_SIZE (DSS_FS_AUX_BITMAP_SIZE(DSS_MIN_AU_SIZE))
 // default is 1.5k
-#define DSS_FS_AUX_SIZE (DSS_FS_AUX_BITMAP_SIZE(DSS_MAX_AU_SIZE) + DSS_FS_AUX_HEAD_SIZE_MAX)
+#define DSS_FS_AUX_SIZE (DSS_MAX_FS_AUX_BITMAP_SIZE + DSS_FS_AUX_HEAD_SIZE_MAX)
 
 extern auid_t dss_set_inited_mask;
 extern auid_t dss_unset_inited_mask;

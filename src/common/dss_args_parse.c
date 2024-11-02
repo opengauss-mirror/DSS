@@ -43,7 +43,7 @@
 extern "C" {
 #endif
 
-static status_t cmd_parse_check(dss_args_t *cmd_args_set, int set_size)
+status_t cmd_parse_check(dss_args_t *cmd_args_set, int set_size)
 {
     for (int i = 0; i < set_size; i++) {
         if (cmd_args_set[i].required && !cmd_args_set[i].inputed) {
