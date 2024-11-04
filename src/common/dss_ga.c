@@ -330,8 +330,8 @@ uint32 ga_get_pool_usage(ga_pool_id_e pool_id)
     if (pool == NULL || pool->ctrl == NULL) {
         return 0;
     }
-    uint64 max_usable_obj_cnt = (pool->ctrl->def.ex_max + 1) * pool->ctrl->def.object_count;
-    uint64 max_init_obj_cnt = (pool->ctrl->ex_count + 1) * pool->ctrl->def.object_count;
+    uint64 max_usable_obj_cnt = (uint64)(pool->ctrl->def.ex_max + 1) * pool->ctrl->def.object_count;
+    uint64 max_init_obj_cnt = (uint64)(pool->ctrl->ex_count + 1) * pool->ctrl->def.object_count;
     uint32 usage = (uint32)((max_init_obj_cnt - pool->ctrl->free_objects.count) * GA_USAGE_UNIT) / max_usable_obj_cnt;
     return usage;
 }

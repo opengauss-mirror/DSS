@@ -1075,7 +1075,7 @@ static void dss_recycle_meta_by_vg(dss_session_t *session, dss_vg_info_item_t *v
 
         found_num += dss_try_find_recycle_meta_by_bucket(session, vg_item, bucket, recycle_meta_args);
         uint32 batch_num = dss_recycle_meta_batch_num(trigger_enable);
-        if ((found_num == batch_num) || ((bucket_id + 1) == cur_map_num)) {
+        if ((found_num >= batch_num) || ((bucket_id + 1) == cur_map_num)) {
             dss_try_recycle_meta_batch(session, vg_item, trigger_enable);
             found_num = 0;
         }

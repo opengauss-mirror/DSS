@@ -56,7 +56,7 @@ typedef struct st_dss_recycle_meta_args {
     uint32 trigger_clean_wait_time;  // ms
     cm_thread_cond_t trigger_cond;   // for tigger recycle meta by other task
     bool32 trigger_enable;
-    uint64 last_bucket_id[DSS_MAX_VOLUME_GROUP_NUM];  // for re-start from last recycle stop point
+    uint32 last_bucket_id[DSS_MAX_VOLUME_GROUP_NUM];  // for re-start from last recycle stop point
 } dss_recycle_meta_args_t;
 
 typedef struct st_dss_recycle_meta {
