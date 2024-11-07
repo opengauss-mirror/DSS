@@ -226,18 +226,39 @@ static dss_args_set_t tbox_repair_args_set = {
 
 static void repair_help(const char *prog_name, int print_flag)
 {
-    (void)printf("\nUsage:%s ssrepair <-v vol_path> <-t type> <-i block_id> <-s au_size> <-k key_value>\n", prog_name);
-    (void)printf("[TOOl BOX] Repairing Metadata on Physical Disks.\n");
+    (void)printf("\nUsage:%s ssrepair <-v vol_path> <-t type> [-i meta_id] [-s au_size] <-k key_value>\n", prog_name);
+    (void)printf("[TOOl BOX] Repair Metadata on Physical Disks.\n");
     if (print_flag == DSS_HELP_SIMPLE) {
         return;
     }
     (void)printf("-v/--vol_path <vol_path>, <required>, the volume path of the host need to repair.\n");
     (void)printf("-t/--type <type>, <required>, repair type for meta info.\n");
-    (void)printf(
-        "-i/--id <meta_id>, [optional], the meta id you want to repair only if you want to repair fs or ft.\n");
+    (void)printf("-i/--id <meta_id>, [optional], the meta id you want to repair.\n");
     (void)printf("-s/--au_size <au_size>, [optional], the size of single alloc unit of volume, unit is KB, "
                  "at least is 2MB, at most is 64MB.\n");
-    (void)printf("-k/--key_value <key_value>, <required>, the meta id you want to repair.\n");
+    (void)printf("-k/--key_value <key_value>, <required>, names of meta_data items and their target values.\n");
+    (void)printf("Examples:\n");
+    (void)printf("- repair core_ctrl on /dev/sda1:\n"
+                 "\tdsstbox ssrepair -v /dev/sda1 -t core_ctrl -k \"volume_count=3,volume_attrs[2].id=2\"\n");
+    (void)printf("- repair volume_ctrl on /dev/sda1:\n"
+                 "\tdsstbox ssrepair -v /dev/sda1 -t volume_ctrl -k \"version=15,defs[2].flag=2\"\n");
+    (void)printf("- repair root_ft_block on /dev/sda1:\n"
+                 "\tdsstbox ssrepair -v /dev/sda1 -t root_ft_block "
+                 "-k \"ft_block.common.flags=2,ft_root.items.count=16\"\n");
+    (void)printf("- repair volume_header on /dev/sda2:\n"
+                 "\tdsstbox ssrepair -v /dev/sda2 -t volume_header "
+                 "-k \"vg_name=data_new,vol_type.entry_volume_name=/dev/sda1\"\n");
+    (void)printf("- repair software_version on /dev/sda1:\n"
+                 "\tdsstbox ssrepair -v /dev/sda1 -t software_version -k \"software_version=2\"\n");
+    (void)printf("- repair fs_block on /dev/sda1:\n"
+                 "\tdsstbox ssrepair -v /dev/sda1 -t fs_block -i 8919238324529152 -s 8192 "
+                 "-k \"head.common.type=1,bitmap[1]=18446744073709551615\"\n");
+    (void)printf("- repair ft_block on /dev/sda1:\n"
+                 "\tdsstbox ssrepair -v /dev/sda1 -t ft_block -i 105553116275712 -s 8192 "
+                 "-k \"common.type=0,node_num=16\"\n");
+    (void)printf("- repair fs_aux_block on /dev/sda1:\n"
+                 "\tdsstbox ssrepair -v /dev/sda1 -t fs_aux_block -i 96018151430434816 -s 8192 "
+                 "-k \"head.common.type=2,bitmap[3]=1,bitmap[4]=0\"\n");
 }
 
 static status_t collect_repair_input(repair_input_def_t *input)
