@@ -96,6 +96,7 @@ typedef struct st_dss_instance {
 #if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
     void *fi_run_ctx;
 #endif
+    dss_recycle_meta_t recycle_meta;
 } dss_instance_t;
 
 status_t dss_lock_instance(void);
@@ -124,6 +125,7 @@ void dss_hashmap_dynamic_extend_and_redistribute_proc(thread_t *thread);
 bool32 dss_check_join_cluster();
 void dss_check_unreg_volume(dss_session_t *session);
 void dss_meta_syn_proc(thread_t *thread);
+void dss_recycle_meta_proc(thread_t *thread);
 
 #ifdef __cplusplus
 }

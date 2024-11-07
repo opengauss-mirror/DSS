@@ -323,6 +323,19 @@ void ga_detach_area(void)
     (void)cm_detach_shm(SHM_TYPE_FIXED, (uint32)SHM_ID_APP_GA);
 }
 
+uint32 ga_get_pool_usage(ga_pool_id_e pool_id)
+{
+    ga_pool_t *pool = &g_app_pools[GA_POOL_IDX(pool_id)];
+
+    if (pool == NULL || pool->ctrl == NULL) {
+        return 0;
+    }
+    uint64 max_usable_obj_cnt = (uint64)(pool->ctrl->def.ex_max + 1) * pool->ctrl->def.object_count;
+    uint64 max_init_obj_cnt = (uint64)(pool->ctrl->ex_count + 1) * pool->ctrl->def.object_count;
+    uint32 usage = (uint32)((max_init_obj_cnt - pool->ctrl->free_objects.count) * GA_USAGE_UNIT) / max_usable_obj_cnt;
+    return usage;
+}
+
 static status_t ga_extend_pool(ga_pool_id_e pool_id)
 {
     ulong ex_pool_size;

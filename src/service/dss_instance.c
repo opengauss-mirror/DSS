@@ -101,7 +101,7 @@ static status_t instance_init_ga(dss_instance_t *inst)
     instance_set_pool_def(GA_FS_AUX_POOL, DSS_MAX_MEM_BLOCK_SIZE / (DSS_FS_AUX_SIZE + DSS_BLOCK_CTRL_SIZE),
         DSS_FS_AUX_SIZE + DSS_BLOCK_CTRL_SIZE, GA_MAX_EXTENDED_POOLS);
     instance_set_pool_def(
-        GA_SEGMENT_POOL, DSS_MAX_VOLUME_GROUP_NUM, DSS_BUCKETS_SIZE_PER_SEGMENT, DSS_MAX_SEGMENT_NUM - 1);    
+        GA_SEGMENT_POOL, DSS_MAX_VOLUME_GROUP_NUM, DSS_BUCKETS_SIZE_PER_SEGMENT, DSS_MAX_SEGMENT_NUM - 1);
     ret = ga_create_global_area();
     DSS_RETURN_IF_ERROR(ret);
     LOG_RUN_INF("Init GA pool and area successfully.");
@@ -1052,6 +1052,28 @@ void dss_meta_syn_proc(thread_t *thread)
         // DSS_STATUS_OPEN for control with switchover
         if (g_dss_instance.status == DSS_STATUS_OPEN) {
             (void)dss_meta_syn(session, bg_task_info);
+        }
+        cm_sleep(CM_SLEEP_10_FIXED);
+    }
+}
+
+void dss_recycle_meta_proc(thread_t *thread)
+{
+    cm_set_thread_name("recycle_meta");
+
+    dss_bg_task_info_t *bg_task_info = (dss_bg_task_info_t *)(thread->argument);
+    dss_set_recycle_meta_args_to_vg(bg_task_info);
+
+    uint32 work_idx = dss_get_recycle_meta_task_idx(bg_task_info->my_task_id);
+    dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
+    dss_session_t *session = session_ctrl->sessions[work_idx];
+    date_t clean_time = cm_now();
+
+    while (!thread->closed) {
+        // DSS_STATUS_OPEN for control with switchover
+        if (g_dss_instance.status == DSS_STATUS_OPEN) {
+            dss_recycle_meta(session, bg_task_info, &clean_time);
+            continue;
         }
         cm_sleep(CM_SLEEP_10_FIXED);
     }

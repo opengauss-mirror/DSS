@@ -42,13 +42,25 @@ typedef enum en_dss_block_type {
 } dss_block_type_t;
 
 #pragma pack(8)
-typedef struct st_dss_fs_block_cache_info {
-    char *entry_block_addr;
-    char *fs_block_addr;
-    char *fs_aux_addr;
-    uint64 entry_block_id;
-    uint64 fs_block_id;
-    uint64 fs_aux_block_id;
+typedef union st_dss_fs_block_cache_info {
+    // this for cache gft_node_t
+    struct {
+        char *entry_block_addr;
+        char *fs_block_addr;
+        char *fs_aux_addr;
+        uint64 entry_block_id;
+        uint64 fs_block_id;
+        uint64 fs_aux_block_id;
+
+        // for find the owner vg and cache slot
+        uint32 owner_vg_id;
+        uint32 owner_ftid_cache_index;
+    };
+    // this for cache fs_block_t and fs_aux_block_t
+    struct {
+        char *owner_node_addr;
+        uint64 owner_node_id;
+    };
 } dss_fs_block_cache_info_t;
 
 typedef struct st_dss_block_ctrl {
@@ -60,11 +72,12 @@ typedef struct st_dss_block_ctrl {
     uint32_t hash;
     bool32 has_next;
     bool32 has_prev;
+    ga_obj_id_t my_obj_id;
 
     // the follow data setted or unsetted by uplayer, not by meta buf
     // the follow info need not to make sure be seen by cli-api, such as point
     // this section indentify the block owner
-    // every bg task using the ctrl should check (node != NULL), (fid, file_ver) and (node->fid, node->file_ver) fisrt
+    // every bg task using the ctrl should check (node != NULL), (fid, file_ver) and (node->fid, node->file_ver) first
     // with the latch
     bool32 is_refresh_ftid;  // just for dss_ft_block_t
     uint64 fid;              // it's the owner's gft_node_t.fid
@@ -79,13 +92,19 @@ typedef struct st_dss_block_ctrl {
     dss_fs_block_cache_info_t fs_block_cache_info;  // only save in ft block ctrl now
 
     // this section using for ctrl syn meta bg task
-    uint64 syn_meta_ref_cnt;
+    int64 syn_meta_ref_cnt;
     bilist_node_t syn_meta_node;  // for syn meta
+
+    // this section using for ctrl recycle meta
+    int64 ref_hot;
+    bilist_node_t recycle_meta_node;
+    bool8 recycle_disable;
 } dss_block_ctrl_t;
 
 typedef struct st_dss_block_ctrl_task_desc_t {
     latch_t latch;
     bilist_t bilist;
+    void *task_args;
 } dss_block_ctrl_task_desc_t;
 #pragma pack()
 

@@ -35,6 +35,7 @@ extern "C" {
 #endif
 
 #pragma pack(8)
+#define DSS_REFRESH_FS_AUX_BATCH_MAX 8U
 typedef struct st_dss_fs_aux_root_t {
     uint64 version;
     dss_fs_block_list_t free;

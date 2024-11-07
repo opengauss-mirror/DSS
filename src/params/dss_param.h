@@ -33,6 +33,7 @@
 #include "mes_interface.h"
 #include "dss_errno.h"
 #include "dss_api.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -43,7 +44,7 @@ extern "C" {
 #define DSS_WORK_THREAD_LOAD_DATA_PERCENT 0.5
 
 #define DSS_MES_MAX_WAIT_TIMEOUT 10000  // 10s
-#define DSS_MES_MIN_WAIT_TIMEOUT 500  // 500ms
+#define DSS_MES_MIN_WAIT_TIMEOUT 500    // 500ms
 
 #define DSS_MIN_RECV_MSG_BUFF_SIZE (uint64) SIZE_M(9)
 #define DSS_MAX_RECV_MSG_BUFF_SIZE (uint64) SIZE_G(1)
@@ -56,10 +57,16 @@ typedef enum en_dss_mode {
 } dss_mode_e;
 
 /* use for dorado cluster */
-typedef enum cluster_run_mode_t {
-    CLUSTER_PRIMARY = 0,
-    CLUSTER_STANDBY = 1
-} cluster_run_mode_t;
+typedef enum cluster_run_mode_t { CLUSTER_PRIMARY = 0, CLUSTER_STANDBY = 1 } cluster_run_mode_t;
+
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+#define DSS_RECYLE_META_RANGE_MAX 10000U
+#endif
+
+typedef struct st_dss_recycle_meta_pos {
+    uint32 hwm;  // trigger to recycle, the unit is 0.01%
+    uint32 lwm;  // mark to end recycle, the unit is 0.01%
+} dss_recycle_meta_pos_t;
 
 typedef struct st_dss_params {
     char *root_name;  // root volume name
@@ -94,6 +101,7 @@ typedef struct st_dss_params {
     bool32 enable_core_state_collect;
     uint32 delay_clean_interval;
     cluster_run_mode_t cluster_run_mode;
+    dss_recycle_meta_pos_t recyle_meta_pos;
 } dss_params_t;
 
 typedef struct st_dss_config {

@@ -28,6 +28,7 @@
 #include "dss_errno.h"
 #include "dss_param.h"
 #include "dss_fault_injection.h"
+#include "dss_ga.h"
 #include "dss_param_verify.h"
 
 #ifdef __cplusplus
@@ -533,6 +534,52 @@ status_t dss_notify_fi_custom_fault_value(void *se, void *item, char *value)
 {
     return dss_notify_fi_value_base(value, "SS_FI_CUSTOM_FAULT_PARAM", DDES_FI_TYPE_CUSTOM_FAULT);
 }
+
+// for recycle meta begin
+static status_t dss_verify_recycle_meta_pool_range_base(void *lex, void *def, char *cfg_name)
+{
+    char *value = (char *)lex;
+    uint32 num;
+    text_t text = {.str = value, .len = (uint32)strlen(value)};
+    cm_trim_text(&text);
+    status_t status = cm_text2uint32(&text, &num);
+    DSS_RETURN_IFERR2(status, CM_THROW_ERROR(ERR_INVALID_PARAM, cfg_name));
+
+    if (num > GA_USAGE_UNIT) {
+        CM_THROW_ERROR(ERR_INVALID_PARAM, cfg_name);
+        return CM_ERROR;
+    }
+
+    int32 iret_snprintf =
+        snprintf_s(((dss_def_t *)def)->value, CM_PARAM_BUFFER_SIZE, CM_PARAM_BUFFER_SIZE - 1, PRINT_FMT_UINT32, num);
+    DSS_SECUREC_SS_RETURN_IF_ERROR(iret_snprintf, CM_ERROR);
+    return CM_SUCCESS;
+}
+
+status_t dss_verify_recycle_meta_pool_hwm(void *lex, void *def)
+{
+    return dss_verify_recycle_meta_pool_range_base(lex, def, "__RECYCLE_META_POOL_HWM");
+}
+
+status_t dss_verify_recycle_meta_pool_lwm(void *lex, void *def)
+{
+    return dss_verify_recycle_meta_pool_range_base(lex, def, "__RECYCLE_META_POOL_LWM");
+}
+
+status_t dss_notify_recycle_meta_pool_hwm(void *se, void *item, char *value)
+{
+    CM_RETURN_IFERR(cm_str2uint32(value, (uint32 *)&g_inst_cfg->params.recyle_meta_pos.hwm));
+    LOG_DEBUG_INF("__RECYCLE_META_POOL_HWM new cfg value %u, unit is:0.01", g_inst_cfg->params.recyle_meta_pos.hwm);
+    return CM_SUCCESS;
+}
+
+status_t dss_notify_recycle_meta_pool_lwm(void *se, void *item, char *value)
+{
+    CM_RETURN_IFERR(cm_str2uint32(value, (uint32 *)&g_inst_cfg->params.recyle_meta_pos.lwm));
+    LOG_DEBUG_INF("__RECYCLE_META_POOL_LWM new cfg value %u, unit is:0.01", g_inst_cfg->params.recyle_meta_pos.lwm);
+    return CM_SUCCESS;
+}
+// for recycle meta end
 #endif
 
 status_t dss_verify_mes_wait_timeout(void *lex, void *def)

@@ -86,6 +86,13 @@ status_t dss_notify_fi_process_fault_value(void *se, void *item, char *value);
 status_t dss_verify_fi_custom_fault_value(void *lex, void *def);
 status_t dss_notify_fi_custom_fault_value(void *se, void *item, char *value);
 // for fi end
+
+// for recycle meta begin
+status_t dss_verify_recycle_meta_pool_hwm(void *lex, void *def);
+status_t dss_verify_recycle_meta_pool_lwm(void *lex, void *def);
+status_t dss_notify_recycle_meta_pool_hwm(void *se, void *item, char *value);
+status_t dss_notify_recycle_meta_pool_lwm(void *se, void *item, char *value);
+// for recycle meta end
 #endif
 
 #ifdef __cplusplus

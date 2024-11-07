@@ -63,6 +63,7 @@ void dss_add_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl,
         return;
     }
 
+    dss_buffer_recycle_disable(block_ctrl, CM_TRUE);
     // add to tail of syn_meta_desc
     cm_bilist_add_tail(&block_ctrl->syn_meta_node, &vg_item->syn_meta_desc.bilist);
     dss_unlatch(&vg_item->syn_meta_desc.latch);
@@ -86,6 +87,7 @@ void dss_del_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl,
         block_ctrl->fid, block_ctrl->ftid, block_ctrl->file_ver, (uint32)block_ctrl->type,
         DSS_ID_TO_U64(block_ctrl->block_id), block_ctrl->syn_meta_ref_cnt);
     cm_bilist_del(&block_ctrl->syn_meta_node, &vg_item->syn_meta_desc.bilist);
+    dss_buffer_recycle_disable(block_ctrl, CM_FALSE);
     dss_unlatch(&vg_item->syn_meta_desc.latch);
 }
 
@@ -139,7 +141,7 @@ bool32 dss_syn_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item)
     bilist_node_t *bilist_node_tail = NULL;
     bilist_node_t *bilist_node_next = NULL;
 
-    // without latch here, may miss this time, bu can get next time
+    // without latch here, may miss this time, but can get next time
     bilist_node = cm_bilist_head(&vg_item->syn_meta_desc.bilist);
     bilist_node_tail = cm_bilist_tail(&vg_item->syn_meta_desc.bilist);
     while (bilist_node != NULL) {
@@ -228,10 +230,10 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
     ga_obj_id_t out_obj_id;
     dss_block_id_t meta_block_id;
     dss_set_blockid(&meta_block_id, meta_syn->meta_block_id);
-    char *block = dss_find_block_in_shm_no_refresh_ex(session, vg_item, meta_block_id, &out_obj_id);
+    char *block = dss_find_block_in_shm_no_refresh(session, vg_item, meta_block_id, &out_obj_id);
     if (block == NULL) {
         LOG_DEBUG_INF(
-            "syn meta file:%llu, file_ver:%llu, vg :%u, block:%llu  type:%u, with version:%llu not found node fail.",
+            "syn meta file:%llu, file_ver:%llu, vg :%u, block:%llu type:%u, with version:%llu not found node fail.",
             meta_syn->fid, meta_syn->file_ver, meta_syn->vg_id, meta_syn->meta_block_id, meta_syn->meta_type,
             meta_syn->syn_meta_version);
         *ack = CM_TRUE;
@@ -280,7 +282,7 @@ status_t dss_invalidate_meta_remote(
 {
     *invalid_ack = CM_FALSE;
 
-    LOG_DEBUG_INF(" Begin to invalidate meta vg id:%u, meta type:%u, meta id:%llu.", invalidate_meta_msg->vg_id,
+    LOG_DEBUG_INF("Begin to invalidate meta vg id:%u, meta type:%u, meta id:%llu.", invalidate_meta_msg->vg_id,
         invalidate_meta_msg->meta_type, invalidate_meta_msg->meta_block_id);
     dss_vg_info_item_t *vg_item = dss_find_vg_item_by_id(invalidate_meta_msg->vg_id);
     if (vg_item == NULL) {

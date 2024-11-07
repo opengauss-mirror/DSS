@@ -169,9 +169,16 @@ static config_item_t g_dss_params[] = {
     {"SS_FI_CUSTOM_FAULT_PARAM", CM_TRUE, ATTR_NONE, "3000", NULL, NULL, "-", "[0,4924967295]", "GS_TYPE_INTEGER", NULL,
         55, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_custom_fault_value, dss_notify_fi_custom_fault_value, NULL,
         NULL},
+
+    // for recycle meta begin
+    {"__RECYCLE_META_POOL_HWM", CM_TRUE, ATTR_NONE, "8000", NULL, NULL, "-", "[0,10000]", "GS_TYPE_INTEGER", NULL, 56,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_recycle_meta_pool_hwm, dss_notify_recycle_meta_pool_hwm, NULL, NULL},
+    {"__RECYCLE_META_POOL_LWM", CM_TRUE, ATTR_NONE, "6000", NULL, NULL, "-", "[0,10000]", "GS_TYPE_INTEGER", NULL, 57,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_recycle_meta_pool_lwm, dss_notify_recycle_meta_pool_lwm, NULL, NULL},
+// for recycle meta end
 #endif
-    { "LOG_COMPRESSED",  CM_TRUE, ATTR_READONLY, "FALSE", NULL, NULL, "-", "[FALSE,TRUE]",  "GS_TYPE_BOOLEAN", NULL,
-        56, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"LOG_COMPRESSED", CM_TRUE, ATTR_READONLY, "FALSE", NULL, NULL, "-", "[FALSE,TRUE]", "GS_TYPE_BOOLEAN", NULL, 56,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 static const char *g_dss_config_file = (const char *)"dss_inst.ini";
@@ -764,6 +771,30 @@ static status_t dss_load_fi_params(dss_config_t *inst_cfg)
 
     return CM_SUCCESS;
 }
+
+static status_t dss_load_recycle_meta_params(dss_config_t *inst_cfg)
+{
+    uint32 cfg_data = 0;
+    char *value = cm_get_config_value(&inst_cfg->config, "__RECYCLE_META_POOL_HWM");
+    status_t status = cm_str2uint32(value, &cfg_data);
+    if (status != CM_SUCCESS || cfg_data > DSS_RECYLE_META_RANGE_MAX) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "__RECYCLE_META_POOL_HWM");
+        return CM_ERROR;
+    }
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "__RECYCLE_META_POOL_HWM"));
+    inst_cfg->params.recyle_meta_pos.hwm = cfg_data;
+    LOG_DEBUG_INF("__RECYCLE_META_POOL_HWM new cfg value %u, unit is:0.01", inst_cfg->params.recyle_meta_pos.hwm);
+
+    value = cm_get_config_value(&inst_cfg->config, "__RECYCLE_META_POOL_LWM");
+    status = cm_str2uint32(value, &cfg_data);
+    if (status != CM_SUCCESS || cfg_data > DSS_RECYLE_META_RANGE_MAX) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "__RECYCLE_META_POOL_LWM");
+        return CM_ERROR;
+    }
+    inst_cfg->params.recyle_meta_pos.lwm = cfg_data;
+    LOG_DEBUG_INF("__RECYCLE_META_POOL_LWM new cfg value %u, unit is:0.01", inst_cfg->params.recyle_meta_pos.lwm);
+    return CM_SUCCESS;
+}
 #endif
 
 status_t dss_load_config(dss_config_t *inst_cfg)
@@ -785,8 +816,7 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     status_t status = cm_load_config(g_dss_params, DSS_PARAM_COUNT, file_name, &inst_cfg->config, CM_FALSE);
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load config"));
     if (dss_is_server()) {
-        status = dss_init_loggers(
-            inst_cfg, dss_get_instance_log_def(), dss_get_instance_log_def_count(), "dssserver");
+        status = dss_init_loggers(inst_cfg, dss_get_instance_log_def(), dss_get_instance_log_def_count(), "dssserver");
         DSS_RETURN_IFERR2(status, (void)printf("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code())));
     }
     CM_RETURN_IFERR(dss_load_path(inst_cfg));
@@ -811,6 +841,7 @@ status_t dss_load_config(dss_config_t *inst_cfg)
 #if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
     if (dss_is_server()) {
         CM_RETURN_IFERR(dss_load_fi_params(inst_cfg));
+        CM_RETURN_IFERR(dss_load_recycle_meta_params(inst_cfg));
     }
 #endif
 
