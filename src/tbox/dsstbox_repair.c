@@ -113,6 +113,18 @@ static status_t repair_func_dss_block_id_t(char *item_ptr, text_t *key, text_t *
     return CM_SUCCESS;
 }
 
+static status_t repair_func_ftid_t(char *item_ptr, text_t *key, text_t *value)
+{
+    ftid_t ftid;
+    status_t status = cm_text2uint64(value, (uint64 *)&ftid);
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("ftid:%s is not a valid uint64\n", value->str));
+    ftid_t *repair_ptr = (ftid_t *)item_ptr;
+    LOG_RUN_INF("[TBOX][REPAIR] modify ft id from %s.", dss_display_metaid(*repair_ptr));
+    LOG_RUN_INF("[TBOX][REPAIR] modify ft id to %s.", dss_display_metaid(ftid));
+    *repair_ptr = ftid;
+    return CM_SUCCESS;
+}
+
 static status_t repair_func_auid_t(char *item_ptr, text_t *key, text_t *value)
 {
     return repair_func_dss_block_id_t(item_ptr, key, value);
@@ -158,6 +170,20 @@ static status_t repair_func_uint8_t(char *item_ptr, text_t *key, text_t *value)
     return CM_SUCCESS;
 }
 
+static status_t repair_set_block_type(char *item_ptr, text_t *key, text_t *value)
+{
+    uint32 block_type;
+    status_t status = cm_text2uint32(value, &block_type);
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("repair value:%s is not a valid uint32\n", value->str));
+    LOG_RUN_INF("[TBOX][REPAIR] modify uint32 from %u to %u;", *(uint32 *)item_ptr, block_type);
+    if (block_type >= DSS_BLOCK_TYPE_MAX) {
+        DSS_PRINT_ERROR("[TBOX][REPAIR] modify block type failed, %u is not a valid type.\n", block_type);
+        return CM_ERROR;
+    }
+    *(uint32 *)item_ptr = block_type;
+    return CM_SUCCESS;
+}
+
 typedef struct st_repair_complex_meta {
     const char *meta_name;
     repair_items_t *repair_items;
@@ -198,13 +224,18 @@ static status_t repair_func_complex_meta(
         (name), (uint32)(len), (uint32)(OFFSET_OF(obj, item)), (func) \
     }
 
+#define REPAIR_ITEM_WITH_OFFSET_FUNC(name, offset, type, func)   \
+    {                                                            \
+        (name), (uint32)(sizeof(type)), (uint32)(offset), (func) \
+    }
+
 #define ARCHIVE_LOGS_LEN (sizeof(arch_log_id_t) * GS_MAX_ARCH_DEST)
 
 typedef status_t (*repair_func_t)(char *item_ptr, text_t *key, text_t *value);
 
 #define REPAIR_COMMON_BLOCK_ITEM_COUNT (sizeof(g_repair_common_block_items_list) / sizeof(repair_items_t))
 repair_items_t g_repair_common_block_items_list[] = {
-    REPAIR_ITEM("type", dss_common_block_t, type, uint32_t),
+    REPAIR_ITEM_WITH_FUNC("type", dss_common_block_t, type, uint32_t, repair_set_block_type),
     REPAIR_ITEM("version", dss_common_block_t, version, uint64),
     REPAIR_ITEM("id", dss_common_block_t, id, dss_block_id_t),
     REPAIR_ITEM("flags", dss_common_block_t, flags, uint8_t),
@@ -277,7 +308,7 @@ static bool32 repair_key_with_index(text_t *key, const char *str, uint32_t *inde
 }
 
 typedef status_t (*dss_meta_repairer_t)(char *meta_buffer, text_t *name, text_t *value);
-static status_t dss_ft_block_repairer(char *block, text_t *name, text_t *value)
+static status_t dss_fs_block_repairer(char *block, text_t *name, text_t *value)
 {
     text_t part1, part2;
     uint32 index = 0;
@@ -372,8 +403,9 @@ static status_t repair_set_volume_attr_id(char *item_ptr, text_t *key, text_t *v
 
 repair_items_t g_repair_volume_attr_items_list[] = {
     // id is a bit-field member, treat it as an uint64 with special process
-    {"id", sizeof(uint64), 0, repair_set_volume_attr_id}, REPAIR_ITEM("size", dss_volume_attr_t, size, uint64),
-    REPAIR_ITEM("hwm", dss_volume_attr_t, hwm, uint64), REPAIR_ITEM("free", dss_volume_attr_t, free, uint64)};
+    REPAIR_ITEM_WITH_OFFSET_FUNC("id", 0, uint64, repair_set_volume_attr_id),
+    REPAIR_ITEM("size", dss_volume_attr_t, size, uint64), REPAIR_ITEM("hwm", dss_volume_attr_t, hwm, uint64),
+    REPAIR_ITEM("free", dss_volume_attr_t, free, uint64)};
 repair_complex_meta_funcs_t g_repair_set_volume_attr_funcs = {
     "volume attr", g_repair_volume_attr_items_list, sizeof(g_repair_volume_attr_items_list) / sizeof(repair_items_t)};
 static status_t repair_set_volume_attr(char *item_ptr, text_t *key, text_t *value)
@@ -519,7 +551,7 @@ status_t dss_repair_fs_block(repair_input_def_t *input)
         return CM_ERROR;
     }
 
-    status = dss_repair_meta_by_input(input, (char *)block, dss_ft_block_repairer);
+    status = dss_repair_meta_by_input(input, (char *)block, dss_fs_block_repairer);
     if (status != CM_SUCCESS) {
         DSS_FREE_POINT(block);
         dss_close_volume(&volume);
@@ -527,6 +559,163 @@ status_t dss_repair_fs_block(repair_input_def_t *input)
     }
 
     status = dss_repair_write_fs_block(input, block, &volume);
+    DSS_FREE_POINT(block);
+    dss_close_volume(&volume);
+    return status;
+}
+
+static status_t dss_repair_load_ft_block(repair_input_def_t *input, dss_ft_block_t **block, dss_volume_t *volume)
+{
+    *block = (dss_ft_block_t *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_BLOCK_SIZE);
+    if (*block == NULL) {
+        DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_VG_DATA_SIZE, "[TBOX][REPAIR] load ft block");
+        return CM_ERROR;
+    }
+    int64 offset = dss_get_ftb_offset(SIZE_K(input->au_size), &input->block_id);
+    LOG_RUN_INF("[TBOX][REPAIR] load ft block to read volume %s, offset:%lld, id:%s.\n", input->vol_path, offset,
+        dss_display_metaid(input->block_id));
+    status_t status = dss_read_volume(volume, offset, *block, (int32)DSS_BLOCK_SIZE);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[TBOX][REPAIR] Failed to read volume %s, offset:%lld, id:%s, errno:%u.\n", input->vol_path, offset,
+            dss_display_metaid(input->block_id), errno);
+        DSS_FREE_POINT(*block);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+repair_items_t g_repair_gft_list_items_list[] = {
+    REPAIR_ITEM("count", gft_list_t, count, uint32_t),
+    REPAIR_ITEM("first", gft_list_t, first, ftid_t),
+    REPAIR_ITEM("last", gft_list_t, last, ftid_t),
+};
+#define REPAIR_FT_LIST_ITEM_COUNT (sizeof(g_repair_gft_list_items_list) / sizeof(repair_items_t))
+
+repair_complex_meta_funcs_t repair_set_gft_list_funcs = {
+    "gft list", g_repair_gft_list_items_list, REPAIR_FT_LIST_ITEM_COUNT};
+static status_t repair_func_gft_list_t(char *item_ptr, text_t *key, text_t *value)
+{
+    return repair_func_complex_meta(&repair_set_gft_list_funcs, item_ptr, key, value);
+}
+
+static status_t repair_set_ft_name(char *item_ptr, text_t *key, text_t *value)
+{
+    LOG_RUN_INF("[TBOX][REPAIR] modify ft name from %s to %s;", item_ptr, value->str);
+    if (value->len > DSS_MAX_NAME_LEN - 1) {
+        DSS_PRINT_ERROR("[TBOX][REPAIR] modify ft name is too long, max len is %u, your input %s, len is %u.\n",
+            (uint32)(DSS_MAX_NAME_LEN - 1), value->str, value->len);
+        return CM_ERROR;
+    }
+    return cm_text2str(value, item_ptr, DSS_MAX_NAME_LEN);
+}
+
+static status_t repair_set_ft_type(char *item_ptr, text_t *key, text_t *value)
+{
+    uint32 ft_type;
+    status_t status = cm_text2uint32(value, &ft_type);
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("repair value:%s is not a valid uint32\n", value->str));
+    LOG_RUN_INF("[TBOX][REPAIR] modify uint32 from %u to %u;", *(uint32 *)item_ptr, ft_type);
+    if (ft_type > GFT_LINK) {
+        DSS_PRINT_ERROR("[TBOX][REPAIR] modify ft type failed, %u is not a valid type.\n", ft_type);
+        return CM_ERROR;
+    }
+    *(uint32 *)item_ptr = ft_type;
+    return CM_SUCCESS;
+}
+
+repair_items_t g_repair_ft_node_items_list[] = {
+    REPAIR_ITEM_WITH_FUNC("type", gft_node_t, type, uint32_t, repair_set_ft_type),
+    REPAIR_ITEM("flags", gft_node_t, flags, uint32_t),
+    REPAIR_ITEM("size", gft_node_t, size, uint64),
+    REPAIR_ITEM("entry", gft_node_t, entry, dss_block_id_t),
+    REPAIR_ITEM("items", gft_node_t, items, gft_list_t),
+    REPAIR_ITEM("id", gft_node_t, id, ftid_t),
+    REPAIR_ITEM("next", gft_node_t, next, ftid_t),
+    REPAIR_ITEM("prev", gft_node_t, prev, ftid_t),
+    REPAIR_ITEM_WITH_LEN_FUNC("name", gft_node_t, name, DSS_MAX_NAME_LEN, repair_set_ft_name),
+    REPAIR_ITEM("fid", gft_node_t, fid, uint64),
+    REPAIR_ITEM("written_size", gft_node_t, written_size, uint64),
+    REPAIR_ITEM("parent", gft_node_t, parent, ftid_t),
+    REPAIR_ITEM("file_ver", gft_node_t, file_ver, uint64),
+    REPAIR_ITEM("min_inited_size", gft_node_t, min_inited_size, uint64),
+};
+#define REPAIR_FT_NODE_ITEM_COUNT (sizeof(g_repair_ft_node_items_list) / sizeof(repair_items_t))
+
+repair_complex_meta_funcs_t repair_set_ft_node_funcs = {
+    "ft node", g_repair_ft_node_items_list, REPAIR_FT_NODE_ITEM_COUNT};
+static status_t repair_set_ft_node(char *item_ptr, text_t *key, text_t *value)
+{
+    return repair_func_complex_meta(&repair_set_ft_node_funcs, item_ptr, key, value);
+}
+
+#define REPAIR_FT_BLOCK_ITEM_COUNT (sizeof(g_repair_ft_block_items_list) / sizeof(repair_items_t))
+repair_items_t g_repair_ft_block_items_list[] = {
+    REPAIR_ITEM_WITH_FUNC("common", dss_ft_block_t, common, dss_common_block_t, repair_set_common_block),
+    REPAIR_ITEM("node_num", dss_ft_block_t, node_num, uint32_t),
+    REPAIR_ITEM("next", dss_ft_block_t, next, dss_block_id_t),
+    REPAIR_ITEM_WITH_OFFSET_FUNC("ft_node", sizeof(dss_ft_block_t), gft_node_t, repair_set_ft_node),
+};
+
+static status_t dss_ft_block_repairer(char *block, text_t *name, text_t *value)
+{
+    text_t part1, part2;
+    LOG_RUN_INF("[TBOX][REPAIR] modify ft block key value : %s;", name->str);
+    cm_split_text(name, '.', '\0', &part1, &part2);
+    cm_trim_text(&part1);
+    cm_trim_text(&part2);
+    for (uint32_t i = 0; i < REPAIR_FT_BLOCK_ITEM_COUNT; i++) {
+        repair_items_t *item = &g_repair_ft_block_items_list[i];
+        if (cm_text_str_equal(&part1, item->name)) {
+            LOG_RUN_INF("[TBOX][REPAIR] modify ft block key name : %s, offset : %u;", item->name, item->item_offset);
+            return item->repair_func((void *)(((char *)block) + item->item_offset), &part2, value);
+        }
+    }
+    DSS_PRINT_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse ft block;", part1.str);
+    return CM_ERROR;
+}
+
+static status_t dss_repair_write_ft_block(repair_input_def_t *input, dss_ft_block_t *block, dss_volume_t *volume)
+{
+    uint32_t checksum = dss_get_checksum(block, DSS_BLOCK_SIZE);
+    int64 offset = dss_get_ftb_offset(SIZE_K(input->au_size), &input->block_id);
+    LOG_RUN_INF("[TBOX][REPAIR] Repair ft block %s, volume:%s, offset:%lld, checksum old:%u new:%u.",
+        dss_display_metaid(input->block_id), input->vol_path, offset, block->common.checksum, checksum);
+    (void)printf("[TBOX][REPAIR] Repair ft block %s, volume:%s, offset:%lld, checksum old:%u new:%u.\n",
+        dss_display_metaid(input->block_id), input->vol_path, offset, block->common.checksum, checksum);
+    block->common.checksum = checksum;
+
+    status_t status = dss_write_volume(volume, offset, block, (int32)DSS_BLOCK_SIZE);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[TBOX][REPAIR] Failed to write ft block on volume %s, offset:%lld, id:%s.\n", input->vol_path,
+            offset, dss_display_metaid(input->block_id));
+        DSS_PRINT_ERROR("Failed to write ft block on volume %s, offset:%lld, id:%s.\n", input->vol_path, offset,
+            dss_display_metaid(input->block_id));
+    }
+    return status;
+}
+
+status_t dss_repair_ft_block(repair_input_def_t *input)
+{
+    dss_volume_t volume;
+    dss_ft_block_t *block = NULL;
+    status_t status = dss_open_volume(input->vol_path, NULL, DSS_CLI_OPEN_FLAG, &volume);
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[TBOX][REPAIR] Open volume %s failed.\n", input->vol_path));
+    // malloc and load ft_block mem
+    status = dss_repair_load_ft_block(input, &block, &volume);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("[TBOX][REPAIR] load ft block failed, volume %s.\n", input->vol_path);
+        dss_close_volume(&volume);
+        return CM_ERROR;
+    }
+
+    status = dss_repair_meta_by_input(input, (char *)block, dss_ft_block_repairer);
+    if (status != CM_SUCCESS) {
+        DSS_FREE_POINT(block);
+        dss_close_volume(&volume);
+        return CM_ERROR;
+    }
+
+    status = dss_repair_write_ft_block(input, block, &volume);
     DSS_FREE_POINT(block);
     dss_close_volume(&volume);
     return status;
