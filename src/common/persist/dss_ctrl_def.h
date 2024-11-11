@@ -122,6 +122,7 @@ typedef enum en_volume_slot {
     VOLUME_ADD = 3,      // add
     VOLUME_REMOVE = 4,   // remove
     VOLUME_REPLACE = 5,  // replace
+    VOLUME_FLAG_MAX,
 } volume_slot_e;
 
 typedef struct st_dss_volume_attr {
@@ -172,6 +173,8 @@ typedef enum st_dss_bak_level_e {
     DSS_BAK_LEVEL_1,  // super block backed up on some specific volumes, fs and ft backed up at the end of each volume
     DSS_BAK_LEVEL_2,  // super block backed up on all volumes, fs and ft backed up at the end of each volume
 } dss_bak_level_e;
+
+#define DSS_MAX_BAK_LEVEL DSS_BAK_LEVEL_2
 
 typedef enum en_dss_software_version {
     DSS_SOFTWARE_VERSION_0 = 0, /* version 0 */
