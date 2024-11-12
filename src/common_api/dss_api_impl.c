@@ -583,16 +583,16 @@ status_t dss_init_vol_handle_sync(dss_conn_t *conn)
 status_t dss_set_session_id(dss_conn_t *conn, uint32 objectid)
 {
     if (objectid >= dss_get_max_total_session_cnt()) {
-        LOG_RUN_ERR(
-            "objectid error, objectid is %u, max session cnt is %u.", objectid, dss_get_max_total_session_cnt());
+        LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "objectid error, objectid is %u, max session cnt is %u.", objectid,
+            dss_get_max_total_session_cnt());
         return ERR_DSS_SESSION_INVALID_ID;
     }
     conn->session = (dss_session_t *)ga_object_addr(GA_SESSION_POOL, objectid);
     if (conn->session == NULL) {
-        LOG_RUN_ERR("Failed to get session, object id is %u.", objectid);
+        LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Failed to get session, object id is %u.", objectid);
         return ERR_DSS_SESSION_INVALID_ID;
     }
-    LOG_RUN_INF("dss set session id is %u, objectid is %u.", ((dss_session_t *)conn->session)->id, objectid);
+    LOG_DEBUG_INF("dss set session id is %u, objectid is %u.", ((dss_session_t *)conn->session)->id, objectid);
     dss_set_thv_run_ctx_item(DSS_THV_RUN_CTX_ITEM_SESSION, conn->session);
     return CM_SUCCESS;
 }
@@ -614,7 +614,7 @@ status_t dss_cli_handshake(dss_conn_t *conn, uint32 max_open_file)
     cli_info.cli_pid = cm_sys_pid();
     status_t status = cm_sys_process_start_time(cli_info.cli_pid, &cli_info.start_time);
     if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to get process start time pid %llu.\n", cli_info.cli_pid);
+        LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Failed to get process start time pid %llu.\n", cli_info.cli_pid);
         return CM_ERROR;
     }
     LOG_DEBUG_INF("The process start time is:%lld.", cli_info.start_time);
@@ -985,7 +985,8 @@ status_t dss_extend_files_context(dss_file_run_ctx_t *file_run_ctx)
 {
     if (file_run_ctx->files.group_num == DSS_MAX_FILE_CONTEXT_GROUP_NUM) {
         DSS_THROW_ERROR(ERR_INVALID_VALUE, "file group num", file_run_ctx->files.group_num);
-        LOG_RUN_ERR("file context group exceeds upper limit %d", DSS_MAX_FILE_CONTEXT_GROUP_NUM);
+        LOG_RUN_ERR_INHIBIT(
+            LOG_INHIBIT_LEVEL1, "file context group exceeds upper limit %d", DSS_MAX_FILE_CONTEXT_GROUP_NUM);
         return CM_ERROR;
     }
     uint32 context_size = DSS_FILE_CONTEXT_PER_GROUP * (uint32)sizeof(dss_file_context_t);
@@ -1984,8 +1985,8 @@ status_t dss_init(uint32 max_open_files, char *home)
     DSS_STATIC_ASSERT(sizeof(dss_root_ft_block_t) == 256);
 
     if (max_open_files > DSS_MAX_OPEN_FILES) {
-        LOG_DEBUG_ERR("exceed DSS_MAX_OPEN_FILES.");
-        return ERR_DSS_INVALID_PARAM;
+        DSS_THROW_ERROR(ERR_INVALID_VALUE, "max_open_files", max_open_files);
+        return CM_ERROR;
     }
 
     dss_env_t *dss_env = dss_get_env();

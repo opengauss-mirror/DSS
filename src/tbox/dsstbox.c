@@ -261,7 +261,7 @@ static status_t miner_check_args(dss_args_t *cmd_args_set, int set_size)
         return CM_ERROR;
     }
     if (!cmd_args_set[DSS_ARG_MINER_VG].inputed) {
-        DSS_PRINT_ERROR("[TBOX][MINER]should set the vol path to load.\n");
+        DSS_PRINT_ERROR("[TBOX][MINER]should set the vg name to show.\n");
         return CM_ERROR;
     }
     if (cmd_args_set[DSS_ARG_MINER_START_LSN].inputed && cmd_args_set[DSS_ARG_MINER_INDEX].inputed) {
@@ -269,7 +269,7 @@ static status_t miner_check_args(dss_args_t *cmd_args_set, int set_size)
         return CM_ERROR;
     }
     if (cmd_args_set[DSS_ARG_MINER_NUMBER].inputed &&
-        (!cmd_args_set[DSS_ARG_MINER_START_LSN].inputed || !cmd_args_set[DSS_ARG_MINER_INDEX].inputed)) {
+        (!cmd_args_set[DSS_ARG_MINER_START_LSN].inputed && !cmd_args_set[DSS_ARG_MINER_INDEX].inputed)) {
         DSS_PRINT_ERROR("[TBOX][MINER]should set the number with start_lsn or index to show.\n");
         return CM_ERROR;
     }
