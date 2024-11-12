@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Huawei Technologies Co.,Ltd.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2024-2024. All rights reserved.
  *
  * DSS is licensed under Mulan PSL v2.
  * You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -52,9 +52,9 @@ typedef struct st_repair_input_def {
     uint32_t au_size;
 } repair_input_def_t;
 
+status_t dss_repair_verify_disk_version(char *vol_path);
 status_t dss_repair_fs_block(repair_input_def_t *input);
 status_t dss_repair_ft_block(repair_input_def_t *input);
-status_t dss_repair_verify_disk_version(char *vol_path);
 status_t dss_repair_core_ctrl(repair_input_def_t *input);
 status_t dss_repair_volume_header(repair_input_def_t *input);
 status_t dss_repair_software_version(repair_input_def_t *input);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Huawei Technologies Co.,Ltd.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2024-2024. All rights reserved.
  *
  * DSS is licensed under Mulan PSL v2.
  * You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -204,10 +204,6 @@ static status_t repair_func_complex_meta(
     {                                                            \
         (name), (uint32)(sizeof(type)), (uint32)(offset), (func) \
     }
-
-#define ARCHIVE_LOGS_LEN (sizeof(arch_log_id_t) * GS_MAX_ARCH_DEST)
-
-typedef status_t (*repair_func_t)(char *item_ptr, text_t *key, text_t *value);
 
 static status_t repair_func_common_block_type(char *item_ptr, text_t *key, text_t *value)
 {
@@ -845,7 +841,7 @@ status_t dss_repair_ft_block(repair_input_def_t *input)
     dss_ft_block_t *block = NULL;
     status_t status = dss_open_volume(input->vol_path, NULL, DSS_CLI_OPEN_FLAG, &volume);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[TBOX][REPAIR] Open volume %s failed.\n", input->vol_path));
-    // malloc and load ft_block mem
+    // malloc and load ft block mem
     status = dss_repair_load_ft_block(input, &block, &volume);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("[TBOX][REPAIR] load ft block failed, volume %s.\n", input->vol_path);
