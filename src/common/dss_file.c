@@ -97,6 +97,10 @@ static status_t dss_check_name_is_valid(const char *name, uint32 path_max_size)
     if (strlen(name) >= path_max_size) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, name, ", name is too long"));
     }
+    if (cm_str_equal(name, DSS_DIR_PARENT) || cm_str_equal(name, DSS_DIR_SELF)) {
+        DSS_THROW_ERROR(ERR_DSS_FILE_PATH_ILL, name, ", cannot be '..' or '.'");
+        return CM_ERROR;
+    }
 
     for (uint32 i = 0; i < strlen(name); i++) {
         status_t status = dss_is_valid_name_char(name[i]);
