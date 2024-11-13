@@ -1073,6 +1073,7 @@ void dss_recycle_meta_proc(thread_t *thread)
         // DSS_STATUS_OPEN for control with switchover
         if (g_dss_instance.status == DSS_STATUS_OPEN) {
             dss_recycle_meta(session, bg_task_info, &clean_time);
+            cm_sleep(CM_SLEEP_10_FIXED);
             continue;
         }
         cm_sleep(CM_SLEEP_10_FIXED);

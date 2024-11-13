@@ -88,6 +88,9 @@ char *dss_find_block_from_disk_and_refresh_shm(dss_session_t *session, dss_vg_in
     dss_block_id_t block_id, dss_block_type_t type, ga_obj_id_t *out_obj_id);
 char *dss_find_block_in_shm_no_refresh(
     dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id, ga_obj_id_t *out_obj_id);
+// do not care content change, just care about exist
+char *dss_find_block_in_shm_no_refresh_ex(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id, ga_obj_id_t *out_obj_id);
 
 status_t dss_refresh_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item, shm_hashmap_t *map);
 status_t dss_get_block_from_disk(

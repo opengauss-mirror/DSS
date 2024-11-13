@@ -230,7 +230,7 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
     ga_obj_id_t out_obj_id;
     dss_block_id_t meta_block_id;
     dss_set_blockid(&meta_block_id, meta_syn->meta_block_id);
-    char *block = dss_find_block_in_shm_no_refresh(session, vg_item, meta_block_id, &out_obj_id);
+    char *block = dss_find_block_in_shm_no_refresh_ex(session, vg_item, meta_block_id, &out_obj_id);
     if (block == NULL) {
         LOG_DEBUG_INF(
             "syn meta file:%llu, file_ver:%llu, vg :%u, block:%llu type:%u, with version:%llu not found node fail.",

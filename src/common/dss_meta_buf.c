@@ -568,6 +568,70 @@ void *dss_find_block_in_bucket(dss_session_t *session, dss_vg_info_item_t *vg_it
     return NULL;
 }
 
+// do not care content change
+static void *dss_find_block_in_bucket_ex(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 hash, uint64 *key,
+    bool32 is_print_error_log, ga_obj_id_t *out_obj_id)
+{
+    shm_hashmap_t *map = vg_item->buffer_cache;
+    CM_ASSERT(key != NULL);
+    if (map == NULL) {
+        if (is_print_error_log) {
+            LOG_DEBUG_ERR("Pointer to map or compare_func is NULL");
+        }
+        return NULL;
+    }
+    char *meta_addr = NULL;
+    dss_block_ctrl_t *block_ctrl = NULL;
+    dss_block_ctrl_t *next_block_ctrl = NULL;
+    auid_t block_id_tmp = {0};
+    shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
+    uint32 bucket_idx = shm_hashmap_calc_bucket_idx(hash_ctrl, hash);
+    uint32 segment_objid = DSS_INVALID_ID32;
+    shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx, &segment_objid);
+    if (bucket == NULL) {
+        if (is_print_error_log) {
+            LOG_DEBUG_ERR("Pointer to bucket %u is NULL.", bucket_idx);
+        }
+        return NULL;
+    }
+    (void)dss_lock_shm_meta_bucket_s(session, segment_objid, &bucket->enque_lock);
+    ga_obj_id_t next_id = *(ga_obj_id_t *)&bucket->first;
+    bool32 has_next = bucket->has_next;
+    if (has_next) {
+        meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
+        cm_panic(meta_addr != NULL);
+        block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
+        block_id_tmp = ((dss_common_block_t *)meta_addr)->id;
+        dss_latch_s(&block_ctrl->latch);
+    }
+    dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
+
+    while (has_next) {
+        if ((block_ctrl->hash == hash) && (dss_buffer_cache_key_compare(&block_id_tmp, key) == CM_TRUE)) {
+            if (out_obj_id != NULL) {
+                *out_obj_id = next_id;
+            }
+            dss_inc_meta_ref_hot(block_ctrl);
+            dss_unlatch(&block_ctrl->latch);
+            return meta_addr;
+        }
+        has_next = block_ctrl->has_next;
+        next_id = *(ga_obj_id_t *)&block_ctrl->hash_next;
+        if (has_next) {
+            meta_addr = dss_buffer_get_meta_addr(next_id.pool_id, next_id.obj_id);
+            cm_panic(meta_addr != NULL);
+            next_block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
+            block_id_tmp = ((dss_common_block_t *)meta_addr)->id;
+            dss_latch_s(&next_block_ctrl->latch);
+        }
+        dss_unlatch(&block_ctrl->latch);
+        block_ctrl = next_block_ctrl;
+        next_block_ctrl = NULL;
+    }
+
+    return NULL;
+}
+
 status_t dss_find_block_objid_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
     dss_block_type_t type, ga_obj_id_t *objid)
 {
@@ -771,6 +835,14 @@ char *dss_find_block_in_shm_no_refresh(
 {
     uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
     return dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
+}
+
+// do not care content change
+char *dss_find_block_in_shm_no_refresh_ex(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id, ga_obj_id_t *out_obj_id)
+{
+    uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
+    return dss_find_block_in_bucket_ex(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, out_obj_id);
 }
 
 static status_t dss_refresh_buffer_cache_inner(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 bucket_idx,
