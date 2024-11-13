@@ -260,6 +260,9 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_MIN_WORKTHREADS_CFG 16
 #define DSS_MAX_WORKTHREADS_CFG 128
 
+#define DSS_DIR_PARENT ".."
+#define DSS_DIR_SELF "."
+
 #define DSS_RETURN_IF_ERROR(ret)      \
     do {                              \
         int _status_ = (ret);         \
