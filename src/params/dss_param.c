@@ -139,7 +139,7 @@ static config_item_t g_dss_params[] = {
         EFFECT_REBOOT, CFG_INS, dss_verify_cluster_run_mode, dss_notify_cluster_run_mode, NULL, NULL},
     {"XLOG_VG_ID", CM_TRUE, ATTR_READONLY, "1", NULL, NULL, "-", "[1,64]", "GS_TYPE_INTEGER", NULL, 42, EFFECT_REBOOT,
         CFG_INS, NULL, NULL, NULL, NULL},
-    {"MES_WAIT_TIMEOUT", CM_TRUE, ATTR_NONE, "2000", NULL, NULL, "-", "[500,10000]", "GS_TYPE_INTEGER", NULL, 43,
+    {"MES_WAIT_TIMEOUT", CM_TRUE, ATTR_NONE, "10000", NULL, NULL, "-", "[500,30000]", "GS_TYPE_INTEGER", NULL, 43,
         EFFECT_IMMEDIATELY, CFG_INS, dss_verify_mes_wait_timeout, dss_notify_mes_wait_timeout, NULL, NULL},
     {"_ENABLE_CORE_STATE_COLLECT", CM_TRUE, ATTR_NONE, "FALSE", NULL, NULL, "-", "[FALSE,TRUE]", "GS_TYPE_BOOLEAN",
         NULL, 44, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_enable_core_state_collect,
