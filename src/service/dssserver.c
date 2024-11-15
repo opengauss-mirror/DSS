@@ -250,6 +250,8 @@ static status_t dss_create_recycle_meta_bg_task_set(dss_instance_t *inst)
 {
     LOG_RUN_INF("create dss recycle meta background task.");
 
+    inst->recycle_meta.recycle_meta_args.time_clean_wait_time = DSS_RECYCLE_META_TRIGGER_WAIT_TIME;
+    inst->recycle_meta.recycle_meta_args.trigger_clean_wait_time = DSS_RECYCLE_META_TRIGGER_WAIT_TIME;
     inst->recycle_meta.recycle_meta_args.recyle_meta_pos = &inst->inst_cfg.params.recyle_meta_pos;
     cm_init_cond(&inst->recycle_meta.recycle_meta_args.trigger_cond);
 
