@@ -28,6 +28,7 @@
 #include "dss_malloc.h"
 #include "dss_redo_recovery.h"
 #include "cm_dlock.h"
+#include "cm_utils.h"
 #include "dss_io_fence.h"
 #include "dss_open_file.h"
 #include "dss_diskgroup.h"
@@ -200,7 +201,7 @@ status_t dss_load_vg_conf_info(dss_vg_info_t **vgs, const dss_config_t *inst_cfg
 
     status_t status = dss_load_vg_conf_inner(vgs_info, inst_cfg);
     if (status != CM_SUCCESS) {
-        DSS_FREE_POINT(vgs_info);
+        dss_free_vg_info();
         return CM_ERROR;
     }
 
@@ -489,25 +490,41 @@ status_t dss_get_vg_info()
     return status;
 }
 
-bool32 dss_check_dup_vg(text_t *name, text_t *entry_path, dss_vg_info_t *config, uint32 vg_no)
+status_t dss_check_entry_path(char *entry_path1, char *entry_path2, bool32 *result)
 {
-    uint32 name_len, path_len;
-    for (uint32 i = 0; i < vg_no; i++) {
-        name_len = (uint32)strlen(config->volume_group[i].vg_name);
-        if (name_len == name->len) {
-            if (cm_strcmpni(name->str, config->volume_group[i].vg_name, name_len) == 0) {
-                return DSS_TRUE;
-            }
+    if (cm_str_equal_ins(entry_path1, entry_path2)) {
+        *result = CM_TRUE;
+        return CM_SUCCESS;
+    }
+    char real_path1[DSS_MAX_VOLUME_PATH_LEN];
+    char real_path2[DSS_MAX_VOLUME_PATH_LEN];
+    CM_RETURN_IFERR(realpath_file(entry_path1, real_path1, DSS_MAX_VOLUME_PATH_LEN));
+    CM_RETURN_IFERR(realpath_file(entry_path2, real_path2, DSS_MAX_VOLUME_PATH_LEN));
+    if (cm_str_equal_ins(real_path1, real_path2)) {
+        *result = CM_TRUE;
+        return CM_SUCCESS;
+    }
+    *result = CM_FALSE;
+    return CM_SUCCESS;
+}
+
+status_t dss_check_dup_vg(dss_vg_info_t *config, uint32 vg_no, bool32 *result)
+{
+    char *last_vg_name = config->volume_group[vg_no - 1].vg_name;
+    char *last_entry_path = config->volume_group[vg_no - 1].entry_path;
+
+    for (uint32 i = 0; i < vg_no - 1; i++) {
+        if (cm_str_equal_ins(last_vg_name, config->volume_group[i].vg_name)) {
+            *result = CM_TRUE;
+            return CM_SUCCESS;
         }
-        path_len = (uint32)strlen(config->volume_group[i].entry_path);
-        if (path_len == entry_path->len) {
-            if (cm_strcmpni(entry_path->str, config->volume_group[i].entry_path, path_len) == 0) {
-                return DSS_TRUE;
-            }
+        CM_RETURN_IFERR(dss_check_entry_path(last_entry_path, config->volume_group[i].entry_path, result));
+        if (*result) {
+            return CM_SUCCESS;
         }
     }
-
-    return CM_FALSE;
+    *result = CM_FALSE;
+    return CM_SUCCESS;
 }
 
 status_t dss_parse_vg_config(dss_vg_info_t *config, char *buf, uint32 buf_len)
@@ -516,6 +533,7 @@ status_t dss_parse_vg_config(dss_vg_info_t *config, char *buf, uint32 buf_len)
     text_t text, line, comment, name, value;
     uint32 vg_no;
     CM_ASSERT(config != NULL);
+    bool32 check_ret = CM_FALSE;
 
     text.len = buf_len;
     text.str = buf;
@@ -557,13 +575,14 @@ status_t dss_parse_vg_config(dss_vg_info_t *config, char *buf, uint32 buf_len)
             return CM_ERROR;
         }
 
-        if (dss_check_dup_vg(&name, &value, config, vg_no)) {
-            DSS_THROW_ERROR(ERR_DSS_CONFIG_LOAD, "more than one volume group name or more than one entry-paths.");
-            return CM_ERROR;
-        }
         CM_RETURN_IFERR(cm_text2str(&name, config->volume_group[vg_no].vg_name, DSS_MAX_NAME_LEN));
         CM_RETURN_IFERR(cm_text2str(&value, config->volume_group[vg_no].entry_path, DSS_MAX_VOLUME_PATH_LEN));
         vg_no++;
+        CM_RETURN_IFERR(dss_check_dup_vg(config, vg_no, &check_ret));
+        if (check_ret) {
+            DSS_THROW_ERROR(ERR_DSS_CONFIG_LOAD, "more than one volume group name or more than one entry-paths.");
+            return CM_ERROR;
+        }
 
         comment.str = text.str;
         comment.len = 0;
