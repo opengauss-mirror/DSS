@@ -88,7 +88,9 @@ static void dss_close_thread(dss_instance_t *inst)
 {
     // pause lsnr thread
     uds_lsnr_t *lsnr = &inst->lsnr;
+    cm_latch_x(&inst->uds_lsnr_latch, DSS_DEFAULT_SESSIONID, NULL);
     cs_pause_uds_lsnr(lsnr);
+    cm_unlatch(&inst->uds_lsnr_latch, NULL);
     // close worker thread
     dss_destroy_reactors();
 
