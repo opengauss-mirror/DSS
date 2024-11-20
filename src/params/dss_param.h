@@ -43,7 +43,7 @@ extern "C" {
 // for most time, standby nodes rerad meta from primary
 #define DSS_WORK_THREAD_LOAD_DATA_PERCENT 0.5
 
-#define DSS_MES_MAX_WAIT_TIMEOUT 10000  // 10s
+#define DSS_MES_MAX_WAIT_TIMEOUT 30000  // 30s
 #define DSS_MES_MIN_WAIT_TIMEOUT 500    // 500ms
 
 #define DSS_MIN_RECV_MSG_BUFF_SIZE (uint64) SIZE_M(9)
