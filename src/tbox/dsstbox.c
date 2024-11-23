@@ -489,8 +489,8 @@ static status_t miner_proc_inner(miner_run_ctx_def_t *ctx)
         DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][MINER] start_lsn:%s is not a valid uint64.\n",
                                       tbox_miner_args[DSS_ARG_MINER_START_LSN].input_args));
         if (ctx->input.start_lsn == 0) {
-            DSS_PRINT_ERROR("[TBOX][MINER]Generally, the value of start_lsn should be greater than 0. In special cases, to"
-                            " display only the redo_ctrl information, set both number and start_lsn to 0.\n");
+            DSS_PRINT_ERROR("[TBOX][MINER]Generally, the value of start_lsn should be greater than 0. In special cases,"
+                            " to display only the redo_ctrl information, set both number and start_lsn to 0.\n");
             return CM_ERROR;
         }
         status = dss_print_redo_info_by_lsn(ctx);
@@ -502,13 +502,14 @@ static status_t miner_proc_inner(miner_run_ctx_def_t *ctx)
             DSS_PRINT_ERROR(
                 "[TBOX][MINER]No valid redo from index %u for count is %u.\n", ctx->input.index, ctx->count);
             return CM_ERROR;
-        }                          
+        }
         if (tbox_miner_args[DSS_ARG_MINER_OFFSET].inputed) {
             status = cm_str2uint64(tbox_miner_args[DSS_ARG_MINER_OFFSET].input_args, (uint64 *)&ctx->input.offset);
             DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][MINER] offset:%s is not a valid uint64.\n",
                                           tbox_miner_args[DSS_ARG_MINER_OFFSET].input_args));
             status = dss_print_redo_info_by_index(ctx);
         } else {
+            // if set index but not set offset and number, print all redo info
             status = dss_print_redo_info(ctx);
         }
     } else {
@@ -624,12 +625,7 @@ static status_t dss_exec_tbox_core(int argc, char **argv, uint32 tbox_idx)
 {
     cmd_parse_init(g_dss_admin_tbox[tbox_idx].args_set->cmd_args, g_dss_admin_tbox[tbox_idx].args_set->args_size);
     if (cmd_parse_args(argc, argv, g_dss_admin_tbox[tbox_idx].args_set) != CM_SUCCESS) {
-        int32 code;
-        const char *message;
-        cm_get_error(&code, &message);
-        if (code != 0) {
-            DSS_PRINT_ERROR("\ntbox %s error:%d %s.\n", g_dss_admin_tbox[tbox_idx].cmd, code, message);
-        }
+        DSS_PRINT_ERROR("[TBOX] %s execute failed.\n", g_dss_admin_tbox[tbox_idx].cmd);
         return CM_ERROR;
     }
     status_t ret = g_dss_admin_tbox[tbox_idx].proc();
