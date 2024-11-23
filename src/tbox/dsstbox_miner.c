@@ -82,7 +82,7 @@ static status_t dss_init_and_load_vg(miner_run_ctx_def_t *ctx)
     }
     uint32 software_version = dss_get_software_version(&vg_item->dss_ctrl->vg_info);
     if (software_version > DSS_SOFTWARE_VERSION) {
-        DSS_PRINT_ERROR("[TBOX][MINER] disk software_version:%u is not match dsstbox version:%u.\n", software_version,
+        LOG_RUN_ERR("[TBOX][MINER] disk software_version:%u is not match dsstbox version:%u.\n", software_version,
             (uint32)DSS_SOFTWARE_VERSION);
         DSS_PRINT_ERROR("[TBOX][MINER] disk software_version:%u is not match dsstbox version:%u.\n", software_version,
             (uint32)DSS_SOFTWARE_VERSION);
@@ -149,7 +149,7 @@ status_t dss_init_miner_run_ctx(miner_run_ctx_def_t *ctx)
         DSS_PRINT_ERROR("[TBOX][MINER]redo buf size should not be 0.\n");
         return CM_ERROR;
     }
-    char *log_buf = (char *)cm_malloc_align(DSS_ALIGN_SIZE, size);
+    char *log_buf = (char *)cm_malloc_align(DSS_ALIGN_SIZE, (uint32)size);
     if (log_buf == NULL) {
         DSS_PRINT_ERROR("[TBOX][MINER]Failed to alloc memory for redo buf.\n");
         DSS_FREE_POINT(vg_item->dss_ctrl);
@@ -157,7 +157,7 @@ status_t dss_init_miner_run_ctx(miner_run_ctx_def_t *ctx)
     }
     status = dss_load_redo_buffer(log_buf, vg_item);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("[TBOX][MINER]Failed to load redo buf.");
+        DSS_PRINT_ERROR("[TBOX][MINER]Failed to load redo buf.\n");
         DSS_FREE_POINT(vg_item->dss_ctrl);
         DSS_FREE_POINT(log_buf);
         return CM_ERROR;
@@ -211,7 +211,7 @@ bool32 dss_probe_valid_redo(miner_run_ctx_def_t *ctx, uint64 start_offset, uint6
     if (start_offset + load_size > size) {
         char *tmp_log_buf = (char *)cm_malloc(DSS_VG_LOG_SPLIT_SIZE);
         if (tmp_log_buf == NULL) {
-            DSS_PRINT_ERROR("[TBOX][MINER]Failed to alloc wraparound redo buf.\n");
+            LOG_RUN_ERR("[TBOX][MINER]Failed to alloc wraparound redo buf.\n");
             return CM_FALSE;
         }
         uint64 wraparound_end_offset = (start_offset + load_size) % size;
@@ -283,7 +283,7 @@ void dss_print_redo_ctrl(dss_redo_ctrl_t *redo_ctrl)
     (void)printf("}\n");
 }
 
-static status_t dss_print_redo_batch_base(char* log_buf, uint64 start_offset, uint64 end_offset, uint64 size)
+static status_t dss_print_redo_batch_base(char *log_buf, uint64 start_offset, uint64 end_offset, uint64 size)
 {
     if (end_offset < start_offset) {
         char *tmp_log_buf = (char *)cm_malloc(DSS_VG_LOG_SPLIT_SIZE);
@@ -411,7 +411,7 @@ status_t dss_print_redo_info_by_lsn(miner_run_ctx_def_t *ctx)
         }
         dss_redo_batch_t *batch = (dss_redo_batch_t *)(log_buf + start_offset);
         if (input->start_lsn != 0 && input->start_lsn < batch->lsn) {
-            DSS_PRINT_ERROR("[TBOX][MINER]start_lsn %llu is smaller than the smallest effective lsn %llu.\n",
+            DSS_PRINT_ERROR("[TBOX][MINER]start lsn %llu is smaller than the smallest effective lsn %llu.\n",
                 input->start_lsn, batch->lsn);
             return CM_ERROR;
         }

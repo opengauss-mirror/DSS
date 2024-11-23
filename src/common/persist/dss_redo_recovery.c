@@ -32,6 +32,7 @@
 #include "dss_redo.h"
 #include "dss_fs_aux.h"
 #include "dss_syn_meta.h"
+#include "dss_defs_print.h"
 
 static status_t dss_recover_core_ctrlinfo(dss_vg_info_item_t *vg_item)
 {

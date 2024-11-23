@@ -978,7 +978,7 @@ status_t dss_init_file_context(
 /*  
 1 after extend success, will generate new linked list
 context[file_run_ctx->files->group_num - 1] [0]->context[file_run_ctx->files->group_num - 1] 
-[1]->...->context[file_run_ctx->files->group_num - 1] [DSS_OPEN_FILES_NUM - 1]
+[1]->...->context[file_run_ctx->files->group_num - 1] [DSS_FILE_CONTEXT_PER_GROUP - 1]
 2 insert new linked list head into the old linked list
 */
 status_t dss_extend_files_context(dss_file_run_ctx_t *file_run_ctx)

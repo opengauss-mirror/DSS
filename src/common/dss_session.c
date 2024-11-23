@@ -117,12 +117,12 @@ uint32 dss_get_recover_task_idx(void)
     return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM);
 }
 
-uint32 dss_get_hashmap_dynamic_extend_task_idx(void)
+uint32 dss_get_delay_clean_task_idx(void)
 {
     return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_DELAY_CLEAN_BACKGROUND_TASK;
 }
 
-uint32 dss_get_delay_clean_task_idx(void)
+uint32 dss_get_hashmap_dynamic_extend_task_idx(void)
 {
     return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_HASHMAP_DYNAMIC_EXTEND_TASK;
 }
