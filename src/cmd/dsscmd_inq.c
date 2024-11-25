@@ -616,25 +616,26 @@ static status_t dss_clean_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, 
     bool32 is_lock = CM_FALSE;
     dss_vg_info_item_t *vg_item;
     int64 tmp_inst_id = (inst_id == DSS_MAX_INST_ID) ? inst_cfg->params.inst_id : inst_id;
+    int32 dss_mode = dss_storage_mode(inst_cfg);
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         vg_item = &vg_info->volume_group[i];
         if (vg_item->vg_name[0] == '\0' || vg_item->entry_path[0] == '\0') {
             return CM_ERROR;
         }
-        if (dss_check_lock_instid(vg_item, vg_item->entry_path, tmp_inst_id, &is_lock) != CM_SUCCESS) {
+        if (dss_check_lock_instid(dss_mode, vg_item, vg_item->entry_path, tmp_inst_id, &is_lock) != CM_SUCCESS) {
             return CM_ERROR;
         }
         if (!is_lock) {
             continue;
         }
         if (inst_id != DSS_MAX_INST_ID) {
-            dss_unlock_vg_raid(vg_item, vg_item->entry_path, tmp_inst_id);
+            dss_unlock_vg(dss_mode, vg_item, vg_item->entry_path, tmp_inst_id);
             continue;
         }
         if (dss_file_lock_vg_w(inst_cfg) != CM_SUCCESS) {
             return CM_ERROR;
         }
-        dss_unlock_vg_raid(vg_item, vg_item->entry_path, tmp_inst_id);
+        dss_unlock_vg(dss_mode, vg_item, vg_item->entry_path, tmp_inst_id);
         dss_file_unlock_vg();
     }
     return CM_SUCCESS;

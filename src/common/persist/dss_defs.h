@@ -148,6 +148,7 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_MIN_INST_ID 0
 #define DSS_MAX_INST_ID DSS_MAX_INSTANCES
 #define DSS_LOCK_VG_TIMEOUT 1000000  // usecs
+#define DSS_LOCK_VG_TIMEOUT_MS (DSS_LOCK_VG_TIMEOUT / 1000)  // ms
 #define DSS_LOKC_ALIGN_SIZE_512 512
 #define DSS_MIN_LOCK_INTERVAL 1
 #define DSS_MAX_LOCK_INTERVAL 600000
@@ -167,6 +168,9 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 
 #define DSS_BLOCK_SIZE 512
 #define DSS_ROOT_FT_DISK_SIZE SIZE_K(8)
+#define DSS_LOCK_SHARE_DISK_SIZE (SIZE_K(32) + 512)
+#define DSS_INIT_DISK_LATCH_SIZE (SIZE_K(32))
+
 #define DSS_NAME_BUFFER_SIZE (uint32)68
 #define DSS_NAME_USER_BUFFER_SIZE (DSS_NAME_BUFFER_SIZE - 16)  // reserve 16 bytes for system
 #define DSS_VOLUME_CODE_SIZE 64

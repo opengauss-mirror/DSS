@@ -246,8 +246,8 @@ static status_t dss_load_storage_mode(dss_config_t *inst_cfg)
 
     if (cm_str_equal_ins(value, "CLUSTER_RAID")) {
         inst_cfg->params.dss_mode = DSS_MODE_CLUSTER_RAID;
-    } else if (cm_str_equal_ins(value, "RAID")) {
-        inst_cfg->params.dss_mode = DSS_MODE_RAID;
+    } else if (cm_str_equal_ins(value, "SHARE_DISK")) {
+        inst_cfg->params.dss_mode = DSS_MODE_SHARE_DISK;
     } else if (cm_str_equal_ins(value, "DISK")) {
         inst_cfg->params.dss_mode = DSS_MODE_DISK;
         CM_RETURN_IFERR(dss_load_disk_lock_file_path(inst_cfg));

@@ -52,7 +52,7 @@ extern "C" {
 typedef enum en_dss_mode {
     DSS_MODE_UNKNOWN = 0,
     DSS_MODE_CLUSTER_RAID = 1,  // MULTI DATANODE's RAID
-    DSS_MODE_RAID = 2,          // A DATANODE's RAID
+    DSS_MODE_SHARE_DISK = 2,    // SHARE DISK LOCK
     DSS_MODE_DISK = 3           // A DATANODE's DISK
 } dss_mode_e;
 

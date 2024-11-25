@@ -48,8 +48,10 @@
 #define DSS_VG_CONF_NAME "dss_vg_conf.ini"
 #define DSS_RECYLE_DIR_NAME ".recycle"
 
-#define DSS_CTRL_RESERVE_SIZE1 (SIZE_K(727))
+#define DSS_CTRL_RESERVE_SIZE1 (SIZE_K(663))
 #define DSS_CTRL_RESERVE_SIZE2 (SIZE_K(15) - 512)
+#define DSS_CTRL_RESERVE_SIZE3 (SIZE_K(32))
+#define DSS_CTRL_RESERVE_SIZE4 512
 
 #define DSS_CTRL_CORE_OFFSET OFFSET_OF(dss_ctrl_t, core_data)
 #define DSS_CTRL_VOLUME_OFFSET OFFSET_OF(dss_ctrl_t, volume_data)
@@ -58,6 +60,7 @@
 #define DSS_CTRL_ROOT_OFFSET OFFSET_OF(dss_ctrl_t, root)
 #define DSS_CTRL_GLOBAL_CTRL_OFFSET OFFSET_OF(dss_ctrl_t, global_data)
 #define DSS_CTRL_REDO_OFFSET OFFSET_OF(dss_ctrl_t, redo_ctrl_data)
+#define DSS_VG_LOCK_SHARE_DISK_OFFSET OFFSET_OF(dss_ctrl_t, disk_lock)
 
 #define DSS_CTRL_BAK_ADDR SIZE_M(1)
 #define DSS_CTRL_BAK_CORE_OFFSET (DSS_CTRL_BAK_ADDR + DSS_CTRL_CORE_OFFSET)
@@ -267,11 +270,21 @@ typedef struct st_dss_ctrl {
     };
     char root[DSS_ROOT_FT_DISK_SIZE];  // dss_root_ft_block_t, 8KB
     union {
-        dss_redo_ctrl_t redo_ctrl;  // 512
-        char redo_ctrl_data[DSS_DISK_UNIT_SIZE];
+        dss_redo_ctrl_t redo_ctrl;
+        char redo_ctrl_data[DSS_DISK_UNIT_SIZE]; // 512
     };
-    char reserve1[DSS_CTRL_RESERVE_SIZE1];  // 727K
-    char lock[DSS_DISK_LOCK_LEN];           // align with 16K
+    char reserve1[DSS_CTRL_RESERVE_SIZE1];     // 663K
+    char disk_latch[DSS_INIT_DISK_LATCH_SIZE]; // INIT DISK LATCH 32KB
+    union {
+        struct {
+            char disk_lock[DSS_LOCK_SHARE_DISK_SIZE]; // share disk lock, 32KB + 512, align with 8K
+            char reserve4[DSS_CTRL_RESERVE_SIZE4];    // 512
+        };
+        struct {
+            char reserve3[DSS_CTRL_RESERVE_SIZE3];  // 32KB
+            char lock[DSS_DISK_LOCK_LEN];           // align with 16K
+        };
+    };
     char reserve2[DSS_CTRL_RESERVE_SIZE2];
     union {
         dss_group_global_ctrl_t global_ctrl;
