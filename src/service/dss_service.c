@@ -171,17 +171,22 @@ static void dss_clean_session_hotpatch_latch(dss_session_t *session)
 
 void dss_release_session_res(dss_session_t *session)
 {
+    dss_server_session_lock(session);
     dss_clean_session_latch(session, CM_FALSE);
     dss_clean_session_hotpatch_latch(session);
     dss_clean_open_files(session);
-    dss_destroy_session(session);
+    dss_destroy_session_inner(session);
+    cm_spin_unlock(&session->shm_lock);
+    LOG_DEBUG_INF("Succeed to unlock session %u shm lock", session->id);
+    cm_spin_unlock(&session->lock);
 }
 
 status_t dss_process_single_cmd(dss_session_t **session)
 {
     status_t status = dss_process_command(*session);
     if ((*session)->is_closed) {
-        LOG_RUN_INF("Session:%u end to do service.", (*session)->id);
+        LOG_RUN_INF("Session:%u end to do service, thread id is %u, connect time is %llu, try to clean source.",
+            (*session)->id, (*session)->cli_info.thread_id, (*session)->cli_info.connect_time);
         dss_clean_reactor_session(*session);
         *session = NULL;
     } else {
@@ -546,11 +551,11 @@ static status_t dss_process_handshake(dss_session_t *session)
     session->client_version = dss_get_version(&session->recv_pack);
     uint32 current_proto_ver = dss_get_master_proto_ver();
     session->proto_version = MIN(session->client_version, current_proto_ver);
-    dss_cli_info *cli_info;
-    DSS_RETURN_IF_ERROR(dss_get_data(&session->recv_pack, sizeof(dss_cli_info), (void **)&cli_info));
+    dss_cli_info_t *cli_info;
+    DSS_RETURN_IF_ERROR(dss_get_data(&session->recv_pack, sizeof(dss_cli_info_t), (void **)&cli_info));
     errno_t errcode;
     cm_spin_lock(&session->lock, NULL);
-    errcode = memcpy_s(&session->cli_info, sizeof(dss_cli_info), cli_info, sizeof(dss_cli_info));
+    errcode = memcpy_s(&session->cli_info, sizeof(dss_cli_info_t), cli_info, sizeof(dss_cli_info_t));
     cm_spin_unlock(&session->lock);
     securec_check_ret(errcode);
     LOG_RUN_INF(

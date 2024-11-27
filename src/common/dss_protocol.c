@@ -133,8 +133,7 @@ status_t dss_write_packet(cs_pipe_t *pipe, dss_packet_t *pack)
         DSS_RETURN_IFERR2(CM_ERROR, CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, pack->head->size, DSS_MAX_PACKET_SIZE));
     }
     status_t status = VIO_SEND_TIMED(pipe, pack->buf, pack->head->size, DSS_DEFAULT_NULL_VALUE);
-    DSS_RETURN_IFERR2(
-        status, CM_THROW_ERROR(ERR_PACKET_SEND, pack->buf_size, pack->head->size, pack->head->size));
+    DSS_RETURN_IFERR2(status, CM_THROW_ERROR(ERR_PACKET_SEND, pack->buf_size, pack->head->size, pack->head->size));
     return CM_SUCCESS;
 }
 
@@ -158,7 +157,7 @@ static status_t dss_read_packet(cs_pipe_t *pipe, dss_packet_t *pack, bool32 cs_c
     char *cs_mes = cs_client ? "read wait for server response" : "read wait for client request";
     for (;;) {
         status = VIO_RECV(pipe, pack->buf + offset, (uint32)(pack->buf_size - offset), &recv_size);
-        DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_TCP_RECV, "Receive protocol failed."));
+        DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_TCP_RECV, "uds", cm_get_sock_error()));
         offset += recv_size;
         if (offset >= (int32)sizeof(dss_packet_head_t)) {
             break;
@@ -171,7 +170,10 @@ static status_t dss_read_packet(cs_pipe_t *pipe, dss_packet_t *pack, bool32 cs_c
     }
 
     if (pack->head->size > pack->buf_size) {
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_TCP_RECV, "Receive protocol failed."));
+        DSS_THROW_ERROR_EX(ERR_TCP_RECV, "Receive protocol failed, head size is %u, buffer size is %u, errno %d.",
+            pack->head->size, pack->buf_size, cm_get_sock_error());
+        cm_fync_logfile();
+        CM_ASSERT(0);
     }
 
     remain_size = (int32)pack->head->size - offset;

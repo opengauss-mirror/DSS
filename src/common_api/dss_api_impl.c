@@ -610,24 +610,24 @@ static status_t dss_set_server_info(dss_conn_t *conn, char *home, uint32 objecti
 
 status_t dss_cli_handshake(dss_conn_t *conn, uint32 max_open_file)
 {
-    dss_cli_info cli_info;
-    cli_info.cli_pid = cm_sys_pid();
-    status_t status = cm_sys_process_start_time(cli_info.cli_pid, &cli_info.start_time);
+    conn->cli_info.cli_pid = cm_sys_pid();
+    conn->cli_info.thread_id = cm_get_current_thread_id();
+
+    status_t status = cm_sys_process_start_time(conn->cli_info.cli_pid, &conn->cli_info.start_time);
     if (status != CM_SUCCESS) {
-        LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Failed to get process start time pid %llu.\n", cli_info.cli_pid);
+        LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Failed to get process start time pid %llu.\n", conn->cli_info.cli_pid);
         return CM_ERROR;
     }
-    LOG_DEBUG_INF("The process start time is:%lld.", cli_info.start_time);
-
+    LOG_DEBUG_INF("The process start time is:%lld.", conn->cli_info.start_time);
     errno_t err;
-    err = strcpy_s(cli_info.process_name, sizeof(cli_info.process_name), cm_sys_program_name());
+    err = strcpy_s(conn->cli_info.process_name, sizeof(conn->cli_info.process_name), cm_sys_program_name());
     if (err != EOK) {
         LOG_DEBUG_ERR("System call strcpy_s error %d.", err);
         return CM_ERROR;
     }
-
+    conn->cli_info.connect_time = cm_clock_monotonic_now();
     dss_get_server_info_t output_info = {NULL, DSS_INVALID_SESSIONID, 0};
-    CM_RETURN_IFERR(dss_msg_interact(conn, DSS_CMD_HANDSHAKE, (void *)&cli_info, (void *)&output_info));
+    CM_RETURN_IFERR(dss_msg_interact(conn, DSS_CMD_HANDSHAKE, (void *)&conn->cli_info, (void *)&output_info));
     if (conn->pack.head->version >= DSS_VERSION_2) {
         if (g_dss_server_pid == 0) {
             g_dss_server_pid = output_info.server_pid;
@@ -653,7 +653,6 @@ status_t dss_connect_ex(const char *server_locator, dss_conn_opt_t *options, dss
         status = dss_cli_handshake(conn, max_open_file);
         DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client handshake to server failed."),
             dss_disconnect(conn));
-
         status = dss_init_vol_handle_sync(conn);
         DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client init vol handle failed."),
             dss_disconnect(conn));
@@ -662,6 +661,29 @@ status_t dss_connect_ex(const char *server_locator, dss_conn_opt_t *options, dss
     return status;
 }
 
+status_t dss_cli_session_lock(dss_conn_t *conn, dss_session_t *session)
+{
+    if (!cm_spin_timed_lock(&session->shm_lock, SESSION_LOCK_TIMEOUT)) {
+        LOG_RUN_ERR("Failed to lock session %u shm lock", session->id);
+        return CM_ERROR;
+    }
+    LOG_DEBUG_INF("Succeed to lock session %u shm lock", session->id);
+    if (session->cli_info.thread_id != conn->cli_info.thread_id ||
+        session->cli_info.connect_time != conn->cli_info.connect_time) {
+        DSS_THROW_ERROR_EX(ERR_DSS_CONNECT_FAILED,
+            "session %u thread id is %u, connect_time is %lld, conn thread id is %u, connect_time is %llu", session->id,
+            session->cli_info.thread_id, session->cli_info.connect_time, conn->cli_info.thread_id,
+            conn->cli_info.connect_time);
+        LOG_RUN_ERR("Failed to check session %u, thread id is %u, connect_time is %lld, conn thread id is %u, "
+                    "connect_time is %llu",
+                    session->id, session->cli_info.thread_id, session->cli_info.connect_time, conn->cli_info.thread_id,
+                    conn->cli_info.connect_time);
+        cm_spin_unlock(&session->shm_lock);
+        LOG_DEBUG_INF("Succeed to unlock session %u shm lock", session->id);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
 void dss_disconnect_ex(dss_conn_t *conn)
 {
     dss_env_t *dss_env = dss_get_env();
@@ -2717,7 +2739,7 @@ static status_t dss_encode_unlink(dss_conn_t *conn, dss_packet_t *pack, void *se
 
 static status_t dss_encode_handshake(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
 {
-    CM_RETURN_IFERR(dss_put_data(pack, send_info, sizeof(dss_cli_info)));
+    CM_RETURN_IFERR(dss_put_data(pack, send_info, sizeof(dss_cli_info_t)));
     return CM_SUCCESS;
 }
 
