@@ -1606,7 +1606,7 @@ static void lscli_help(const char *prog_name, int print_flag)
 static status_t lscli_proc(void)
 {
     errno_t errcode;
-    dss_cli_info cli_info;
+    dss_cli_info_t cli_info;
 
     cli_info.cli_pid = cm_sys_pid();
     status_t status = cm_sys_process_start_time(cli_info.cli_pid, &cli_info.start_time);
