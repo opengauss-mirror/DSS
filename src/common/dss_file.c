@@ -4291,7 +4291,18 @@ void dss_clean_all_sessions_latch()
         LOG_RUN_INF("[CLEAN_LATCH]session id %u, pid %llu, start_time %lld, process name:%s, objectid %u.", session->id,
             cli_pid, start_time, session->cli_info.process_name, session->objectid);
         // clean the session lock and latch
+        if (!cm_spin_try_lock(&session->lock)) {
+            continue;
+        }
+        while (!cm_spin_timed_lock(&session->shm_lock, DSS_SERVER_SESS_TIMEOUT)) {
+            // unlock if the client goes offline
+            cm_spin_unlock(&session->shm_lock);
+            LOG_RUN_INF("Succeed to unlock session %u shm lock", session->id);
+            cm_sleep(CM_SLEEP_500_FIXED);
+        }
+        LOG_DEBUG_INF("Succeed to lock session %u shm lock", session->id);
         dss_clean_session_latch(session, CM_TRUE);
+        dss_server_session_unlock(session);
     }
 }
 

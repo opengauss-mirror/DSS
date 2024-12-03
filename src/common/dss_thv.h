@@ -102,7 +102,7 @@ void *dss_get_thv_run_ctx_item(dss_thv_run_ctx_item_e item);
 typedef void (*dss_exit_proc_t)(int32 exit_code);
 void dss_exit(int32 exit_code);
 void regist_exit_proc(dss_exit_proc_t proc);
-
+void dss_destroy_thv(thv_type_e type);
 #ifdef __cplusplus
 }
 #endif

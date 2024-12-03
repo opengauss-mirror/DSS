@@ -215,25 +215,30 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
     DSS_RETURN_IF_ERROR(dss_init_session(*session, pipe));
     return CM_SUCCESS;
 }
-
-void dss_destroy_session(dss_session_t *session)
+void dss_destroy_session_inner(dss_session_t *session)
 {
     if (session->connected == CM_TRUE) {
         cs_disconnect(&session->pipe);
         session->connected = CM_FALSE;
     }
-    cm_spin_lock(&g_dss_session_ctrl.lock, NULL);
-    cm_spin_lock(&session->lock, NULL);
     g_dss_session_ctrl.used_count--;
     session->is_closed = CM_TRUE;
     session->is_used = CM_FALSE;
-    session->cli_info.cli_pid = 0;
-    session->cli_info.start_time = 0;
+    errno_t ret = memset_sp(&session->cli_info, sizeof(session->cli_info), 0, sizeof(session->cli_info));
+    securec_check_panic(ret);
     session->client_version = DSS_PROTO_VERSION;
     session->proto_version = DSS_PROTO_VERSION;
     session->put_log = CM_FALSE;
     session->is_holding_hotpatch_latch = CM_FALSE;
-    cm_spin_unlock(&session->lock);
+}
+void dss_destroy_session(dss_session_t *session)
+{
+    cm_spin_lock(&g_dss_session_ctrl.lock, NULL);
+    cm_spin_lock(&session->shm_lock, NULL);
+    LOG_DEBUG_INF("Succeed to lock session %u shm lock", session->id);
+    dss_destroy_session_inner(session);
+    cm_spin_unlock(&session->shm_lock);
+    LOG_DEBUG_INF("Succeed to unlock session %u shm lock", session->id);
     cm_spin_unlock(&g_dss_session_ctrl.lock);
 }
 
@@ -823,27 +828,6 @@ static bool32 dss_clean_lock_for_shm_meta(dss_session_t *session, dss_shared_lat
     return CM_TRUE;
 }
 
-#define DSS_WAIT_CLI_EXIT_CHK_INTERVAL 200
-static void dss_wait_cli_exit(dss_session_t *session)
-{
-    bool32 alived = CM_FALSE;
-    if (session->cli_info.cli_pid == 0) {
-        return;
-    }
-    do {
-        alived = cm_sys_process_alived(session->cli_info.cli_pid, session->cli_info.start_time);
-        if (!alived) {
-            break;
-        }
-        LOG_DEBUG_INF("Process:%s is alive, pid:%llu, start_time:%lld.", session->cli_info.process_name,
-            session->cli_info.cli_pid, session->cli_info.start_time);
-        if (session->is_closed) {
-            break;
-        }
-        cm_usleep(DSS_WAIT_CLI_EXIT_CHK_INTERVAL);
-    } while (alived);
-}
-
 static bool32 dss_need_clean_session_latch(dss_session_t *session, uint64 cli_pid, int64 start_time)
 {
     if (cli_pid == 0 || !session->is_used || !session->connected || cm_sys_process_alived(cli_pid, start_time)) {
@@ -859,30 +843,15 @@ void dss_clean_session_latch(dss_session_t *session, bool32 is_daemon)
     int32 latch_place;
     dss_latch_offset_type_e offset_type;
     dss_shared_latch_t *shared_latch = NULL;
-
-    CM_ASSERT(session != NULL);
     if (!session->is_direct) {
         LOG_DEBUG_INF("Clean sid:%u is not direct.", DSS_SESSIONID_IN_LOCK(session->id));
         return;
     }
-    // may cli not exit now, wait it
-    if (!is_daemon) {
-        dss_wait_cli_exit(session);
-        // only prevent other clean task
-        cm_spin_lock(&session->lock, NULL);
-    } else {
-        bool32 locked = cm_spin_try_lock(&session->lock);
-        if (!locked) {
-            return;
-        }
-    }
-
     uint64 cli_pid = session->cli_info.cli_pid;
     int64 start_time = session->cli_info.start_time;
     if (is_daemon && !dss_need_clean_session_latch(session, cli_pid, start_time)) {
         LOG_RUN_INF("[CLEAN_LATCH]session id %u, pid %llu, start_time %lld, process name:%s need check next time.",
             session->id, cli_pid, start_time, session->cli_info.process_name);
-        cm_spin_unlock(&session->lock);
         return;
     }
     LOG_RUN_INF("[CLEAN_LATCH]session id %u, pid %llu, start_time %lld, process name:%s in lock.", session->id, cli_pid,
@@ -917,26 +886,50 @@ void dss_clean_session_latch(dss_session_t *session, bool32 is_daemon)
             LOG_DEBUG_INF("Clean sid:%u shared_latch,latch_place:%d, offset:%llu.", DSS_SESSIONID_IN_LOCK(session->id),
                 latch_place, (uint64)offset);
         }
-
         // the lock is locked by this session in the dead-client,
         if (is_daemon && shared_latch->latch.lock != 0 &&
             DSS_SESSIONID_IN_LOCK(session->id) != shared_latch->latch.lock) {
-            cm_spin_unlock(&session->lock);
             LOG_DEBUG_INF("Clean sid:%u daemon wait next time to clean.", DSS_SESSIONID_IN_LOCK(session->id));
             return;
         } else {
             bool32 is_clean = dss_clean_lock_for_shm_meta(session, shared_latch, is_daemon);
             if (!is_clean) {
-                cm_spin_unlock(&session->lock);
                 LOG_DEBUG_INF("Clean sid:%u daemon wait next time to clean.", DSS_SESSIONID_IN_LOCK(session->id));
                 return;
             }
         }
     }
-
     session->latch_stack.op = LATCH_SHARED_OP_NONE;
     session->latch_stack.stack_top = DSS_MAX_LATCH_STACK_BOTTON;
+}
+
+void dss_server_session_lock(dss_session_t *session)
+{
+    // session->lock to contrl the concurrency of cleaning session latch thread
+    cm_spin_lock(&session->lock, NULL);
+    while (!cm_spin_timed_lock(&session->shm_lock, DSS_SERVER_SESS_TIMEOUT)) {
+        bool32 alived = cm_sys_process_alived(session->cli_info.cli_pid, session->cli_info.start_time);
+        if (!alived) {
+            // unlock if the client goes offline
+            LOG_DEBUG_INF("Process:%s is not alive, pid:%llu, start_time:%lld.", session->cli_info.process_name,
+                session->cli_info.cli_pid, session->cli_info.start_time);
+            cm_spin_unlock(&session->shm_lock);
+            LOG_DEBUG_INF("Succeed to unlock session %u shm lock", session->id);
+            continue;
+        }
+        LOG_DEBUG_INF("Process:%s is alive, pid:%llu, start_time:%lld.", session->cli_info.process_name,
+            session->cli_info.cli_pid, session->cli_info.start_time);
+        cm_sleep(CM_SLEEP_500_FIXED);
+    }
+    LOG_DEBUG_INF("Succeed to lock session %u shm lock", session->id);
+}
+
+void dss_server_session_unlock(dss_session_t *session)
+{
+    cm_spin_unlock(&session->shm_lock);
+    LOG_DEBUG_INF("Succeed to unlock session %u shm lock", session->id);
     cm_spin_unlock(&session->lock);
+    LOG_DEBUG_INF("Succeed to unlock session %u lock", session->id);
 }
 
 #ifdef __cplusplus

@@ -213,7 +213,9 @@ static status_t dss_get_conn(dss_conn_t **conn)
     cm_reset_error();
     dss_clt_env_init();
     if (cm_get_thv(GLOBAL_THV_OBJ0, CM_TRUE, (pointer_t *)conn) != CM_SUCCESS) {
-        return CM_ERROR;
+        LOG_RUN_ERR("[DSS API] ABORT INFO : dss server stoped, application need restart.");
+        cm_fync_logfile();
+        dss_exit(1);
     }
 
 #ifdef ENABLE_DSSTEST
@@ -237,12 +239,33 @@ static status_t dss_get_conn(dss_conn_t **conn)
     return CM_SUCCESS;
 }
 
-int dss_dmake(const char *dir_name)
+static status_t dss_enter_api(dss_conn_t **conn)
 {
-    dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("dmake get conn error."));
-
+    status_t status = dss_get_conn(conn);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    while (dss_cli_session_lock((*conn), (*conn)->session) != CM_SUCCESS) {
+        dss_destroy_thv(GLOBAL_THV_OBJ0);
+        LOG_RUN_INF("Begin to reconnect dss server.");
+        status = dss_get_conn(conn);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to reconnect dss server.");
+            return status;
+        }
+    }
+    return CM_SUCCESS;
+}
+static void dss_leave_api(dss_conn_t *conn, bool32 get_api_volume_error)
+{
+    cm_spin_unlock(&((dss_session_t *)(conn->session))->shm_lock);
+    LOG_DEBUG_INF("Succeed to unlock session %u shm lock", ((dss_session_t *)(conn->session))->id);
+    if (get_api_volume_error) {
+        dss_get_api_volume_error();
+    }
+}
+int dss_dmake_impl(dss_conn_t *conn, const char *dir_name)
+{
     text_t text;
     text_t sub;
     cm_str2text((char *)dir_name, &text);
@@ -265,33 +288,40 @@ int dss_dmake(const char *dir_name)
     }
     CM_RETURN_IFERR(cm_text2str(&sub, parent_str, sizeof(parent_str)));
     CM_RETURN_IFERR(cm_text2str(&text, name_str, sizeof(name_str)));
+    int ret = dss_make_dir_impl(conn, parent_str, name_str);
+    return ret;
+}
 
-    ret = dss_make_dir_impl(conn, parent_str, name_str);
-    dss_get_api_volume_error();
+int dss_dmake(const char *dir_name)
+{
+    dss_conn_t *conn = NULL;
+    status_t ret = dss_enter_api(&conn);
+    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("dmake get conn error."));
+    ret = dss_dmake_impl(conn, dir_name);
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
 int dss_dremove(const char *dir)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("dremove get conn error."));
-
     ret = dss_remove_dir_impl(conn, dir, false);
-    dss_get_api_volume_error();
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
 dss_dir_handle dss_dopen(const char *dir_path)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     if (ret != CM_SUCCESS) {
         LOG_RUN_ERR("dopen get conn error.");
         return NULL;
     }
     dss_dir_t *dir = dss_open_dir_impl(conn, dir_path, CM_TRUE);
-    dss_get_api_volume_error();
+    dss_leave_api(conn, CM_TRUE);
     return (dss_dir_handle)dir;
 }
 
@@ -306,15 +336,15 @@ int dss_dread(dss_dir_handle dir, dss_dir_item_t item, dss_dir_item_t *result)
         return DSS_SUCCESS;
     }
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("dread get conn error."));
 
     gft_node_t *node = dss_read_dir_impl(conn, (dss_dir_t *)dir, CM_TRUE);
+    dss_leave_api(conn, CM_FALSE);
     if (node == NULL) {
         return DSS_SUCCESS;
     }
     item->d_type = (dss_item_type_t)node->type;
-
     int32 errcode = memcpy_s(item->d_name, DSS_MAX_NAME_LEN, node->name, DSS_MAX_NAME_LEN);
     if (SECUREC_UNLIKELY(errcode != EOK)) {
         DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
@@ -333,25 +363,29 @@ int dss_stat(const char *path, dss_stat_info_t item)
     timeval_t begin_tv;
     dss_begin_stat(&begin_tv);
     dss_conn_t *conn = NULL;
-    status_t status = dss_get_conn(&conn);
+    status_t status = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("stat get conn error."));
     gft_node_t *node = dss_get_node_by_path_impl(conn, path);
     if (node == NULL) {
+        dss_leave_api(conn, CM_FALSE);
         return DSS_ERROR;
     }
     if (node->type == GFT_LINK) {
         char dst_path[DSS_FILE_PATH_MAX_LENGTH] = {0};
         if (dss_readlink_impl(conn, path, (char *)dst_path, sizeof(dst_path)) != CM_SUCCESS) {
             LOG_DEBUG_ERR("read link: %s error", path);
+            dss_leave_api(conn, CM_FALSE);
             return CM_ERROR;
         }
         node = dss_get_node_by_path_impl(conn, dst_path);
         if (node == NULL) {
+            dss_leave_api(conn, CM_FALSE);
             return DSS_ERROR;
         }
     }
     int ret = dss_set_stat_info(item, node);
     dss_session_end_stat(conn->session, &begin_tv, DSS_STAT);
+    dss_leave_api(conn, CM_FALSE);
     return ret;
 }
 
@@ -362,9 +396,10 @@ int dss_lstat(const char *path, dss_stat_info_t item)
         return DSS_ERROR;
     }
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("lstat get conn error."));
     gft_node_t *node = dss_get_node_by_path_impl(conn, path);
+    dss_leave_api(conn, CM_FALSE);
     if (node == NULL) {
         LOG_DEBUG_INF("lstat get node by path :%s error", path);
         return DSS_ERROR;
@@ -379,41 +414,40 @@ int dss_fstat(int handle, dss_stat_info_t item)
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "dss_stat_info_t");
         return DSS_ERROR;
     }
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fstat get conn error"));
-    return dss_fstat_impl(conn, HANDLE_VALUE(handle), item);
+    ret = dss_fstat_impl(conn, HANDLE_VALUE(handle), item);
+    dss_leave_api(conn, CM_FALSE);
+    return (int)ret;
 }
 
 int dss_dclose(dss_dir_handle dir)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("dclose get conn error"));
-
     ret = dss_close_dir_impl(conn, (dss_dir_t *)dir);
-    dss_get_api_volume_error();
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
 int dss_fcreate(const char *name, int flag)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fcreate get conn error"));
-
     ret = dss_create_file_impl(conn, name, flag);
-    dss_get_api_volume_error();
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
 int dss_fremove(const char *file)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fremove get conn error"));
-
     ret = dss_remove_file_impl(conn, file);
-    dss_get_api_volume_error();
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
@@ -424,25 +458,27 @@ int dss_fopen(const char *file, int flag, int *handle)
 
     dss_begin_stat(&begin_tv);
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fopen get conn error"));
 
     ret = dss_open_file_impl(conn, file, flag, handle);
-    dss_get_api_volume_error();
     // if open fails, -1 is returned. DB determines based on -1
     if (ret == CM_SUCCESS) {
         *handle += DSS_HANDLE_BASE;
     }
     dss_session_end_stat(conn->session, &begin_tv, DSS_FOPEN);
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
 int dss_get_inst_status(dss_server_status_t *dss_status)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when get inst status"));
-    return (int)dss_get_inst_status_on_server(conn, dss_status);
+    ret = dss_get_inst_status_on_server(conn, dss_status);
+    dss_leave_api(conn, CM_FALSE);
+    return (int)ret;
 }
 
 int dss_is_maintain(unsigned int *is_maintain)
@@ -461,58 +497,56 @@ int dss_is_maintain(unsigned int *is_maintain)
 int dss_set_main_inst(void)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when set main inst"));
-    return (int)dss_set_main_inst_on_server(conn);
+    ret = dss_set_main_inst_on_server(conn);
+    dss_leave_api(conn, CM_FALSE);
+    return (int)ret;
 }
 
 int dss_disable_grab_lock(void)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when disable grab lock"));
-    return (int)dss_disable_grab_lock_on_server(conn);
+    ret = dss_disable_grab_lock_on_server(conn);
+    dss_leave_api(conn, CM_FALSE);
+    return (int)ret;
 }
 
 int dss_enable_grab_lock(void)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when enable grab lock"));
-    return (int)dss_enable_grab_lock_on_server(conn);
+    ret = dss_enable_grab_lock_on_server(conn);
+    dss_leave_api(conn, CM_FALSE);
+    return (int)ret;
 }
 
 int dss_fclose(int handle)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("fclose get conn error"));
 
     ret = dss_close_file_impl(conn, HANDLE_VALUE(handle));
-    dss_get_api_volume_error();
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
 int dss_symlink(const char *oldpath, const char *newpath)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("symlink get conn error."));
-
-    return (int)dss_symlink_impl(conn, oldpath, newpath);
+    ret = dss_symlink_impl(conn, oldpath, newpath);
+    dss_leave_api(conn, CM_FALSE);
+    return (int)ret;
 }
 
-int dss_readlink(const char *link_path, char *buf, int bufsize)
+status_t dss_readlink_inner(dss_conn_t *conn, const char *link_path, char *buf, int bufsize)
 {
-    if (bufsize <= 0) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid bufsize when get cfg");
-        return DSS_ERROR;
-    }
-
-    dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("readlink get conn error."));
-
     bool32 is_link = false;
     CM_RETURN_IFERR(dss_islink_impl(conn, link_path, &is_link));
     if (!is_link) {
@@ -523,40 +557,57 @@ int dss_readlink(const char *link_path, char *buf, int bufsize)
     if (dss_readlink_impl(conn, link_path, buf, bufsize) != CM_SUCCESS) {
         return CM_ERROR;
     }
+    return CM_SUCCESS;
+}
 
+int dss_readlink(const char *link_path, char *buf, int bufsize)
+{
+    if (bufsize <= 0) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "invalid bufsize when get cfg");
+        return DSS_ERROR;
+    }
+    dss_conn_t *conn = NULL;
+    status_t ret = dss_enter_api(&conn);
+    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("readlink get conn error."));
+    ret = dss_readlink_inner(conn, link_path, buf, bufsize);
+    if (ret != CM_SUCCESS) {
+        dss_leave_api(conn, CM_FALSE);
+        return ret;
+    }
+    dss_leave_api(conn, CM_FALSE);
     return (int)strlen(buf);
 }
 
 long long dss_fseek(int handle, long long offset, int origin)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fseek get conn error."));
 
     long long status = dss_seek_file_impl(conn, HANDLE_VALUE(handle), offset, origin);
-    dss_get_api_volume_error();
+    dss_leave_api(conn, CM_TRUE);
     return status;
 }
 
 int dss_fwrite(int handle, const void *buf, int size)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fwrite get conn error"));
 
     ret = dss_write_file_impl(conn, HANDLE_VALUE(handle), buf, size);
-    dss_get_api_volume_error();
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
 int dss_fread(int handle, void *buf, int size, int *read_size)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fread get conn error."));
 
     ret = dss_read_file_impl(conn, HANDLE_VALUE(handle), buf, size, read_size);
-    dss_get_api_volume_error();
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
@@ -575,15 +626,14 @@ int dss_pwrite(int handle, const void *buf, int size, long long offset)
         return CM_ERROR;
     }
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("pwrite get conn error."));
 
     ret = dss_pwrite_file_impl(conn, HANDLE_VALUE(handle), buf, size, offset);
-    dss_get_api_volume_error();
     if (ret == CM_SUCCESS) {
         dss_session_end_stat(conn->session, &begin_tv, DSS_PWRITE);
     }
-
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
@@ -607,14 +657,14 @@ int dss_pread(int handle, void *buf, int size, long long offset, int *read_size)
         return CM_ERROR;
     }
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("pread get conn error."));
 
     ret = dss_pread_file_impl(conn, HANDLE_VALUE(handle), buf, size, offset, read_size);
-    dss_get_api_volume_error();
     if (ret == CM_SUCCESS) {
         dss_session_end_stat(conn->session, &begin_tv, DSS_PREAD);
     }
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
@@ -622,53 +672,53 @@ int dss_get_addr(int handle, long long offset, char *pool_name, char *image_name
     unsigned long int *obj_offset)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("get conn error when get ceph address."));
-
     ret = dss_get_addr_impl(conn, HANDLE_VALUE(handle), offset, pool_name, image_name, obj_addr, obj_id, obj_offset);
-    dss_get_api_volume_error();
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
 int dss_fcopy(const char *src_path, const char *dest_path)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fcopy get conn error."));
 
     ret = dss_copy_file_impl(conn, src_path, dest_path);
-    dss_get_api_volume_error();
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
 int dss_frename(const char *src, const char *dst)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("frename get conn error."));
 
     ret = dss_rename_file_impl(conn, src, dst);
-    dss_get_api_volume_error();
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
 int dss_ftruncate(int handle, long long length)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("ftruncate get conn error."));
     ret = dss_truncate_impl(conn, HANDLE_VALUE(handle), length);
-    dss_get_api_volume_error();
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
 int dss_unlink(const char *link)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("unlink get conn error."));
-
-    return (int)dss_unlink_impl(conn, link);
+    ret = dss_unlink_impl(conn, link);
+    dss_leave_api(conn, CM_FALSE);
+    return (int)ret;
 }
 
 int dss_check_size(int size)
@@ -697,7 +747,7 @@ static void dss_fsize_with_options(const char *fname, long long *fsize, int orig
     }
 
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     if (ret != CM_SUCCESS) {
         LOG_RUN_ERR("fszie with options get conn error.");
         return;
@@ -706,24 +756,28 @@ static void dss_fsize_with_options(const char *fname, long long *fsize, int orig
     status = dss_open_file_impl(conn, fname, O_RDONLY, &handle);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Open file :%s failed.\n", fname);
+        dss_leave_api(conn, CM_FALSE);
         return;
     }
 
     *fsize = dss_seek_file_impl(conn, handle, 0, origin);
     if (*fsize == CM_INVALID_INT64) {
         LOG_DEBUG_ERR("Seek file :%s failed.\n", fname);
+        dss_leave_api(conn, CM_FALSE);
     }
 
     (void)dss_close_file_impl(conn, handle);
+    dss_leave_api(conn, CM_FALSE);
 }
 
 int dss_fsize_physical(int handle, long long *fsize)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("get conn error."));
-
-    return dss_get_phy_size_impl(conn, HANDLE_VALUE(handle), fsize);
+    ret = dss_get_phy_size_impl(conn, HANDLE_VALUE(handle), fsize);
+    dss_leave_api(conn, CM_FALSE);
+    return (int)ret;
 }
 
 void dss_fsize_maxwr(const char *fname, long long *fsize)
@@ -746,10 +800,10 @@ int dss_get_fname(int handle, char *fname, int fname_size)
 int dss_fallocate(int handle, int mode, long long offset, long long length)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fallocate get conn error."));
     ret = dss_fallocate_impl(conn, HANDLE_VALUE(handle), mode, offset, length);
-    dss_get_api_volume_error();
+    dss_leave_api(conn, CM_TRUE);
 
     return (int)ret;
 }
@@ -940,7 +994,7 @@ int dss_aio_prep_pread(void *iocb, int handle, void *buf, size_t count, long lon
         return CM_ERROR;
     }
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IF_ERROR(ret);
 
     int dev_fd = DSS_INVALID_HANDLE;
@@ -962,15 +1016,18 @@ int dss_aio_prep_pwrite(void *iocb, int handle, void *buf, size_t count, long lo
         return CM_ERROR;
     }
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IF_ERROR(ret);
 
     int dev_fd = DSS_INVALID_HANDLE;
     long long new_offset = 0;
     ret = dss_get_fd_by_offset(conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_FALSE, &dev_fd, &new_offset, NULL);
-    DSS_RETURN_IF_ERROR(ret);
-
+    if (ret != CM_SUCCESS) {
+        dss_leave_api(conn, CM_FALSE);
+        return ret;
+    }
     io_prep_pwrite(iocb, dev_fd, buf, count, new_offset);
+    dss_leave_api(conn, CM_FALSE);
     return CM_SUCCESS;
 }
 
@@ -983,19 +1040,23 @@ int dss_aio_post_pwrite(void *iocb, int handle, size_t count, long long offset)
     }
 
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IF_ERROR(ret);
 
-    return (int)dss_aio_post_pwrite_file_impl(conn, HANDLE_VALUE(handle), offset, (int32)count);
+    ret = dss_aio_post_pwrite_file_impl(conn, HANDLE_VALUE(handle), offset, (int32)count);
+    dss_leave_api(conn, CM_FALSE);
+    return (int)ret;
 }
 
 int dss_get_au_size(int handle, long long *au_size)
 {
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IF_ERROR(ret);
 
-    return get_au_size_impl(conn, HANDLE_VALUE(handle), au_size);
+    ret = get_au_size_impl(conn, HANDLE_VALUE(handle), au_size);
+    dss_leave_api(conn, CM_FALSE);
+    return (int)ret;
 }
 
 int dss_compare_size_equal(const char *vg_name, long long *au_size)
@@ -1024,10 +1085,12 @@ int dss_setcfg(const char *name, const char *value, const char *scope)
     }
 
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IF_ERROR(ret);
 
-    return (int)dss_setcfg_impl(conn, name, value, tmp_scope);
+    ret = dss_setcfg_impl(conn, name, value, tmp_scope);
+    dss_leave_api(conn, CM_FALSE);
+    return (int)ret;
 }
 
 int dss_getcfg(const char *name, char *value, int value_size)
@@ -1041,10 +1104,12 @@ int dss_getcfg(const char *name, char *value, int value_size)
         return DSS_ERROR;
     }
     dss_conn_t *conn = NULL;
-    status_t ret = dss_get_conn(&conn);
+    status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("getcfg get conn error."));
 
-    return (int)dss_getcfg_impl(conn, name, value, (size_t)value_size);
+    ret = dss_getcfg_impl(conn, name, value, (size_t)value_size);
+    dss_leave_api(conn, CM_FALSE);
+    return (int)ret;
 }
 
 int dss_get_lib_version(void)
