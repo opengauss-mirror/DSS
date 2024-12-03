@@ -33,6 +33,9 @@ DSS：Distributed Storage Service，分布式存储服务，是一款提供分�
 支持以下操作系统：
 -   CentOS 7.6（x86）
 -   openEuler-20.03-LTS
+-   openEuler-22.03-LTS
+-   openEuler-24.03-LTS
+
 适配其他系统，可参照openGauss数据库编译指导
 ##### 2、下载DSS
 可以从开源社区下载DSS。
