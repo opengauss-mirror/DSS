@@ -346,11 +346,11 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
     securec_check_ret(errcode);
 
     status = dss_init_zero_buf();
-    DSS_RETURN_IFERR2(status, (void)printf("Dss init zero buf fail.\n"));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("Dss init zero buf fail.\n"));
 
 #if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
     status = dss_init_fi_ctx(inst);
-    DSS_RETURN_IFERR2(status, (void)printf("Dss init fi ctx fail.\n"));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("Dss init fi ctx fail.\n"));
 #endif
 
     dss_init_cluster_proto_ver(inst);
@@ -358,13 +358,13 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
     dss_set_server_flag();
     regist_get_instance_status_proc(dss_get_instance_status);
     status = dss_set_cfg_dir(dss_args.dss_home, &inst->inst_cfg);
-    DSS_RETURN_IFERR2(status, (void)printf("Environment variant DSS_HOME not found!\n"));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("Environment variant DSS_HOME not found!\n"));
     status = cm_start_timer(g_timer());
-    DSS_RETURN_IFERR2(status, (void)printf("Aborted due to starting timer thread.\n"));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("Aborted due to starting timer thread.\n"));
     status = dss_load_config(&inst->inst_cfg);
-    DSS_RETURN_IFERR2(status, (void)printf("%s\nFailed to load parameters!\n", cm_get_errormsg(cm_get_error_code())));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("Failed to load parameters!\n"));
     status = dss_save_process_pid(&inst->inst_cfg);
-    DSS_RETURN_IFERR2(status, (void)printf("Save dssserver pid failed!\n"));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("Save dssserver pid failed!\n"));
 #ifdef DISABLE_SYN_META
     dss_set_syn_meta_enable(CM_FALSE);
 #endif
