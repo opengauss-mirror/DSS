@@ -190,7 +190,7 @@ static status_t dss_printf_volume_ctrl(const dss_vg_info_item_t *vg_item, dss_vo
     dss_volume_def_t *volume_defs = volume_ctrl->defs;
     for (uint32 i = 0; i < DSS_MAX_VOLUMES; ++i) {
         if (volume_defs->flag != VOLUME_FREE) {
-            (void)printf("  volume_defs[%u] = {\n", i);
+            (void)printf("  defs[%u] = {\n", i);
             printf_dss_volume_def(volume_defs);
             (void)printf("  }\n");
         }
