@@ -153,7 +153,7 @@ status_t dss_check_meta_type(const char *type)
         (cm_strcmpi(type, DSS_REPAIR_TYPE_VOLUME_HEADER) != 0) &&
         (cm_strcmpi(type, DSS_REPAIR_TYPE_SOFTWARE_VERSION) != 0) &&
         (cm_strcmpi(type, DSS_REPAIR_TYPE_FS_AUX_BLOCK) != 0)) {
-        DSS_PRINT_ERROR("Invalid tbox ssrepair type:%s.\n", type);
+        DSS_PRINT_RUN_ERROR("Invalid tbox ssrepair type:%s.\n", type);
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -164,12 +164,12 @@ status_t dss_check_meta_id(const char *intput)
     uint64 id = 0;
     status_t status = cm_str2uint64(intput, &id);
     if (status == CM_ERROR) {
-        DSS_PRINT_ERROR("intput:%s is not a valid uint64 meta id\n", intput);
+        DSS_PRINT_RUN_ERROR("intput:%s is not a valid uint64 meta id\n", intput);
         return CM_ERROR;
     }
     dss_block_id_t *block_id = (dss_block_id_t *)&id;
     if (block_id->volume >= DSS_MAX_VOLUMES) {
-        DSS_PRINT_ERROR("block_id is invalid, id = %s.\n", dss_display_metaid(*block_id));
+        DSS_PRINT_RUN_ERROR("block_id is invalid, id = %s.\n", dss_display_metaid(*block_id));
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -192,11 +192,11 @@ static status_t check_repair_args(dss_args_t *cmd_args_set, int set_size)
         cm_strcmpi(repair_type, DSS_REPAIR_TYPE_FT_BLOCK) == 0 ||
         cm_strcmpi(repair_type, DSS_REPAIR_TYPE_FS_AUX_BLOCK) == 0) {
         if (!cmd_args_set[DSS_REPAIR_ARG_META_ID].inputed) {
-            DSS_PRINT_ERROR("To repair %s, block_id must be specified by -i.\n", repair_type);
+            DSS_PRINT_RUN_ERROR("To repair %s, block_id must be specified by -i.\n", repair_type);
             return CM_ERROR;
         }
         if (!cmd_args_set[DSS_REPAIR_ARG_AU_SIZE].inputed) {
-            DSS_PRINT_ERROR("To repair %s, au_size must be specified by -s.\n", repair_type);
+            DSS_PRINT_RUN_ERROR("To repair %s, au_size must be specified by -s.\n", repair_type);
             return CM_ERROR;
         }
         return CM_SUCCESS;
@@ -206,11 +206,11 @@ static status_t check_repair_args(dss_args_t *cmd_args_set, int set_size)
                cm_strcmpi(repair_type, DSS_REPAIR_TYPE_ROOT_FT_BLOCK) == 0 ||
                cm_strcmpi(repair_type, DSS_REPAIR_TYPE_VOLUME_CTRL) == 0) {
         if (cmd_args_set[DSS_REPAIR_ARG_META_ID].inputed) {
-            DSS_PRINT_ERROR("To repair %s, block_id specified by -i is not expected.\n", repair_type);
+            DSS_PRINT_RUN_ERROR("To repair %s, block_id specified by -i is not expected.\n", repair_type);
             return CM_ERROR;
         }
         if (cmd_args_set[DSS_REPAIR_ARG_AU_SIZE].inputed) {
-            DSS_PRINT_ERROR("To repair %s, au_size specified by -s is not expected.\n", repair_type);
+            DSS_PRINT_RUN_ERROR("To repair %s, au_size specified by -s is not expected.\n", repair_type);
             return CM_ERROR;
         }
         return CM_SUCCESS;
@@ -270,7 +270,7 @@ static status_t collect_repair_input(repair_input_def_t *input)
     status_t status = CM_SUCCESS;
     if (tbox_repair_args[DSS_REPAIR_ARG_META_ID].inputed) {
         status = cm_str2uint64(tbox_repair_args[DSS_REPAIR_ARG_META_ID].input_args, (uint64 *)&input->block_id);
-        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][REPAIR] block_id:%s is not a valid uint64\n",
+        DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] block_id:%s is not a valid uint64\n",
                                       tbox_repair_args[DSS_REPAIR_ARG_META_ID].input_args));
     } else {
         input->block_id = DSS_INVALID_BLOCK_ID;
@@ -279,7 +279,7 @@ static status_t collect_repair_input(repair_input_def_t *input)
     // au_size
     if (tbox_repair_args[DSS_REPAIR_ARG_AU_SIZE].inputed) {
         status = cm_str2uint32(tbox_repair_args[DSS_REPAIR_ARG_AU_SIZE].input_args, &input->au_size);
-        DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][REPAIR] au_size:%s is not a valid uint32\n",
+        DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] au_size:%s is not a valid uint32\n",
                                       tbox_repair_args[DSS_REPAIR_ARG_AU_SIZE].input_args));
     } else {
         input->au_size = 0;
@@ -347,7 +347,7 @@ static status_t repair_proc(void)
     // For other types, version check is needed.
     if (cm_strcmpi(input.type, DSS_REPAIR_TYPE_SOFTWARE_VERSION) != 0) {
         DSS_RETURN_IFERR2(dss_repair_verify_disk_version(input.vol_path),
-            DSS_PRINT_ERROR("[TBOX][REPAIR] verify disk version failed %s.\n", input.vol_path));
+            DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] verify disk version failed %s.\n", input.vol_path));
     }
 
     dss_repair_confirm();
@@ -371,10 +371,10 @@ static status_t repair_proc(void)
     } else if (cm_strcmpi(input.type, DSS_REPAIR_TYPE_FS_AUX_BLOCK) == 0) {
         status = dss_repair_fs_aux(&input);
     } else {
-        DSS_PRINT_ERROR("[TBOX][REPAIR] Only support -t "
-                        "[fs_block|ft_block|core_ctrl|volume_header|software_version|"
-                        "root_ft_block|volume_ctrl|fs_aux_block], "
-                        "your type is %s.\n",
+        DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] Only support -t "
+                           "[fs_block|ft_block|core_ctrl|volume_header|software_version|"
+                           "root_ft_block|volume_ctrl|fs_aux_block], "
+                           "your type is %s.\n",
             input.type);
         status = CM_ERROR;
     }
@@ -625,7 +625,7 @@ static status_t dss_exec_tbox_core(int argc, char **argv, uint32 tbox_idx)
 {
     cmd_parse_init(g_dss_admin_tbox[tbox_idx].args_set->cmd_args, g_dss_admin_tbox[tbox_idx].args_set->args_size);
     if (cmd_parse_args(argc, argv, g_dss_admin_tbox[tbox_idx].args_set) != CM_SUCCESS) {
-        DSS_PRINT_ERROR("[TBOX] %s execute failed.\n", g_dss_admin_tbox[tbox_idx].cmd);
+        DSS_PRINT_RUN_ERROR("[TBOX] %s execute failed.\n", g_dss_admin_tbox[tbox_idx].cmd);
         return CM_ERROR;
     }
     status_t ret = g_dss_admin_tbox[tbox_idx].proc();
