@@ -77,6 +77,7 @@ typedef struct st_dss_instance {
     dss_config_t inst_cfg;
     dss_instance_status_e status;
     uds_lsnr_t lsnr;
+    latch_t uds_lsnr_latch;
     reactors_t reactors;
     thread_t *threads;
     int64 active_sessions;

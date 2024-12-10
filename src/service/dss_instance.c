@@ -729,7 +729,7 @@ void dss_recovery_when_primary(dss_session_t *session, dss_instance_t *inst, uin
             cm_fync_logfile();
             dss_exit(1);
         }
-        dss_set_session_running(inst);
+        dss_set_session_running(inst, session->id);
     }
 
     // when current node is standby, and will change to primary, the status is from DSS_STATUS_OPEN to

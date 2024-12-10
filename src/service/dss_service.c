@@ -989,12 +989,19 @@ void dss_wait_background_pause(dss_instance_t *inst)
     LOG_DEBUG_INF("Succeed to pause background task.");
 }
 
-void dss_set_session_running(dss_instance_t *inst)
+void dss_set_session_running(dss_instance_t *inst, uint32 sid)
 {
     LOG_DEBUG_INF("Begin to set session running.");
+    cm_latch_x(&inst->uds_lsnr_latch, sid, NULL);
+    if (inst->abort_status) {
+        LOG_RUN_INF("dssserver is aborting, no need to set sessions running.");
+        cm_unlatch(&inst->uds_lsnr_latch, NULL);
+        return;
+    }
     uds_lsnr_t *lsnr = &inst->lsnr;
     dss_continue_reactors();
     lsnr->status = LSNR_STATUS_RUNNING;
+    cm_unlatch(&inst->uds_lsnr_latch, NULL);
     LOG_DEBUG_INF("Succeed to run all sessions.");
 }
 
@@ -1061,7 +1068,7 @@ static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 swi
     dss_set_server_status_flag(DSS_STATUS_READONLY);
     LOG_RUN_INF("[SWITCH]inst %u set status flag %u when trans lock.", curr_id, DSS_STATUS_READONLY);
     dss_set_master_id((uint32)switch_id);
-    dss_set_session_running(&g_dss_instance);
+    dss_set_session_running(&g_dss_instance, session->id);
     g_dss_instance.status = DSS_STATUS_OPEN;
 #endif
     status_t ret = CM_SUCCESS;
@@ -1071,7 +1078,7 @@ static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 swi
         LOG_RUN_INF("[SWITCH]inst %u set status flag %u when trans lock.", curr_id, DSS_STATUS_READONLY);
         ret = cm_res_trans_lock(&g_dss_instance.cm_res.mgr, DSS_CM_LOCK, (uint32)switch_id);
         if (ret != CM_SUCCESS) {
-            dss_set_session_running(&g_dss_instance);
+            dss_set_session_running(&g_dss_instance, session->id);
             dss_set_server_status_flag(DSS_STATUS_READWRITE);
             LOG_RUN_INF("[SWITCH]inst %u set status flag %u when failed to trans lock.", curr_id, DSS_STATUS_READWRITE);
             g_dss_instance.status = DSS_STATUS_OPEN;
@@ -1079,10 +1086,10 @@ static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 swi
             return ret;
         }
         dss_set_master_id((uint32)switch_id);
-        dss_set_session_running(&g_dss_instance);
+        dss_set_session_running(&g_dss_instance, session->id);
         g_dss_instance.status = DSS_STATUS_OPEN;
     } else {
-        dss_set_session_running(&g_dss_instance);
+        dss_set_session_running(&g_dss_instance, session->id);
         g_dss_instance.status = DSS_STATUS_OPEN;
         LOG_RUN_ERR("[SWITCH]Only with cm can switch lock.");
         return CM_ERROR;
@@ -1217,12 +1224,12 @@ static status_t dss_process_disable_grab_lock_inner(dss_session_t *session, uint
                             "lock_owner_id is %u.",
                     curr_id, DSS_STATUS_READONLY, (int32)ret, lock_owner_id);
             }
-            dss_set_session_running(&g_dss_instance);
+            dss_set_session_running(&g_dss_instance, session->id);
             LOG_RUN_ERR("[RELEASE LOCK] cm release lock failed from %u.", curr_id);
             return CM_ERROR;
         }
         dss_set_master_id(DSS_INVALID_ID32);
-        dss_set_session_running(&g_dss_instance);
+        dss_set_session_running(&g_dss_instance, session->id);
     } else {
         LOG_RUN_ERR("[RELEASE LOCK] Only with cm can release lock.");
         return CM_ERROR;
