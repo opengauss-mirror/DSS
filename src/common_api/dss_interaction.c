@@ -24,6 +24,7 @@
 
 #include "dss_interaction.h"
 #include "dss_thv.h"
+#include "dss_cli_conn.h"
 
 #ifdef __cplusplus
 extern "C" {

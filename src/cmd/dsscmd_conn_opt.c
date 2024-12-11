@@ -2,6 +2,7 @@
 #include "dss_interaction.h"
 #include "dsscmd.h"
 #include "dsscmd_conn_opt.h"
+#include "dss_cli_conn.h"
 
 #define DSS_SUBSTR_UDS_PATH "UDS:"
 

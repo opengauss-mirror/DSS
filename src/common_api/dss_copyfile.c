@@ -28,6 +28,7 @@
 #include "dss_file.h"
 #include "dss_malloc.h"
 #include "dss_redo.h"
+#include "dss_cli_conn.h"
 
 #define DSS_PRINT_BLOCK_SIZE SIZE_M(1)
 

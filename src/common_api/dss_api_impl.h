@@ -37,6 +37,9 @@
 extern "C" {
 #endif
 
+typedef struct st_dss_conn dss_conn_t; 
+typedef struct st_dss_conn_opt dss_conn_opt_t;
+
 typedef struct st_dss_rw_param {
     dss_conn_t *conn;
     int32 handle;
@@ -187,17 +190,12 @@ typedef struct st_dss_query_hotpatch_recv_info {
     dss_hp_info_view_t *hp_info_view;  // Location of output buffer must be specified before decoding.
 } dss_query_hotpatch_recv_info_t;
 
-typedef struct st_dss_conn_opt {
-    int32 timeout;
-    char *user_name;
-} dss_conn_opt_t;
 
 #define DSSAPI_BLOCK_SIZE 512
 #define DSS_HOME "DSS_HOME"
 #define SYS_HOME "HOME"
 #define DSS_DEFAULT_UDS_PATH "UDS:/tmp/.dss_unix_d_socket"
 #define SESSION_LOCK_TIMEOUT 500 // tickets
-extern int32 g_dss_uds_conn_timeout;
 
 status_t dss_load_ctrl_sync(dss_conn_t *conn, const char *vg_name, uint32 index);
 status_t dss_add_or_remove_volume(dss_conn_t *conn, const char *vg_name, const char *volume_name, uint8 cmd);
