@@ -24,6 +24,7 @@
 
 #include "dss_api_impl.h"
 #include "dss_file.h"
+#include "dss_cli_conn.h"
 
 #define DSS_ARG_IDX_0 0
 #define DSS_ARG_IDX_1 1

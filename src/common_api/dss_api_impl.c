@@ -35,6 +35,7 @@
 #include "dss_fs_aux.h"
 #include "dss_thv.h"
 #include "dss_stats.h"
+#include "dss_cli_conn.h"
 
 #ifdef __cplusplus
 extern "C" {

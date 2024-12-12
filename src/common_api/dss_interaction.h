@@ -36,20 +36,7 @@
 extern "C" {
 #endif
 
-typedef struct st_dss_conn {
-    dss_packet_t pack;  // for sending
-    cs_pipe_t pipe;
-    void *cli_vg_handles;
-    bool32 flag;
-    void *session;
-    uint32 server_version;
-    uint32 proto_version;
-#ifdef ENABLE_DSSTEST
-    pid_t conn_pid;
-#endif
-    dss_cli_info_t cli_info;
-} dss_conn_t;
-
+typedef struct st_dss_conn dss_conn_t;
 int dss_get_pack_err(dss_conn_t *conn, dss_packet_t *pack);
 void dss_cli_get_err(dss_packet_t *pack, int32 *errcode, char **errmsg);
 

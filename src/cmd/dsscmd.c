@@ -54,6 +54,7 @@
 #include "dsscmd_encrypt.h"
 #include "dsscmd_conn_opt.h"
 #include "dsscmd_interactive.h"
+#include "dss_cli_conn.h"
 #ifndef WIN32
 #include "config.h"
 #endif

@@ -29,6 +29,7 @@
 #include "dss_api_impl.h"
 #include "dss_file.h"
 #include "dss_malloc.h"
+#include "dss_cli_conn.h"
 
 static inline bool is_match(const char *name, const char *pattern)
 {
