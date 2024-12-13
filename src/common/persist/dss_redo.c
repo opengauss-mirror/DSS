@@ -1634,7 +1634,7 @@ status_t rp_redo_set_fs_aux_block_batch_in_recovery(dss_session_t *session, dss_
         batch_first.au++;
     }
     root->free = data->new_free_list;
-    second_block->head.used_num += (uint16)batch_count;
+    second_block->head.used_num = data->old_used_num + (uint16)batch_count;
     return CM_SUCCESS;
 }
 
