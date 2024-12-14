@@ -551,7 +551,7 @@ void dss_cmd_handle_common_key(int32 input_key_char, char *cmd_buf, uint32 *nbyt
     *spacenum = tmp_spacenum;
 }
 
-void dss_cmd_fgets(int *hist_count, int *list_num, uint32 welcome_width, char *cmd_buf, uint32 max_len)
+bool8 dss_cmd_fgets(int *hist_count, int *list_num, uint32 welcome_width, char *cmd_buf, uint32 max_len)
 {
     int32 key_char = 0;
     int32 direction_key = 0;
@@ -568,6 +568,7 @@ void dss_cmd_fgets(int *hist_count, int *list_num, uint32 welcome_width, char *c
 
     while (key_char != CMD_KEY_ASCII_LF && key_char != CMD_KEY_ASCII_CR) {
         key_char = getchar();
+        DSS_RETURN_STATUS_IF_TRUE((key_char < 0), CM_TRUE);
         switch (key_char) {
             case CMD_KEY_ESCAPE:
                 (void)getchar(); // '['
@@ -612,6 +613,7 @@ void dss_cmd_fgets(int *hist_count, int *list_num, uint32 welcome_width, char *c
 #ifndef WIN32
     (void)tcsetattr(STDIN_FILENO, TCSANOW, &oldt); /* Set terminal input echo on */
 #endif
+    return CM_FALSE;
 }
 
 uint32 dss_cmd_print_welcome()
@@ -683,7 +685,7 @@ void dss_cmd_run_interactively()
     int argc;
     uint32 cmd_idx;
     bool8 go_ahead;
-
+    bool8 exit_cmd;
     dss_cmd_set_path_optional();
     setlocale(LC_CTYPE, "");
 
@@ -691,8 +693,10 @@ void dss_cmd_run_interactively()
         welcome_width = dss_cmd_print_welcome();
 
         (void)memset_s(g_cmd_buf, MAX_CMD_LEN, 0, MAX_CMD_LEN);
-        dss_cmd_fgets(&hist_count, &list_num, welcome_width, g_cmd_buf, MAX_CMD_LEN);
-
+        exit_cmd = dss_cmd_fgets(&hist_count, &list_num, welcome_width, g_cmd_buf, MAX_CMD_LEN);
+        if (exit_cmd) {
+            break;
+        }
         argc = dss_cmd_parse_args(g_cmd_buf, args, DSS_MAX_ARG_NUM);
 
         cm_reset_error();
