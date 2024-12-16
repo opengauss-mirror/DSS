@@ -902,7 +902,7 @@ status_t dss_set_ssl_param(const char *param_name, const char *param_value)
 
 void dss_ssl_ca_cert_expire(void)
 {
-    if ((int32)(g_timer()->systime / SECONDS_PER_DAY) % g_inst_cfg->params.ssl_detect_day == 0) {
+    if ((g_timer()->systime / SECONDS_PER_DAY) % g_inst_cfg->params.ssl_detect_day == 0) {
         (void)mes_chk_ssl_cert_expire();
     }
 }
