@@ -46,6 +46,13 @@ extern "C" {
 #define DSS_FILE_PATH_MAX_LENGTH (SIZE_K(1) + 1)
 #define DSS_FKEY_FILENAME "server.key.rand"
 #define DSS_MAX_AUDIT_PATH_LENGTH (SIZE_K(2) + 512)
+
+#define DSS_VG_ALARM_CHECK_COUNT 10
+#define DSS_VG_USAGE_MIN 0
+#define DSS_VG_USAGE_MAX 100
+
+typedef enum { DSS_VG_SPACE_ALARM_INIT, DSS_VG_SPACE_ALARM_HWM, DSS_VG_SPACE_ALARM_LWM} dss_alarm_type_e;
+
 /* invalid id */
 #define DSS_INVALID_INT8 ((int8)(-1))
 #define DSS_INVALID_ID8 (uint8)0xFF

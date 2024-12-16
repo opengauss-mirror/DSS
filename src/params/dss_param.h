@@ -102,6 +102,8 @@ typedef struct st_dss_params {
     uint32 delay_clean_interval;
     cluster_run_mode_t cluster_run_mode;
     dss_recycle_meta_pos_t recyle_meta_pos;
+    uint32 space_usage_hwm;
+    uint32 space_usage_lwm;
 } dss_params_t;
 
 typedef struct st_dss_config {

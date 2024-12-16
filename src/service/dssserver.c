@@ -274,6 +274,15 @@ static status_t dss_create_recycle_meta_bg_task_set(dss_instance_t *inst)
     return status;
 }
 
+static status_t dss_alarm_check_background_task(dss_instance_t *inst)
+{
+    LOG_RUN_INF("create dss alarm check background task.");
+    uint32 alarm_check_thread_id = dss_get_alarm_check_task_idx();
+    status_t status =
+        cm_create_thread(dss_alarm_check_proc, 0, &g_dss_instance, &(g_dss_instance.threads[alarm_check_thread_id]));
+    return status;
+}
+
 static status_t dss_init_background_tasks(void)
 {
     status_t status = dss_recovery_background_task(&g_dss_instance);
@@ -301,6 +310,11 @@ static status_t dss_init_background_tasks(void)
     status = dss_create_recycle_meta_bg_task_set(&g_dss_instance);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Create dss recycle meta background task failed.");
+        return status;
+    }
+    status = dss_alarm_check_background_task(&g_dss_instance);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Create dss vg usage alarm background task failed.");
         return status;
     }
     return CM_SUCCESS;

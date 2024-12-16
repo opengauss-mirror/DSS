@@ -54,7 +54,8 @@ typedef enum st_dss_background_task_type {
     DSS_RECOVERY_BACKGROUND_TASK = 0,
     DSS_DELAY_CLEAN_BACKGROUND_TASK = 1,
     DSS_HASHMAP_DYNAMIC_EXTEND_TASK = 2,
-    DSS_META_SYN_BG_TASK_BASE = 3,
+    DSS_ALARM_CHECK_TASK = 3,
+    DSS_META_SYN_BG_TASK_BASE = 4,
     DSS_META_SYN_BG_TASK_END = DSS_META_SYN_BG_TASK_BASE + DSS_META_SYN_BG_TASK_NUM_MAX,
     DSS_RECYCLE_META_TASK_BASE = DSS_META_SYN_BG_TASK_END,
     DSS_RECYCLE_META_TASK_END = DSS_RECYCLE_META_TASK_BASE + DSS_RECYLE_META_TASK_NUM_MAX,
@@ -198,6 +199,7 @@ uint32 dss_get_delay_clean_task_idx(void);
 typedef uint32 (*dss_get_bg_task_idx_func_t)(uint32 idx);
 uint32 dss_get_meta_syn_task_idx(uint32 idx);
 uint32 dss_get_recycle_meta_task_idx(uint32 idx);
+uint32 dss_get_alarm_check_task_idx(void);
 void dss_server_session_lock(dss_session_t *session);
 void dss_server_session_unlock(dss_session_t *session);
 dss_session_t *dss_get_reserv_session(uint32 idx);
