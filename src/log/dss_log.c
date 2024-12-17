@@ -236,8 +236,9 @@ static status_t dss_init_log_home_ex(dss_config_t *inst_cfg, char *log_parm_valu
     if (val_len >= CM_MAX_LOG_HOME_LEN) {
         DSS_THROW_ERROR(ERR_INIT_LOGGER, "%s value: %s is out of range.", log_param_name, log_parm_value);
         return CM_ERROR;
-    } else if (val_len > 0) {
-        errcode = strncpy_s(log_parm_value, CM_MAX_LOG_HOME_LEN, value, CM_MAX_LOG_HOME_LEN);
+    }
+    if (val_len > 0) {
+        errcode = strncpy_s(log_parm_value, CM_MAX_LOG_HOME_LEN, value, val_len);
         securec_check_ret(errcode);
         verify_flag = CM_TRUE;
     } else {
@@ -351,7 +352,8 @@ static status_t dss_init_loggers_inner(dss_config_t *inst_cfg, log_param_t *log_
 
 status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32 log_def_count, char *name)
 {
-    char file_name[CM_MAX_PATH_LEN];
+    char file_name[CM_FULL_PATH_BUFFER_SIZE];
+    uint32 buffer_len = CM_FULL_PATH_BUFFER_SIZE;
     log_param_t *log_param = cm_log_param_instance();
     log_param->log_level = 0;
     char alarm_dir[CM_MAX_LOG_HOME_LEN];
@@ -367,13 +369,13 @@ status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32
         return CM_ERROR;
     }
 
-    uint32 len = CM_MAX_PATH_LEN;
     int32 ret;
     for (size_t i = 0; i < log_def_count; i++) {
         if (log_def[i].log_id == LOG_ALARM) {
-            ret = snprintf_s(file_name, len, (len - 1), "%s/%s", alarm_dir, log_def[i].log_filename);
+            ret = snprintf_s(file_name, buffer_len, (buffer_len - 1), "%s/%s", alarm_dir, log_def[i].log_filename);
         } else {
-            ret = snprintf_s(file_name, len, (len - 1), "%s/%s", log_param->log_home, log_def[i].log_filename);
+            ret = snprintf_s(
+                file_name, buffer_len, (buffer_len - 1), "%s/%s", log_param->log_home, log_def[i].log_filename);
         }
         DSS_SECUREC_SS_RETURN_IF_ERROR(ret, CM_ERROR);
         if (cm_log_init(log_def[i].log_id, file_name) != CM_SUCCESS) {
