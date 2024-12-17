@@ -249,17 +249,18 @@ static status_t dss_load_disk_lock_file_path(dss_config_t *inst_cfg)
 static status_t dss_load_storage_mode(dss_config_t *inst_cfg)
 {
     char *value = cm_get_config_value(&inst_cfg->config, "STORAGE_MODE");
-
     if (cm_str_equal_ins(value, "CLUSTER_RAID")) {
         inst_cfg->params.dss_mode = DSS_MODE_CLUSTER_RAID;
     } else if (cm_str_equal_ins(value, "SHARE_DISK")) {
         inst_cfg->params.dss_mode = DSS_MODE_SHARE_DISK;
     } else if (cm_str_equal_ins(value, "DISK")) {
         inst_cfg->params.dss_mode = DSS_MODE_DISK;
-        CM_RETURN_IFERR(dss_load_disk_lock_file_path(inst_cfg));
     } else {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, value));
     }
+    // _DISK_LOCK_FILE_PATH is only used when STORAGE_MODE=DISK.
+    // When STORAGE_MODE is SHARE_DISK or CLUSTER_RAID, _DISK_LOCK_FILE_PATH is loaded and verified, but not used.
+    CM_RETURN_IFERR(dss_load_disk_lock_file_path(inst_cfg));
     return CM_SUCCESS;
 }
 
