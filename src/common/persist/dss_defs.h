@@ -265,7 +265,6 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_UDS_SOCKET_TIMEOUT (int32)0x4FFFFFFF
 #define DSS_SEEK_MAXWR 3 /* Used for seek actual file size for openGauss */
 
-#define DSS_BASE_YEAR 1900
 #define DSS_MIN_IOTHREADS_CFG 1
 #define DSS_MAX_IOTHREADS_CFG 8
 #define DSS_MIN_WORKTHREADS_CFG 16
@@ -539,42 +538,6 @@ typedef struct st_dss_audit_info {
         }                        \
     }
 
-#define MICROSECS_PER_MIN 60000000U
-static inline uint64 cm_day_usec(void)
-{
-#ifdef WIN32
-    uint64 usec;
-    SYSTEMTIME sys_time;
-    GetLocalTime(&sys_time);
-
-    usec = sys_time.wHour * SECONDS_PER_HOUR * MICROSECS_PER_SECOND;
-    usec += sys_time.wMinute * MICROSECS_PER_MIN;
-    usec += sys_time.wSecond * MICROSECS_PER_SECOND;
-    usec += sys_time.wMilliseconds * MICROSECS_PER_MILLISEC;
-#else
-    uint64 usec;
-    struct timeval tv;
-    (void)gettimeofday(&tv, NULL);
-    usec = (uint64)(tv.tv_sec * MICROSECS_PER_SECOND);
-    usec += (uint64)tv.tv_usec;
-#endif
-
-    return usec;
-}
-
-static inline struct tm *dss_localtime(const time_t *timep, struct tm *result)
-{
-#ifdef WIN32
-    errno_t err = localtime_s(result, timep);
-    if (err != EOK) {
-        CM_ASSERT(0);
-    }
-    return NULL;
-#else
-    return localtime_r(timep, result);
-#endif
-}
-
 static inline uint32 dss_get_log_size(uint64 au_size)
 {
     if (au_size < DSS_VG_LOG_BUFFER_SIZE && au_size > 0) {
@@ -585,12 +548,6 @@ static inline uint32 dss_get_log_size(uint64 au_size)
     return au_size;
 }
 
-time_t cm_encode_time(date_detail_t *detail);
-void cm_decode_time(time_t time, date_detail_t *detail);
-time_t cm_date2time(date_t date);
-status_t cm_time2str(time_t time, const char *fmt, char *str, uint32 str_max_size);
-
-void cm_destroy_thread_lock(thread_lock_t *lock);
 char *dss_get_cmd_desc(dss_cmd_type_e cmd_type);
 char *dss_get_print_tab(uint8 level);
 
