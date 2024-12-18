@@ -61,15 +61,51 @@ char g_repair_audit_buff[DSS_REPAIR_AUDIT_LOG_LEN];
 typedef struct st_repair_audit_info {
     char date[CM_MAX_TIME_STRLEN];
     char user[CM_NAME_BUFFER_SIZE];
+    char host_ip[CM_MAX_IP_LEN];
 } repair_audit_info_t;
 repair_audit_info_t g_audit_info;
 
+#ifndef WIN32
+void dsstbox_exec_cmd_get_host_and_user(const char *cmd, char *output, uint32 output_len)
+{
+    FILE *file = popen(cmd, "r");
+    if (file == NULL) {
+        return;
+    }
+    (void)fgets(output, (int32)output_len, file);
+    (void)pclose(file);
+    return;
+}
+#endif
+
+void dsstbox_audit_get_host_and_user()
+{
+#ifdef WIN32
+    return;
+#else
+    char cmd[] = "who am i| awk '{print $1, $NF}'";
+    char res[DSS_REPAIR_AUDIT_SOURCE_LEN] = {0};
+    text_t output_text;
+    text_t user_text;
+    dsstbox_exec_cmd_get_host_and_user(cmd, res, DSS_REPAIR_AUDIT_SOURCE_LEN);
+    output_text.str = res;
+    output_text.len = (uint32)strlen(res);
+    if (output_text.len == 0) {
+        return;
+    }
+    if (!cm_fetch_text(&output_text, ' ', 0, &user_text)) {
+        return;
+    }
+    output_text.len--;
+    cm_remove_brackets(&output_text);
+    MEMS_RETVOID_IFERR(strncpy_s(g_audit_info.user, CM_NAME_BUFFER_SIZE, user_text.str, user_text.len));
+    MEMS_RETVOID_IFERR(strncpy_s(g_audit_info.host_ip, CM_MAX_IP_LEN, output_text.str, output_text.len));
+    return;
+#endif
+}
 static void dss_repair_init_audit()
 {
-    // user
-    char *user_name = cm_sys_user_name();
-    MEMS_RETVOID_IFERR(strcpy_s(g_audit_info.user, CM_NAME_BUFFER_SIZE, (const char *)user_name));
-
+    dsstbox_audit_get_host_and_user();
     // time
     int32 tz = g_timer()->tz;
     int32 tz_hour = TIMEZONE_GET_HOUR(tz);
@@ -123,9 +159,10 @@ static void dss_repair_create_audit_msg(repair_input_def_t *input, status_t resu
 {
     dss_repair_gen_audit_resource(input);
     int32 ret = snprintf_s(g_repair_audit_buff, DSS_REPAIR_AUDIT_LOG_LEN, DSS_REPAIR_AUDIT_LOG_LEN - 1,
-        "USER:[%u] \"%s\" "
-        "ACTION:[8] \"ssrepair\" RESOURCE:[%u] \"%s\" RESULT:[7] \"%s\" CONTEXT[%u]: \"%s\"",
+        "USER:[%u] \"%s\" HOST:[%u] \"%s\" "
+        "ACTION:[8] \"ssrepair\" RESOURCE:[%u] \"%s\" RETURNCODE:[7] \"%s\" CONTEXT[%u]: \"%s\"",
         (uint32)strlen(g_audit_info.user), g_audit_info.user,          // user
+        (uint32)strlen(g_audit_info.host_ip), g_audit_info.host_ip,    // host_ip
         (uint32)strlen(g_repair_audit_source), g_repair_audit_source,  // resource
         (result == CM_SUCCESS ? "SUCCESS" : "FAILURE"),                // result
         (uint32)strlen(input->key_value), input->key_value);           // context

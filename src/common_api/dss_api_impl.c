@@ -2452,7 +2452,11 @@ status_t dss_getcfg_impl(dss_conn_t *conn, const char *name, char *out_str, size
         DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "value of str_len is not large enough when getcfg.");
         return CM_ERROR;
     }
-    LOG_DEBUG_INF("Client get cfg is %s.", out_str);
+    if (strlen(out_str) != 0 && cm_str_equal_ins(name, "SSL_PWD_CIPHERTEXT")) {
+        LOG_DEBUG_INF("Client get cfg is ***.");
+    } else {
+        LOG_DEBUG_INF("Client get cfg is %s.", (strlen(out_str) == 0) ? NULL : out_str);
+    }
     return CM_SUCCESS;
 }
 

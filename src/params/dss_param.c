@@ -887,7 +887,8 @@ status_t dss_set_ssl_param(const char *param_name, const char *param_value)
     if (param_name == NULL) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "the ssl param name should not be null."));
     }
-    if (cm_str_equal(param_name, "SSL_PWD_PLAINTEXT") || cm_str_equal(param_name, "SSL_PWD_CIPHERTEXT")) {
+    if ((cm_str_equal(param_name, "SSL_PWD_PLAINTEXT") || cm_str_equal(param_name, "SSL_PWD_CIPHERTEXT")) &&
+        strlen(param_value) != 0) {
         LOG_RUN_INF("dss set ssl param, param_name=%s param_value=%s", param_name, "***");
     } else {
         LOG_RUN_INF("dss set ssl param, param_name=%s param_value=%s", param_name, param_value);

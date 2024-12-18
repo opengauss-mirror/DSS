@@ -1028,7 +1028,11 @@ static status_t dss_process_getcfg(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", name));
 
     DSS_RETURN_IF_ERROR(dss_get_cfg_param(name, &value));
-    DSS_LOG_DEBUG_OP("Server value is %s, when get cfg.", value);
+    if (strlen(value) != 0 && cm_str_equal_ins(name, "SSL_PWD_CIPHERTEXT")) {
+        DSS_LOG_DEBUG_OP("Server value is ***, when get cfg.");
+    } else {
+        DSS_LOG_DEBUG_OP("Server value is %s, when get cfg.", value);
+    }
     text_t data;
     cm_str2text(value, &data);
     // SSL default value is NULL
