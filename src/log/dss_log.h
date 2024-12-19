@@ -56,9 +56,20 @@ typedef struct st_dss_audit_assist {
 
 #define DSS_LOG_DEBUG_OP(user_fmt_str, ...)              \
     do {                                                 \
-        LOG_DEBUG_INF("[OP]" user_fmt_str, __VA_ARGS__); \
+        LOG_DEBUG_INF("[OP]" user_fmt_str, ##__VA_ARGS__); \
     } while (0)
 
+static inline void dss_print_detail_error()
+{
+    int32 errcode_print;
+    const char *errmsg_print = NULL;
+    cm_get_error(&errcode_print, &errmsg_print);
+    if (errcode_print != 0) {
+        (void)printf(" detail reason [%d] : %s\n", errcode_print, errmsg_print);
+        (void)fflush(stdout);
+    }
+    cm_reset_error();
+}
 #define DSS_PRINT_ERROR(fmt, ...)                                                    \
     do {                                                                             \
         (void)printf(fmt, ##__VA_ARGS__);                                            \

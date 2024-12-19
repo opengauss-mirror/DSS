@@ -413,7 +413,8 @@ status_t dss_alloc_vg_item_redo_log_buf(dss_vg_info_item_t *vg_item)
     }
     errno_t rc = memset_s(log_buf, DSS_DISK_UNIT_SIZE, 0, DSS_DISK_UNIT_SIZE);
     if (rc != EOK) {
-        DSS_RETURN_IFERR3(CM_ERROR, LOG_RUN_ERR("Memset failed."), DSS_FREE_POINT(log_buf));
+        DSS_RETURN_IFERR4(
+            CM_ERROR, LOG_RUN_ERR("Memset failed."), DSS_FREE_POINT(log_buf), CM_THROW_ERROR(ERR_SYSTEM_CALL, rc));
     }
     vg_item->log_file_ctrl.log_buf = log_buf;
     return CM_SUCCESS;
@@ -463,9 +464,9 @@ status_t dss_get_vg_info()
         }
         g_vgs_info->volume_group[i].stack.buff = (char *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_MAX_STACK_BUF_SIZE);
         bool32 result = (bool32)(g_vgs_info->volume_group[i].stack.buff != NULL);
-        DSS_RETURN_IF_FALSE2(result,
-            LOG_DEBUG_ERR("malloc stack failed, align size:%u, size:%u.", DSS_ALIGN_SIZE, DSS_MAX_STACK_BUF_SIZE));
-
+        DSS_RETURN_IF_FALSE3(result,
+            LOG_DEBUG_ERR("malloc stack failed, align size:%u, size:%u.", DSS_ALIGN_SIZE, DSS_MAX_STACK_BUF_SIZE),
+            DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_MAX_STACK_BUF_SIZE, "volume group stack buff"));
         g_vgs_info->volume_group[i].stack.size = DSS_MAX_STACK_BUF_SIZE;
         int32 ret =
             shm_hashmap_init(&vg_item->buffer_cache, i, dss_buffer_cache_key_compare);
@@ -475,7 +476,7 @@ status_t dss_get_vg_info()
             }
             DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
             LOG_RUN_ERR("DSS instance failed to initialize buffer cache, %d!", ret);
-            DSS_THROW_ERROR(ret);
+            DSS_THROW_ERROR(ERR_DSS_GA_INIT, "failed to init hashmap of vg %s", g_vgs_info->volume_group[i].vg_name);
             return CM_ERROR;
         }
         cm_bilist_init(&g_vgs_info->volume_group[i].open_file_list);

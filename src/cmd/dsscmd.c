@@ -3437,31 +3437,35 @@ static status_t encrypt_proc(void)
     status = dss_catch_input_text(plain, CM_PASSWD_MAX_LEN + 1);
     if (status != CM_SUCCESS) {
         (void)(memset_s(plain, CM_PASSWD_MAX_LEN + 1, 0, CM_PASSWD_MAX_LEN + 1));
-        DSS_PRINT_ERROR("Failed to encrypt password when catch input.\n");
+        DSS_PRINT_RUN_ERROR("[ENCRYPT]Failed to encrypt password when catch input.\n");
         return CM_ERROR;
     }
+    LOG_RUN_INF("[ENCRYPT]Succeed to encrypt password when catch input.\n");
     cipher_t cipher;
     status = cm_encrypt_pwd((uchar *)plain, (uint32)strlen(plain), &cipher);
     if (status != CM_SUCCESS) {
         (void)(memset_s(plain, CM_PASSWD_MAX_LEN + 1, 0, CM_PASSWD_MAX_LEN + 1));
-        DSS_PRINT_ERROR("Failed to encrypt password.\n");
+        DSS_PRINT_RUN_ERROR("[ENCRYPT]Failed to encrypt password.\n");
         return CM_ERROR;
     }
     (void)(memset_s(plain, CM_PASSWD_MAX_LEN + 1, 0, CM_PASSWD_MAX_LEN + 1));
     status = dss_save_random_file(cipher.rand, RANDOM_LEN + 1);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to save random component.\n");
+        DSS_PRINT_RUN_ERROR("[ENCRYPT]Failed to save random component.\n");
         return CM_ERROR;
     }
+    LOG_RUN_INF("[ENCRYPT]Succeed to save random component.\n");
     (void)(memset_s(cipher.rand, RANDOM_LEN + 1, 0, RANDOM_LEN + 1));
     char buf[CM_MAX_SSL_CIPHER_LEN] = {0};
     uint32_t buf_len = CM_MAX_SSL_CIPHER_LEN;
     status = cm_base64_encode((uchar *)&cipher, (uint32)sizeof(cipher_t), buf, &buf_len);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to encrypt password when encode.\n");
+        DSS_PRINT_RUN_ERROR("[ENCRYPT]Failed to encrypt password when encode.\n");
         return CM_ERROR;
     }
     (void)printf("Cipher: \t\t%s\n", buf);
+    (void)fflush(stdout);
+    LOG_RUN_INF("[ENCRYPT]Succeed to print cipher, length is %u.\n", (uint32)strlen(buf));
     return CM_SUCCESS;
 }
 
@@ -3550,9 +3554,22 @@ static status_t getcfg_proc(void)
     char value[DSS_PARAM_BUFFER_SIZE] = {0};
     status_t status = dss_getcfg_impl(conn, name, value, DSS_PARAM_BUFFER_SIZE);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to get cfg, name is %s, value is %s.\n", name, (strlen(value) == 0) ? NULL : value);
+        if (strlen(value) != 0 && cm_str_equal_ins(name, "SSL_PWD_CIPHERTEXT")) {
+            LOG_DEBUG_ERR("Failed to get cfg, name is %s, value is ***.\n", name);
+            (void)printf("Failed to get cfg, name is %s, value is %s.\n", name, value);
+            (void)fflush(stdout);
+            dss_print_detail_error();
+        } else {
+            DSS_PRINT_ERROR("Failed to get cfg, name is %s, value is %s.\n", name, (strlen(value) == 0) ? NULL : value);
+        }
     } else {
-        DSS_PRINT_INF("Succeed to get cfg, name is %s, value is %s.\n", name, (strlen(value) == 0) ? NULL : value);
+        if (strlen(value) != 0 && cm_str_equal_ins(name, "SSL_PWD_CIPHERTEXT")) {
+            LOG_DEBUG_INF("Succeed to get cfg, name is %s, value is ***.\n", name);
+            (void)printf("Succeed to get cfg, name is %s, value is %s.\n", name, value);
+            (void)fflush(stdout);
+        } else {
+            DSS_PRINT_INF("Succeed to get cfg, name is %s, value is %s.\n", name, (strlen(value) == 0) ? NULL : value);
+        }
     }
     return status;
 }
