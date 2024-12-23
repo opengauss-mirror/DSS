@@ -95,72 +95,6 @@ char *dss_get_print_tab(uint8 level)
     return g_dss_printf_tab[level];
 }
 
-void cm_decode_time(time_t time, date_detail_t *detail)
-{
-    struct tm now_time;
-    (void)dss_localtime(&time, &now_time);
-    detail->year = (uint16)now_time.tm_year + DSS_BASE_YEAR;
-    detail->mon = (uint8)now_time.tm_mon + 1;
-    detail->day = (uint8)now_time.tm_mday;
-    detail->hour = (uint8)now_time.tm_hour;
-    detail->min = (uint8)now_time.tm_min;
-    detail->sec = (uint8)now_time.tm_sec;
-    detail->millisec = 0;
-    detail->microsec = 0;
-    detail->nanosec = 0;
-}
-
-time_t cm_encode_time(date_detail_t *detail)
-{
-    struct tm now_time;
-
-    now_time.tm_year = (int)detail->year - DSS_BASE_YEAR;
-    now_time.tm_mon = (int)detail->mon - 1;
-    now_time.tm_mday = (int)detail->day;
-    now_time.tm_hour = (int)detail->hour;
-    now_time.tm_min = (int)detail->min;
-    now_time.tm_sec = (int)detail->sec;
-    now_time.tm_isdst = 0;
-
-    return mktime(&now_time);
-}
-
-time_t cm_date2time(date_t date)
-{
-    date_detail_t detail;
-
-    cm_decode_date(date, &detail);
-    return cm_encode_time(&detail);
-}
-
-static status_t cm_time2text(time_t time, text_t *fmt, text_t *text, uint32 text_str_max_size)
-{
-    date_detail_t detail;
-    text_t format_text;
-
-    CM_ASSERT(fmt != NULL);
-    CM_ASSERT(text != NULL);
-    cm_decode_time(time, &detail);
-
-    if (fmt == NULL || fmt->str == NULL) {
-        return CM_ERROR;
-    } else {
-        format_text = *fmt;
-    }
-
-    return cm_detail2text(&detail, &format_text, CM_MAX_DATETIME_PRECISION, text, text_str_max_size);
-}
-
-status_t cm_time2str(time_t time, const char *fmt, char *str, uint32 str_max_size)
-{
-    text_t fmt_text, time_text;
-    cm_str2text((char *)fmt, &fmt_text);
-    time_text.str = str;
-    time_text.len = 0;
-
-    return cm_time2text(time, &fmt_text, &time_text, str_max_size);
-}
-
 #define DSS_DISPLAY_SIZE 75
 
 #ifdef WIN32
@@ -177,14 +111,4 @@ char *dss_display_metaid(auid_t id)
         g_display_buf[0] = '\0';
     }
     return g_display_buf;
-}
-
-void cm_destroy_thread_lock(thread_lock_t *lock)
-{
-    CM_ASSERT(lock != NULL);
-#ifdef WIN32
-    DeleteCriticalSection(lock);
-#else
-    (void)pthread_mutex_destroy(lock);
-#endif
 }
