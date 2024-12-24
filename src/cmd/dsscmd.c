@@ -689,7 +689,7 @@ static void lsvg_printf_vg_info(
         (void)printf("   vg_used:%.05f\n", dss_vg_used);
         (void)printf("   vg_used_percent:%.2lf\n", dss_vg_used_percent);
     } else {
-        (void)printf("%-14s%-20u%-20.05f %-20.05f %-20.05f %-20.2lf\n", vg_vlm_info->vg_name, vg_vlm_info->volume_count,
+        (void)printf("%-64s%-20u%-20.05f %-20.05f %-20.05f %-20.2lf\n", vg_vlm_info->vg_name, vg_vlm_info->volume_count,
             dss_vg_size, dss_vg_free, dss_vg_used, dss_vg_used_percent);
     }
 }
@@ -743,7 +743,7 @@ static status_t lsvg_info(dss_conn_t *connection, const char *measure, bool32 de
 
     if (!detail) {
         (void)printf(
-            "%-14s%-20s%-20s %-20s %-20s %-20s\n", "vg_name", "volume_count", "size", "free", "used", "percent(%)");
+            "%-64s%-20s%-20s %-20s %-20s %-20s\n", "vg_name", "volume_count", "size", "free", "used", "percent(%)");
     }
 
     for (uint32 vg_id = 0; vg_id < (uint32)allvg_vlm_space_info->group_num; vg_id++) {
