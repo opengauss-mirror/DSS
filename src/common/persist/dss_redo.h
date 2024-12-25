@@ -35,6 +35,15 @@ extern "C" {
 
 #define DSS_LOG_OFFSET OFFSET_OF(dss_ctrl_t, log_buf)
 
+#define DSS_INSTANCE_LOG_BUFFER_SIZE_V0 SIZE_M(8)
+#define DSS_LOG_BUF_SLOT_COUNT_V0 16
+#define DSS_INSTANCE_LOG_SPLIT_SIZE_V0 ((DSS_INSTANCE_LOG_BUFFER_SIZE_V0) / (DSS_LOG_BUF_SLOT_COUNT_V0))
+#define DSS_INSTANCE_LOG_SPLIT_SIZE                                                          \
+    ((DSS_INSTANCE_LOG_BUFFER_SIZE_V0) / (DSS_MAX_VOLUME_GROUP_NUM) / (DSS_DISK_UNIT_SIZE) * \
+        (DSS_DISK_UNIT_SIZE))  // 126KB
+#define DSS_VG_LOG_SPLIT_SIZE SIZE_K(64)
+#define DSS_VG_LOG_BUFFER_SIZE SIZE_M(64)
+
 #pragma pack(8)
 
 typedef enum en_dss_redo_type {
@@ -242,6 +251,16 @@ static inline uint64 dss_get_redo_log_v0_start(dss_ctrl_t *dss_ctrl, uint32 vg_i
     uint64 au_size = dss_get_vg_au_size(dss_ctrl);
     uint64 redo_start = CM_CALC_ALIGN(DSS_VOLUME_HEAD_SIZE, au_size) + vg_id * DSS_INSTANCE_LOG_SPLIT_SIZE;
     return redo_start;
+}
+
+static inline uint32 dss_get_log_size(uint64 au_size)
+{
+    if (au_size < DSS_VG_LOG_BUFFER_SIZE && au_size > 0) {
+        uint64 m = DSS_VG_LOG_BUFFER_SIZE / au_size;
+        uint64 n = DSS_VG_LOG_BUFFER_SIZE % au_size;
+        return (n == 0) ? (uint32)DSS_VG_LOG_BUFFER_SIZE : (uint32)((m + 1) * au_size);
+    }
+    return (uint32)au_size;
 }
 
 #define DSS_REDO_BATCH_HEAD_SIZE OFFSET_OF(dss_redo_batch_t, data)

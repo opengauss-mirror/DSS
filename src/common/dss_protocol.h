@@ -38,6 +38,68 @@
 extern "C" {
 #endif
 
+// The value of each command type cannot be changed for compatibility reasons.
+// If you want to add a command type, add it at the end. Before DSS_CMD_END
+typedef enum {
+    DSS_CMD_BASE,
+    DSS_CMD_BEGIN,
+    DSS_CMD_MODIFY_BEGIN = DSS_CMD_BEGIN,
+    DSS_CMD_MKDIR = DSS_CMD_MODIFY_BEGIN,
+    DSS_CMD_RMDIR,
+    DSS_CMD_OPEN_DIR,
+    DSS_CMD_CLOSE_DIR,
+    DSS_CMD_OPEN_FILE,
+    DSS_CMD_CLOSE_FILE,
+    DSS_CMD_CREATE_FILE,
+    DSS_CMD_DELETE_FILE,
+    DSS_CMD_EXTEND_FILE,
+    DSS_CMD_ATTACH_FILE,  // 10
+    DSS_CMD_DETACH_FILE,
+    DSS_CMD_RENAME_FILE,
+    DSS_CMD_REFRESH_FILE,
+    DSS_CMD_TRUNCATE_FILE,
+    DSS_CMD_REFRESH_FILE_TABLE,
+    DSS_CMD_FALLOCATE_FILE,
+    DSS_CMD_ADD_VOLUME,
+    DSS_CMD_REMOVE_VOLUME,
+    DSS_CMD_REFRESH_VOLUME,
+    DSS_CMD_KICKH,  // 20
+    DSS_CMD_LOAD_CTRL,
+    DSS_CMD_UPDATE_WRITTEN_SIZE,
+    DSS_CMD_STOP_SERVER,
+    DSS_CMD_SETCFG,
+    DSS_CMD_SYMLINK,
+    DSS_CMD_UNLINK,
+    DSS_CMD_SET_MAIN_INST,
+    DSS_CMD_SWITCH_LOCK,
+    DSS_CMD_DISABLE_GRAB_LOCK,
+    DSS_CMD_ENABLE_GRAB_LOCK,
+    DSS_CMD_HOTPATCH,
+    DSS_CMD_MODIFY_END = 127,
+    DSS_CMD_QUERY_BEGIN = DSS_CMD_MODIFY_END,
+    DSS_CMD_HANDSHAKE = DSS_CMD_QUERY_BEGIN,
+    DSS_CMD_EXIST,  // 128
+    DSS_CMD_READLINK,
+    DSS_CMD_GET_FTID_BY_PATH,
+    DSS_CMD_GETCFG,
+    DSS_CMD_GET_INST_STATUS,
+    DSS_CMD_GET_TIME_STAT,
+    DSS_CMD_EXEC_REMOTE,
+    DSS_CMD_QUERY_HOTPATCH,
+    DSS_CMD_QUERY_END = DSS_CMD_QUERY_HOTPATCH,
+    DSS_CMD_END  // must be the last item
+} dss_cmd_type_e;
+
+#define DSS_CMD_TYPE_OFFSET(cmd_id) ((uint32)(cmd_id) - (uint32)DSS_CMD_BEGIN)
+
+char *dss_get_cmd_desc(dss_cmd_type_e cmd_type);
+
+static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
+{
+    return ((type == DSS_CMD_GET_INST_STATUS) || (type == DSS_CMD_HANDSHAKE) || (type == DSS_CMD_STOP_SERVER) ||
+            (type == DSS_CMD_ENABLE_GRAB_LOCK) || (type == DSS_CMD_GETCFG) || (type == DSS_CMD_SETCFG));
+}
+
 typedef struct st_dss_packet_head {
     uint32 version;
     uint32 client_version;

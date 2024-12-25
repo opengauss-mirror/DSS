@@ -26,18 +26,23 @@
 #define __DSS_LOG_H__
 #include "cm_log.h"
 #include "cm_text.h"
+#include "dss_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef struct st_dss_config dss_config_t;
-typedef struct st_dss_log_def_t dss_log_def_t;
 
 #define DSS_AUDIT_ALL 255
 
 #define DSS_AUDIT_MODIFY 0x00000001
 #define DSS_AUDIT_QUERY 0x00000002
+
+typedef struct st_dss_log_def_t {
+    log_type_t log_id;
+    char log_filename[DSS_MAX_NAME_LEN];
+} dss_log_def_t;
 
 typedef struct st_dss_audit_assist {
     char date[CM_MAX_TIME_STRLEN];
@@ -53,6 +58,11 @@ typedef struct st_dss_audit_assist {
     int32 code;
     int32 tz;
 } dss_audit_assist_t;
+
+typedef struct st_dss_audit_info {
+    char *action;
+    char resource[DSS_MAX_AUDIT_PATH_LENGTH];
+} dss_audit_info_t;
 
 #define DSS_LOG_DEBUG_OP(user_fmt_str, ...)              \
     do {                                                 \
@@ -143,6 +153,8 @@ typedef enum dss_warn_name {
     WARN_DSS_SPACEUSAGE, /* dss vg space */
 } dss_warn_name_t;
 
+typedef enum { DSS_VG_SPACE_ALARM_INIT, DSS_VG_SPACE_ALARM_HWM, DSS_VG_SPACE_ALARM_LWM} dss_alarm_type_e;
+
 #define DSS_ERROR_COUNT 3000
 extern const char *g_dss_error_desc[DSS_ERROR_COUNT];
 extern char *g_dss_warn_desc[];
@@ -153,6 +165,9 @@ dss_log_def_t *dss_get_instance_log_def();
 dss_log_def_t *dss_get_cmd_log_def();
 uint32 dss_get_instance_log_def_count();
 uint32 dss_get_cmd_log_def_count();
+
+char *dss_get_print_tab(uint8 level);
+
 #ifdef __cplusplus
 }
 #endif

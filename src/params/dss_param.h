@@ -26,6 +26,7 @@
 #define __DSS_PARAM_H__
 
 #include "dss_defs.h"
+#include "dss_log.h"
 #include "cm_config.h"
 #include "cs_pipe.h"
 #include "ceph_rbd_param.h"

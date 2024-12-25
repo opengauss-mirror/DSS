@@ -28,6 +28,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #endif
+#include "cm_log.h"
 
 static int32 dss_zero_mmap_fd = 0;
 static char *dss_zero_buf = NULL;

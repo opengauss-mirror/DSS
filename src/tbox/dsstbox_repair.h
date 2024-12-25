@@ -26,6 +26,7 @@
 #define __DSSTBOX_REPAIR_H_
 
 #include "dss_defs.h"
+#include "dss_au.h"
 
 #define DSS_REPAIR_ARG_VOL_PATH 0
 #define DSS_REPAIR_ARG_TYPE 1

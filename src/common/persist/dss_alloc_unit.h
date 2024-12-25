@@ -27,6 +27,7 @@
 
 #include "cm_defs.h"
 #include "dss_defs.h"
+#include "dss_au.h"
 #include "dss_diskgroup.h"
 
 #ifdef __cplusplus

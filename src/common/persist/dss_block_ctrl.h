@@ -26,6 +26,7 @@
 #define __DSS_BLOCK_CTRL_H
 
 #include "dss_defs.h"
+#include "dss_au.h"
 #include "cm_latch.h"
 #include "cm_bilist.h"
 #include "dss_shm.h"

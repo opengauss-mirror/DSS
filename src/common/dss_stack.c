@@ -23,7 +23,9 @@
  */
 #include "dss_stack.h"
 #include "cm_log.h"
+#include "cm_debug.h"
 #include "dss_defs.h"
+#include "dss_log.h"
 
 char *dss_get_stack_pos(dss_stack *stack, uint32 depth)
 {

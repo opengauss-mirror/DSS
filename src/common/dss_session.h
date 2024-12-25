@@ -26,13 +26,15 @@
 #define __DSS_SESSION_H__
 
 #include "cm_defs.h"
+#include "cm_thread_pool.h"
+#include "cm_date.h"
 #include "cs_packet.h"
 #include "cs_pipe.h"
 #include "dss_defs.h"
-#include "cm_thread_pool.h"
+#include "dss_au.h"
+#include "dss_log.h"
 #include "dss_protocol.h"
 #include "dss_latch.h"
-#include "cm_date.h"
 #include "dss_stats.h"
 #include "dss_shm.h"
 
