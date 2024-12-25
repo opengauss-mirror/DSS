@@ -1548,6 +1548,7 @@ status_t dss_format_ft_node_core(
     ga_obj_id_t ga_obj_id = {.pool_id = GA_8K_POOL, .obj_id = 0};
     gft_list_t bk_list = gft->free_list;
     dss_ft_block_t *block = (dss_ft_block_t *)dss_get_ft_block_by_ftid(session, vg_item, gft->last);
+    CM_ASSERT(block != NULL);
     block->next = auid;
     for (uint32 i = 0; i < block_num; i++) {
         block = (dss_ft_block_t *)dss_buffer_get_meta_addr(GA_8K_POOL, obj_id);
@@ -1645,6 +1646,7 @@ status_t dss_format_bitmap_node(dss_session_t *session, dss_vg_info_item_t *vg_i
     ga_obj_id.pool_id = GA_16K_POOL;
     for (uint32 i = 0; i < block_num; i++) {
         block = (dss_fs_block_header *)dss_buffer_get_meta_addr(GA_16K_POOL, obj_id);
+        CM_ASSERT(block != NULL);
         block->common.id = auid;
         block->common.id.block = i;
         block->common.id.item = 0;
