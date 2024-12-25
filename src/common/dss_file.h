@@ -342,6 +342,7 @@ static inline dss_block_ctrl_t *dss_get_block_ctrl_by_node(gft_node_t *node)
 static inline void dss_latch_node_init(gft_node_t *node)
 {
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_node(node);
+    DSS_ASSERT_LOG(block_ctrl != NULL, "block_ctrl is NULL when init latch because node is root block");
     cm_latch_init(&block_ctrl->latch);
 }
 
@@ -355,12 +356,14 @@ static inline void dss_latch_s_node(dss_session_t *session, gft_node_t *node, la
 static inline void dss_latch_x_node(dss_session_t *session, gft_node_t *node, latch_statis_t *stat)
 {
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_node(node);
+    DSS_ASSERT_LOG(block_ctrl != NULL, "block_ctrl is NULL when latch x node because node is root block");
     cm_latch_x(&block_ctrl->latch, DSS_SESSIONID_IN_LOCK(session->id), stat);
 }
 
 static inline void dss_unlatch_node(gft_node_t *node)
 {
     dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_node(node);
+    DSS_ASSERT_LOG(block_ctrl != NULL, "block_ctrl is NULL when unlatch node because node is root block");
     dss_unlatch(&block_ctrl->latch);
 }
 static inline dss_file_context_t *dss_get_file_context_by_handle(dss_file_run_ctx_t *file_run_ctx, int32 handle)

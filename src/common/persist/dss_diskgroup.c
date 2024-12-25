@@ -429,6 +429,7 @@ static dss_share_vg_item_t *dss_get_vg_item_by_id(bool32 is_server, uint32 id)
             return NULL;
         }
         vg_item = (dss_share_vg_item_t *)ga_object_addr(GA_INSTANCE_POOL, objectid);
+        CM_ASSERT(vg_item != NULL);
         vg_item->objectid = objectid;
         return vg_item;
     }
