@@ -846,6 +846,7 @@ gft_node_t *dss_find_gft_node_by_fid_in_bucket(
     shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
     uint32 segment_objid = DSS_INVALID_ID32;
     shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx, &segment_objid);
+    CM_ASSERT(bucket != NULL);
     char *addr = NULL;
     dss_block_ctrl_t *block_ctrl = NULL;
     gft_node_t *node = NULL;

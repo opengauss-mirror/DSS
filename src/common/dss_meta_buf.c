@@ -850,6 +850,7 @@ static status_t dss_refresh_buffer_cache_inner(dss_session_t *session, dss_vg_in
 {
     shm_hash_ctrl_t *hash_ctrl = &vg_item->buffer_cache->hash_ctrl;
     shm_hashmap_bucket_t *bucket = shm_hashmap_get_bucket(hash_ctrl, bucket_idx, NULL);
+    CM_ASSERT(bucket != NULL);
 
     dss_block_ctrl_t *block_ctrl = NULL;
     dss_block_ctrl_t *block_ctrl_prev = NULL;
