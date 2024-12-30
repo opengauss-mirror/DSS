@@ -26,6 +26,7 @@
 #define __DSS_CTRL_DEF_H__
 
 #include "dss_defs.h"
+#include "dss_au.h"
 #include "cm_spinlock.h"
 #include "dss_hashmap.h"
 #include "cm_latch.h"
@@ -332,6 +333,15 @@ typedef enum en_dss_from_type {
     FROM_BBOX,
     FROM_DISK,
 } dss_from_type_e;
+
+typedef struct st_dss_log_file_ctrl {
+    spinlock_t lock;
+    char *log_buf;  // global log_buf
+    bool8 used;
+    uint32 index;
+    uint64 offset;
+    uint64 lsn;
+} dss_log_file_ctrl_t;
 
 typedef struct st_dss_vg_info_item_t {
     uint32 id;

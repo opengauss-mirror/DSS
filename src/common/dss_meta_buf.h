@@ -26,6 +26,7 @@
 #define __DSS_META_BUF_H__
 
 #include "dss_ga.h"
+#include "dss_au.h"
 #include "dss_diskgroup.h"
 #include "dss_session.h"
 

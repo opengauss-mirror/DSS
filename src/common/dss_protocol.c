@@ -27,6 +27,58 @@
 #include "dss_thv.h"
 #include "dss_protocol.h"
 
+
+static char *g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_MKDIR)] = "mkdir",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_RMDIR)] = "rmdir",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_OPEN_DIR)] = "open dir",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_CLOSE_DIR)] = "close dir",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_OPEN_FILE)] = "open file",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_CLOSE_FILE)] = "close file",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_CREATE_FILE)] = "create file",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_DELETE_FILE)] = "delete file",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXTEND_FILE)] = "extend file",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ATTACH_FILE)] = "attach file",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_DETACH_FILE)] = "detach file",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_RENAME_FILE)] = "rename file",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_REFRESH_FILE)] = "refresh file",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_TRUNCATE_FILE)] = "truncate file",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_REFRESH_FILE_TABLE)] = "refresh file table",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_FALLOCATE_FILE)] = "fallocate file",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ADD_VOLUME)] = "add volume",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_REMOVE_VOLUME)] = "remove volume",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_REFRESH_VOLUME)] = "refresh volume",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_KICKH)] = "kick off host",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_LOAD_CTRL)] = "load ctrl",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_UPDATE_WRITTEN_SIZE)] = "update written size",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_STOP_SERVER)] = "stopserver",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SETCFG)] = "setcfg",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SYMLINK)] = "symlink",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_UNLINK)] = "unlink",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SET_MAIN_INST)] = "set main inst",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SWITCH_LOCK)] = "switch cm lock",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_DISABLE_GRAB_LOCK)] = "disable grab cm lock",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ENABLE_GRAB_LOCK)] = "enable grab cm lock",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_HOTPATCH)] = "hotpatch operation",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_HANDSHAKE)] = "handshake with server",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST)] = "exist item",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_READLINK)] = "readlink",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_FTID_BY_PATH)] = "get ftid by path",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GETCFG)] = "getcfg",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_INST_STATUS)] = "get inst status",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_TIME_STAT)] = "get time stat",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXEC_REMOTE)] = "exec remote",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_QUERY_HOTPATCH)] = "query status of hotpatch",
+};
+
+char *dss_get_cmd_desc(dss_cmd_type_e cmd_type)
+{
+    if (cmd_type < DSS_CMD_BEGIN || cmd_type >= DSS_CMD_END) {
+        return "unknown";
+    }
+    return g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(cmd_type)];
+}
+
 typedef status_t (*recv_func_t)(void *link, char *buf, uint32 size, int32 *recv_size);
 typedef status_t (*recv_timed_func_t)(void *link, char *buf, uint32 size, uint32 timeout);
 typedef status_t (*send_timed_func_t)(void *link, const char *buf, uint32 size, uint32 timeout);

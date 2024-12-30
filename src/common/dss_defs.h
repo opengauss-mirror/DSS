@@ -17,7 +17,7 @@
  *
  *
  * IDENTIFICATION
- *    src/common/persist/dss_defs.h
+ *    src/common/dss_defs.h
  *
  * -------------------------------------------------------------------------
  */
@@ -25,15 +25,7 @@
 #ifndef __DSS_DEFS_H__
 #define __DSS_DEFS_H__
 
-#include <sys/stat.h>
-#include "cm_date.h"
-#include "cm_defs.h"
 #include "cm_error.h"
-#include "cm_ip.h"
-#include "cm_log.h"
-#include "cm_thread.h"
-#include "cm_timer.h"
-#include "dss_log.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,8 +42,6 @@ extern "C" {
 #define DSS_VG_ALARM_CHECK_COUNT 10
 #define DSS_VG_USAGE_MIN 0
 #define DSS_VG_USAGE_MAX 100
-
-typedef enum { DSS_VG_SPACE_ALARM_INIT, DSS_VG_SPACE_ALARM_HWM, DSS_VG_SPACE_ALARM_LWM} dss_alarm_type_e;
 
 /* invalid id */
 #define DSS_INVALID_INT8 ((int8)(-1))
@@ -77,65 +67,6 @@ typedef enum { DSS_VG_SPACE_ALARM_INIT, DSS_VG_SPACE_ALARM_HWM, DSS_VG_SPACE_ALA
 #else
 #define DSS_INVALID_HANDLE (-1)
 #endif
-// The value of each command type cannot be changed for compatibility reasons.
-// If you want to add a command type, add it at the end. Before DSS_CMD_END
-typedef enum {
-    DSS_CMD_BASE,
-    DSS_CMD_BEGIN,
-    DSS_CMD_MODIFY_BEGIN = DSS_CMD_BEGIN,
-    DSS_CMD_MKDIR = DSS_CMD_MODIFY_BEGIN,
-    DSS_CMD_RMDIR,
-    DSS_CMD_OPEN_DIR,
-    DSS_CMD_CLOSE_DIR,
-    DSS_CMD_OPEN_FILE,
-    DSS_CMD_CLOSE_FILE,
-    DSS_CMD_CREATE_FILE,
-    DSS_CMD_DELETE_FILE,
-    DSS_CMD_EXTEND_FILE,
-    DSS_CMD_ATTACH_FILE,  // 10
-    DSS_CMD_DETACH_FILE,
-    DSS_CMD_RENAME_FILE,
-    DSS_CMD_REFRESH_FILE,
-    DSS_CMD_TRUNCATE_FILE,
-    DSS_CMD_REFRESH_FILE_TABLE,
-    DSS_CMD_FALLOCATE_FILE,
-    DSS_CMD_ADD_VOLUME,
-    DSS_CMD_REMOVE_VOLUME,
-    DSS_CMD_REFRESH_VOLUME,
-    DSS_CMD_KICKH,  // 20
-    DSS_CMD_LOAD_CTRL,
-    DSS_CMD_UPDATE_WRITTEN_SIZE,
-    DSS_CMD_STOP_SERVER,
-    DSS_CMD_SETCFG,
-    DSS_CMD_SYMLINK,
-    DSS_CMD_UNLINK,
-    DSS_CMD_SET_MAIN_INST,
-    DSS_CMD_SWITCH_LOCK,
-    DSS_CMD_DISABLE_GRAB_LOCK,
-    DSS_CMD_ENABLE_GRAB_LOCK,
-    DSS_CMD_HOTPATCH,
-    DSS_CMD_MODIFY_END = 127,
-    DSS_CMD_QUERY_BEGIN = DSS_CMD_MODIFY_END,
-    DSS_CMD_HANDSHAKE = DSS_CMD_QUERY_BEGIN,
-    DSS_CMD_EXIST,  // 128
-    DSS_CMD_READLINK,
-    DSS_CMD_GET_FTID_BY_PATH,
-    DSS_CMD_GETCFG,
-    DSS_CMD_GET_INST_STATUS,
-    DSS_CMD_GET_TIME_STAT,
-    DSS_CMD_EXEC_REMOTE,
-    DSS_CMD_QUERY_HOTPATCH,
-    DSS_CMD_QUERY_END = DSS_CMD_QUERY_HOTPATCH,
-    DSS_CMD_END  // must be the last item
-} dss_cmd_type_e;
-
-#define DSS_CMD_TYPE_OFFSET(cmd_id) ((uint32)(cmd_id) - (uint32)DSS_CMD_BEGIN)
-
-static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
-{
-    return ((type == DSS_CMD_GET_INST_STATUS) || (type == DSS_CMD_HANDSHAKE) || (type == DSS_CMD_STOP_SERVER) ||
-            (type == DSS_CMD_ENABLE_GRAB_LOCK) || (type == DSS_CMD_GETCFG) || (type == DSS_CMD_SETCFG));
-}
 
 #define DSS_DEFAULT_AU_SIZE SIZE_M(8)
 #define DSS_MAX_AU_SIZE SIZE_M(64)
@@ -344,29 +275,29 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
         }                                       \
     } while (0)
 
-#define DSS_SECUREC_RETURN_IF_ERROR(err, ret)        \
-    {                                                \
-        if ((err) != EOK) {                          \
-            DSS_THROW_ERROR(ERR_SYSTEM_CALL, (err)); \
-            return ret;                              \
-        }                                            \
+#define DSS_SECUREC_RETURN_IF_ERROR(err, ret)       \
+    {                                               \
+        if ((err) != EOK) {                         \
+            CM_THROW_ERROR(ERR_SYSTEM_CALL, (err)); \
+            return ret;                             \
+        }                                           \
     }
 
 #define DSS_SECUREC_RETURN_IF_ERROR2(err, hook, ret) \
     {                                                \
         if ((err) != EOK) {                          \
             hook;                                    \
-            DSS_THROW_ERROR(ERR_SYSTEM_CALL, (err)); \
+            CM_THROW_ERROR(ERR_SYSTEM_CALL, (err));  \
             return ret;                              \
         }                                            \
     }
 
-#define DSS_SECUREC_SS_RETURN_IF_ERROR(err, ret)     \
-    {                                                \
-        if ((err) == -1) {                           \
-            DSS_THROW_ERROR(ERR_SYSTEM_CALL, (err)); \
-            return ret;                              \
-        }                                            \
+#define DSS_SECUREC_SS_RETURN_IF_ERROR(err, ret)    \
+    {                                               \
+        if ((err) == -1) {                          \
+            CM_THROW_ERROR(ERR_SYSTEM_CALL, (err)); \
+            return ret;                             \
+        }                                           \
     }
 
 #define DSS_RETURN_IF_NULL(ret) \
@@ -431,23 +362,6 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
         }                                                                              \
     } while (0)
 
-#pragma pack(8)
-typedef struct st_auid_t {  // id of allocation unit, 8 Bytes
-    uint64 volume : DSS_MAX_BIT_NUM_VOLUME;
-    uint64 au : DSS_MAX_BIT_NUM_AU;
-    uint64 block : DSS_MAX_BIT_NUM_BLOCK;
-    uint64 item : DSS_MAX_BIT_NUM_ITEM;
-} auid_t;
-#pragma pack()
-
-typedef auid_t dss_block_id_t;
-typedef auid_t ftid_t;
-
-extern auid_t dss_invalid_auid;
-#define DSS_INVALID_AUID (dss_invalid_auid)
-#define DSS_INVALID_BLOCK_ID (dss_invalid_auid)
-#define DSS_INVALID_FTID (dss_invalid_auid)
-
 #define DSS_BYTE_BITS_SIZE 8
 
 // if want change the default, compile the dss with set DSS_PAGE_SIZE=page_size_you_want
@@ -467,69 +381,6 @@ extern auid_t dss_invalid_auid;
 // default is 1.5k
 #define DSS_FS_AUX_SIZE (DSS_MAX_FS_AUX_BITMAP_SIZE + DSS_FS_AUX_HEAD_SIZE_MAX)
 
-extern auid_t dss_set_inited_mask;
-extern auid_t dss_unset_inited_mask;
-
-#define DSS_AU_UNINITED_MARK 0x1
-static inline void dss_auid_set_uninit(auid_t *auid)
-{
-    auid->item |= DSS_AU_UNINITED_MARK;
-}
-
-static inline void dss_auid_unset_uninit(auid_t *auid)
-{
-    auid->item &= ~DSS_AU_UNINITED_MARK;
-}
-
-static inline bool32 dss_auid_is_uninit(auid_t *auid)
-{
-    return ((auid->item & DSS_AU_UNINITED_MARK) != 0);
-}
-
-#define DSS_BLOCK_ID_SET_INITED(block_id) ((*(uint64 *)&block_id) & (*(uint64 *)&dss_unset_inited_mask))
-#define DSS_BLOCK_ID_SET_UNINITED(block_id) ((*(uint64 *)&block_id) | (*(uint64 *)&dss_set_inited_mask))
-#define DSS_BLOCK_ID_IGNORE_UNINITED(block_id) ((*(uint64 *)&block_id) & (*(uint64 *)&dss_unset_inited_mask))
-#define DSS_BLOCK_ID_IS_INITED(block_id) (((block_id).item & DSS_AU_UNINITED_MARK) == 0)
-
-#define DSS_BLOCK_ID_SET_AUX(block_id) ((*(uint64 *)&block_id) | (*(uint64 *)&dss_set_inited_mask))
-#define DSS_BLOCK_ID_SET_NOT_AUX(block_id) ((*(uint64 *)&block_id) & (*(uint64 *)&dss_unset_inited_mask))
-#define DSS_BLOCK_ID_IS_AUX(block_id) (((block_id).item & DSS_AU_UNINITED_MARK) == 1)
-
-#pragma pack(8)
-typedef struct st_dss_addr_t {
-    uint64 volumeid : 10;
-    uint64 offset : 54;
-} dss_addr_t;
-#pragma pack()
-
-typedef struct st_dss_log_def_t {
-    log_type_t log_id;
-    char log_filename[DSS_MAX_NAME_LEN];
-} dss_log_def_t;
-
-#define DSS_INSTANCE_LOG_BUFFER_SIZE_V0 SIZE_M(8)
-#define DSS_LOG_BUF_SLOT_COUNT_V0 16
-#define DSS_INSTANCE_LOG_SPLIT_SIZE_V0 ((DSS_INSTANCE_LOG_BUFFER_SIZE_V0) / (DSS_LOG_BUF_SLOT_COUNT_V0))
-#define DSS_INSTANCE_LOG_SPLIT_SIZE                                                          \
-    ((DSS_INSTANCE_LOG_BUFFER_SIZE_V0) / (DSS_MAX_VOLUME_GROUP_NUM) / (DSS_DISK_UNIT_SIZE) * \
-        (DSS_DISK_UNIT_SIZE))  // 126KB
-#define DSS_VG_LOG_SPLIT_SIZE SIZE_K(64)
-#define DSS_VG_LOG_BUFFER_SIZE SIZE_M(64)
-
-typedef struct st_dss_log_file_ctrl {
-    spinlock_t lock;
-    char *log_buf;  // global log_buf
-    bool8 used;
-    uint32 index;
-    uint64 offset;
-    uint64 lsn;
-} dss_log_file_ctrl_t;
-
-typedef struct st_dss_audit_info {
-    char *action;
-    char resource[DSS_MAX_AUDIT_PATH_LENGTH];
-} dss_audit_info_t;
-
 #define DSS_FREE_POINT(pointer)  \
     {                            \
         if ((pointer) != NULL) { \
@@ -537,21 +388,6 @@ typedef struct st_dss_audit_info {
             (pointer) = NULL;    \
         }                        \
     }
-
-static inline uint32 dss_get_log_size(uint64 au_size)
-{
-    if (au_size < DSS_VG_LOG_BUFFER_SIZE && au_size > 0) {
-        uint64 m = DSS_VG_LOG_BUFFER_SIZE / au_size;
-        uint64 n = DSS_VG_LOG_BUFFER_SIZE % au_size;
-        return (n == 0) ? DSS_VG_LOG_BUFFER_SIZE : (m + 1) * au_size;
-    }
-    return au_size;
-}
-
-char *dss_get_cmd_desc(dss_cmd_type_e cmd_type);
-char *dss_get_print_tab(uint8 level);
-
-char *dss_display_metaid(auid_t id);
 
 #ifdef __cplusplus
 }

@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include "dss_errno.h"
+#include "dss_au.h"
 #include "dss_interaction.h"
 #include "dss_session.h"
 #include "dss_api.h"

@@ -164,6 +164,14 @@ char *g_dss_warn_desc[] = {
     "DSSSpaceUsageUpToHWM",
 };
 
+#define DSS_MAX_PRINT_LEVEL 4
+static char *g_dss_printf_tab[DSS_MAX_PRINT_LEVEL] = {"", "\t", "\t\t", "\t\t\t"};
+
+char *dss_get_print_tab(uint8 level)
+{
+    return g_dss_printf_tab[level];
+}
+
 dss_log_def_t *dss_get_instance_log_def()
 {
     return g_dss_instance_log;

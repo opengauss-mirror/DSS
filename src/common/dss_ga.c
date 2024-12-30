@@ -23,6 +23,8 @@
  */
 
 #include "cm_defs.h"
+#include "cm_debug.h"
+#include "cm_log.h"
 #include "dss_defs.h"
 #include "dss_errno.h"
 #include "dss_ga.h"

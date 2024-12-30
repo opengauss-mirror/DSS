@@ -27,6 +27,7 @@
 
 #include "cm_defs.h"
 #include "cm_date.h"
+#include "cm_timer.h"
 
 #ifdef __cplusplus
 extern "C" {
