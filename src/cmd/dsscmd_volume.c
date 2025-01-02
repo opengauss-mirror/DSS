@@ -545,13 +545,21 @@ static status_t dss_replace_volume_to_disk(dss_vg_info_item_t* vg_item, const ch
             LOG_RUN_ERR("Failed to update volume_ctrl, vg_name is %s, vol_path is %s.", vg_item->vg_name, new_vol);
         }
     } while (0);
-  
-    if (id == 0) {
-        dss_unlock_vg_storage_core(vg_item, new_vol, inst_cfg);
-        dss_close_volume(&vg_item->volume_handle[0]);
-    }
+
     if (ret != CM_SUCCESS) {
+        if (id == 0) {
+            (void)dss_unlock_vg_storage_core(vg_item, new_vol, inst_cfg);
+            dss_close_volume(&vg_item->volume_handle[0]);
+        }
         return ret;
+    } else {
+        if (id == 0) {
+            if (dss_unlock_vg_storage_core(vg_item, new_vol, inst_cfg) != CM_SUCCESS) {
+                dss_close_volume(&vg_item->volume_handle[0]);
+                return CM_ERROR;
+            }
+            dss_close_volume(&vg_item->volume_handle[0]);
+        }
     }
     ret = dss_modify_volume_head(vg_item, old_vol, id, VOLUME_MODIFY_REMOVE);
     if (ret != CM_SUCCESS) {
@@ -676,10 +684,13 @@ status_t dss_modify_volume_offline(
         return CM_ERROR;
     }
     ret = dss_modify_volume_offline_inner(vg_item, old_vol, new_vol, type, inst_cfg);
-    dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
-    dss_inq_free_vg_info(vg_info);
     if (ret != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to execute modify volume inner.\n");
+        (void)dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
+        dss_inq_free_vg_info(vg_info);
+        return ret;
     }
+    ret = dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
+    dss_inq_free_vg_info(vg_info);
     return ret;
 }

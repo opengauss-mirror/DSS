@@ -1036,7 +1036,7 @@ void dss_check_unreg_volume(dss_session_t *session)
     ret = dss_load_vg_ctrl_part(vg_item, (int64)(DSS_VOLUME_HEAD_SIZE - DSS_DISK_UNIT_SIZE),
         &vg_item->dss_ctrl->global_ctrl, DSS_DISK_UNIT_SIZE, &remote);
     dss_unlock_vg_mem_and_shm(session, vg_item);
-    dss_unlock_vg_storage(vg_item, vg_item->entry_path, g_inst_cfg);
+    (void)dss_unlock_vg_storage(vg_item, vg_item->entry_path, g_inst_cfg);
     if (ret != CM_SUCCESS) {
         return;
     }
