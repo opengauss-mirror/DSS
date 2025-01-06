@@ -902,6 +902,7 @@ static status_t dss_refresh_buffer_cache_inner(dss_session_t *session, dss_vg_in
             // may has been linked to recycle meta list
             dss_remove_recycle_meta(session, vg_item, block_ctrl);
             SHM_HASH_BUCKET_REMOVE(bucket, *(sh_mem_p *)&obj_id, block_ctrl, block_ctrl_prev, block_ctrl_next);
+            need_remove = CM_FALSE;
         }
 
         obj_id = obj_id_next;
