@@ -109,7 +109,7 @@ void printf_dss_au_root(dss_au_root_t *au_root)
 void dss_printf_core_ctrl_base(dss_core_ctrl_t *core_ctrl)
 {
     (void)printf("core_ctrl = {\n");
-    (void)printf("  checknum = %u\n", core_ctrl->checksum);
+    (void)printf("  checksum = %u\n", core_ctrl->checksum);
     (void)printf("  reserve = %u\n", core_ctrl->reserve);
     (void)printf("  version = %llu\n", core_ctrl->version);
     (void)printf("  au_size = %u\n", core_ctrl->au_size);
@@ -156,23 +156,23 @@ void printf_gft_list(gft_list_t *items)
 
 void printf_gft_root(gft_root_t *ft_root)
 {
-    (void)printf("    ft_root_free_list = {\n");
+    (void)printf("    free_list = {\n");
 
     gft_list_t *free_list = &ft_root->free_list;
     printf_gft_list(free_list);
     (void)printf("    }\n");
-    (void)printf("    ft_root_items = {\n");
+    (void)printf("    items = {\n");
 
     gft_list_t *items = &ft_root->items;
     printf_gft_list(items);
     (void)printf("    }\n");
     (void)printf("    fid = %llu\n", ft_root->fid);
-    (void)printf("    block_id_first = {\n");
+    (void)printf("    first = {\n");
 
     dss_block_id_t *block_id_first = &ft_root->first;
     printf_auid(block_id_first);
     (void)printf("    }\n");
-    (void)printf("    block_id_last = {\n");
+    (void)printf("    last = {\n");
 
     dss_block_id_t *block_id_last = &ft_root->last;
     printf_auid(block_id_last);
