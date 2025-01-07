@@ -47,6 +47,25 @@
 #define dss_strdup strdup
 #endif
 
+static status_t check_no_sub_meta_member(text_t *key)
+{
+    // When key->str is NULL, it is the condition that the meta is not followed by ".xxx".
+    // e.g. fs_block bitmap[0]=some_value
+    // e.g. fs_block head.common.type=1
+    if (key->str == NULL) {
+        return CM_SUCCESS;
+    }
+    // When key->str is not NULL, it is the condition that the meta is followed by ".xxx".
+    // e.g. fs_block bitmap[0].=some_value
+    // e.g. fs_block bitmap[0].abc=some_value
+    // e.g. fs_block head.common.type.=1
+    // e.g. fs_block head.common.type.ttt=1
+    key->str[key->len] = '\0';
+    DSS_PRINT_RUN_ERROR(
+        "Invalid post-fix(.%s) in key-value string, it may be following a meta of base type.\n", key->str);
+    return CM_ERROR;
+}
+
 typedef status_t (*repair_func_t)(char *item_ptr, text_t *key, text_t *value);
 typedef struct st_repair_items {
     const char *name;
@@ -103,6 +122,7 @@ status_t repair_parse_kv(text_t *text, text_t *name, text_t *value, uint32 *line
 
 static status_t repair_func_dss_block_id_t(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     dss_block_id_t block_id;
     status_t status = cm_text2uint64(value, (uint64 *)&block_id);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("block_id:%s is not a valid uint64\n", value->str));
@@ -115,6 +135,7 @@ static status_t repair_func_dss_block_id_t(char *item_ptr, text_t *key, text_t *
 
 static status_t repair_func_ftid_t(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     ftid_t ftid;
     status_t status = cm_text2uint64(value, (uint64 *)&ftid);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("ftid:%s is not a valid uint64\n", value->str));
@@ -132,6 +153,7 @@ static status_t repair_func_auid_t(char *item_ptr, text_t *key, text_t *value)
 
 static status_t repair_func_uint64(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     uint64 val;
     status_t status = cm_text2uint64(value, &val);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("repair value:%s is not a valid uint64\n", value->str));
@@ -142,6 +164,7 @@ static status_t repair_func_uint64(char *item_ptr, text_t *key, text_t *value)
 
 static status_t repair_func_uint32_t(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     uint32 val;
     status_t status = cm_text2uint32(value, &val);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("repair value:%s is not a valid uint32\n", value->str));
@@ -152,6 +175,7 @@ static status_t repair_func_uint32_t(char *item_ptr, text_t *key, text_t *value)
 
 static status_t repair_func_uint16_t(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     uint16 val;
     status_t status = cm_text2uint16(value, &val);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("repair value:%s is not a valid uint16\n", value->str));
@@ -207,6 +231,7 @@ static status_t repair_func_complex_meta(
 
 static status_t repair_func_common_block_type(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     uint32 val;
     status_t status = cm_text2uint32(value, &val);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("repair value:%s is not a valid uint32\n", value->str));
@@ -223,6 +248,7 @@ static status_t repair_func_common_block_type(char *item_ptr, text_t *key, text_
 }
 static status_t repair_func_common_block_flags(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     uint8 val;
     status_t status = cm_text2uint8(value, &val);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("repair value:%s is not a valid uint8\n", value->str));
@@ -272,6 +298,7 @@ static status_t repair_set_fs_block_header(char *item_ptr, text_t *key, text_t *
 
 static status_t repair_set_fs_block_bitmap(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     LOG_RUN_INF("[TBOX][REPAIR] modify fs bitmap:%s.", value->str);
     return repair_func_dss_block_id_t(item_ptr, key, value);
 }
@@ -399,6 +426,7 @@ static status_t repair_set_fs_aux_root(char *item_ptr, text_t *key, text_t *valu
 
 static status_t repair_set_volume_attr_id(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     uint16 val;
     status_t status = cm_text2uint16(value, &val);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("repair value:%s is not a valid uint16\n", value->str));
@@ -484,6 +512,7 @@ static status_t dss_core_ctrl_repairer(char *meta_buffer, text_t *name, text_t *
 
 static status_t repair_func_volume_name(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     if (value->len > DSS_MAX_VOLUME_PATH_LEN - 1) {
         LOG_RUN_ERR("[TBOX][REPAIR] volume_name is too long, max len is %u, your input is %u.",
             (uint32)(DSS_MAX_VOLUME_PATH_LEN - 1), value->len);
@@ -495,6 +524,7 @@ static status_t repair_func_volume_name(char *item_ptr, text_t *key, text_t *val
 }
 static status_t repair_func_volume_type_val(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     uint32 val;
     status_t status = cm_text2uint32(value, &val);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("repair value:%s is not a valid uint32\n", value->str));
@@ -523,6 +553,7 @@ static status_t repair_set_volume_type(char *item_ptr, text_t *key, text_t *valu
 
 static status_t repair_set_vg_name(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     if (value->len > DSS_MAX_NAME_LEN - 1) {
         LOG_RUN_ERR("[TBOX][REPAIR] vg_name is too long, max len is %u, your input is %u.",
             (uint32)(DSS_MAX_NAME_LEN - 1), value->len);
@@ -544,6 +575,7 @@ static status_t repair_set_timeval(char *item_ptr, text_t *key, text_t *value)
 
 static status_t repair_func_bak_level_e(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     uint32 val = 0;
     status_t status = cm_text2uint32(value, &val);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("[TBOX][REPAIR] repair value:%s is not a valid uint32.\n", value->str));
@@ -743,6 +775,7 @@ static status_t repair_func_gft_list_t(char *item_ptr, text_t *key, text_t *valu
 
 static status_t repair_set_ft_name(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     LOG_RUN_INF("[TBOX][REPAIR] modify ft name from %s to %s;", item_ptr, value->str);
     if (value->len > DSS_MAX_NAME_LEN - 1) {
         DSS_PRINT_ERROR("[TBOX][REPAIR] modify ft name is too long, max len is %u, your input %s, len is %u.\n",
@@ -754,6 +787,7 @@ static status_t repair_set_ft_name(char *item_ptr, text_t *key, text_t *value)
 
 static status_t repair_set_ft_type(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     uint32 ft_type;
     status_t status = cm_text2uint32(value, &ft_type);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("repair value:%s is not a valid uint32\n", value->str));
@@ -1229,6 +1263,7 @@ static status_t dss_repair_load_volume_ctrl(dss_volume_t *volume, dss_volume_ctr
 
 static status_t repair_set_volume_def_id(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     // id is only 16-bit long.
     uint16 val;
     status_t status = cm_text2uint16(value, &val);
@@ -1248,6 +1283,7 @@ static status_t repair_set_volume_def_id(char *item_ptr, text_t *key, text_t *va
 
 static status_t repair_set_volume_def_flag(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     // flags is only 3-bit long.
     uint8 val;
     status_t status = cm_text2uint8(value, &val);
@@ -1267,6 +1303,7 @@ static status_t repair_set_volume_def_flag(char *item_ptr, text_t *key, text_t *
 
 static status_t repair_set_volume_def_name(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     if (value->len > DSS_MAX_VOLUME_PATH_LEN - 1) {
         LOG_RUN_ERR("[TBOX][REPAIR] defs[i].name is too long, max len is %u, your input is %u.",
             (uint32)(DSS_MAX_VOLUME_PATH_LEN - 1), value->len);
@@ -1279,6 +1316,7 @@ static status_t repair_set_volume_def_name(char *item_ptr, text_t *key, text_t *
 
 static status_t repair_set_volume_def_code(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     if (value->len > DSS_VOLUME_CODE_SIZE - 1) {
         LOG_RUN_ERR("[TBOX][REPAIR] defs[i].code is too long, max len is %u, your input is %u.",
             (uint32)(DSS_VOLUME_CODE_SIZE - 1), value->len);
@@ -1409,6 +1447,7 @@ static status_t dss_repair_load_fs_aux_block(repair_input_def_t *input, dss_volu
 
 static status_t repair_set_fs_aux_bitmap_num(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     uint32 val;
     status_t status = cm_text2uint32(value, &val);
     DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("repair value:%s is not a valid uint32\n", value->str));
@@ -1435,7 +1474,7 @@ repair_items_t g_repair_fs_aux_block_head_items_list[] = {
 };
 
 repair_complex_meta_funcs_t repair_set_fs_aux_block_header_funcs = {
-    "fs block header", g_repair_fs_aux_block_head_items_list, REPAIR_FS_AUX_BLOCK_HEAD_ITEM_COUNT};
+    "fs aux block header", g_repair_fs_aux_block_head_items_list, REPAIR_FS_AUX_BLOCK_HEAD_ITEM_COUNT};
 
 static status_t repair_set_fs_aux_block_header(char *item_ptr, text_t *key, text_t *value)
 {
@@ -1444,6 +1483,7 @@ static status_t repair_set_fs_aux_block_header(char *item_ptr, text_t *key, text
 
 static status_t repair_set_fs_aux_block_bitmap(char *item_ptr, text_t *key, text_t *value)
 {
+    DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
     bool32 set_or_unset = (value->str[0] == '1');
     uint8 bit_offset = *(uint8 *)(&value->str[1]);
     uint8 bit_mask = ((uint8)0x1 << bit_offset);
