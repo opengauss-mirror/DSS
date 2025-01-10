@@ -350,50 +350,48 @@ void dss_unlock_vg_mem_and_shm_ex(dss_session_t *session, char *vg_name)
     }
 }
 
-void dss_mv_to_recycle_dir(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node)
+void dss_mv_to_specific_dir(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, gft_node_t *specific_node)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(node != NULL);
+    CM_ASSERT(specific_node != NULL);
     gft_node_t *last_node = NULL;
-    dss_au_root_t *dss_au_root = DSS_GET_AU_ROOT(vg_item->dss_ctrl);
-    ftid_t recycle_ftid = *(ftid_t *)(&dss_au_root->free_root);
-    gft_node_t *recycle_node = dss_get_ft_node_by_ftid(session, vg_item, recycle_ftid, CM_TRUE, CM_FALSE);
-    CM_ASSERT(recycle_node != NULL);
 
-    LOG_DEBUG_INF("[FT][RECYCLE] Begin to mv node to recycle dir, name:%s, node:%s, recycle dir count:%u.", node->name,
-        dss_display_metaid(node->id), recycle_node->items.count);
-    LOG_DEBUG_INF("[FT][RECYCLE] Now recycle dir first node:%s.", dss_display_metaid(recycle_node->items.first));
-    LOG_DEBUG_INF("[FT][RECYCLE] Now recycle dir last node:%s.", dss_display_metaid(recycle_node->items.last));
-    recycle_node->items.count++;
-    node->prev = recycle_node->items.last;
-    node->parent = recycle_ftid;
+    LOG_DEBUG_INF("[FT] Begin to mv node to specific dir, name:%s, node:%s, specific dir count:%u.", node->name,
+        dss_display_metaid(node->id), specific_node->items.count);
+    LOG_DEBUG_INF("[FT] Now specific dir first node:%s.", dss_display_metaid(specific_node->items.first));
+    LOG_DEBUG_INF("[FT] Now specific dir last node:%s.", dss_display_metaid(specific_node->items.last));
+    specific_node->items.count++;
+    node->prev = specific_node->items.last;
+    node->parent = specific_node->id;
     dss_set_blockid(&node->next, DSS_INVALID_64);
 
-    bool32 cmp = dss_cmp_blockid(recycle_node->items.last, DSS_INVALID_64);
+    bool32 cmp = dss_cmp_blockid(specific_node->items.last, DSS_INVALID_64);
     if (cmp) {
-        recycle_node->items.first = node->id;
+        specific_node->items.first = node->id;
     } else {
         last_node =
-            (gft_node_t *)dss_get_ft_node_by_ftid(session, vg_item, recycle_node->items.last, CM_TRUE, CM_FALSE);
+            (gft_node_t *)dss_get_ft_node_by_ftid(session, vg_item, specific_node->items.last, CM_TRUE, CM_FALSE);
         CM_ASSERT(last_node != NULL);
         last_node->next = node->id;
     }
-    recycle_node->items.last = node->id;
+    specific_node->items.last = node->id;
 
-    dss_redo_recycle_ft_node_t redo;
-    redo.node[DSS_REDO_RECYCLE_FT_NODE_SELF_INDEX] = *node;
+    dss_redo_move_ft_node_t redo;
+    redo.node[DSS_REDO_MOVE_FT_NODE_SELF_INDEX] = *node;
     if (last_node != NULL) {
-        redo.node[DSS_REDO_RECYCLE_FT_NODE_LAST_INDEX] = *last_node;
+        redo.node[DSS_REDO_MOVE_FT_NODE_LAST_INDEX] = *last_node;
     } else {
-        dss_set_auid(&redo.node[DSS_REDO_RECYCLE_FT_NODE_LAST_INDEX].id, CM_INVALID_ID64);
+        dss_set_auid(&redo.node[DSS_REDO_MOVE_FT_NODE_LAST_INDEX].id, CM_INVALID_ID64);
     }
-    redo.node[DSS_REDO_RECYCLE_FT_NODE_RECYCLE_INDEX] = *recycle_node;
+    redo.node[DSS_REDO_MOVE_FT_NODE_SPECIFIC_INDEX] = *specific_node;
 
-    dss_put_log(session, vg_item, DSS_RT_RECYCLE_FILE_TABLE_NODE, &redo, sizeof(dss_redo_recycle_ft_node_t));
-    DSS_LOG_DEBUG_OP("[FT][RECYCLE] Succeed to mv to recycle dir, name:%s, node:%s, now recycle dir count:%u.",
-        node->name, dss_display_metaid(node->id), recycle_node->items.count);
-    LOG_DEBUG_INF("[FT][RECYCLE] Now recycle dir first node:%s.", dss_display_metaid(recycle_node->items.first));
-    LOG_DEBUG_INF("[FT][RECYCLE] Now recycle dir last node:%s.", dss_display_metaid(recycle_node->items.last));
+    dss_put_log(session, vg_item, DSS_RT_MOVE_FILE_TABLE_NODE, &redo, sizeof(dss_redo_move_ft_node_t));
+    DSS_LOG_DEBUG_OP("[FT] Succeed to mv to specific dir, name:%s, node:%s, now specific dir count:%u.",
+        node->name, dss_display_metaid(node->id), specific_node->items.count);
+    LOG_DEBUG_INF("[FT] Now specific dir first node:%s.", dss_display_metaid(specific_node->items.first));
+    LOG_DEBUG_INF("[FT] Now specific dir last node:%s.", dss_display_metaid(specific_node->items.last));
 }
 
 status_t dss_recycle_empty_file(
@@ -2197,6 +2195,36 @@ void dss_free_ft_node(
     CM_ASSERT(parent_node != NULL);
     CM_ASSERT(node != NULL);
     dss_free_ft_node_inner(session, vg_item, parent_node, node, real_del);
+}
+
+void dss_remove_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node)
+{
+    CM_ASSERT(vg_item != NULL);
+    CM_ASSERT(parent_node != NULL);
+    CM_ASSERT(node != NULL);
+    gft_block_info_t prev_info = {0};
+    gft_block_info_t next_info = {0};
+    dss_get_prev_and_next_node(session, vg_item, parent_node, node, &prev_info, &next_info);
+
+    dss_redo_remove_ft_node_t redo_node;
+    redo_node.node[DSS_REDO_REMOVE_FT_NODE_PARENT_INDEX] = *parent_node;
+    if (prev_info.ft_node != NULL) {
+        redo_node.node[DSS_REDO_REMOVE_FT_NODE_PREV_INDEX] = *prev_info.ft_node;
+        DSS_LOG_DEBUG_OP("Remove ft node, prev_node name:%s, prev_node id:%s.", prev_info.ft_node->name,
+            dss_display_metaid(prev_info.ft_node->id));
+    } else {
+        dss_set_auid(&redo_node.node[DSS_REDO_REMOVE_FT_NODE_PREV_INDEX].id, CM_INVALID_ID64);
+    }
+    if (next_info.ft_node != NULL) {
+        redo_node.node[DSS_REDO_REMOVE_FT_NODE_NEXT_INDEX] = *next_info.ft_node;
+        DSS_LOG_DEBUG_OP("Remove ft node, next_node name:%s, next_node id:%s.", next_info.ft_node->name,
+            dss_display_metaid(next_info.ft_node->id));
+    } else {
+        dss_set_auid(&redo_node.node[DSS_REDO_REMOVE_FT_NODE_NEXT_INDEX].id, CM_INVALID_ID64);
+    }
+    redo_node.node[DSS_REDO_REMOVE_FT_NODE_SELF_INDEX] = *node;
+    dss_put_log(session, vg_item, DSS_RT_REMOVE_FILE_TABLE_NODE, &redo_node, sizeof(dss_redo_remove_ft_node_t));
+    DSS_LOG_DEBUG_OP("[FT][REMOVE] Remove ft node, name:%s, %s", node->name, dss_display_metaid(node->id));
 }
 
 gft_node_t *dss_find_ft_node_core(
@@ -4146,10 +4174,11 @@ status_t dss_load_fs_block_by_blockid(
 
     return CM_SUCCESS;
 }
-status_t dss_check_rename_path(dss_session_t *session, const char *src_path, const char *dst_path, text_t *dst_name)
+status_t dss_check_rename_path(const char *src_path, const char *dst_path, text_t *dst_name, bool32 *is_cross_dir)
 {
     text_t src_dir;
     text_t src_name;
+    *is_cross_dir = CM_FALSE;
     cm_str2text((char *)src_path, &src_name);
     if (!cm_fetch_rtext(&src_name, '/', '\0', &src_dir)) {
         DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("not a complete absolute path name(%s %s)", T2S(&src_dir), src_path),
@@ -4163,7 +4192,7 @@ status_t dss_check_rename_path(dss_session_t *session, const char *src_path, con
     }
 
     if (cm_text_equal(&src_dir, &dst_dir) == CM_FALSE) {
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FILE_RENAME, "can not change path."));
+        *is_cross_dir = CM_TRUE;
     }
     return CM_SUCCESS;
 }
