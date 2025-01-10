@@ -247,6 +247,8 @@ typedef struct st_get_ft_block_req {
     dss_message_head_t dss_head;
     char path[DSS_FILE_PATH_MAX_LENGTH];
     gft_item_type_t type;
+    // add flag after DSS_VERSION_2
+    int32 flag;
 } dss_get_ft_block_req_t;
 
 typedef struct st_get_ft_block_ack {
@@ -297,7 +299,7 @@ int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, uint32 ver
 status_t dss_join_cluster(bool32 *join_succ);
 status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg_name);
 status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_path, gft_item_type_t type,
-    dss_check_dir_output_t *output_info, bool32 is_throw_err);
+    dss_check_dir_output_t *output_info, int32 flag, bool32 is_throw_err);
 
 #ifdef __cplusplus
 }

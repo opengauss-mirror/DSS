@@ -455,10 +455,10 @@ static status_t dss_read_link_file(
     return CM_SUCCESS;
 }
 
-static status_t dss_check_dir_core(
-    dss_session_t *session, const char *dir_path, char *name, uint32_t *beg_pos, dss_check_dir_param_t *output_param);
+static status_t dss_check_dir_core(dss_session_t *session, const char *dir_path, char *name, uint32_t *beg_pos,
+    dss_check_dir_param_t *output_param, int32 flag);
 static status_t dss_open_link(
-    dss_session_t *session, const char *link_path, dss_vg_info_item_t **vg_item, gft_node_t **out_node);
+    dss_session_t *session, const char *link_path, dss_vg_info_item_t **vg_item, gft_node_t **out_node, int32 flag);
 
 status_t dss_read_link(dss_session_t *session, char *link_path, char *out_filepath, uint32 *out_len)
 {
@@ -467,7 +467,7 @@ status_t dss_read_link(dss_session_t *session, char *link_path, char *out_filepa
     char name[DSS_MAX_NAME_LEN];
     CM_RETURN_IFERR(dss_find_vg_by_dir(link_path, name, &vg_item));
     dss_lock_vg_mem_and_shm_s(session, vg_item);
-    status_t status = dss_open_link(session, link_path, &vg_item, &node);
+    status_t status = dss_open_link(session, link_path, &vg_item, &node, O_RDONLY);
     if (status != CM_SUCCESS) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
         return status;
@@ -515,7 +515,7 @@ status_t dss_write_link_file(dss_session_t *session, char *link_path, char *dst_
     char name[DSS_MAX_NAME_LEN];
     CM_RETURN_IFERR(dss_find_vg_by_dir(link_path, name, &vg_item));
     dss_lock_vg_mem_and_shm_s(session, vg_item);
-    status = dss_open_link(session, link_path, &vg_item, &node);
+    status = dss_open_link(session, link_path, &vg_item, &node, O_RDWR);
     dss_unlock_vg_mem_and_shm(session, vg_item);
     CM_RETURN_IFERR(status);
     CM_RETURN_IF_FALSE(node->type == GFT_LINK);
@@ -564,7 +564,7 @@ status_t dss_write_link_file(dss_session_t *session, char *link_path, char *dst_
 }
 
 static status_t dss_check_link(
-    dss_session_t *session, const char *dir_path, uint32_t *beg_pos, dss_check_dir_param_t *output_param)
+    dss_session_t *session, const char *dir_path, uint32_t *beg_pos, dss_check_dir_param_t *output_param, int32 flag)
 {
     // last node is a link
     if (dir_path[*beg_pos] == 0 && !output_param->last_is_link) {
@@ -599,7 +599,7 @@ static status_t dss_check_link(
     }
     output_param->p_node = NULL;
     // clean the parent node info before find the next link node
-    return dss_check_dir_core(session, link_path, name, beg_pos, output_param);
+    return dss_check_dir_core(session, link_path, name, beg_pos, output_param, flag);
 }
 
 void dss_check_ft_block_flags(dss_ft_block_t *block, dss_block_flag_e flags)
@@ -627,8 +627,20 @@ void dss_check_ft_node_parent(gft_node_t *node, ftid_t parent_id)
     dss_check_ft_block_flags(block, DSS_BLOCK_FLAG_USED);
 }
 
-static status_t dss_check_dir_core(
-    dss_session_t *session, const char *dir_path, char *name, uint32_t *beg_pos, dss_check_dir_param_t *output_param)
+status_t dss_check_node(gft_node_t *node, const char *dir_path, int flag)
+{
+    if (((flag & O_WRONLY) != 0) || ((flag & O_RDWR) != 0)) {
+        if ((node->flags & DSS_FT_NODE_FLAG_SYSTEM) != 0) {
+            DSS_THROW_ERROR(ERR_DSS_FILE_MODIFY_SYSTEM, dir_path);
+            LOG_DEBUG_ERR("Failed to check node, path:%s exist system dir.", dir_path);
+            return CM_ERROR;
+        }
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_check_dir_core(dss_session_t *session, const char *dir_path, char *name, uint32_t *beg_pos,
+    dss_check_dir_param_t *output_param, int32 flag)
 {
     uint32_t next_pos;
     status_t status;
@@ -645,6 +657,9 @@ static status_t dss_check_dir_core(
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to get the root node %s.", name));
     }
     output_param->last_node = node;
+    if (dss_check_node(node, dir_path, flag) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
     do {
         status = dss_get_name_from_path(dir_path, beg_pos, name);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to get name from path %s,%d.", dir_path, status));
@@ -655,6 +670,9 @@ static status_t dss_check_dir_core(
             session, output_param->vg_item, output_param->last_node, name, output_param->is_skip_delay_file);
         if (output_param->last_node == NULL) {
             return ERR_DSS_FILE_NOT_EXIST;
+        }
+        if (dss_check_node(output_param->last_node, dir_path, flag) != CM_SUCCESS) {
+            return CM_ERROR;
         }
         dss_check_ft_node_parent(output_param->last_node, node->id);
         output_param->p_node = node;
@@ -671,7 +689,7 @@ static status_t dss_check_dir_core(
                 LOG_DEBUG_ERR("link is not supported to be queried from bbox file.");
                 return CM_ERROR;
             }
-            status = dss_check_link(session, dir_path, beg_pos, output_param);
+            status = dss_check_link(session, dir_path, beg_pos, output_param, flag);
             if (status != CM_SUCCESS && output_param->last_is_link) {
                 output_param->last_node = output_param->link_node;
                 cm_reset_error();
@@ -695,7 +713,7 @@ static status_t dss_exist_item_core(
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to get name from path %s.", dir_path));
     }
     dss_check_dir_param_t output_param = {NULL, NULL, NULL, NULL, CM_TRUE, CM_FALSE, CM_FALSE, CM_FALSE};
-    DSS_RETURN_IF_ERROR(dss_check_dir_core(session, dir_path, name, &beg_pos, &output_param));
+    DSS_RETURN_IF_ERROR(dss_check_dir_core(session, dir_path, name, &beg_pos, &output_param, O_RDONLY));
     if ((output_param.last_node == NULL) || (output_param.last_node->flags & DSS_FT_NODE_FLAG_DEL)) {
         *result = CM_FALSE;
     } else {
@@ -742,7 +760,7 @@ void regist_get_node_by_path_remote_proc(dss_get_node_by_path_remote_proc_t proc
 }
 
 status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_type_t type,
-    dss_check_dir_output_t *output_info, bool32 is_throw_err)
+    dss_check_dir_output_t *output_info, int32 flag, bool32 is_throw_err)
 {
     CM_ASSERT(dir_path != NULL);
     status_t status = CM_ERROR;
@@ -753,7 +771,7 @@ status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_ty
             return CM_ERROR;
         }
         if (dss_get_node_by_path_remote_proc != NULL) {
-            status = dss_get_node_by_path_remote_proc(session, dir_path, type, output_info, is_throw_err);
+            status = dss_get_node_by_path_remote_proc(session, dir_path, type, output_info, flag, is_throw_err);
             if (status == ERR_DSS_MES_ILL) {
                 continue;
             }
@@ -775,7 +793,7 @@ status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_ty
         output_param.vg_item = *output_info->item;
     }
     output_param.is_find_link = (type == GFT_LINK);
-    status = dss_check_dir_core(session, dir_path, name, &beg_pos, &output_param);
+    status = dss_check_dir_core(session, dir_path, name, &beg_pos, &output_param, flag);
     if (status == ERR_DSS_FILE_NOT_EXIST && is_throw_err) {
         DSS_THROW_ERROR(ERR_DSS_FILE_NOT_EXIST, name, dir_path);
     }
@@ -856,7 +874,7 @@ status_t dss_open_dir(dss_session_t *session, const char *dir_path, bool32 is_re
     do {
         dss_vg_info_item_t *dir_vg_item = vg_item;
         dss_check_dir_output_t output_info = {&node, &dir_vg_item, NULL, CM_FALSE};
-        status = dss_check_dir(session, dir_path, GFT_PATH, &output_info, CM_TRUE);
+        status = dss_check_dir(session, dir_path, GFT_PATH, &output_info, O_RDONLY, CM_TRUE);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to check dir:%s.", dir_path);
             break;
@@ -1191,7 +1209,7 @@ gft_node_t *dss_get_gft_node_by_path(
         dss_get_dir_path(dir_path, DSS_FILE_PATH_MAX_LENGTH, path);
         *dir_vg_item = vg_item;
         dss_check_dir_output_t output_info = {&parent_node, dir_vg_item, NULL, CM_FALSE};
-        status = dss_check_dir(session, dir_path, GFT_PATH, &output_info, CM_TRUE);
+        status = dss_check_dir(session, dir_path, GFT_PATH, &output_info, O_RDONLY, CM_TRUE);
         DSS_BREAK_IF_ERROR(status);
         uint32_t pos = dss_get_last_delimiter(path, '/');
         status = dss_get_name_from_path(path, &pos, name);
@@ -1242,14 +1260,14 @@ status_t dss_check_file(dss_vg_info_item_t *vg_item)
     return CM_SUCCESS;
 }
 
-status_t dss_open_file_check_s(
-    dss_session_t *session, const char *file, dss_vg_info_item_t **vg_item, gft_item_type_t type, gft_node_t **out_node)
+status_t dss_open_file_check_s(dss_session_t *session, const char *file, dss_vg_info_item_t **vg_item,
+    gft_item_type_t type, gft_node_t **out_node, int32_t flag)
 {
     status_t status = dss_check_file(*vg_item);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check file, errcode:%d.", cm_get_error_code()));
     dss_vg_info_item_t *file_vg_item = *vg_item;
     dss_check_dir_output_t output_info = {out_node, &file_vg_item, NULL, CM_FALSE};
-    status = dss_check_dir(session, file, type, &output_info, CM_TRUE);
+    status = dss_check_dir(session, file, type, &output_info, flag, CM_TRUE);
     DSS_RETURN_IFERR2(
         status, LOG_DEBUG_ERR("Failed to check dir when open file read, errcode:%d.", cm_get_error_code()));
     if (file_vg_item->id != (*vg_item)->id) {
@@ -1269,7 +1287,7 @@ status_t dss_open_file_check(
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check file,errcode:%d.", cm_get_error_code()));
     dss_vg_info_item_t *file_vg_item = *vg_item;
     dss_check_dir_output_t output_info = {out_node, &file_vg_item, NULL, CM_TRUE};
-    status = dss_check_dir(session, file, type, &output_info, CM_TRUE);
+    status = dss_check_dir(session, file, type, &output_info, O_WRONLY, CM_TRUE);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to check dir when open file, errcode:%d.", cm_get_error_code());
         return status;
@@ -1307,8 +1325,8 @@ static status_t dss_open_file_find_block_and_insert_index(
     return CM_SUCCESS;
 }
 
-static status_t dss_open_file_core(
-    dss_session_t *session, const char *path, uint32 type, gft_node_t **out_node, dss_find_node_t *find_info)
+static status_t dss_open_file_core(dss_session_t *session, const char *path, uint32 type, gft_node_t **out_node,
+    dss_find_node_t *find_info, int32_t flag)
 {
     CM_ASSERT(path != NULL);
     dss_vg_info_item_t *vg_item = NULL;
@@ -1317,7 +1335,7 @@ static status_t dss_open_file_core(
     CM_RETURN_IFERR(dss_find_vg_by_dir(path, name, &vg_item));
     dss_lock_vg_mem_and_shm_s(session, vg_item);
 
-    status_t status = dss_open_file_check_s(session, path, &vg_item, type, out_node);
+    status_t status = dss_open_file_check_s(session, path, &vg_item, type, out_node, flag);
     DSS_RETURN_IFERR2(status, dss_unlock_vg_mem_and_shm(session, vg_item));
     if (*out_node == NULL) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
@@ -1354,18 +1372,18 @@ status_t dss_open_file(dss_session_t *session, const char *file, int32_t flag, d
 {
     DSS_LOG_DEBUG_OP("Begin to open file:%s, session id:%u.", file, session->id);
     gft_node_t *out_node = NULL;
-    CM_RETURN_IFERR(dss_open_file_core(session, file, GFT_FILE, &out_node, find_info));
+    CM_RETURN_IFERR(dss_open_file_core(session, file, GFT_FILE, &out_node, find_info, flag));
     uint64 fid = out_node->fid;
     DSS_LOG_DEBUG_OP("Succeed to open file:%s, fid:%llu, ftid:%s, session:%u.", file, fid,
         dss_display_metaid(out_node->id), session->id);
     return CM_SUCCESS;
 }
 
-static status_t dss_open_link_core(
-    dss_session_t *session, dss_vg_info_item_t **vg_item, const char *path, uint32 type, gft_node_t **out_node)
+static status_t dss_open_link_core(dss_session_t *session, dss_vg_info_item_t **vg_item, const char *path, uint32 type,
+    gft_node_t **out_node, int32 flag)
 {
     CM_ASSERT(path != NULL);
-    status_t status = dss_open_file_check_s(session, path, vg_item, type, out_node);
+    status_t status = dss_open_file_check_s(session, path, vg_item, type, out_node, flag);
     if (status != CM_SUCCESS) {
         return CM_ERROR;
     }
@@ -1376,13 +1394,13 @@ static status_t dss_open_link_core(
 }
 
 static status_t dss_open_link(
-    dss_session_t *session, const char *link_path, dss_vg_info_item_t **vg_item, gft_node_t **out_node)
+    dss_session_t *session, const char *link_path, dss_vg_info_item_t **vg_item, gft_node_t **out_node, int32 flag)
 {
     LOG_DEBUG_INF("Begin to open link:%s session id:%u", link_path, session->id);
     char name[DSS_MAX_NAME_LEN];
 
     DSS_RETURN_IF_ERROR(dss_find_vg_by_dir(link_path, name, vg_item));
-    DSS_RETURN_IF_ERROR(dss_open_link_core(session, vg_item, link_path, GFT_LINK, out_node));
+    DSS_RETURN_IF_ERROR(dss_open_link_core(session, vg_item, link_path, GFT_LINK, out_node, flag));
     DSS_LOG_DEBUG_OP("Succeed to open link:%s, fid:%llu, session id:%u, entry:%s.", link_path, (*out_node)->fid,
         session->id, dss_display_metaid((*out_node)->entry));
     return CM_SUCCESS;

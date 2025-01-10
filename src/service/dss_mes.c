@@ -1165,6 +1165,9 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
     LOG_DEBUG_INF("[MES] Exec cmd:%u on remote node:%u begin.", (uint32)cmd, remoteid);
     do {
         uint32 proto_ver = dss_get_remote_proto_ver(remoteid);
+        if (cmd == DSS_CMD_REQ_GET_FT_BLOCK && proto_ver < DSS_VERSION_3) {
+            req_size = OFFSET_OF(dss_get_ft_block_req_t, flag);
+        }
         // 1. init msg head
         dss_init_mes_head(dss_head, cmd, 0, (uint16)currid, (uint16)remoteid, req_size, proto_ver, 0);
         // 2. send request to remote
@@ -1612,10 +1615,11 @@ static status_t dss_get_node_by_path_inner(dss_session_t *session, dss_check_dir
 }
 
 status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_path, gft_item_type_t type,
-    dss_check_dir_output_t *output_info, bool32 is_throw_err)
+    dss_check_dir_output_t *output_info, int32 flag, bool32 is_throw_err)
 {
     dss_get_ft_block_req_t req;
     req.type = type;
+    req.flag = flag;
     errno_t errcode = strncpy_s(req.path, sizeof(req.path), dir_path, strlen(dir_path));
     DSS_SECUREC_SS_RETURN_IF_ERROR(errcode, CM_ERROR);
 
@@ -1708,7 +1712,11 @@ static status_t dss_proc_get_ft_block_req_core(
     gft_node_t *parent_node = NULL;
     dss_vg_info_item_t *file_vg_item = *vg_item;
     dss_check_dir_output_t output_info = {&out_node, &file_vg_item, &parent_node, CM_FALSE};
-    DSS_RETURN_IF_ERROR(dss_check_dir(session, req->path, req->type, &output_info, CM_TRUE));
+    int32 flag = O_RDONLY;
+    if (req->dss_head.msg_proto_ver >= DSS_VERSION_3) {
+        flag = req->flag;
+    }
+    DSS_RETURN_IF_ERROR(dss_check_dir(session, req->path, req->type, &output_info, flag, CM_TRUE));
     if (file_vg_item->id != (*vg_item)->id) {
         LOG_DEBUG_INF("Change shm lock when get link path :%s, src vg id:%u, dst vg id:%u.", req->path, (*vg_item)->id,
             file_vg_item->id);
@@ -1757,15 +1765,20 @@ static status_t dss_proc_get_ft_block_req_core(
 
 void dss_proc_get_ft_block_req(dss_session_t *session, mes_msg_t *msg)
 {
-    if (msg->size != sizeof(dss_get_ft_block_req_t)) {
-        LOG_RUN_ERR("Get ft block from remote node check req msg size fail.");
-        return;
-    }
     dss_get_ft_block_req_t *req = (dss_get_ft_block_req_t *)msg->buffer;
     uint16 src_inst = req->dss_head.dst_inst;
     uint16 dst_inst = req->dss_head.src_inst;
     ruid_type ruid = req->dss_head.ruid;
     uint32 proto_ver = req->dss_head.msg_proto_ver;
+    if (proto_ver < DSS_VERSION_3 && msg->size != OFFSET_OF(dss_get_ft_block_req_t, flag)) {
+        LOG_RUN_ERR(
+            "[VERSION(%u)]Get ft block from remote node check req msg size fail, msg size:%u.", proto_ver, msg->size);
+        return;
+    } else if (proto_ver >= DSS_VERSION_3 && msg->size != sizeof(dss_get_ft_block_req_t)) {
+        LOG_RUN_ERR(
+            "[VERSION(%u)]Get ft block from remote node check req msg size failed, msg size:%u.", proto_ver, msg->size);
+        return;
+    }
     // please solve with your proto_ver
     if (req->type > GFT_LINK) {
         LOG_RUN_ERR("Get ft block from remote node:%u check req msg type:%d fail.", (uint32)dst_inst, req->type);

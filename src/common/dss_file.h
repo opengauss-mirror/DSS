@@ -151,7 +151,7 @@ dss_fs_block_t *dss_find_fs_block(dss_session_t *session, dss_vg_info_item_t *vg
 status_t dss_check_rename_path(const char *src_path, const char *dst_path, text_t *dst_name, bool32 *is_cross_dir);
 status_t dss_get_name_from_path(const char *path, uint32_t *beg_pos, char *name);
 status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_type_t type,
-    dss_check_dir_output_t *output_info, bool32 is_throw_err);
+    dss_check_dir_output_t *output_info, int32 flag, bool32 is_throw_err);
 
 dss_env_t *dss_get_env(void);
 dss_config_t *dss_get_inst_cfg(void);
@@ -162,6 +162,7 @@ status_t dss_check_path(const char *path);
 status_t dss_check_volume_path(const char *path);
 status_t dss_check_device_path(const char *path);
 status_t dss_check_path_both(const char *path);
+status_t dss_check_node(gft_node_t *node, const char *dir_path, int flag);
 
 status_t dss_refresh_vginfo(dss_vg_info_item_t *vg_item);
 
@@ -383,7 +384,7 @@ void regist_broadcast_check_file_open_proc(dss_broadcast_check_file_open_proc_t 
 typedef status_t (*dss_refresh_ft_by_primary_proc_t)(dss_block_id_t blockid, uint32 vgid, char *vg_name);
 void regist_refresh_ft_by_primary_proc(dss_refresh_ft_by_primary_proc_t proc);
 typedef status_t (*dss_get_node_by_path_remote_proc_t)(dss_session_t *session, const char *dir_path,
-    gft_item_type_t type, dss_check_dir_output_t *output_info, bool32 is_throw_err);
+    gft_item_type_t type, dss_check_dir_output_t *output_info, int32 flag, bool32 is_throw_err);
 void regist_get_node_by_path_remote_proc(dss_get_node_by_path_remote_proc_t proc);
 
 void dss_clean_all_sessions_latch();

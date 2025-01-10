@@ -1205,7 +1205,7 @@ static status_t dss_ls_print_file(dss_conn_t *conn, const char *path, const char
 {
     gft_node_t *node = NULL;
     dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE};
-    DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_FILE, &output_info, CM_FALSE));
+    DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_FILE, &output_info, O_RDONLY, CM_FALSE));
     if (node == NULL) {
         LOG_DEBUG_INF("Failed to find path %s with the file type", path);
         return CM_ERROR;
@@ -1220,7 +1220,7 @@ static status_t dss_ls_try_print_link(
     if (dss_is_valid_link_path(path)) {
         gft_node_t *node = NULL;
         dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE};
-        DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE));
+        DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, O_RDONLY, CM_FALSE));
         if (node != NULL) {  // ls print the link
             dss_ls_show_base(show_min_inited_size);
             return dss_ls_print_node_info(node, measure, show_min_inited_size);
