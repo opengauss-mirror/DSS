@@ -238,10 +238,9 @@ static status_t cmd_check_block_index_id(const char *index_str)
         DSS_PRINT_ERROR("The value of index_id  or node_id is invalid.\n");
         return CM_ERROR;
     }
-    uint32 max_block_index_id = MAX(DSS_FILE_SPACE_BLOCK_BITMAP_COUNT, DSS_MAX_FT_BLOCK_INDEX_ID);
-    if (index_id < DSS_MIN_BLOCK_INDEX_ID || index_id >= max_block_index_id) {
-        DSS_PRINT_ERROR(
-            "The value of index_id or node_id should be in [%u, %u).\n", DSS_MIN_BLOCK_INDEX_ID, max_block_index_id);
+    uint32 max_block_index_id = MAX(DSS_FILE_SPACE_BLOCK_BITMAP_COUNT, (DSS_MAX_AU_SIZE / DSS_PAGE_SIZE));
+    if (index_id >= max_block_index_id) {
+        DSS_PRINT_ERROR("The value of index_id or node_id should be in [0, %u].\n", max_block_index_id - 1);
         return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -2237,17 +2236,17 @@ static status_t dss_print_struct_name(dss_vg_info_item_t *vg_item, const char *s
     if (vg_item->from_type == FROM_DISK) {
         status = dss_open_volume(vg_item->entry_path, NULL, DSS_CLI_OPEN_FLAG, &volume);
         DSS_RETURN_IFERR2(
-            status, DSS_PRINT_ERROR("Failed to open file %s.\nFailed to printf dss metadata.\n", vg_item->entry_path));
+            status, DSS_PRINT_ERROR("Failed to open file %s.\nFailed to print dss metadata.\n", vg_item->entry_path));
     }
     status = dss_print_struct_name_inner(vg_item, &volume, struct_name);
     if (vg_item->from_type == FROM_DISK) {
         dss_close_volume(&volume);
     }
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to printf dss metadata.\n");
+        DSS_PRINT_ERROR("Failed to print dss metadata.\n");
         return CM_ERROR;
     }
-    DSS_PRINT_INF("Succeed to printf dss metadata.\n");
+    DSS_PRINT_INF("Succeed to print dss metadata.\n");
     return status;
 }
 
@@ -2255,10 +2254,10 @@ static status_t dss_print_block_id(dss_session_t *session, dss_vg_info_item_t *v
 {
     status_t status = dss_printf_block_with_blockid(session, vg_item, block_id, node_id);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to printf dss file block with block_id:%llu.\n", block_id);
+        DSS_PRINT_ERROR("Failed to print block with block_id:%llu.\n", block_id);
         return CM_ERROR;
     }
-    DSS_PRINT_INF("Succeed to printf dss file block with block_id:%llu.\n", block_id);
+    DSS_PRINT_INF("Succeed to print block with block_id:%llu.\n", block_id);
     return status;
 }
 

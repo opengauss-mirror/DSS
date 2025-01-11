@@ -82,6 +82,9 @@ static status_t dss_printf_vg_header(const dss_vg_info_item_t *vg_item, dss_volu
     char create_time[512];
     status = cm_time2str(time, "YYYY-MM-DD HH24:mi:ss", create_time, sizeof(create_time));
     (void)printf("  create_time = %s\n", create_time);
+    (void)printf("  bak_level = %d\n", (int32)vg_header->bak_level);
+    (void)printf("  ft_node_ratio = %u\n", vg_header->ft_node_ratio);
+    (void)printf("  bak_ft_offset = %llu\n", vg_header->bak_ft_offset);
     (void)printf("}\n");
     if (vg_item->from_type == FROM_DISK) {
         DSS_FREE_POINT(vg_header);
@@ -126,9 +129,13 @@ status_t dss_printf_core_ctrl(dss_vg_info_item_t *vg_item, dss_volume_t *volume)
     printf_dss_fs_block_root(root);
     (void)printf("  }\n");
     (void)printf("  au_root = {\n");
-
     dss_au_root_t *au_root = (dss_au_root_t *)(core_ctrl->au_root);
     printf_dss_au_root(au_root);
+    (void)printf("  }\n");
+
+    (void)printf("  fs_aux_root = {\n");
+    dss_fs_aux_root_t *fs_aux_root = (dss_fs_aux_root_t *)(core_ctrl->fs_aux_root);
+    printf_dss_fs_aux_root(fs_aux_root);
     (void)printf("  }\n");
 
     dss_volume_attr_t *volume_attrs = core_ctrl->volume_attrs;
@@ -214,6 +221,7 @@ static void printf_common_block_t(const dss_common_block_t *common)
     (void)printf("%s      id = {\n", tab);
     printf_auid(&common->id);
     (void)printf("%s      }\n", tab);
+    (void)printf("%s      flags = %hhu\n", tab, common->flags);
 }
 
 static void printf_ft_block(dss_ft_block_t *ft_block)
@@ -325,8 +333,14 @@ static void printf_fs_block_header(dss_fs_block_header *fs_block_header)
     dss_block_id_t *next = &fs_block_header->next;
     printf_auid(next);
     (void)printf("%s    }\n", tab);
+    (void)printf("%s    ftid = {\n", tab);
+
+    dss_block_id_t *ftid = &fs_block_header->ftid;
+    printf_auid(ftid);
+    (void)printf("%s    }\n", tab);
     (void)printf("%s    used_num = %hu\n", tab, fs_block_header->used_num);
     (void)printf("%s    total_num = %hu\n", tab, fs_block_header->total_num);
+    (void)printf("%s    index = %hu\n", tab, fs_block_header->index);
     (void)printf("%s    reserve = %hu\n", tab, fs_block_header->reserve);
 }
 
@@ -379,7 +393,7 @@ status_t dss_print_fsb_by_id_detail_part(
         ((end_first_fs_index != CM_INVALID_ID32) && (end_first_fs_index > size - 1)) ||
         ((start_second_fs_index != CM_INVALID_ID32) && (start_second_fs_index > size - 1)) ||
         ((end_second_fs_index != CM_INVALID_ID32) && (end_second_fs_index > size - 1))) {
-        DSS_PRINT_ERROR("index should be in range 0-%u.\n", size - 1);
+        DSS_PRINT_ERROR("index should be in range [0, %u].\n", size - 1);
         return CM_ERROR;
     }
     if (start_first_fs_index == end_first_fs_index) {
@@ -509,52 +523,91 @@ static status_t dss_print_ftn_by_id(char *block, uint64 node_id)
     printf_ft_block(file_table_block);
     (void)printf("}\n\n");
 
-    uint32 size = (DSS_BLOCK_SIZE - (uint32)sizeof(dss_ft_block_t)) / (uint32)sizeof(gft_node_t);
     gft_node_t *node = NULL;
 
-    if (node_id == DSS_DEFAULT_NODE_ID) {
-        for (uint32 i = 0; i < size; ++i) {
-            node = (gft_node_t *)(block + (uint32)sizeof(dss_ft_block_t) + i * (uint32)sizeof(gft_node_t));
-            (void)printf("gft_node[%u] = {\n", i);
-            printf_gft_node(node);
-            (void)printf("}\n");
-        }
-    } else {
-        if (node_id > size - 1) {
-            DSS_PRINT_ERROR("The value of index_id or node_id should be in range 0-%u.\n", size - 1);
-            return CM_ERROR;
-        }
-        node = (gft_node_t *)(block + sizeof(dss_ft_block_t) + node_id * sizeof(gft_node_t));
-        (void)printf("gft_node[%llu] = {\n", node_id);
-        printf_gft_node(node);
-        (void)printf("}\n");
+    if (node_id != 0) {
+        DSS_PRINT_ERROR("The value of node_id for ft_block can only be 0.\n");
+        return CM_ERROR;
     }
+    node = (gft_node_t *)(block + (uint32)sizeof(dss_ft_block_t));
+    (void)printf("ft_node = {\n");
+    printf_gft_node(node);
+    (void)printf("}\n");
     return CM_SUCCESS;
 }
 
-static void print_fs_aux_block_detail(dss_fs_aux_t *fs_aux)
+// print bitmap value from 0 to end
+static void print_fs_aux_bitmap_by_range(uchar *bitmap, uint64 end)
+{
+    uint64 byte_cnt = end / DSS_BYTE_BITS_SIZE;
+    for (uint64 byte_idx = 0; byte_idx < byte_cnt; ++byte_idx) {
+        (void)printf("bitmap[%llu-%llu] = ", byte_idx * DSS_BYTE_BITS_SIZE, (byte_idx + 1) * DSS_BYTE_BITS_SIZE - 1);
+        uchar byte = bitmap[byte_idx];
+        for (uint64 bit_idx = 0; bit_idx < DSS_BYTE_BITS_SIZE; ++bit_idx) {
+            (void)printf("%c", (((byte >> bit_idx) & 1) ? '1' : '0'));
+        }
+        (void)printf("\n");
+    }
+    uchar byte = bitmap[byte_cnt];
+    uint64 bit_cnt_left = end - byte_cnt * DSS_BYTE_BITS_SIZE;
+    (void)printf("bitmap[%llu-%llu] = ", byte_cnt * DSS_BYTE_BITS_SIZE, end);
+    for (uint64 bit_idx = 0; bit_idx <= bit_cnt_left; ++bit_idx) {
+        (void)printf("%c", (((byte >> bit_idx) & 1) ? '1' : '0'));
+    }
+    (void)printf("\n");
+}
+
+static void print_fs_aux_bitmap_one_bit(uchar *bitmap, uint64 idx)
+{
+    uint64 byte_cnt = idx / DSS_BYTE_BITS_SIZE;
+    uint64 bit_idx = idx - byte_cnt * DSS_BYTE_BITS_SIZE;
+    (void)printf("bitmap[%llu] = %c\n", idx, (((bitmap[byte_cnt] >> bit_idx) & 1) ? '1' : '0'));
+}
+
+static void print_fs_aux_block_head(dss_fs_aux_t *fs_aux)
 {
     (void)printf("    common = {\n");
-
     dss_common_block_t *common = &fs_aux->head.common;
     printf_common_block_t(common);
     (void)printf("    }\n");
 
-    (void)printf("  ftid = {\n");
+    (void)printf("    next = {\n");
+    printf_auid(&fs_aux->head.next);
+    (void)printf("    }\n");
+
+    (void)printf("    ftid = {\n");
     printf_auid(&fs_aux->head.ftid);
     (void)printf("    }\n");
 
-    (void)printf("  data_id = {\n");
+    (void)printf("    data_id = {\n");
     printf_auid(&fs_aux->head.data_id);
     (void)printf("    }\n");
+    (void)printf("    bitmap_num = %u\n", fs_aux->head.bitmap_num);
+    (void)printf("    index = %hu\n", fs_aux->head.index);
+    (void)printf("    resv = %hu\n", fs_aux->head.resv);
 }
 
-static status_t dss_print_fs_aux(char *block)
+static status_t dss_print_fs_aux_by_id(char *block, uint64 bitmap_idx)
 {
     dss_fs_aux_t *fs_aux = (dss_fs_aux_t *)block;
     (void)printf("fs_aux = {\n");
-    print_fs_aux_block_detail(fs_aux);
+    (void)printf("  head = {\n");
+    print_fs_aux_block_head(fs_aux);
+    (void)printf("  }\n");
+    (void)printf("  ");
+    print_fs_aux_bitmap_by_range(fs_aux->bitmap, DSS_BYTE_BITS_SIZE - 1);
+    uint64 bit_size = fs_aux->head.bitmap_num * DSS_BYTE_BITS_SIZE;
+    if (bitmap_idx >= bit_size) {
+        DSS_PRINT_ERROR(
+            "The value of index_id or node_id for fs_aux_block should be in range [0, %llu].\n", bit_size - 1);
+        return CM_ERROR;
+    }
     (void)printf("}\n\n");
+    if (bitmap_idx == 0) {
+        print_fs_aux_bitmap_by_range(fs_aux->bitmap, bit_size - 1);
+    } else {
+        print_fs_aux_bitmap_one_bit(fs_aux->bitmap, bitmap_idx);
+    }
     return CM_SUCCESS;
 }
 
@@ -565,7 +618,7 @@ status_t dss_printf_dss_file_table_block(
     dss_volume_t volume;
     status_t status = dss_open_volume(volume_ctrl->defs[id->volume].name, NULL, DSS_CLI_OPEN_FLAG, &volume);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to open file with volume handle:%d.\n", volume.handle);
+        DSS_PRINT_ERROR("Failed to open volume:%s.\n", volume_ctrl->defs[id->volume].name);
         return status;
     }
 
@@ -607,7 +660,7 @@ static status_t dss_print_fsb_by_id(char *block, uint64 node_id)
     uint32 size = (uint32)DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
     dss_block_id_t *node = NULL;
 
-    if (node_id == DSS_DEFAULT_NODE_ID) {
+    if (node_id == 0) {
         for (uint32 i = 0; i < size; ++i) {
             node = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + i * sizeof(dss_block_id_t));
             if (dss_cmp_auid(*(auid_t *)node, DSS_INVALID_64)) {
@@ -619,7 +672,7 @@ static status_t dss_print_fsb_by_id(char *block, uint64 node_id)
         }
     } else {
         if (node_id > size - 1) {
-            DSS_PRINT_ERROR("The value of index_id or node_id should be in range 0-%u.\n", size - 1);
+            DSS_PRINT_ERROR("The value of index_id or node_id for fs_block should be in range [0, %u].\n", size - 1);
             return CM_ERROR;
         }
         node = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + node_id * sizeof(dss_block_id_t));
@@ -637,7 +690,7 @@ static status_t printf_dss_file_space_block(
     int64 offset;
     dss_volume_t volume;
     status = dss_open_volume(volume_ctrl->defs[id->volume].name, NULL, DSS_CLI_OPEN_FLAG, &volume);
-    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to open file with volume handle:%d.\n", volume.handle));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to open volume:%s.\n", volume_ctrl->defs[id->volume].name));
 
     offset = dss_get_fsb_offset(core_ctrl->au_size, id);
     bool32 result = (bool32)(offset % DSS_DISK_UNIT_SIZE == 0);
@@ -662,6 +715,34 @@ static status_t printf_dss_file_space_block(
     return status;
 }
 
+static status_t printf_dss_fs_aux_block(
+    dss_volume_ctrl_t *volume_ctrl, dss_core_ctrl_t *core_ctrl, dss_block_id_t *id, uint64 bitmap_idx)
+{
+    dss_volume_t volume;
+    status_t status = dss_open_volume(volume_ctrl->defs[id->volume].name, NULL, DSS_CLI_OPEN_FLAG, &volume);
+    DSS_RETURN_IFERR2(status, DSS_PRINT_ERROR("Failed to open volume:%s.\n", volume_ctrl->defs[id->volume].name));
+
+    int64 offset = dss_get_fab_offset(core_ctrl->au_size, *id);
+    bool32 result = (bool32)(offset % DSS_DISK_UNIT_SIZE == 0);
+    DSS_RETURN_IF_FALSE3(
+        result, DSS_PRINT_ERROR("offset must be align %d.\n", DSS_DISK_UNIT_SIZE), dss_close_volume(&volume));
+    char *block = (char *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_FS_AUX_SIZE);
+    result = (bool32)(block != NULL);
+    DSS_RETURN_IF_FALSE3(
+        result, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_FS_AUX_SIZE, "block"), dss_close_volume(&volume));
+    status = dss_read_volume(&volume, offset, block, (int32)DSS_FS_AUX_SIZE);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to read file %d.\n", volume.handle);
+        dss_close_volume(&volume);
+        DSS_FREE_POINT(block);
+        return status;
+    }
+    status = dss_print_fs_aux_by_id(block, bitmap_idx);
+    dss_close_volume(&volume);
+    DSS_FREE_POINT(block);
+    return status;
+}
+
 static int64 dss_get_type_offset(const dss_core_ctrl_t *core_ctrl, const dss_block_id_t *id)
 {
     return (int64)((uint64)id->au * core_ctrl->au_size);
@@ -674,7 +755,7 @@ static status_t dss_get_block_type(
     int64 offset;
     dss_volume_t volume;
     status = dss_open_volume(volume_ctrl->defs[id->volume].name, NULL, DSS_CLI_OPEN_FLAG, &volume);
-    DSS_RETURN_IFERR3(status, DSS_PRINT_ERROR("Failed to open file with volume handle:%d.\n", volume.handle),
+    DSS_RETURN_IFERR3(status, DSS_PRINT_ERROR("Failed to open volume:%s.\n", volume_ctrl->defs[id->volume].name),
         dss_close_volume(&volume));
 
     offset = dss_get_type_offset(core_ctrl, id);
@@ -716,27 +797,31 @@ static status_t dss_print_block_by_type(
     if (status != CM_SUCCESS) {
         return status;
     }
-
-    if ((block_type != DSS_BLOCK_TYPE_FT) && (block_type != DSS_BLOCK_TYPE_FS)) {
-        DSS_PRINT_ERROR("block_id is invalid, block type:%u.\n", block_type);
-        return CM_ERROR;
+    switch (block_type) {
+        case DSS_BLOCK_TYPE_FT:
+            status = dss_printf_dss_file_table_block(volume_ctrl, core_ctrl, id, node_id);
+            if (status != CM_SUCCESS) {
+                DSS_PRINT_ERROR("Failed to printf file table block with block_id:%llu.\n", block_id);
+            }
+            break;
+        case DSS_BLOCK_TYPE_FS:
+            status = printf_dss_file_space_block(volume_ctrl, core_ctrl, id, node_id);
+            if (status != CM_SUCCESS) {
+                DSS_PRINT_ERROR("Failed to printf file space block with block_id:%llu.\n", block_id);
+            }
+            break;
+        case DSS_BLOCK_TYPE_FS_AUX:
+            status = printf_dss_fs_aux_block(volume_ctrl, core_ctrl, id, node_id);
+            if (status != CM_SUCCESS) {
+                DSS_PRINT_ERROR("Failed to printf file space block with block_id:%llu.\n", block_id);
+            }
+            break;
+        default:
+            DSS_PRINT_ERROR("block_id is invalid, block type:%u.\n", block_type);
+            status = CM_ERROR;
+            break;
     }
-
-    if (block_type == DSS_BLOCK_TYPE_FT) {
-        status = dss_printf_dss_file_table_block(volume_ctrl, core_ctrl, id, node_id);
-        if (status != CM_SUCCESS) {
-            DSS_PRINT_ERROR("Failed to printf file table block with block_id:%llu.\n", block_id);
-            return status;
-        }
-    } else {
-        status = printf_dss_file_space_block(volume_ctrl, core_ctrl, id, node_id);
-        if (status != CM_SUCCESS) {
-            DSS_PRINT_ERROR("Failed to printf file space block with block_id:%llu.\n", block_id);
-            return status;
-        }
-    }
-
-    return CM_SUCCESS;
+    return status;
 }
 
 static status_t get_volume_core_ctrl(dss_vg_info_item_t *vg_item, dss_volume_t *volume, dss_core_ctrl_t *core_ctrl)
@@ -803,7 +888,7 @@ status_t dss_printf_block_with_blockid_from_memory(
     } else if (block_head->type == DSS_BLOCK_TYPE_FS) {
         status = dss_print_fsb_by_id(block, node_id);
     } else if (block_head->type == DSS_BLOCK_TYPE_FS_AUX) {
-        status = dss_print_fs_aux(block);
+        status = dss_print_fs_aux_by_id(block, node_id);
     } else {
         DSS_PRINT_ERROR("Invalid block type %u, block id is %llu.\n", block_head->type, block_id);
         return CM_ERROR;

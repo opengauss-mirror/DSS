@@ -52,9 +52,6 @@ static inline void dss_init_show_param(dss_show_param_t *show_param)
     show_param->path[0] = '\0';
 }
 
-#define DSS_MIN_BLOCK_INDEX_ID 0
-#define DSS_MAX_FT_BLOCK_INDEX_ID (DSS_BLOCK_SIZE - sizeof(dss_ft_block_t)) / sizeof(gft_node_t)
-
 status_t dss_printf_core_ctrl(dss_vg_info_item_t *vg_item, dss_volume_t *volume);
 status_t dss_printf_block_with_blockid(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 block_id, uint64 node_id);
 status_t dss_print_gft_node_by_path(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_show_param_t *show_param);
