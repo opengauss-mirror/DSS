@@ -3963,7 +3963,7 @@ static status_t dss_refresh_file_ft_core(dss_session_t *session, dss_vg_info_ite
     *node_out = NULL;
     gft_node_t *node = NULL;
     bool32 need_retry = CM_FALSE;
-    bool32 first_try = CM_FALSE;
+    bool32 first_try = CM_TRUE;
 
     do {
         if (session != NULL && session->is_closed) {
