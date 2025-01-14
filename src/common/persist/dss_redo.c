@@ -592,7 +592,7 @@ static void print_redo_alloc_ft_node(dss_redo_entry_t *entry)
             continue;
         }
         (void)printf("    gft_node[%u] = {\n", i);
-        printf_gft_node(&data->node[i]);
+        printf_gft_node(&data->node[i], "    ");
         (void)printf("    }\n");
     }
     (void)printf("    }\n");
@@ -961,7 +961,7 @@ static void print_redo_rename_file(dss_redo_entry_t *entry)
     dss_redo_rename_t *data = (dss_redo_rename_t *)entry->data;
     (void)printf("    set_file_size = {\n");
     (void)printf("     node = {\n");
-    printf_gft_node(&data->node);
+    printf_gft_node(&data->node, "    ");
     (void)printf("      }\n");
     (void)printf("     name = %s\n", data->name);
     (void)printf("     old_name = %s\n", data->old_name);
@@ -1143,7 +1143,7 @@ static void print_redo_free_ft_node(dss_redo_entry_t *entry)
             continue;
         }
         (void)printf("    gft_node[%u] = {\n", i);
-        printf_gft_node(&data->node[i]);
+        printf_gft_node(&data->node[i], "    ");
         (void)printf("    }\n");
     }
     (void)printf("    }\n");
@@ -1239,7 +1239,7 @@ static void print_redo_recycle_ft_node(dss_redo_entry_t *entry)
             continue;
         }
         (void)printf("    gft_node[%u] = {\n", i);
-        printf_gft_node(&data->node[i]);
+        printf_gft_node(&data->node[i], "    ");
         (void)printf("    }\n");
     }
     (void)printf("    }\n");
