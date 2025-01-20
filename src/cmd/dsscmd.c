@@ -125,8 +125,9 @@ static status_t cmd_check_zero_or_one(const char *zero_or_one_str)
 static status_t cmd_check_uds(const char *uds)
 {
     const char *uds_prefix = "UDS:";
-    if (strlen(uds) < strlen(uds_prefix) || memcmp(uds, uds_prefix, strlen(uds_prefix)) != 0) {
-        DSS_PRINT_ERROR("uds name should start with %s.\n", uds_prefix);
+    /* if uds path only has "UDS:", it is invalid */
+    if (strlen(uds) <= strlen(uds_prefix) || memcmp(uds, uds_prefix, strlen(uds_prefix)) != 0) {
+        DSS_PRINT_ERROR("uds name should start with %s, also it should not be empty.\n", uds_prefix);
         return CM_ERROR;
     }
     return dss_check_path(uds + strlen(uds_prefix));
