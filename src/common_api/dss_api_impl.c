@@ -1878,7 +1878,7 @@ status_t dss_copy_file_impl(dss_conn_t *conn, const char *src, const char *dest)
 
 status_t dss_rename_file_impl(dss_conn_t *conn, const char *src, const char *dst)
 {
-    DSS_RETURN_IFERR2(dss_check_device_path(src), LOG_DEBUG_ERR("old name path is invaild."));
+    DSS_RETURN_IFERR2(dss_check_device_path(src), LOG_DEBUG_ERR("old name path is invalid."));
     DSS_RETURN_IFERR2(dss_check_device_path(dst), LOG_DEBUG_ERR("new name path is invalid."));
     LOG_DEBUG_INF("Rename file, old name path: %s, new name path: %s", src, dst);
     dss_rename_file_info_t send_info;
