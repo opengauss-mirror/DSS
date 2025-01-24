@@ -3945,6 +3945,8 @@ static status_t dss_refresh_file_ft_core(dss_session_t *session, dss_vg_info_ite
     *node_out = NULL;
     gft_node_t *node = NULL;
     bool32 need_retry = CM_FALSE;
+    bool32 first_try = CM_FALSE;
+
     do {
         if (session != NULL && session->is_closed) {
             LOG_DEBUG_ERR("Session:%u is closed, fail to refresh:%s.", session->id, dss_display_metaid(ftid));
@@ -3962,6 +3964,14 @@ static status_t dss_refresh_file_ft_core(dss_session_t *session, dss_vg_info_ite
 
         if (dss_is_fs_meta_valid(node)) {
             break;
+        }
+        if (first_try) {
+            first_try = CM_FALSE;
+            // If revalidation is needed, yield the s-latch, and try to fetch x-latch.
+            dss_unlock_vg_mem_and_shm(session, vg_item);
+            dss_lock_vg_mem_and_shm_x(session, vg_item);
+            // And then re-load the ft_node to check whether it has already been revalidated by some other thread.
+            continue;
         }
         need_retry = dss_try_revalidate_file(session, vg_item, node);
         if (need_retry) {
@@ -3981,7 +3991,10 @@ static status_t dss_refresh_file_ft_core(dss_session_t *session, dss_vg_info_ite
             dss_lock_vg_mem_and_shm_x(session, vg_item);
         }
     } while (CM_TRUE);
-
+    if (!first_try) {
+        // After re-validation, degrade the x-latch to s-latch, because x-latch is no longer needed in following steps.
+        dss_lock_vg_mem_and_shm_degrade(session, vg_item);
+    }
     LOG_DEBUG_INF("Apply refresh file:%s, curr size:%llu, ftid:%s by session id:%u.", node->name, node->size,
         dss_display_metaid(ftid), session->id);
     LOG_DEBUG_INF("Entry id: %s", dss_display_metaid(node->entry));
@@ -4014,7 +4027,6 @@ static status_t dss_refresh_file_core(
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to find fs data block by offset:%lld.", offset));
 
     if (DSS_IS_FILE_INNER_INITED(node->flags) && fs_pos.is_valid && fs_pos.is_exist_aux) {
-        dss_lock_vg_mem_and_shm_degrade(session, vg_item);
         status = dss_try_find_data_au_batch(session, vg_item, node, fs_pos.second_fs_block, fs_pos.block_au_count);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to find fs data batch block by offset:%lld.", offset));
     }
@@ -4029,7 +4041,7 @@ status_t dss_refresh_file(dss_session_t *session, uint64 fid, ftid_t ftid, char 
             DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name));
     }
 
-    dss_lock_vg_mem_and_shm_x(session, vg_item);
+    dss_lock_vg_mem_and_shm_s(session, vg_item);
     status_t ret = dss_refresh_file_core(session, vg_item, fid, ftid, offset);
     dss_unlock_vg_mem_and_shm(session, vg_item);
     return ret;
