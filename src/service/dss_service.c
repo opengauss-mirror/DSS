@@ -866,6 +866,8 @@ static status_t dss_process_hotpatch_inner(dss_session_t *session)
         default:
             DSS_THROW_ERROR(ERR_INVALID_PARAM, "hotpatch operation");
             LOG_RUN_ERR("[HotPatch] Unsupported hotpatch operation: %u", operation);
+            DSS_RETURN_IF_ERROR(
+                dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "invalid op:%d", operation));
             return CM_ERROR;
     }
     return CM_SUCCESS;
@@ -874,6 +876,8 @@ static status_t dss_process_hotpatch_inner(dss_session_t *session)
 static status_t dss_process_hotpatch(dss_session_t *session)
 {
     if (dss_hp_check_is_inited() != CM_SUCCESS) {
+        DSS_RETURN_IF_ERROR(
+            dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "hotpatch not supported"));
         return CM_ERROR;
     }
     dss_hp_latch_x(session->id);
@@ -932,9 +936,6 @@ static status_t dss_process_query_hotpatch_inner(dss_session_t *session, uint32 
     }
     // Modify cur_batch_count to its actual value.
     *cur_batch_count_loc = cur_batch_count;
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY,
-        "[HotPatch] start_patch_number: %u, toatl_count: %u, cur_batch_count:%u", start_patch_number, total_count,
-        cur_batch_count));
     // start_patch_number starts from 1, not zero. So when finished, start_patch_number + cur_batch_count - 1 =
     // total_count.
     if (start_patch_number + cur_batch_count > total_count) {
@@ -946,11 +947,15 @@ static status_t dss_process_query_hotpatch_inner(dss_session_t *session, uint32 
 static status_t dss_process_query_hotpatch(dss_session_t *session)
 {
     if (dss_hp_check_is_inited() != CM_SUCCESS) {
+        DSS_RETURN_IF_ERROR(
+            dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "hotpatch not supported"));
         return CM_ERROR;
     }
     dss_init_get(&session->recv_pack);
     int start_patch_number;
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &start_patch_number));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+        session->audit_info.resource, DSS_AUDIT_QUERY, "start_patch_number: %u", start_patch_number));
     if (start_patch_number == 1) {
         dss_hp_latch_s(session->id);  // Latch only at the first interaction.
         session->is_holding_hotpatch_latch = CM_TRUE;

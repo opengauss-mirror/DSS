@@ -458,7 +458,7 @@ static void sql_audit_create_message(
         assist->session_id.len, assist->session_id.str,     // SESSIONID
         (uint32)strlen(assist->db_user), assist->db_user,   // USER
         (uint32)strlen(assist->os_host), assist->os_host,   // HOST
-        (uint32)strlen(resource), resource,                 // ACTION
+        (uint32)strlen(resource), resource,                 // RESOURCE
         (uint32)strlen(action), action,                     // ACTION
         assist->return_code.len, assist->return_code.str);  // RETURNCODE
     if (SECUREC_UNLIKELY(ret == -1) || (uint32)(ret + 1) > CM_T2S_LARGER_BUFFER_SIZE) {
