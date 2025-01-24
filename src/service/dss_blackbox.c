@@ -173,7 +173,7 @@ static void dss_sig_collect_reactor_bt(void)
 static void dss_sig_collect_background_bt(void)
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
-    if (!g_dss_instance.is_maintain && inst_cfg->params.inst_cnt >= 1) {
+    if (!g_dss_instance.is_maintain && inst_cfg->params.nodes_list.inst_cnt >= 1) {
         dss_sig_collect_mes_task_bt();
         dss_sig_collect_mes_listener_bt();
     }

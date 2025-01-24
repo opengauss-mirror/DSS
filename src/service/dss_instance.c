@@ -47,6 +47,7 @@
 #include "dss_simulation_cm.h"
 #endif
 #include "dss_fault_injection.h"
+#include "dss_nodes_list.h"
 
 #define DSS_MAINTAIN_ENV "DSS_MAINTAIN"
 dss_instance_t g_dss_instance;
@@ -508,7 +509,7 @@ void dss_check_peer_by_inst(dss_instance_t *inst, uint64 inst_id)
 
     // Not cfg the inst
     uint64 inst_mask = ((uint64)0x1 << inst_id);
-    if ((inst_cfg->params.inst_map & inst_mask) == 0) {
+    if ((inst_cfg->params.nodes_list.inst_map & inst_mask) == 0) {
         return;
     }
 
@@ -556,7 +557,7 @@ static void dss_check_peer_by_cm(dss_instance_t *inst)
         }
 
         uint64_t inst_mask = ((uint64)0x1 << res_instance_id);
-        if ((inst_cfg->params.inst_map & inst_mask) == 0) {
+        if ((inst_cfg->params.nodes_list.inst_map & inst_mask) == 0) {
             LOG_RUN_INF("dss instance [%d] is not in mes nodes cfg lists.", res_instance_id);
             continue;
         }
@@ -620,7 +621,7 @@ status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
     } else {
         dss_config_t *inst_cfg = dss_get_inst_cfg();
         for (int i = 0; i < DSS_MAX_INSTANCES; i++) {
-            if (inst_cfg->params.ports[i] != 0) {
+            if (inst_cfg->params.nodes_list.ports[i] != 0) {
                 *master_id = i;
                 LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "Set min id %u as master id.", i);
                 break;
@@ -651,7 +652,7 @@ status_t dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 t
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     *master_id = DSS_INVALID_ID32;
-    if (inst->is_maintain || inst->inst_cfg.params.inst_cnt <= 1) {
+    if (inst->is_maintain || inst->inst_cfg.params.nodes_list.inst_cnt <= 1) {
         *grab_lock = CM_TRUE;
         LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5,
             "[RECOVERY]Set curr_id %u to be primary when dssserver is maintain or just one inst.",
@@ -923,7 +924,7 @@ static void dss_check_peer_inst_inner(dss_instance_t *inst)
 void dss_check_peer_inst(dss_instance_t *inst, uint64 inst_id)
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
-    if (inst_cfg->params.inst_cnt <= 1) {
+    if (inst_cfg->params.nodes_list.inst_cnt <= 1) {
         return;
     }
 
