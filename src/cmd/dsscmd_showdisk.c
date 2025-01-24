@@ -115,7 +115,7 @@ status_t dss_printf_core_ctrl(dss_vg_info_item_t *vg_item, dss_volume_t *volume)
     }
 
     (void)printf("core_ctrl = {\n");
-    (void)printf("  checknum = %u\n", core_ctrl->checksum);
+    (void)printf("  checksum = %u\n", core_ctrl->checksum);
     (void)printf("  reserve = %u\n", core_ctrl->reserve);
     (void)printf("  version = %llu\n", core_ctrl->version);
     (void)printf("  au_size = %u\n", core_ctrl->au_size);
@@ -184,7 +184,7 @@ static status_t dss_printf_volume_ctrl(const dss_vg_info_item_t *vg_item, dss_vo
         volume_ctrl = &vg_item->dss_ctrl->volume;
     }
     (void)printf("volume_ctrl = {\n");
-    (void)printf("  checknum = %u\n", volume_ctrl->checksum);
+    (void)printf("  checksum = %u\n", volume_ctrl->checksum);
     (void)printf("  rsvd = %u\n", volume_ctrl->rsvd);
     (void)printf("  version = %llu\n", volume_ctrl->version);
     dss_volume_def_t *volume_defs = volume_ctrl->defs;
@@ -211,21 +211,21 @@ static void printf_common_block_t(const dss_common_block_t *common)
     (void)printf("%s      checksum = %u\n", tab, common->checksum);
     (void)printf("%s      type = %u\n", tab, common->type);
     (void)printf("%s      version = %llu\n", tab, common->version);
-    (void)printf("%s      block_id = {\n", tab);
+    (void)printf("%s      id = {\n", tab);
     printf_auid(&common->id);
     (void)printf("%s      }\n", tab);
 }
 
 static void printf_ft_block(dss_ft_block_t *ft_block)
 {
-    (void)printf("    block_common = {\n");
+    (void)printf("    common = {\n");
 
     dss_common_block_t *common = &ft_block->common;
     printf_common_block_t(common);
     (void)printf("    }\n");
 
-    (void)printf("    ft_block_node_num = %u\n", ft_block->node_num);
-    (void)printf("    ft_block_next = {\n");
+    (void)printf("    node_num = %u\n", ft_block->node_num);
+    (void)printf("    next = {\n");
 
     dss_block_id_t *next = &ft_block->next;
     printf_auid(next);
@@ -234,13 +234,13 @@ static void printf_ft_block(dss_ft_block_t *ft_block)
 
 static void printf_root_ft_header(dss_root_ft_header_t *root_ft_header)
 {
-    (void)printf("    block_common = {\n");
+    (void)printf("    common = {\n");
 
     dss_common_block_t *common = &root_ft_header->common;
     printf_common_block_t(common);
     (void)printf("    }\n");
-    (void)printf("    ft_block_node_num = %u\n", root_ft_header->node_num);
-    (void)printf("    ft_block_next = {\n");
+    (void)printf("    node_num = %u\n", root_ft_header->node_num);
+    (void)printf("    next = {\n");
 
     dss_block_id_t *next = &root_ft_header->next;
     printf_auid(next);
@@ -316,11 +316,11 @@ status_t dss_print_struct_name_inner(dss_vg_info_item_t *vg_item, dss_volume_t *
 static void printf_fs_block_header(dss_fs_block_header *fs_block_header)
 {
     char *tab = dss_get_print_tab(g_print_level);
-    (void)printf("%s    block_common = {\n", tab);
+    (void)printf("%s    common = {\n", tab);
     dss_common_block_t *common = &fs_block_header->common;
     printf_common_block_t(common);
     (void)printf("%s    }\n", tab);
-    (void)printf("%s    fs_block_next = {\n", tab);
+    (void)printf("%s    next = {\n", tab);
 
     dss_block_id_t *next = &fs_block_header->next;
     printf_auid(next);
@@ -333,7 +333,7 @@ static void printf_fs_block_header(dss_fs_block_header *fs_block_header)
 static void printf_fs_block(dss_fs_block_t *fs_block)
 {
     char *tab = dss_get_print_tab(g_print_level);
-    (void)printf("%s  fs_block_header = {\n", tab);
+    (void)printf("%s  head = {\n", tab);
     dss_fs_block_header *fs_block_header = &fs_block->head;
     printf_fs_block_header(fs_block_header);
     (void)printf("%s  }\n", tab);
@@ -534,17 +534,17 @@ static status_t dss_print_ftn_by_id(char *block, uint64 node_id)
 
 static void print_fs_aux_block_detail(dss_fs_aux_t *fs_aux)
 {
-    (void)printf("    block_common = {\n");
+    (void)printf("    common = {\n");
 
     dss_common_block_t *common = &fs_aux->head.common;
     printf_common_block_t(common);
     (void)printf("    }\n");
 
-    (void)printf("  owner ftid = {\n");
+    (void)printf("  ftid = {\n");
     printf_auid(&fs_aux->head.ftid);
     (void)printf("    }\n");
 
-    (void)printf("  data id = {\n");
+    (void)printf("  data_id = {\n");
     printf_auid(&fs_aux->head.data_id);
     (void)printf("    }\n");
 }
@@ -552,7 +552,7 @@ static void print_fs_aux_block_detail(dss_fs_aux_t *fs_aux)
 static status_t dss_print_fs_aux(char *block)
 {
     dss_fs_aux_t *fs_aux = (dss_fs_aux_t *)block;
-    (void)printf("fs aux = {\n");
+    (void)printf("fs_aux = {\n");
     print_fs_aux_block_detail(fs_aux);
     (void)printf("}\n\n");
     return CM_SUCCESS;
@@ -600,7 +600,7 @@ status_t dss_printf_dss_file_table_block(
 static status_t dss_print_fsb_by_id(char *block, uint64 node_id)
 {
     dss_fs_block_t *file_space_block = (dss_fs_block_t *)block;
-    (void)printf("file_space_block = {\n");
+    (void)printf("fs_block = {\n");
     printf_fs_block(file_space_block);
     (void)printf("}\n\n");
 
