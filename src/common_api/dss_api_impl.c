@@ -3039,7 +3039,7 @@ static status_t dss_encode_fallocate_file(dss_conn_t *conn, dss_packet_t *pack, 
 static status_t dss_encode_hotpatch(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
 {
     if (conn->proto_version < DSS_VERSION_2) {
-        DSS_THROW_ERROR(ERR_DSS_UNSUPPORTED_CMD, "hotpatch");
+        DSS_THROW_ERROR(ERR_DSS_UNSUPPORTED_CMD, "hotpatch", conn->proto_version, (uint32)DSS_VERSION_2);
         return CM_ERROR;
     }
     dss_hotpatch_cmd_info_t *info = (dss_hotpatch_cmd_info_t *)send_info;
@@ -3053,7 +3053,7 @@ static status_t dss_encode_hotpatch(dss_conn_t *conn, dss_packet_t *pack, void *
 static status_t dss_encode_query_hotpatch(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
 {
     if (conn->proto_version < DSS_VERSION_2) {
-        DSS_THROW_ERROR(ERR_DSS_UNSUPPORTED_CMD, "query_hotpatch");
+        DSS_THROW_ERROR(ERR_DSS_UNSUPPORTED_CMD, "query_hotpatch", conn->proto_version, (uint32)DSS_VERSION_2);
         return CM_ERROR;
     }
     CM_RETURN_IFERR(dss_put_int32(pack, *((uint32 *)send_info)));
