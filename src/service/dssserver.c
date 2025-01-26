@@ -277,9 +277,9 @@ static status_t dss_create_recycle_meta_bg_task_set(dss_instance_t *inst)
 static status_t dss_alarm_check_background_task(dss_instance_t *inst)
 {
     LOG_RUN_INF("create dss alarm check background task.");
-    uint32 alarm_check_thread_id = dss_get_alarm_check_task_idx();
+    uint32 vg_usgae_alarm_thread_id = dss_get_alarm_check_task_idx();
     status_t status =
-        cm_create_thread(dss_alarm_check_proc, 0, &g_dss_instance, &(g_dss_instance.threads[alarm_check_thread_id]));
+        cm_create_thread(dss_alarm_check_proc, 0, &g_dss_instance, &(g_dss_instance.threads[vg_usgae_alarm_thread_id]));
     return status;
 }
 
@@ -317,7 +317,7 @@ static status_t dss_init_background_tasks(void)
         LOG_RUN_ERR("Create dss vg usage alarm background task failed.");
         return status;
     }
-    return CM_SUCCESS;
+    return status;
 }
 
 typedef status_t (*dss_srv_arg_parser)(int argc, char **argv, int *argIdx, dss_srv_args_t *dss_args);
