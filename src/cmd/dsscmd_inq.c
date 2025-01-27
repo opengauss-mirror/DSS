@@ -667,7 +667,7 @@ status_t dss_check_lock_remain(dss_vg_info_t *vg_info, int32 dss_mode, int64 ins
         if (status != CM_SUCCESS) {
             LOG_RUN_ERR("Failed to check vg %s lock remain in inst %lld.", vg_info->volume_group[i].vg_name, inst_id);
             DSS_PRINT_ERROR(
-                "Failed to check vg %s lock remain in inst %lld.", vg_info->volume_group[i].vg_name, inst_id);
+                "Failed to check vg %s lock remain in inst %lld.\n", vg_info->volume_group[i].vg_name, inst_id);
             return CM_ERROR;
         }
         if (!is_remain) {

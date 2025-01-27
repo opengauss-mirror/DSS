@@ -454,6 +454,8 @@ int main(int argc, char **argv)
     }
     (void)printf("DSS SERVER STARTED.\n");
     LOG_RUN_INF("DSS SERVER STARTED.\n");
+    log_param_t *log_param = cm_log_param_instance();
+    log_param->log_instance_starting = CM_FALSE;
     handle_main_wait();
     (void)printf("DSS SERVER END.\n");
     LOG_RUN_INF("DSS SERVER END.\n");
