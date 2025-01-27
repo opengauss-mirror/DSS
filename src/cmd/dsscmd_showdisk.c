@@ -430,7 +430,7 @@ status_t dss_print_fsb_by_id_detail(
     }
     dss_fs_block_t *file_space_block = (dss_fs_block_t *)block;
     char *tab = dss_get_print_tab(g_print_level);
-    (void)printf("%sfile_space_block = {\n", tab);
+    (void)printf("%sfs_block = {\n", tab);
     printf_fs_block(file_space_block);
     (void)printf("%s}\n\n", tab);
     uint32 size = (uint32)DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
@@ -465,7 +465,7 @@ status_t dss_print_entry_fs_block_detail(
     g_print_level++;
     // print complete file
     if (show_param->offset == CM_INVALID_INT64 && show_param->size == CM_INVALID_INT32) {
-        (void)printf("  entry detail = {\n");
+        (void)printf("  entry_detail = {\n");
         status_t status = dss_print_fsb_by_id_detail(session, vg_item, *(uint64 *)entry, show_param);
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to print fs block in detail.\n");
@@ -491,7 +491,7 @@ status_t dss_print_entry_fs_block_detail(
             DSS_PRINT_ERROR("Failed to get fs block info by offset.\n");
             return CM_ERROR;
         }
-        (void)printf("  fs block range = {\n");
+        (void)printf("  fs_block_range = {\n");
         status = dss_print_fsb_by_id_detail(session, vg_item, *(uint64 *)entry, show_param);
         if (status != CM_SUCCESS) {
             DSS_PRINT_ERROR("Failed to print fs block in detail.\n");
@@ -505,7 +505,7 @@ status_t dss_print_entry_fs_block_detail(
 static status_t dss_print_ftn_by_id(char *block, uint64 node_id)
 {
     dss_ft_block_t *file_table_block = (dss_ft_block_t *)block;
-    (void)printf("file_table_block = {\n");
+    (void)printf("ft_block = {\n");
     printf_ft_block(file_table_block);
     (void)printf("}\n\n");
 
