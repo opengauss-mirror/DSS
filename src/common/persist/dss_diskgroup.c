@@ -769,6 +769,11 @@ status_t dss_unlock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_pa
 {
     return CM_SUCCESS;
 }
+status_t dss_check_lock_remain_inner(
+    int32 dss_mode, dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id, bool32 *is_remain)
+{
+    return CM_SUCCESS;
+}
 #else
 
 static void dss_free_vglock_fp(const char *lock_file, FILE *fp)
@@ -970,7 +975,7 @@ status_t dss_dl_dealloc(unsigned int lock_id)
     return CM_SUCCESS;
 }
 
-status_t dss_lock_share_disk_vg(const char * entry_path, dss_config_t *inst_cfg)
+status_t dss_lock_share_disk_vg(const char *entry_path, dss_config_t *inst_cfg)
 {
     unsigned int lock_id;
     unsigned long long disk_inst_id;
@@ -1085,9 +1090,13 @@ status_t dss_unlock_vg_raid(dss_vg_info_item_t *vg_item, const char *entry_path,
     }
     status = cm_disk_unlock_s(&lock, entry_path);
     if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to unlock %s.", entry_path);
-        cm_destory_dlock(&lock);
-        return CM_ERROR;
+        LOG_RUN_ERR("Failed to unlock %s the first time, inst id %llu, just try again.", entry_path, inst_id);
+        status = cm_disk_unlock_s(&lock, entry_path);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to unlock %s the second time, inst id %llu.", entry_path, inst_id);
+            cm_destory_dlock(&lock);
+            return CM_ERROR;
+        }
     }
     LOG_DEBUG_INF("unLock vg succ, entry path %s.", entry_path);
     cm_destory_dlock(&lock);
@@ -1099,23 +1108,25 @@ status_t dss_unlock_vg_share_disk(dss_vg_info_item_t *vg_item, const char *entry
     unsigned int lock_id;
     status_t status;
 
-    lock_id = cm_dl_alloc(entry_path, DSS_VG_LOCK_SHARE_DISK_OFFSET, (unsigned long long) inst_id);
+    lock_id = cm_dl_alloc(entry_path, DSS_VG_LOCK_SHARE_DISK_OFFSET, (unsigned long long)inst_id);
     if (lock_id == CM_INVALID_LOCK_ID) {
         LOG_RUN_ERR("Failed to alloc %s, inst id %llu.", entry_path, inst_id);
         return CM_ERROR;
     }
-
     status = cm_dl_unlock(lock_id);
     if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to unlock %s, inst id %llu.", entry_path, inst_id);
-        status = dss_dl_dealloc(lock_id);
+        LOG_RUN_ERR("Failed to unlock %s the first time, inst id %llu, just try again.", entry_path, inst_id);
+        status = cm_dl_unlock(lock_id);
         if (status != CM_SUCCESS) {
-            LOG_RUN_ERR("Failed to dealloc %s, inst id %llu.", entry_path, inst_id);
+            LOG_RUN_ERR("Failed to unlock %s the second time, inst id %llu.", entry_path, inst_id);
+            status = dss_dl_dealloc(lock_id);
+            if (status != CM_SUCCESS) {
+                LOG_RUN_ERR("Failed to dealloc %s, inst id %llu.", entry_path, inst_id);
+            }
             return CM_ERROR;
         }
-        return CM_ERROR;
     }
-    LOG_DEBUG_INF("Unlock vg succ, entry path %s.", entry_path);
+    LOG_DEBUG_INF("unLock vg succ, entry path %s.", entry_path);
     status = dss_dl_dealloc(lock_id);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to dealloc %s, inst id %llu.", entry_path, inst_id);
@@ -1127,9 +1138,9 @@ status_t dss_unlock_vg_share_disk(dss_vg_info_item_t *vg_item, const char *entry
 status_t dss_unlock_vg(int32 dss_mode, dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id)
 {
     if (dss_mode == DSS_MODE_SHARE_DISK) {
-        return dss_unlock_vg_share_disk(vg_item, entry_path, g_inst_cfg->params.inst_id);
+        return dss_unlock_vg_share_disk(vg_item, entry_path, inst_id);
     } else {
-        return dss_unlock_vg_raid(vg_item, entry_path, g_inst_cfg->params.inst_id);
+        return dss_unlock_vg_raid(vg_item, entry_path, inst_id);
     }
 }
 
@@ -1177,7 +1188,7 @@ status_t dss_check_lock_remain_share_disk(
     dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id, bool32 *is_remain)
 {
     unsigned int lock_id;
-    *is_remain = CM_FALSE;
+    *is_remain = CM_TRUE;
     lock_id = cm_dl_alloc(entry_path, DSS_VG_LOCK_SHARE_DISK_OFFSET, (unsigned long long)inst_id);
     if (lock_id == CM_INVALID_LOCK_ID) {
         LOG_DEBUG_ERR("Failed to alloc lock.");
@@ -1195,14 +1206,14 @@ status_t dss_check_lock_remain_cluster_raid(
 {
     int32 fd = 0;
     dlock_t lock;
-    *is_remain = CM_FALSE;
+    *is_remain = CM_TRUE;
     status_t status = cm_alloc_dlock(&lock, DSS_CTRL_VG_LOCK_OFFSET, inst_id);
     if (status != CM_SUCCESS) {
         return CM_ERROR;
     }
     fd = open(entry_path, O_RDWR | O_DIRECT | O_SYNC);
     if (fd < 0) {
-        cm_destory_dlock(&lock);                      
+        cm_destory_dlock(&lock);
         return CM_ERROR;
     }
     status = cm_check_dlock_remain(&lock, fd, is_remain);

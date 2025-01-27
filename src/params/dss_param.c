@@ -862,6 +862,8 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     if (dss_is_server()) {
         status = dss_init_loggers(inst_cfg, dss_get_instance_log_def(), dss_get_instance_log_def_count(), "dssserver");
         DSS_RETURN_IFERR2(status, (void)printf("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code())));
+        log_param_t *log_param = cm_log_param_instance();
+        log_param->log_instance_starting = CM_TRUE;
     }
     CM_RETURN_IFERR(dss_load_path(inst_cfg));
     CM_RETURN_IFERR(dss_load_instance_id(inst_cfg));
