@@ -36,7 +36,6 @@
 extern "C" {
 #endif
 
-#define DSS_DEFAULT_NODE_ID 0
 #define DSS_SECOND_PRINT_LEVEL 2
 extern uint8 g_print_level;
 void printf_auid(const auid_t *first);

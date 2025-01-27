@@ -98,7 +98,7 @@ void printf_dss_au_root(dss_au_root_t *au_root)
     (void)printf("    free_root = %llu\n", au_root->free_root);
     (void)printf("    count = %llu\n", au_root->count);
     (void)printf("    free_vol_id = %u\n", au_root->free_vol_id);
-    (void)printf("    count = %u\n", au_root->reserve);
+    (void)printf("    reserve = %u\n", au_root->reserve);
 
     dss_au_list_t *free_list = &au_root->free_list;
     (void)printf("    free_list = {\n");
@@ -200,12 +200,17 @@ void printf_gft_node(gft_node_t *gft_node)
         printf_auid(entry);
         (void)printf("  }\n");
     }
-
+    (void)printf("  software_version = %u\n", gft_node->software_version);
     (void)printf("  name = %s\n", gft_node->name);
     (void)printf("  fid = %llu\n", gft_node->fid);
     (void)printf("  flags = %u\n", gft_node->flags);
     (void)printf("  size = %lld\n", gft_node->size);
-
+    (void)printf("  written_size = %llu\n", gft_node->written_size);
+    (void)printf("  parent = {\n");
+    printf_auid(&gft_node->parent);
+    (void)printf("  }\n");
+    (void)printf("  file_ver = %llu\n", gft_node->file_ver);
+    (void)printf("  min_inited_size = %llu\n", gft_node->min_inited_size);
     char time[512];
     (void)cm_time2str(gft_node->create_time, "YYYY-MM-DD HH24:mi:ss", time, sizeof(time));
     (void)printf("  create_time = %s\n", time);
