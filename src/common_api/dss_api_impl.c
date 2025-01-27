@@ -23,6 +23,7 @@
  */
 
 #include "cm_system.h"
+#include "cm_date.h"
 #include "dss_copyfile.h"
 #include "dss_defs.h"
 #include "dss_diskgroup.h"
@@ -672,10 +673,10 @@ status_t dss_cli_session_lock(dss_conn_t *conn, dss_session_t *session)
     if (session->cli_info.thread_id != conn->cli_info.thread_id ||
         session->cli_info.connect_time != conn->cli_info.connect_time) {
         DSS_THROW_ERROR_EX(ERR_DSS_CONNECT_FAILED,
-            "session %u thread id is %u, connect_time is %lld, conn thread id is %u, connect_time is %llu", session->id,
+            "session %u thread id is %u, connect_time is %llu, conn thread id is %u, connect_time is %llu", session->id,
             session->cli_info.thread_id, session->cli_info.connect_time, conn->cli_info.thread_id,
             conn->cli_info.connect_time);
-        LOG_RUN_ERR("Failed to check session %u, thread id is %u, connect_time is %lld, conn thread id is %u, "
+        LOG_RUN_ERR("Failed to check session %u, session thread id is %u, connect_time is %llu, conn thread id is %u, "
                     "connect_time is %llu",
                     session->id, session->cli_info.thread_id, session->cli_info.connect_time, conn->cli_info.thread_id,
                     conn->cli_info.connect_time);

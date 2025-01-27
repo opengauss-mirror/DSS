@@ -804,9 +804,12 @@ int dss_aio_prep_pread(void *iocb, int handle, void *buf, size_t count, long lon
     int32 real_count = (int32)count;
     ret = dss_get_fd_by_offset(
         conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_TRUE, &dev_fd, &new_offset, &real_count);
-    DSS_RETURN_IF_ERROR(ret);
-
+    if (ret != CM_SUCCESS) {
+        dss_leave_api(conn, CM_FALSE);
+        return CM_ERROR;
+    }
     io_prep_pread(iocb, dev_fd, buf, (size_t)real_count, new_offset);
+    dss_leave_api(conn, CM_FALSE);
     return CM_SUCCESS;
 }
 
@@ -826,7 +829,7 @@ int dss_aio_prep_pwrite(void *iocb, int handle, void *buf, size_t count, long lo
     ret = dss_get_fd_by_offset(conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_FALSE, &dev_fd, &new_offset, NULL);
     if (ret != CM_SUCCESS) {
         dss_leave_api(conn, CM_FALSE);
-        return ret;
+        return CM_ERROR;
     }
     io_prep_pwrite(iocb, dev_fd, buf, count, new_offset);
     dss_leave_api(conn, CM_FALSE);

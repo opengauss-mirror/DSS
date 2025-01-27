@@ -1642,8 +1642,8 @@ static status_t query_latch_remain_proc(void)
     int64 type = DSS_LATCH_ALL;
     if (cmd_query_latch_remain_args[DSS_ARG_IDX_1].inputed) {
         status = cm_str2bigint(cmd_query_latch_remain_args[DSS_ARG_IDX_1].input_args, &type);
-        DSS_RETURN_IFERR2(
-            status, DSS_PRINT_ERROR("inst_id:%s is not a valid int64.\n", cmd_query_latch_remain_args[DSS_ARG_IDX_0].input_args));
+        DSS_RETURN_IFERR2(status,
+            DSS_PRINT_ERROR("type:%s is not a valid int64.\n", cmd_query_latch_remain_args[DSS_ARG_IDX_1].input_args));
     }
     status = dss_query_latch_remain(home, inst_id, type);
     if (status == CM_ERROR) {
@@ -3510,6 +3510,7 @@ static status_t encrypt_proc(void)
         DSS_PRINT_RUN_ERROR("[ENCRYPT]Failed to encrypt password.\n");
         return CM_ERROR;
     }
+    LOG_RUN_INF("[ENCRYPT]Succeed to encrypt password.\n");
     (void)(memset_s(plain, CM_PASSWD_MAX_LEN + 1, 0, CM_PASSWD_MAX_LEN + 1));
     status = dss_save_random_file(cipher.rand, RANDOM_LEN + 1);
     if (status != CM_SUCCESS) {
