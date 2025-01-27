@@ -1370,7 +1370,7 @@ static status_t repair_set_fs_aux_bitmap_num(char *item_ptr, text_t *key, text_t
     status_t status = cm_text2uint32(value, &val);
     DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("repair value:%s is not a valid uint32\n", value->str));
     if (val > DSS_MAX_FS_AUX_BITMAP_SIZE || val < DSS_MIN_FS_AUX_BITMAP_SIZE) {
-        DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] bitmap_num of fs_aux_header must between %u and %u, your input is %u.\n",
+        DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] bitmap_num of fs_aux_header must be in [%u, %u], your input is %u.\n",
             (uint32)DSS_MIN_FS_AUX_BITMAP_SIZE, (uint32)DSS_MAX_FS_AUX_BITMAP_SIZE, val);
         return CM_ERROR;
     }
@@ -1443,10 +1443,9 @@ static status_t dss_fs_aux_block_repairer(char *block, text_t *name, text_t *val
                     max_fs_aux_bitmap_idx, index);
                 return CM_ERROR;
             }
-            uint32 byte_index = index / DSS_BYTE_BITS_SIZE;        // offset of BYTE in bitmap
-            uint8 bit_index_in_byte = index % DSS_BYTE_BITS_SIZE;  // offset of BIT in BYTE
-            uint32 repair_offset =
-                item->item_offset + byte_index * DSS_BYTE_BITS_SIZE;  // we have to modify BYTE by BYTE, not BIT by BIT
+            uint32 byte_index = index / DSS_BYTE_BITS_SIZE;         // offset of BYTE in bitmap
+            uint8 bit_index_in_byte = index % DSS_BYTE_BITS_SIZE;   // offset of BIT in BYTE
+            uint32 repair_offset = item->item_offset + byte_index;  // we have to modify BYTE by BYTE, not BIT by BIT
             if (value->len != 1 || (value->str[0] != '0' && value->str[0] != '1')) {
                 DSS_PRINT_RUN_ERROR(
                     "[TBOX][REPAIR] value of bitmap of fs_aux_block can only be 0 or 1, your input is %s.\n",
