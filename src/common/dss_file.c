@@ -3598,11 +3598,10 @@ static status_t dss_init_trunc_ftn(dss_session_t *session, dss_vg_info_item_t *v
     return CM_SUCCESS;
 }
 
-static void dss_truncate_set_sizes(
+static void dss_truncate_set_recycle_size(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, gft_node_t *trunc_ftn, int64 length)
 {
-    uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
-    uint64 align_length = CM_CALC_ALIGN((uint64)length, au_size);
+    uint64 align_length = CM_CALC_ALIGN((uint64)length, dss_get_vg_au_size(vg_item->dss_ctrl));
     dss_redo_set_file_size_t redo_size;
     uint64 old_size = (uint64)trunc_ftn->size;
     (void)cm_atomic_set(&trunc_ftn->size, (int64)((uint64)node->size - align_length));
@@ -3611,11 +3610,16 @@ static void dss_truncate_set_sizes(
     redo_size.size = (uint64)trunc_ftn->size;
     redo_size.oldsize = old_size;
     dss_put_log(session, vg_item, DSS_RT_SET_FILE_SIZE, &redo_size, sizeof(redo_size));
+}
 
-    old_size = (uint64)node->size;
+static void dss_truncate_set_size(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, int64 length)
+{
+    uint64 old_size = (uint64)node->size;
+    uint64 align_length = CM_CALC_ALIGN((uint64)length, dss_get_vg_au_size(vg_item->dss_ctrl));
     (void)cm_atomic_set(&node->size, (int64)align_length);
     node->written_size = (uint64)length < node->written_size ? (uint64)length : node->written_size;
     node->min_inited_size = (uint64)align_length < node->min_inited_size ? (uint64)align_length : node->min_inited_size;
+    dss_redo_set_file_size_t redo_size;
     redo_size.ftid = node->id;
     redo_size.size = (uint64)node->size;
     redo_size.oldsize = old_size;
@@ -3750,6 +3754,43 @@ status_t dss_truncate_small_init_tail(dss_session_t *session, dss_vg_info_item_t
     return dss_try_write_zero_one_au("truncate small", session, vg_item, node, (int64)node->written_size);
 }
 
+static status_t dss_truncate_to_recycle(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, dss_fs_block_t *entry_block, int64 length)
+{
+    uint32 block_count = 0;
+    uint32 block_au_count = 0;
+    uint32 au_offset = 0;
+    uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
+    uint64 align_length = CM_CALC_ALIGN((uint64)length, au_size);
+    // find truncate point(FSB index: &block_count, and AU index: &block_au_count) in 2-level bitmap
+    status_t status =
+        dss_get_fs_block_info_by_offset((int64)align_length, au_size, &block_count, &block_au_count, &au_offset);
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("The offset:%llu is not correct, real block count:%u.", align_length, block_count);
+        return CM_ERROR;
+    }
+
+    LOG_DEBUG_INF("Begin to truncate to recycle:%s, length:%lld, align_length:%llu, SFSB idx:%u, AU idx:%u", node->name,
+        length, align_length, block_count, block_au_count);
+
+    gft_node_t *trunc_ftn;
+    if (dss_init_trunc_ftn(session, vg_item, node, &trunc_ftn, align_length) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+
+    dss_fs_block_t *dst_entry_fsb = (dss_fs_block_t *)dss_find_block_in_shm(
+        session, vg_item, trunc_ftn->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
+    if (dst_entry_fsb == NULL) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, LOG_DEBUG_ERR("Failed to find dst entry block:%s.", dss_display_metaid(trunc_ftn->entry)));
+    }
+    dss_check_fs_block_affiliation(&dst_entry_fsb->head, trunc_ftn->id, DSS_ENTRY_FS_INDEX);
+    uint32 au_trunc_idx = au_offset == 0 ? block_au_count : block_au_count + 1;
+    dss_build_truncated_ftn(session, vg_item, entry_block, dst_entry_fsb, block_count, au_trunc_idx);
+    dss_truncate_set_recycle_size(session, vg_item, node, trunc_ftn, length);
+    return CM_SUCCESS;
+}
+
 status_t dss_truncate_inner(dss_session_t *session, uint64 fid, ftid_t ftid, int64 length, dss_vg_info_item_t *vg_item)
 {
     CM_RETURN_IFERR(dss_prepare_truncate(session, vg_item, length));
@@ -3797,41 +3838,18 @@ status_t dss_truncate_inner(dss_session_t *session, uint64 fid, ftid_t ftid, int
      * generated accordingly, associated with the file space block(s) taken from the truncated file.
      */
 
-    // find truncate point(FSB index: &block_count, and AU index: &block_au_count) in 2-level bitmap
-    uint32 block_count = 0;
-    uint32 block_au_count = 0;
-    uint32 au_offset = 0;
-    status = dss_get_fs_block_info_by_offset((int64)align_length, au_size, &block_count, &block_au_count, &au_offset);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("The offset:%llu is not correct, real block count:%u.", align_length, block_count);
-        dss_validate_fs_meta(session, vg_item, node);
-        dss_unlock_vg_mem_and_shm(session, vg_item);
-        return CM_ERROR;
+    uint64 align_origin_length = CM_CALC_ALIGN((uint64)node->size, au_size);
+    bool32 need_recycle = (align_length < align_origin_length);
+    LOG_DEBUG_INF("To truncate %s from %lld(aligned %llu) to %lld(aligned %llu), a recycle file is %s needed.",
+        node->name, node->size, align_origin_length, length, align_length, (need_recycle ? "" : "not"));
+    if (need_recycle) {
+        if (dss_truncate_to_recycle(session, vg_item, node, entry_block, length) != CM_SUCCESS) {
+            dss_validate_fs_meta(session, vg_item, node);
+            dss_unlock_vg_mem_and_shm(session, vg_item);
+            return CM_ERROR;
+        }
     }
-
-    /* Perform truncating file space blocks. */
-    gft_node_t *trunc_ftn;
-    if (dss_init_trunc_ftn(session, vg_item, node, &trunc_ftn, align_length) != CM_SUCCESS) {
-        dss_validate_fs_meta(session, vg_item, node);
-        dss_unlock_vg_mem_and_shm(session, vg_item);
-        return CM_ERROR;
-    }
-
-    LOG_DEBUG_INF("Begin to truncate file:%s, length:%lld, align_length:%llu, SFSB idx:%u, AU idx:%u", node->name,
-        length, align_length, block_count, block_au_count);
-
-    dss_fs_block_t *dst_entry_fsb = (dss_fs_block_t *)dss_find_block_in_shm(
-        session, vg_item, trunc_ftn->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
-    if (dst_entry_fsb == NULL) {
-        dss_validate_fs_meta(session, vg_item, node);
-        dss_unlock_vg_mem_and_shm(session, vg_item);
-        DSS_RETURN_IFERR2(
-            CM_ERROR, LOG_DEBUG_ERR("Failed to find dst entry block:%s.", dss_display_metaid(trunc_ftn->entry)));
-    }
-    dss_check_fs_block_affiliation(&dst_entry_fsb->head, trunc_ftn->id, DSS_ENTRY_FS_INDEX);
-    uint32 au_trunc_idx = au_offset == 0 ? block_au_count : block_au_count + 1;
-    dss_build_truncated_ftn(session, vg_item, entry_block, dst_entry_fsb, block_count, au_trunc_idx);
-    dss_truncate_set_sizes(session, vg_item, node, trunc_ftn, length);
+    dss_truncate_set_size(session, vg_item, node, length);
 
     if (dss_truncate_small_init_tail(session, vg_item, node) != CM_SUCCESS) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
