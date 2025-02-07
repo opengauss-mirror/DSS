@@ -321,9 +321,43 @@ status_t dss_print_struct_name_inner(dss_vg_info_item_t *vg_item, dss_volume_t *
     return CM_SUCCESS;
 }
 
-static void printf_fs_block_header(dss_fs_block_header *fs_block_header)
+static status_t printf_fs_block_bitmap(char *block, uint64 bitmap_idx)
 {
     char *tab = dss_get_print_tab(g_print_level);
+    uint32 size = (uint32)DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
+    dss_block_id_t *data_block_id = NULL;
+
+    if (bitmap_idx == 0) {
+        // To print the whole bitmap.
+        for (uint64 i = 0; i < size; ++i) {
+            data_block_id = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + i * sizeof(dss_block_id_t));
+            // bitmap[0] is sure to be printed no matter whether it is invalid.
+            if (i != 0 && dss_cmp_auid(*(auid_t *)data_block_id, DSS_INVALID_64)) {
+                continue;
+            }
+            (void)printf("%s  bitmap[%llu] = {\n", tab, i);
+            printf_auid(data_block_id);
+            (void)printf("%s  }\n", tab);
+        }
+    } else {
+        if (bitmap_idx > size - 1) {
+            DSS_PRINT_ERROR("The value of index_id or node_id for fs_block should be in range [0, %u].\n", size - 1);
+            return CM_ERROR;
+        }
+        data_block_id = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + bitmap_idx * sizeof(dss_block_id_t));
+        (void)printf("%s  bitmap[%llu] = {\n", tab, bitmap_idx);
+        printf_auid(data_block_id);
+        (void)printf("%s  }\n", tab);
+    }
+    return CM_SUCCESS;
+}
+
+static void printf_fs_block_head(dss_fs_block_t *fs_block)
+{
+    char *tab = dss_get_print_tab(g_print_level);
+    (void)printf("%s  head = {\n", tab);
+
+    dss_fs_block_header *fs_block_header = &fs_block->head;
     (void)printf("%s    common = {\n", tab);
     dss_common_block_t *common = &fs_block_header->common;
     printf_common_block_t(common);
@@ -342,19 +376,7 @@ static void printf_fs_block_header(dss_fs_block_header *fs_block_header)
     (void)printf("%s    total_num = %hu\n", tab, fs_block_header->total_num);
     (void)printf("%s    index = %hu\n", tab, fs_block_header->index);
     (void)printf("%s    reserve = %hu\n", tab, fs_block_header->reserve);
-}
 
-static void printf_fs_block(dss_fs_block_t *fs_block)
-{
-    char *tab = dss_get_print_tab(g_print_level);
-    (void)printf("%s  head = {\n", tab);
-    dss_fs_block_header *fs_block_header = &fs_block->head;
-    printf_fs_block_header(fs_block_header);
-    (void)printf("%s  }\n", tab);
-    (void)printf("%s  bitmap[0] = {\n", tab);
-
-    dss_block_id_t *bitmap = &fs_block->bitmap[0];
-    printf_auid(bitmap);
     (void)printf("%s  }\n", tab);
 }
 
@@ -397,34 +419,62 @@ status_t dss_print_fsb_by_id_detail_part(
         return CM_ERROR;
     }
     if (start_first_fs_index == end_first_fs_index) {
-        (void)printf("%sbitmap[%u] = {\n", tab, start_first_fs_index);
+        (void)printf("%s  bitmap[%u] = {\n", tab, start_first_fs_index);
         node = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + start_first_fs_index * sizeof(dss_block_id_t));
         dss_reset_first_fs_index(show_param, start_second_fs_index, end_second_fs_index);
         DSS_RETURN_IF_ERROR(dss_print_fsb_by_range(node, session, vg_item, show_param));
-        (void)printf("%s}\n", tab);
+        (void)printf("%s  }\n", tab);
         return CM_SUCCESS;
     }
     for (uint32 i = start_first_fs_index; i <= end_first_fs_index; i++) {
         node = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + i * sizeof(dss_block_id_t));
         if (i == start_first_fs_index) {
-            (void)printf("%sbitmap[%u] = {\n", tab, i);
+            (void)printf("%s  bitmap[%u] = {\n", tab, i);
             dss_reset_first_fs_index(show_param, start_second_fs_index, size - 1);
             DSS_RETURN_IF_ERROR(dss_print_fsb_by_range(node, session, vg_item, show_param));
-            (void)printf("%s}\n", tab);
+            (void)printf("%s  }\n", tab);
         } else if (i == end_first_fs_index) {
-            (void)printf("%sbitmap[%u] = {\n", tab, i);
+            (void)printf("%s  bitmap[%u] = {\n", tab, i);
             dss_reset_first_fs_index(show_param, 0, end_second_fs_index);
             DSS_RETURN_IF_ERROR(dss_print_fsb_by_range(node, session, vg_item, show_param));
-            (void)printf("%s}\n", tab);
+            (void)printf("%s  }\n", tab);
         } else {
-            (void)printf("%sbitmap[%u] = {\n", tab, i);
+            (void)printf("%s  bitmap[%u] = {\n", tab, i);
             dss_reset_first_fs_index(show_param, CM_INVALID_ID32, CM_INVALID_ID32);
             DSS_RETURN_IF_ERROR(dss_print_fsb_by_range(node, session, vg_item, show_param));
-            (void)printf("%s}\n", tab);
+            (void)printf("%s  }\n", tab);
         }
     }
     return CM_SUCCESS;
 }
+
+static status_t dss_print_fsb_bitmap_by_detail(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, char *block, dss_show_param_t *show_param, char *tab)
+{
+    uint32 size = (uint32)DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
+    dss_block_id_t *node = NULL;
+    g_print_level++;
+    if (show_param->start_first_fs_index == CM_INVALID_ID32) {
+        for (uint32 i = 0; i < size; ++i) {
+            node = (dss_block_id_t *)(block + (uint32)sizeof(dss_fs_block_t) + i * (uint32)sizeof(dss_block_id_t));
+            if (dss_cmp_auid(*(auid_t *)node, DSS_INVALID_64)) {
+                continue;
+            }
+            (void)printf("%s  bitmap[%u] = {\n", tab, i);
+            g_print_level--;
+            printf_auid(node);
+            g_print_level++;
+            if (g_print_level == DSS_SECOND_PRINT_LEVEL) {
+                (void)dss_print_fsb_by_id_detail(session, vg_item, *(uint64 *)node, show_param);
+            }
+            (void)printf("%s  }\n", tab);
+        }
+    } else {
+        return dss_print_fsb_by_id_detail_part(session, vg_item, block, show_param);
+    }
+    return CM_SUCCESS;
+}
+
 status_t dss_print_fsb_by_id_detail(
     dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 block_id, dss_show_param_t *show_param)
 {
@@ -445,30 +495,10 @@ status_t dss_print_fsb_by_id_detail(
     dss_fs_block_t *file_space_block = (dss_fs_block_t *)block;
     char *tab = dss_get_print_tab(g_print_level);
     (void)printf("%sfs_block = {\n", tab);
-    printf_fs_block(file_space_block);
+    printf_fs_block_head(file_space_block);
+    status_t ret = dss_print_fsb_bitmap_by_detail(session, vg_item, block, show_param, tab);
     (void)printf("%s}\n\n", tab);
-    uint32 size = (uint32)DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
-    dss_block_id_t *node = NULL;
-    g_print_level++;
-    if (show_param->start_first_fs_index == CM_INVALID_ID32) {
-        for (uint32 i = 0; i < size; ++i) {
-            node = (dss_block_id_t *)(block + (uint32)sizeof(dss_fs_block_t) + i * (uint32)sizeof(dss_block_id_t));
-            if (dss_cmp_auid(*(auid_t *)node, DSS_INVALID_64)) {
-                continue;
-            }
-            (void)printf("%sbitmap[%u] = {\n", tab, i);
-            g_print_level--;
-            printf_auid(node);
-            g_print_level++;
-            if (g_print_level == DSS_SECOND_PRINT_LEVEL) {
-                (void)dss_print_fsb_by_id_detail(session, vg_item, *(uint64 *)node, show_param);
-            }
-            (void)printf("%s}\n", tab);
-        }
-    } else {
-        return dss_print_fsb_by_id_detail_part(session, vg_item, block, show_param);
-    }
-    return CM_SUCCESS;
+    return ret;
 }
 
 status_t dss_print_entry_fs_block_detail(
@@ -521,7 +551,6 @@ static status_t dss_print_ftn_by_id(char *block, uint64 node_id)
     dss_ft_block_t *file_table_block = (dss_ft_block_t *)block;
     (void)printf("ft_block = {\n");
     printf_ft_block(file_table_block);
-    (void)printf("}\n\n");
 
     gft_node_t *node = NULL;
 
@@ -530,9 +559,10 @@ static status_t dss_print_ftn_by_id(char *block, uint64 node_id)
         return CM_ERROR;
     }
     node = (gft_node_t *)(block + (uint32)sizeof(dss_ft_block_t));
-    (void)printf("ft_node = {\n");
-    printf_gft_node(node);
-    (void)printf("}\n");
+    (void)printf("    ft_node = {\n");
+    printf_gft_node(node, "    ");
+    (void)printf("    }\n");
+    (void)printf("}\n\n");
     return CM_SUCCESS;
 }
 
@@ -541,16 +571,16 @@ static void print_fs_aux_bitmap_by_range(uchar *bitmap, uint64 end)
 {
     uint64 byte_cnt = end / DSS_BYTE_BITS_SIZE;
     for (uint64 byte_idx = 0; byte_idx < byte_cnt; ++byte_idx) {
-        (void)printf("bitmap[%llu-%llu] = ", byte_idx * DSS_BYTE_BITS_SIZE, (byte_idx + 1) * DSS_BYTE_BITS_SIZE - 1);
+        (void)printf("  bitmap[%llu-%llu] = ", byte_idx * DSS_BYTE_BITS_SIZE, (byte_idx + 1) * DSS_BYTE_BITS_SIZE - 1);
         uchar byte = bitmap[byte_idx];
         for (uint64 bit_idx = 0; bit_idx < DSS_BYTE_BITS_SIZE; ++bit_idx) {
             (void)printf("%c", (((byte >> bit_idx) & 1) ? '1' : '0'));
         }
-        (void)printf("\n");
+        (void)printf("  \n");
     }
     uchar byte = bitmap[byte_cnt];
     uint64 bit_cnt_left = end - byte_cnt * DSS_BYTE_BITS_SIZE;
-    (void)printf("bitmap[%llu-%llu] = ", byte_cnt * DSS_BYTE_BITS_SIZE, end);
+    (void)printf("  bitmap[%llu-%llu] = ", byte_cnt * DSS_BYTE_BITS_SIZE, end);
     for (uint64 bit_idx = 0; bit_idx <= bit_cnt_left; ++bit_idx) {
         (void)printf("%c", (((byte >> bit_idx) & 1) ? '1' : '0'));
     }
@@ -561,7 +591,7 @@ static void print_fs_aux_bitmap_one_bit(uchar *bitmap, uint64 idx)
 {
     uint64 byte_cnt = idx / DSS_BYTE_BITS_SIZE;
     uint64 bit_idx = idx - byte_cnt * DSS_BYTE_BITS_SIZE;
-    (void)printf("bitmap[%llu] = %c\n", idx, (((bitmap[byte_cnt] >> bit_idx) & 1) ? '1' : '0'));
+    (void)printf("  bitmap[%llu] = %c\n", idx, (((bitmap[byte_cnt] >> bit_idx) & 1) ? '1' : '0'));
 }
 
 static void print_fs_aux_block_head(dss_fs_aux_t *fs_aux)
@@ -587,28 +617,32 @@ static void print_fs_aux_block_head(dss_fs_aux_t *fs_aux)
     (void)printf("    resv = %hu\n", fs_aux->head.resv);
 }
 
-static status_t dss_print_fs_aux_by_id(char *block, uint64 bitmap_idx)
+static status_t dss_print_fs_aux_bitmap(dss_fs_aux_t *fs_aux, uint64 bitmap_idx)
 {
-    dss_fs_aux_t *fs_aux = (dss_fs_aux_t *)block;
-    (void)printf("fs_aux = {\n");
-    (void)printf("  head = {\n");
-    print_fs_aux_block_head(fs_aux);
-    (void)printf("  }\n");
-    (void)printf("  ");
-    print_fs_aux_bitmap_by_range(fs_aux->bitmap, DSS_BYTE_BITS_SIZE - 1);
     uint64 bit_size = fs_aux->head.bitmap_num * DSS_BYTE_BITS_SIZE;
     if (bitmap_idx >= bit_size) {
         DSS_PRINT_ERROR(
             "The value of index_id or node_id for fs_aux_block should be in range [0, %llu].\n", bit_size - 1);
         return CM_ERROR;
     }
-    (void)printf("}\n\n");
     if (bitmap_idx == 0) {
         print_fs_aux_bitmap_by_range(fs_aux->bitmap, bit_size - 1);
     } else {
         print_fs_aux_bitmap_one_bit(fs_aux->bitmap, bitmap_idx);
     }
     return CM_SUCCESS;
+}
+
+static status_t dss_print_fs_aux_by_id(char *block, uint64 bitmap_idx)
+{
+    dss_fs_aux_t *fs_aux = (dss_fs_aux_t *)block;
+    (void)printf("fs_aux_block = {\n");
+    (void)printf("  head = {\n");
+    print_fs_aux_block_head(fs_aux);
+    (void)printf("  }\n");
+    status_t status = dss_print_fs_aux_bitmap(fs_aux, bitmap_idx);
+    (void)printf("}\n\n");
+    return status;
 }
 
 status_t dss_printf_dss_file_table_block(
@@ -650,41 +684,18 @@ status_t dss_printf_dss_file_table_block(
     return status;
 }
 
-static status_t dss_print_fsb_by_id(char *block, uint64 node_id)
+static status_t dss_print_fsb_by_id(char *block, uint64 bitmap_idx)
 {
     dss_fs_block_t *file_space_block = (dss_fs_block_t *)block;
     (void)printf("fs_block = {\n");
-    printf_fs_block(file_space_block);
+    printf_fs_block_head(file_space_block);
+    status_t status = printf_fs_block_bitmap(block, bitmap_idx);
     (void)printf("}\n\n");
-
-    uint32 size = (uint32)DSS_FILE_SPACE_BLOCK_BITMAP_COUNT;
-    dss_block_id_t *node = NULL;
-
-    if (node_id == 0) {
-        for (uint32 i = 0; i < size; ++i) {
-            node = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + i * sizeof(dss_block_id_t));
-            if (dss_cmp_auid(*(auid_t *)node, DSS_INVALID_64)) {
-                continue;
-            }
-            (void)printf("bitmap[%u] = {\n", i);
-            printf_auid(node);
-            (void)printf("}\n");
-        }
-    } else {
-        if (node_id > size - 1) {
-            DSS_PRINT_ERROR("The value of index_id or node_id for fs_block should be in range [0, %u].\n", size - 1);
-            return CM_ERROR;
-        }
-        node = (dss_block_id_t *)(block + sizeof(dss_fs_block_t) + node_id * sizeof(dss_block_id_t));
-        (void)printf("bitmap[%llu] = {\n", node_id);
-        printf_auid(node);
-        (void)printf("}\n");
-    }
-    return CM_SUCCESS;
+    return status;
 }
 
 static status_t printf_dss_file_space_block(
-    dss_volume_ctrl_t *volume_ctrl, dss_core_ctrl_t *core_ctrl, dss_block_id_t *id, uint64 node_id)
+    dss_volume_ctrl_t *volume_ctrl, dss_core_ctrl_t *core_ctrl, dss_block_id_t *id, uint64 bitmap_idx)
 {
     status_t status;
     int64 offset;
@@ -709,7 +720,7 @@ static status_t printf_dss_file_space_block(
         DSS_FREE_POINT(block);
         return status;
     }
-    status = dss_print_fsb_by_id(block, node_id);
+    status = dss_print_fsb_by_id(block, bitmap_idx);
     dss_close_volume(&volume);
     DSS_FREE_POINT(block);
     return status;
@@ -984,7 +995,7 @@ status_t dss_print_gft_node_by_path(dss_session_t *session, dss_vg_info_item_t *
         DSS_PRINT_ERROR("Failed to find ft node by path %s in share memory.\n", show_param->path);
         return CM_ERROR;
     }
-    printf_gft_node(show_param->node);
+    printf_gft_node(show_param->node, "");
     if (show_param->node->type == GFT_FILE) {
         if (show_param->offset == 0 && show_param->size == 0) {
             return CM_SUCCESS;
@@ -1016,7 +1027,7 @@ status_t dss_print_gft_node_by_ftid_and_fid(
             return CM_ERROR;
         }
     }
-    printf_gft_node(show_param->node);
+    printf_gft_node(show_param->node, "");
     if (show_param->node->type == GFT_FILE) {
         if (show_param->offset == 0 && show_param->size == 0) {
             return CM_SUCCESS;

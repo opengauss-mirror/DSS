@@ -179,56 +179,56 @@ void printf_gft_root(gft_root_t *ft_root)
     (void)printf("    }\n");
 }
 
-void printf_gft_node(gft_node_t *gft_node)
+void printf_gft_node(gft_node_t *gft_node, const char *tab)
 {
     if (gft_node->type == GFT_PATH) {
-        (void)printf("  type = GFT_PATH\n");
+        (void)printf("%s  type = GFT_PATH\n", tab);
         gft_list_t *items = &gft_node->items;
-        (void)printf("  items = {\n");
+        (void)printf("%s  items = {\n", tab);
         printf_gft_list(items);
-        (void)printf("  }\n");
+        (void)printf("%s  }\n", tab);
     } else if (gft_node->type == GFT_FILE) {
-        (void)printf("  type = GFT_FILE\n");
+        (void)printf("%s  type = GFT_FILE\n", tab);
         dss_block_id_t *entry = &gft_node->entry;
-        (void)printf("  entry = {\n");
+        (void)printf("%s  entry = {\n", tab);
         printf_auid(entry);
-        (void)printf("  }\n");
+        (void)printf("%s  }\n", tab);
     } else if (gft_node->type == GFT_LINK) {
-        (void)printf("  type = GFT_LINK\n");
+        (void)printf("%s  type = GFT_LINK\n", tab);
         dss_block_id_t *entry = &gft_node->entry;
-        (void)printf("  entry = {\n");
+        (void)printf("%s  entry = {\n", tab);
         printf_auid(entry);
-        (void)printf("  }\n");
+        (void)printf("%s  }\n", tab);
     }
-    (void)printf("  software_version = %u\n", gft_node->software_version);
-    (void)printf("  name = %s\n", gft_node->name);
-    (void)printf("  fid = %llu\n", gft_node->fid);
-    (void)printf("  flags = %u\n", gft_node->flags);
-    (void)printf("  size = %lld\n", gft_node->size);
-    (void)printf("  written_size = %llu\n", gft_node->written_size);
-    (void)printf("  parent = {\n");
+    (void)printf("%s  software_version = %u\n", tab, gft_node->software_version);
+    (void)printf("%s  name = %s\n", tab, gft_node->name);
+    (void)printf("%s  fid = %llu\n", tab, gft_node->fid);
+    (void)printf("%s  flags = %u\n", tab, gft_node->flags);
+    (void)printf("%s  size = %lld\n", tab, gft_node->size);
+    (void)printf("%s  written_size = %llu\n", tab, gft_node->written_size);
+    (void)printf("%s  parent = {\n", tab);
     printf_auid(&gft_node->parent);
-    (void)printf("  }\n");
-    (void)printf("  file_ver = %llu\n", gft_node->file_ver);
-    (void)printf("  min_inited_size = %llu\n", gft_node->min_inited_size);
+    (void)printf("%s  }\n", tab);
+    (void)printf("%s  file_ver = %llu\n", tab, gft_node->file_ver);
+    (void)printf("%s  min_inited_size = %llu\n", tab, gft_node->min_inited_size);
     char time[512];
     (void)cm_time2str(gft_node->create_time, "YYYY-MM-DD HH24:mi:ss", time, sizeof(time));
-    (void)printf("  create_time = %s\n", time);
+    (void)printf("%s  create_time = %s\n", tab, time);
     (void)cm_time2str(gft_node->update_time, "YYYY-MM-DD HH24:mi:ss", time, sizeof(time));
-    (void)printf("  update_time = %s\n", time);
+    (void)printf("%s  update_time = %s\n", tab, time);
 
     auid_t *id = &gft_node->id;
-    (void)printf("  id = {\n");
+    (void)printf("%s  id = {\n", tab);
     printf_auid(id);
-    (void)printf("  }\n");
+    (void)printf("%s  }\n", tab);
 
     auid_t *next = &gft_node->next;
-    (void)printf("  next= {\n");
+    (void)printf("%s  next= {\n", tab);
     printf_auid(next);
-    (void)printf("  }\n");
+    (void)printf("%s  }\n", tab);
 
     auid_t *prev = &gft_node->prev;
-    (void)printf("  prev = {\n");
+    (void)printf("%s  prev = {\n", tab);
     printf_auid(prev);
-    (void)printf("  }\n");
+    (void)printf("%s  }\n", tab);
 }
