@@ -360,7 +360,7 @@ static status_t dss_fs_block_repairer(char *block, text_t *name, text_t *value)
             return item->repair_func((void *)(((char *)block) + repair_offset), &part2, value);
         }
     }
-    DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse fs block;", part1.str);
+    DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse fs block;\n", part1.str);
     return CM_ERROR;
 }
 
@@ -497,7 +497,7 @@ static status_t dss_core_ctrl_repairer(char *meta_buffer, text_t *name, text_t *
             return item->repair_func((void *)(((char *)meta_buffer) + repair_offset), &part2, value);
         }
     }
-    DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse core_ctrl;", part1.str);
+    DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse core_ctrl;\n", part1.str);
     return CM_ERROR;
 }
 
@@ -582,7 +582,7 @@ static status_t repair_reject_set_software_version(char *item_ptr, text_t *key, 
     DSS_PRINT_RUN_ERROR(
         "[TBOX][REPAIR] software_version is not allowed to be modified by "
         "\"dsstbox ssrepair -t volume_header -k software_version=NEW_VERSION\"."
-        "If needed, use \"dsstbox ssrepair -t software_version -k software_version=NEW_VERSION\" instead.");
+        "If needed, use \"dsstbox ssrepair -t software_version -k software_version=NEW_VERSION\" instead.\n");
     return CM_ERROR;
 }
 
@@ -830,7 +830,7 @@ static status_t dss_ft_block_repairer(char *block, text_t *name, text_t *value)
             return item->repair_func((void *)(((char *)block) + item->item_offset), &part2, value);
         }
     }
-    DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse ft block;", part1.str);
+    DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse ft block;\n", part1.str);
     return CM_ERROR;
 }
 
@@ -911,7 +911,7 @@ status_t dss_repair_verify_disk_version(char *vol_path)
     }
 
     if (header->software_version > (uint32)DSS_SOFTWARE_VERSION) {
-        DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] disk software_version:%u is not match dsstbox version:%u.",
+        DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] disk software_version:%u is not match dsstbox version:%u.\n",
             header->software_version, (uint32)DSS_SOFTWARE_VERSION);
         status = CM_ERROR;
     }
@@ -1140,7 +1140,7 @@ static status_t dss_root_ft_block_repairer(char *meta_buffer, text_t *name, text
             return item->repair_func((void *)(((char *)meta_buffer) + item->item_offset), &part2, value);
         }
     }
-    DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse root_ft_block;", part1.str);
+    DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse root_ft_block;\n", part1.str);
     return CM_ERROR;
 }
 
@@ -1328,7 +1328,7 @@ static status_t dss_volume_ctrl_repairer(char *meta_buffer, text_t *name, text_t
             return item->repair_func((void *)(((char *)meta_buffer) + repair_offset), &part2, value);
         }
     }
-    DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse volume_ctrl;", part1.str);
+    DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse volume_ctrl;\n", part1.str);
     return CM_ERROR;
 }
 
@@ -1502,7 +1502,7 @@ static status_t dss_fs_aux_block_repairer(char *block, text_t *name, text_t *val
             return item->repair_func((void *)(((char *)block) + repair_offset), &part2, &modifier);
         }
     }
-    DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse fs_aux_block;", part1.str);
+    DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] Get invalid key : %s, when parse fs_aux_block;\n", part1.str);
     return CM_ERROR;
 }
 
