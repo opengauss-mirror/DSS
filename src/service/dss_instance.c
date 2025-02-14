@@ -27,6 +27,7 @@
 #include "cm_timer.h"
 #include "cm_error.h"
 #include "cm_iofence.h"
+#include "cm_stack.h"
 #include "dss_errno.h"
 #include "dss_defs.h"
 #include "dss_api.h"
@@ -48,10 +49,11 @@
 #endif
 #include "dss_fault_injection.h"
 #include "dss_nodes_list.h"
+#include "dss_delete_file.h"
 
 #define DSS_MAINTAIN_ENV "DSS_MAINTAIN"
 dss_instance_t g_dss_instance;
-
+char *g_delete_buf = NULL;
 static const char *const g_dss_lock_file = "dss.lck";
 
 static void instance_set_pool_def(ga_pool_id_e pool_id, uint32 obj_count, uint32 obj_size, uint32 ex_max)
@@ -799,6 +801,7 @@ void dss_get_cm_lock_and_recover_inner(dss_session_t *session, dss_instance_t *i
     if (old_master_id == master_id) {
         // primary, no need check
         if (master_id == curr_id) {
+            status = dss_delay_clean_background_task(&g_dss_instance);
             cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
             return;
         }
@@ -839,6 +842,15 @@ void dss_get_cm_lock_and_recover(thread_t *thread)
     }
 }
 
+void dss_init_delete_buf()
+{
+    if (g_delete_buf == NULL) {
+        uint32 search_stack_size = dss_get_search_stack_size();
+        uint32 delete_queue_size = sizeof(dss_delete_queue_t);
+        g_delete_buf = cm_malloc(search_stack_size + delete_queue_size);
+        DSS_ASSERT_LOG(g_delete_buf != NULL, "Failed to malloc g_delete_buf");
+    }
+}
 void dss_delay_clean_proc(thread_t *thread)
 {
     cm_set_thread_name("delay_clean");
@@ -848,6 +860,12 @@ void dss_delay_clean_proc(thread_t *thread)
     LOG_RUN_INF("Session[id=%u] is available for delay clean task.", session->id);
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 sleep_times = 0;
+    dss_init_delete_buf();
+    char *serach_stack = g_delete_buf;
+    char *delete_queue = (char *)(g_delete_buf + dss_get_search_stack_size());
+    cm_stack_init((cm_stack_t *)serach_stack, g_delete_buf + sizeof(cm_stack_t),
+        CM_ALIGN8(sizeof(dss_search_node_t) * DSS_MAX_DELETE_DEPTH) + GS_PUSH_RESERVE_SIZE);
+    dss_init_delete_queue((dss_delete_queue_t *)delete_queue);
     while (!thread->closed) {
         if (sleep_times < inst_cfg->params.delay_clean_interval) {
             cm_sleep(CM_SLEEP_1000_FIXED);
@@ -857,10 +875,34 @@ void dss_delay_clean_proc(thread_t *thread)
         g_dss_instance.is_cleaning = CM_TRUE;
         // DSS_STATUS_OPEN for control with switchover
         if (dss_need_exec_local() && dss_is_readwrite() && (g_dss_instance.status == DSS_STATUS_OPEN)) {
-            dss_delay_clean_all_vg(session);
+            dss_delay_clean_all_vg(session, (cm_stack_t *)serach_stack, (dss_delete_queue_t *)delete_queue);
         }
         g_dss_instance.is_cleaning = CM_FALSE;
         sleep_times = 0;
+    }
+}
+
+status_t dss_delay_clean_background_task(dss_instance_t *inst)
+{
+    status_t status = CM_SUCCESS;
+    uint32 delay_clean_idx = dss_get_delay_clean_task_idx();
+    if (inst->threads[delay_clean_idx].id == 0) {
+        status = cm_create_thread(dss_delay_clean_proc, 0, &g_dss_instance, &(g_dss_instance.threads[delay_clean_idx]));
+        if (status == CM_SUCCESS) {
+            LOG_RUN_INF("Succeed to create dss delay clean background task.");
+        } else {
+            LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL4, "Failed to create dss delay clean background task.");
+        }
+    }
+    return status;
+}
+
+void dss_close_delay_clean_background_task(dss_instance_t *inst)
+{
+    uint32 delay_clean_idx = dss_get_delay_clean_task_idx();
+    if (inst->threads[delay_clean_idx].id != 0) {
+        cm_close_thread(&inst->threads[delay_clean_idx]);
+        LOG_RUN_INF("close dss delay clean background task.");
     }
 }
 

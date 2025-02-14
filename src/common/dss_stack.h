@@ -39,7 +39,6 @@ typedef struct tagknl_stack {
     uint32 reserve;
     char *buff;
 } dss_stack;
-
 char *dss_get_stack_pos(dss_stack *stack, uint32 depth);
 void dss_pop_ex(dss_stack *stack, uint32 depth);
 

@@ -101,6 +101,7 @@ typedef struct st_dss_params {
     dss_recycle_meta_pos_t recyle_meta_pos;
     uint32 space_usage_hwm;
     uint32 space_usage_lwm;
+    uint32 delay_clean_search_fragment;
 } dss_params_t;
 
 typedef struct st_dss_config {
@@ -156,7 +157,7 @@ void dss_ssl_ca_cert_expire(void);
 status_t dss_set_cfg_param(char *name, char *value, char *scope);
 status_t dss_get_cfg_param(const char *name, char **value);
 status_t dss_load_delay_clean_interval_core(char *value, dss_config_t *inst_cfg);
-
+status_t dss_load_delay_clean_search_fragment_core(char *value, dss_config_t *inst_cfg);
 static inline status_t dss_load_blackbox_detail_on_inner(char *value, dss_config_t *inst_cfg)
 {
     if (cm_str_equal_ins(value, "TRUE")) {

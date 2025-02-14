@@ -96,7 +96,6 @@ static void dss_close_thread(dss_instance_t *inst)
 
     if (inst->threads != NULL) {
         dss_close_background_task(inst);
-        DSS_FREE_POINT(inst->threads);
     }
 
     // close lsnr thread
@@ -127,6 +126,9 @@ static void dss_clean_server()
 {
     dss_close_thread(&g_dss_instance);
     dss_stop_mes();
+    // may be close delete clean thread in mes, so after stop mes to free threads
+    DSS_FREE_POINT(g_dss_instance.threads);
+    DSS_FREE_POINT(g_delete_buf);
     dss_uninit_cm(&g_dss_instance);
     dss_free_log_ctrl();
     if (g_dss_instance.lock_fd != CM_INVALID_INT32) {
@@ -171,15 +173,6 @@ static status_t dss_recovery_background_task(dss_instance_t *inst)
     uint32 recovery_thread_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
     status_t status = cm_create_thread(
         dss_get_cm_lock_and_recover, 0, &g_dss_instance, &(g_dss_instance.threads[recovery_thread_id]));
-    return status;
-}
-
-static status_t dss_delay_clean_background_task(dss_instance_t *inst)
-{
-    LOG_RUN_INF("create dss delay clean background task.");
-    uint32 delay_clean_idx = dss_get_delay_clean_task_idx();
-    status_t status =
-        cm_create_thread(dss_delay_clean_proc, 0, &g_dss_instance, &(g_dss_instance.threads[delay_clean_idx]));
     return status;
 }
 
@@ -290,12 +283,6 @@ static status_t dss_init_background_tasks(void)
         LOG_RUN_ERR("Create dss recovery background task failed.");
         return status;
     }
-    status = dss_delay_clean_background_task(&g_dss_instance);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("Create dss delay clean background task failed.");
-        return status;
-    }
-
     status = dss_create_meta_syn_bg_task_set(&g_dss_instance);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Create dss syn meta background task failed.");
