@@ -270,6 +270,20 @@ void dss_lock_vg_mem_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_it
     dss_enter_shm_x(session, vg_item);
 }
 
+bool32 dss_lock_vg_mem_and_shm_timed_x(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks)
+{
+    if (!dss_lock_vg_mem_timed_x(vg_item, wait_ticks)) {
+        LOG_DEBUG_WAR("lock vg mem x timeout.");
+        return CM_FALSE;
+    }
+    if (!dss_enter_shm_time_x(session, vg_item, wait_ticks)) {
+        dss_unlock_vg_mem(vg_item);
+        LOG_DEBUG_WAR("lock vg shm x timeout.");
+        return CM_FALSE;
+    }
+    return CM_TRUE;
+}
+
 void dss_lock_vg_mem_and_shm_x2ix(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
     dss_lock_shm_meta_x2ix(session, vg_item->vg_latch);
@@ -292,6 +306,20 @@ void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_it
 {
     dss_lock_vg_mem_s(vg_item);
     dss_enter_shm_s(session, vg_item, CM_FALSE, SPIN_WAIT_FOREVER);
+}
+
+bool32 dss_lock_vg_mem_and_shm_timed_s(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks)
+{
+    if (!dss_lock_vg_mem_timed_s(vg_item, wait_ticks)) {
+        LOG_DEBUG_WAR("lock vg mem s timeout.");
+        return CM_FALSE;
+    }
+    if (!dss_enter_shm_timed_s(session, vg_item, CM_FALSE, wait_ticks)) {
+        dss_unlock_vg_mem(vg_item);
+        LOG_DEBUG_WAR("lock vg shm s timeout.");
+        return CM_FALSE;
+    }
+    return CM_TRUE;
 }
 
 void dss_lock_vg_mem_and_shm_s_force(dss_session_t *session, dss_vg_info_item_t *vg_item)
@@ -4338,94 +4366,30 @@ void dss_clean_all_sessions_latch()
     }
 }
 
-static status_t dss_clean_delay_file_node(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node)
+status_t dss_check_open_file_local_and_remote(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t ftid, bool32 *is_open)
 {
-    if (node->size > 0) {
-        // first remove node from old dir but not real delete, just mv to recycle
-        dss_free_ft_node(session, vg_item, parent_node, node, CM_FALSE);
-        dss_mv_to_recycle_dir(session, vg_item, node);
-    } else {
-        status_t status = dss_recycle_empty_file(session, vg_item, parent_node, node);
-        if (status != CM_SUCCESS) {
-            dss_rollback_mem_update(session, vg_item);
-            LOG_RUN_WAR("[DELAY_CLEAN]Failed to recycle empty file(fid:%llu).", node->fid);
-            return status;
-        }
-    }
-    return CM_SUCCESS;
-}
-
-static status_t dss_clean_delay_node(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node)
-{
-    LOG_DEBUG_INF("[DELAY_CLEAN]Delay File begin to clean name %s ftid:%s.", node->name, dss_display_metaid(node->id));
-    if (node->type == GFT_PATH) {
-        // clean delay path only when they have no children node
-        LOG_DEBUG_INF("[DELAY_CLEAN]Delay File %s ftid:%s is path, children node count %u .", node->name,
-            dss_display_metaid(node->id), node->items.count);
-        dss_free_ft_node(session, vg_item, parent_node, node, CM_TRUE);
-    } else {
-        status_t status = dss_clean_delay_file_node(session, vg_item, parent_node, node);
-        DSS_RETURN_IF_ERROR(status);
-    }
-    if (dss_process_redo_log(session, vg_item) != CM_SUCCESS) {
-        LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
-            cm_get_error_code(), errno, strerror(errno));
-        cm_fync_logfile();
-        dss_exit(1);
-    }
-    LOG_DEBUG_INF("[DELAY_CLEAN]Delay File clean success.");
-    return CM_SUCCESS;
-}
-
-// node is must delay file
-static status_t dss_check_delay_node(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node)
-{
-    LOG_DEBUG_INF("[DELAY_CLEAN]Delay File begin to check name %s ftid:%s.", node->name, dss_display_metaid(node->id));
-    LOG_DEBUG_INF("Parent name:%s ftid:%s", parent_node->name, dss_display_metaid(parent_node->id));
-    bool32 is_open = CM_FALSE;
+    LOG_DEBUG_INF("[DELAY_CLEAN]Delay File begin to check ftid:%s.", dss_display_metaid(ftid));
     // check delay file open local
-    status_t status = dss_check_open_file(session, vg_item, DSS_ID_TO_U64(node->id), &is_open);
-    DSS_RETURN_IFERR2(status,
-        LOG_RUN_WAR("[DELAY_CLEAN]Failed to check local, name %s ftid:%s.", node->name, dss_display_metaid(node->id)));
-    if (is_open) {
-        LOG_DEBUG_INF("[DELAY_CLEAN]File %s ftid:%s is delay node, but have opened local, check next time.", node->name,
-            dss_display_metaid(node->id));
+    status_t status = dss_check_open_file(session, vg_item, DSS_ID_TO_U64(ftid), is_open);
+    DSS_RETURN_IFERR2(status, LOG_RUN_WAR("[DELAY_CLEAN]Failed to check local, ftid:%s.", dss_display_metaid(ftid)));
+    if (*is_open) {
+        LOG_DEBUG_INF("[DELAY_CLEAN]ftid:%s is delay delete node, but has been opened local, check next time.",
+            dss_display_metaid(ftid));
         return CM_SUCCESS;
     }
-
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_node(node);
-    if (block_ctrl != NULL) {
-        uint64 bg_task_ref_cnt = (uint64)cm_atomic_get((atomic_t *)&block_ctrl->bg_task_ref_cnt);
-        if (bg_task_ref_cnt > 0) {
-            LOG_DEBUG_INF(
-                "[DELAY_CLEAN]File %s ftid:%llu is delay node, but have ref by bg task local, check next time.",
-                node->name, DSS_ID_TO_U64(node->id));
-            return CM_SUCCESS;
-        }
-    }
-
     if (broadcast_check_file_open_proc != NULL) {
         // broadcast to check file open
-        status = broadcast_check_file_open_proc(vg_item, DSS_ID_TO_U64(node->id), &is_open);
-        DSS_RETURN_IFERR2(status, LOG_RUN_WAR("[DELAY_CLEAN]Failed check broadcast, name %s ftid:%llu.", node->name,
-                                      DSS_ID_TO_U64(node->id)));
-        if (is_open) {
-            LOG_DEBUG_INF(
-                "[DELAY_CLEAN]File %s ftid:%s is delay node, but have opened other instance, check next time.",
-                node->name, dss_display_metaid(node->id));
+        status = broadcast_check_file_open_proc(vg_item, DSS_ID_TO_U64(ftid), is_open);
+        DSS_RETURN_IFERR2(
+            status, LOG_RUN_WAR("[DELAY_CLEAN]Failed check broadcast, ftid:%s.", dss_display_metaid(ftid)));
+        if (*is_open) {
+            LOG_DEBUG_INF("[DELAY_CLEAN]ftid:%s is delay node, but have opened other instance, check next time.",
+                dss_display_metaid(ftid));
             return CM_SUCCESS;
         }
     }
-
-    status = dss_clean_delay_node(session, vg_item, parent_node, node);
-    DSS_RETURN_IFERR2(status,
-        LOG_RUN_WAR("[DELAY_CLEAN]Failed to clean delay node,name %s ftid:%llu.", node->name, DSS_ID_TO_U64(node->id)));
     return CM_SUCCESS;
 }
-
 gft_node_t *dss_get_next_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node)
 {
     if (dss_cmp_blockid(node->next, CM_INVALID_ID64)) {
@@ -4438,81 +4402,6 @@ bool32 dss_is_last_tree_node(gft_node_t *node)
 {
     return (node->type != GFT_PATH || node->items.count == 0);
 }
-
-// parent_node must be GFT_PATH
-static status_t dss_clean_node_tree(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node)
-{
-    status_t status = CM_ERROR;
-    if (dss_is_last_tree_node(parent_node) || ((parent_node->flags & DSS_FT_NODE_FLAG_SYSTEM) != 0)) {
-        return CM_SUCCESS;
-    }
-    if (get_instance_status_proc() != DSS_STATUS_OPEN) {
-        LOG_DEBUG_INF("[DELAY_CLEAN]Instance status is not open, exit the clean, wait next time.");
-        return CM_SUCCESS;
-    }
-    gft_node_t *next_node = NULL;
-    gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, parent_node->items.first, CM_TRUE, CM_FALSE);
-    if (node == NULL) {
-        LOG_RUN_WAR("[DELAY_CLEAN]Failed to get children node id:%s, parent_node name %s.",
-            dss_display_metaid(parent_node->items.first), parent_node->name);
-        return CM_ERROR;
-    }
-    do {
-        dss_check_ft_node_parent(node, parent_node->id);
-        if (dss_is_last_tree_node(node)) {
-            if ((node->flags & DSS_FT_NODE_FLAG_DEL) != 0) {
-                next_node = dss_get_next_node(session, vg_item, node);
-                status = dss_check_delay_node(session, vg_item, parent_node, node);
-                DSS_RETURN_IF_ERROR(status);
-                node = next_node;
-                continue;
-            }
-            node = dss_get_next_node(session, vg_item, node);
-            continue;
-        }
-        status = dss_clean_node_tree(session, vg_item, node);
-        DSS_RETURN_IFERR2(status, LOG_RUN_WAR("[DELAY_CLEAN]Failed to clean node tree, node name %s ftid:%llu.",
-                                      node->name, DSS_ID_TO_U64(node->id)));
-        // maybe its children node have been cleaned
-        if (((node->flags & DSS_FT_NODE_FLAG_DEL) != 0) && dss_is_last_tree_node(node)) {
-            next_node = dss_get_next_node(session, vg_item, node);
-            status = dss_check_delay_node(session, vg_item, parent_node, node);
-            DSS_RETURN_IF_ERROR(status);
-            node = next_node;
-            continue;
-        }
-        node = dss_get_next_node(session, vg_item, node);
-    } while (node != NULL && (get_instance_status_proc() == DSS_STATUS_OPEN));
-    return CM_SUCCESS;
-}
-
-static void dss_clean_vg_root_tree_core(dss_session_t *session, dss_vg_info_item_t *vg_item)
-{
-    gft_node_t *root_node = dss_find_ft_node(session, vg_item, NULL, vg_item->vg_name, CM_TRUE);
-    if (root_node == NULL) {
-        LOG_RUN_WAR("[DELAY_CLEAN]Failed to get the root node %s.", vg_item->vg_name);
-        return;
-    }
-    status_t status = dss_clean_node_tree(session, vg_item, root_node);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_WAR("[DELAY_CLEAN]Failed to clean the root tree %s.", vg_item->vg_name);
-    }
-}
-
-static void dss_clean_vg_root_tree(dss_session_t *session, dss_vg_info_item_t *vg_item)
-{
-    dss_lock_vg_mem_and_shm_x(session, vg_item);
-    dss_clean_vg_root_tree_core(session, vg_item);
-    dss_unlock_vg_mem_and_shm(session, vg_item);
-}
-
-void dss_delay_clean_all_vg(dss_session_t *session)
-{
-    for (uint32_t i = 0; i < g_vgs_info->group_num; i++) {
-        dss_clean_vg_root_tree(session, &g_vgs_info->volume_group[i]);
-    }
-}
-
 status_t dss_block_data_oper(char *op_desc, bool32 is_write, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
     uint64 offset, char *data_buf, int32 size)
 {

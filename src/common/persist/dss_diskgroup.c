@@ -684,6 +684,11 @@ void dss_lock_vg_mem_x(dss_vg_info_item_t *vg_item)
     dss_latch_x(&vg_item->disk_latch);
 }
 
+bool32 dss_lock_vg_mem_timed_x(dss_vg_info_item_t *vg_item, uint32 wait_ticks)
+{
+    return dss_latch_timed_x(&vg_item->disk_latch, wait_ticks);
+}
+
 void dss_lock_vg_mem_x2ix(dss_vg_info_item_t *vg_item)
 {
     latch_statis_t *stat = NULL;
@@ -699,6 +704,11 @@ void dss_lock_vg_mem_ix2x(dss_vg_info_item_t *vg_item)
 void dss_lock_vg_mem_s(dss_vg_info_item_t *vg_item)
 {
     dss_latch_s(&vg_item->disk_latch);
+}
+
+bool32 dss_lock_vg_mem_timed_s(dss_vg_info_item_t *vg_item, uint32 wait_ticks)
+{
+    return dss_latch_timed_s(&vg_item->disk_latch, wait_ticks);
 }
 
 void dss_lock_vg_mem_degrade(dss_vg_info_item_t *vg_item)

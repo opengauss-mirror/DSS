@@ -60,6 +60,24 @@ void dss_enter_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item, bool32
     (void)dss_lock_shm_meta_s_with_stack(session, &latch_offset, vg_item->vg_latch, timeout);
 }
 
+bool32 dss_enter_shm_timed_s(dss_session_t *session, dss_vg_info_item_t *vg_item, bool32 is_force, int32 timeout)
+{
+    CM_ASSERT(session != NULL);
+    if (dss_is_server()) {
+        if (dss_lock_shm_meta_s_without_stack(session, vg_item->vg_latch, is_force, timeout) != CM_SUCCESS) {
+            return CM_FALSE;
+        }
+        return CM_TRUE;
+    }
+    dss_latch_offset_t latch_offset;
+    latch_offset.type = DSS_LATCH_OFFSET_SHMOFFSET;
+    latch_offset.offset.shm_offset = dss_get_vg_latch_shm_offset(vg_item);
+    if (dss_lock_shm_meta_s_with_stack(session, &latch_offset, vg_item->vg_latch, timeout) != CM_SUCCESS) {
+        return CM_FALSE;
+    }
+    return CM_TRUE;
+}
+
 void dss_leave_shm(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
     CM_ASSERT(session != NULL);

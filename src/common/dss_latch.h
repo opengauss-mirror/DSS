@@ -79,6 +79,7 @@ void dss_latch_s(latch_t *latch);
 void dss_latch_x(latch_t *latch);
 void dss_unlatch(latch_t *latch);
 void dss_latch_x2(latch_t *latch, uint32 sid);
+bool32 dss_latch_timed_s(latch_t *latch, uint32 wait_ticks);
 bool32 dss_latch_timed_x(latch_t *latch, uint32 wait_ticks);
 static inline void dss_latch(latch_t *latch, dss_latch_mode_e latch_mode, uint32 sid)
 {

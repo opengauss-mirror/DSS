@@ -1073,6 +1073,7 @@ static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 swi
     dss_wait_session_pause(&g_dss_instance);
     g_dss_instance.status = DSS_STATUS_SWITCH;
     dss_wait_background_pause(&g_dss_instance);
+    dss_close_delay_clean_background_task(&g_dss_instance);
 #ifdef ENABLE_DSSTEST
     dss_set_server_status_flag(DSS_STATUS_READONLY);
     LOG_RUN_INF("[SWITCH]inst %u set status flag %u when trans lock.", curr_id, DSS_STATUS_READONLY);
@@ -1215,6 +1216,7 @@ static status_t dss_process_disable_grab_lock_inner(dss_session_t *session, uint
         dss_wait_session_pause(&g_dss_instance);
         g_dss_instance.status = DSS_STATUS_SWITCH;
         dss_wait_background_pause(&g_dss_instance);
+        dss_close_delay_clean_background_task(&g_dss_instance);
         dss_set_server_status_flag(DSS_STATUS_READONLY);
         LOG_RUN_INF("[RELEASE LOCK]inst %u set status flag %u when release lock.", curr_id, DSS_STATUS_READONLY);
         ret = cm_res_unlock(&g_dss_instance.cm_res.mgr, DSS_CM_LOCK);
