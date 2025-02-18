@@ -459,7 +459,7 @@ static status_t repair_set_au_size(char *item_ptr, text_t *key, text_t *value)
     uint32 bytes = val * SIZE_K(1);
     LOG_RUN_INF("[TBOX][REPAIR] user-inputted au_size is %uKB, it is %uB.", val, bytes);
     LOG_RUN_INF("[TBOX][REPAIR] modify uint32 from %u to %u;", *(uint32 *)item_ptr, bytes);
-    *(uint32 *)item_ptr = val;
+    *(uint32 *)item_ptr = bytes;
     return CM_SUCCESS;
 }
 
