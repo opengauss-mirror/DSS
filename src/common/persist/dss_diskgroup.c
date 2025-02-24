@@ -468,8 +468,7 @@ status_t dss_get_vg_info()
             LOG_DEBUG_ERR("malloc stack failed, align size:%u, size:%u.", DSS_ALIGN_SIZE, DSS_MAX_STACK_BUF_SIZE),
             DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_MAX_STACK_BUF_SIZE, "volume group stack buff"));
         g_vgs_info->volume_group[i].stack.size = DSS_MAX_STACK_BUF_SIZE;
-        int32 ret =
-            shm_hashmap_init(&vg_item->buffer_cache, i, dss_buffer_cache_key_compare);
+        int32 ret = shm_hashmap_init(&vg_item->buffer_cache, i, dss_buffer_cache_key_compare);
         if (ret != CM_SUCCESS) {
             if (i != 0) {
                 dss_free_shm_hashmap_memory(i - 1);
