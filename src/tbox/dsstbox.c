@@ -47,11 +47,11 @@
 #endif
 
 dss_log_def_t g_dss_dsstbox_log[] = {
-    {LOG_DEBUG, "debug/dsstbox.dlog"},
-    {LOG_OPER, "oper/dsstbox.olog"},
-    {LOG_RUN, "run/dsstbox.rlog"},
-    {LOG_ALARM, "alarm/dsstbox.alog"},
-    {LOG_AUDIT, "audit/dsstbox.aud"},
+    {CM_LOG_DEBUG, "debug/dsstbox.dlog"},
+    {CM_LOG_OPER, "oper/dsstbox.olog"},
+    {CM_LOG_RUN, "run/dsstbox.rlog"},
+    {CM_LOG_ALARM, "alarm/dsstbox.alog"},
+    {CM_LOG_AUDIT, "audit/dsstbox.aud"},
 };
 
 #define DSS_REPAIR_AUDIT_LOG_LEN SIZE_K(32)

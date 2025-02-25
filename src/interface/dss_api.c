@@ -660,23 +660,23 @@ static int32 init_single_logger_core(log_param_t *log_param, log_type_t log_id, 
 {
     int32 ret;
     switch (log_id) {
-        case LOG_RUN:
+        case CM_LOG_RUN:
             ret = snprintf_s(
                 file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/run/%s", log_param->log_home, "dss.rlog");
             break;
-        case LOG_DEBUG:
+        case CM_LOG_DEBUG:
             ret = snprintf_s(
                 file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/debug/%s", log_param->log_home, "dss.dlog");
             break;
-        case LOG_ALARM:
+        case CM_LOG_ALARM:
             ret = snprintf_s(
                 file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/alarm/%s", log_param->log_home, "dss.alog");
             break;
-        case LOG_AUDIT:
+        case CM_LOG_AUDIT:
             ret = snprintf_s(
                 file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/audit/%s", log_param->log_home, "dss.aud");
             break;
-        case LOG_BLACKBOX:
+        case CM_LOG_BLACKBOX:
             ret = snprintf_s(
                 file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/blackbox/%s", log_param->log_home, "dss.blog");
             break;
@@ -749,11 +749,11 @@ int dss_init_logger(
         return ERR_DSS_INIT_LOGGER_FAILED;
     }
 
-    CM_RETURN_IFERR(init_single_logger(log_param, LOG_RUN));
-    CM_RETURN_IFERR(init_single_logger(log_param, LOG_DEBUG));
-    CM_RETURN_IFERR(init_single_logger(log_param, LOG_ALARM));
-    CM_RETURN_IFERR(init_single_logger(log_param, LOG_AUDIT));
-    CM_RETURN_IFERR(init_single_logger(log_param, LOG_BLACKBOX));
+    CM_RETURN_IFERR(init_single_logger(log_param, CM_LOG_RUN));
+    CM_RETURN_IFERR(init_single_logger(log_param, CM_LOG_DEBUG));
+    CM_RETURN_IFERR(init_single_logger(log_param, CM_LOG_ALARM));
+    CM_RETURN_IFERR(init_single_logger(log_param, CM_LOG_AUDIT));
+    CM_RETURN_IFERR(init_single_logger(log_param, CM_LOG_BLACKBOX));
     if (cm_start_timer(g_timer()) != CM_SUCCESS) {
         return ERR_DSS_INIT_LOGGER_FAILED;
     }

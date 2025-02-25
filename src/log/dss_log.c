@@ -147,20 +147,20 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
 };
 
 dss_log_def_t g_dss_cmd_log[] = {
-    {LOG_DEBUG, "debug/dsscmd.dlog"},
-    {LOG_OPER, "oper/dsscmd.olog"},
-    {LOG_RUN, "run/dsscmd.rlog"},
-    {LOG_ALARM, "dsscmd_alarm.log"},
+    {CM_LOG_DEBUG, "debug/dsscmd.dlog"},
+    {CM_LOG_OPER, "oper/dsscmd.olog"},
+    {CM_LOG_RUN, "run/dsscmd.rlog"},
+    {CM_LOG_ALARM, "dsscmd_alarm.log"},
 };
 
 dss_log_def_t g_dss_instance_log[] = {
-    {LOG_DEBUG, "debug/dssinstance.dlog"},
-    {LOG_OPER, "oper/dssinstance.olog"},
-    {LOG_RUN, "run/dssinstance.rlog"},
-    {LOG_ALARM, "dssinstance_alarm.log"},
-    {LOG_AUDIT, "audit/dssinstance.aud"},
-    {LOG_BLACKBOX, "blackbox/dssinstance.blog"},
-    {LOG_DYNAMIC, "dyn/dssinstance.dynlog"},
+    {CM_LOG_DEBUG, "debug/dssinstance.dlog"},
+    {CM_LOG_OPER, "oper/dssinstance.olog"},
+    {CM_LOG_RUN, "run/dssinstance.rlog"},
+    {CM_LOG_ALARM, "dssinstance_alarm.log"},
+    {CM_LOG_AUDIT, "audit/dssinstance.aud"},
+    {CM_LOG_BLACKBOX, "blackbox/dssinstance.blog"},
+    {CM_LOG_DYNAMIC, "dyn/dssinstance.dynlog"},
 };
 
 uint32 g_dss_warn_id[] = {
@@ -386,7 +386,7 @@ status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32
 
     int32 ret;
     for (size_t i = 0; i < log_def_count; i++) {
-        if (log_def[i].log_id == LOG_ALARM) {
+        if (log_def[i].log_id == CM_LOG_ALARM) {
             ret = snprintf_s(file_name, buffer_len, (buffer_len - 1), "%s/%s", alarm_dir, log_def[i].log_filename);
         } else {
             ret = snprintf_s(
