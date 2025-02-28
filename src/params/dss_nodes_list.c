@@ -92,8 +92,13 @@ status_t dss_verify_nodes_list(void *lex, void *def)
     const char *nodes_list_str = (const char *)lex;
     size_t len = strlen(nodes_list_str);
     for (size_t i = 0; i < len; ++i) {
+#ifdef OPENGAUSS
+        if ((nodes_list_str[i] != ':') && (!(CM_IS_DIGIT(nodes_list_str[i]))) && (nodes_list_str[i] != '.') &&
+            (nodes_list_str[i] != ',')) {
+#else
         if ((nodes_list_str[i] != '|') && (!(CM_IS_DIGIT(nodes_list_str[i]))) && (nodes_list_str[i] != '.') &&
             (nodes_list_str[i] != ',')) {
+#endif
             DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DSS_NODES_LIST contains invalid characters");
             return CM_ERROR;
         }
