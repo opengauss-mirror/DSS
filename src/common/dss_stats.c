@@ -31,6 +31,8 @@ extern "C" {
 const char *g_dss_stat_events[DSS_EVT_COUNT] = {
     [DSS_PREAD] = "DSS Pread",
     [DSS_PWRITE] = "DSS Pwrite",
+    [DSS_FREAD] = "DSS Fread",
+    [DSS_FWRITE] = "DSS Fwrite",
     [DSS_PREAD_SYN_META] = "DSS Pread Sync Metadata",
     [DSS_PWRITE_SYN_META] = "DSS Pwrite Sync Metadata",
     [DSS_PREAD_DISK] = "DSS Pread Disk",
