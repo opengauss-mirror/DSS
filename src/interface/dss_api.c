@@ -540,23 +540,33 @@ long long dss_fseek(int handle, long long offset, int origin)
 
 int dss_fwrite(int handle, const void *buf, int size)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fwrite get conn error"));
 
     ret = dss_write_file_impl(conn, HANDLE_VALUE(handle), buf, size);
-    dss_get_api_volume_error();
+    if (ret == CM_SUCCESS) {
+        dss_session_end_stat(conn->session, &begin_tv, DSS_FWRITE);
+    }
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
 int dss_fread(int handle, void *buf, int size, int *read_size)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     dss_conn_t *conn = NULL;
     status_t ret = dss_get_conn(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fread get conn error."));
 
     ret = dss_read_file_impl(conn, HANDLE_VALUE(handle), buf, size, read_size);
-    dss_get_api_volume_error();
+    if (ret == CM_SUCCESS) {
+        dss_session_end_stat(conn->session, &begin_tv, DSS_FREAD);
+    }
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
