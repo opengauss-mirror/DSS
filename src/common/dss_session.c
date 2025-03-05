@@ -31,6 +31,7 @@
 #include "cm_system.h"
 #include "dss_thv.h"
 #include "dss_hp_interface.h"
+#include "dss_fault_injection.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -327,9 +328,13 @@ status_t dss_lock_shm_meta_s_with_stack(
     DSS_ASSERT_LOG(session != NULL, "session ptr is NULL");
     DSS_ASSERT_LOG(session->latch_stack.stack_top < DSS_MAX_LATCH_STACK_DEPTH, "latch_stack overflow");
 
+    DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(
+        DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_LATCH_STACK_UNSET, DSS_EXIT_LOG(CM_FALSE, "lock shm latch stack unset fail"));
     session->latch_stack.stack_top_bak = session->latch_stack.stack_top;
     session->latch_stack.op = LATCH_SHARED_OP_LATCH_S;
     session->latch_stack.latch_offset_stack[session->latch_stack.stack_top] = *offset;
+    DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(
+        DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_LATCH_STACK_SET, DSS_EXIT_LOG(CM_FALSE, "lock shm latch stack fail"));
 
     int32 sleep_times = 0;
     latch_statis_t *stat = NULL;
@@ -338,6 +343,8 @@ status_t dss_lock_shm_meta_s_with_stack(
     bool32 is_force = CM_FALSE;
     do {
         cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, (stat != NULL) ? &stat->s_spin : NULL);
+        DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_LATCH_SPIN_LOCK_SET,
+            DSS_EXIT_LOG(CM_FALSE, "lock shm latch spin lock set fail"));
 
         // for shared latch in shm, need to backup first
         dss_set_latch_extent(&shared_latch->latch_extent, shared_latch->latch.stat, shared_latch->latch.shared_count);
@@ -346,16 +353,28 @@ status_t dss_lock_shm_meta_s_with_stack(
             session->latch_stack.op = LATCH_SHARED_OP_LATCH_S_BEG;
 
             shared_latch->latch.stat = LATCH_STATUS_S;
+            DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_LATCH_S_STAT_SET,
+                DSS_EXIT_LOG(CM_FALSE, "lock shm latch stat set fail"));
+
             shared_latch->latch.shared_count = 1;
+            DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_LATCH_S_SHARED_COUNT_SET,
+                DSS_EXIT_LOG(CM_FALSE, "lock shm latch share count set fail"));
+
             shared_latch->latch.sid = (uint16)sid;
             shared_latch->latch_extent.shared_sid_count += sid;
 
             // put this before the unlock to make sure: whn error happen, no one else can change the status of this
             // latch
             session->latch_stack.stack_top++;
+            DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_LATCH_STACK_TOP_SET,
+                DSS_EXIT_LOG(CM_FALSE, "lock shm latch top set fail"));
+
             session->latch_stack.op = LATCH_SHARED_OP_LATCH_S_END;
 
             cm_spin_unlock(&shared_latch->latch.lock);
+            DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_LATCH_SPIN_UNLOCK_SET,
+                DSS_EXIT_LOG(CM_FALSE, "lock shm latch spin unlock set fail"));
+
             cm_latch_stat_inc(stat, count);
             return CM_SUCCESS;
         }
@@ -363,19 +382,31 @@ status_t dss_lock_shm_meta_s_with_stack(
             session->latch_stack.op = LATCH_SHARED_OP_LATCH_S_BEG;
 
             shared_latch->latch.shared_count++;
+            DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_LATCH_S_SHARED_COUNT_SET2,
+                DSS_EXIT_LOG(CM_FALSE, "lock shm latch share count set fail"));
+
             shared_latch->latch_extent.shared_sid_count += sid;
 
             // put this before the unlock to make sure: whn error happen, no one else can change the status of this
             // latch
             session->latch_stack.stack_top++;
+            DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_LATCH_STACK_TOP_SET2,
+                DSS_EXIT_LOG(CM_FALSE, "lock shm latch top set fail"));
+
             session->latch_stack.op = LATCH_SHARED_OP_LATCH_S_END;
 
             cm_spin_unlock(&shared_latch->latch.lock);
+            DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_LATCH_SPIN_UNLOCK_SET2,
+                DSS_EXIT_LOG(CM_FALSE, "lock shm latch spin unlock set2 fail"));
+
             cm_latch_stat_inc(stat, count);
             return CM_SUCCESS;
         }
 
         cm_spin_unlock(&shared_latch->latch.lock);
+        DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_LATCH_SPIN_UNLOCK_SET3,
+            DSS_EXIT_LOG(CM_FALSE, "lock shm latch spin unlock set3 fail"));
+
         if (stat != NULL) {
             stat->misses++;
         }
@@ -573,7 +604,6 @@ void dss_unlock_shm_meta_without_stack(dss_session_t *session, dss_shared_latch_
     CM_ASSERT(session != NULL);
     cm_panic_log(dss_is_server(), "can not op shared latch without session latch stack in client");
     CM_ASSERT(shared_latch->latch.stat != LATCH_STATUS_IDLE);
-
     spin_statis_t *stat_spin = NULL;
     uint32 sid = DSS_SESSIONID_IN_LOCK(session->id);
     cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, stat_spin);
@@ -602,15 +632,23 @@ bool32 dss_unlock_shm_meta_s_with_stack(dss_session_t *session, dss_shared_latch
     CM_ASSERT(session != NULL);
     // can not call checkcm_paninc_log with dss_is_server
     CM_ASSERT(shared_latch->latch.stat != LATCH_STATUS_IDLE);
+
     session->latch_stack.stack_top_bak = session->latch_stack.stack_top;
     session->latch_stack.op = LATCH_SHARED_OP_UNLATCH;
+    DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_UNLATCH_SPIN_LOCK_UNSET,
+        DSS_EXIT_LOG(CM_FALSE, "lock shm unlatch spin lock unset fail"));
 
     spin_statis_t *stat_spin = NULL;
     uint32 sid = DSS_SESSIONID_IN_LOCK(session->id);
     if (!is_try_lock) {
         cm_spin_lock_by_sid(sid, &shared_latch->latch.lock, stat_spin);
+        DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_UNLATCH_SPIN_LOCK_SET,
+            DSS_EXIT_LOG(CM_FALSE, "lock shm unlatch spin lock set fail"));
+
     } else {
         bool32 is_locked = cm_spin_try_lock(&shared_latch->latch.lock);
+        DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_UNLATCH_SPIN_LOCK_SET2,
+            DSS_EXIT_LOG(CM_FALSE, "lock shm unlatch spin lock set2 fail"));
         if (!is_locked) {
             return CM_FALSE;
         }
@@ -623,15 +661,23 @@ bool32 dss_unlock_shm_meta_s_with_stack(dss_session_t *session, dss_shared_latch
 
     CM_ASSERT(shared_latch->latch.shared_count > 0);
     shared_latch->latch.shared_count--;
+    DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_UNLATCH_S_SHARED_COUNT_SET,
+        DSS_EXIT_LOG(CM_FALSE, "lock shm unlatch share count set fail"));
+
     if (shared_latch->latch.shared_count == 0) {
         if (shared_latch->latch.stat == LATCH_STATUS_S) {
             shared_latch->latch.stat = LATCH_STATUS_IDLE;
         }
+        DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_UNLATCH_S_STAT_SET,
+            DSS_EXIT_LOG(CM_FALSE, "lock shm unlatch stat set fail"));
+
         shared_latch->latch.sid = 0;
     }
     shared_latch->latch_extent.shared_sid_count -= sid;
 
     cm_spin_unlock(&shared_latch->latch.lock);
+    DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_UNLATCH_SPIN_UNLOCK_SET,
+        DSS_EXIT_LOG(CM_FALSE, "lock shm unlatch spin unlock set fail"));
 
     // put this after the unlock to make sure:when error happen after unlock, do NOT op the unlatch-ed latch
     // begin to change stack
@@ -640,7 +686,13 @@ bool32 dss_unlock_shm_meta_s_with_stack(dss_session_t *session, dss_shared_latch
     // but may NOT do [stack_top].typ = DSS_LATCH_OFFSET_INVALID when some error happen,
     // so leave the stack_top-- on the second step
     session->latch_stack.latch_offset_stack[session->latch_stack.stack_top - 1].type = DSS_LATCH_OFFSET_INVALID;
+    DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(
+        DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_UNLATCH_STACK_SET, DSS_EXIT_LOG(CM_FALSE, "lock shm unlatch stack set fail"));
+
     session->latch_stack.stack_top--;
+    DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_SHM_LOCK_UNLATCH_STACK_TOP_SET,
+        DSS_EXIT_LOG(CM_FALSE, "lock shm unlatch stack top set fail"));
+
     session->latch_stack.op = LATCH_SHARED_OP_UNLATCH_END;
     return CM_TRUE;
 }

@@ -39,6 +39,8 @@
 #include "dss_param.h"
 #include "dss_file.h"
 #include "dss_args_parse.h"
+#include "dss_param_verify.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -368,8 +370,33 @@ config_item_t g_dss_admin_parameters[] = {
         NULL, NULL, NULL, NULL},
     {"CLUSTER_RUN_MODE", CM_TRUE, ATTR_NONE, "cluster_primary", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 10,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "LOG_COMPRESSED",  CM_TRUE, ATTR_READONLY, "FALSE", NULL, NULL, "-", "[FALSE,TRUE]",  "GS_TYPE_BOOLEAN", NULL,
-        11, EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"LOG_COMPRESSED", CM_TRUE, ATTR_READONLY, "FALSE", NULL, NULL, "-", "[FALSE,TRUE]", "GS_TYPE_BOOLEAN", NULL, 11,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+    {"SS_FI_PACKET_LOSS_ENTRIES", CM_TRUE, ATTR_NONE, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 46,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_entity, dss_notify_fi_packet_loss_entity, NULL, NULL},
+    {"SS_FI_NET_LATENCY_ENTRIES", CM_TRUE, ATTR_NONE, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 47,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_entity, dss_notify_fi_net_latency_entity, NULL, NULL},
+    {"SS_FI_CPU_LATENCY_ENTRIES", CM_TRUE, ATTR_NONE, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 48,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_entity, dss_notify_fi_cpu_latency_entity, NULL, NULL},
+    {"SS_FI_PROCESS_FAULT_ENTRIES", CM_TRUE, ATTR_NONE, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 49,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_entity, dss_notify_fi_process_fault_entity, NULL, NULL},
+    {"SS_FI_CUSTOM_FAULT_ENTRIES", CM_TRUE, ATTR_NONE, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 50,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_entity, dss_notify_fi_custom_fault_entity, NULL, NULL},
+
+    {"SS_FI_PACKET_LOSS_PROB", CM_TRUE, ATTR_NONE, "10", NULL, NULL, "-", "[0,100]", "GS_TYPE_INTEGER", NULL, 51,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_packet_loss_value, dss_notify_fi_packet_loss_value, NULL, NULL},
+    {"SS_FI_NET_LATENCY_MS", CM_TRUE, ATTR_NONE, "10", NULL, NULL, "-", "[0,4924967295]", "GS_TYPE_INTEGER", NULL, 52,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_net_latency_value, dss_notify_fi_net_latency_value, NULL, NULL},
+    {"SS_FI_CPU_LATENCY_MS", CM_TRUE, ATTR_NONE, "10", NULL, NULL, "-", "[0,4924967295]", "GS_TYPE_INTEGER", NULL, 53,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_cpu_latency_value, dss_notify_fi_cpu_latency_value, NULL, NULL},
+    {"SS_FI_PROCESS_FAULT_PROB", CM_TRUE, ATTR_NONE, "10", NULL, NULL, "-", "[0,100]", "GS_TYPE_INTEGER", NULL, 54,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_process_fault_value, dss_notify_fi_process_fault_value, NULL, NULL},
+    {"SS_FI_CUSTOM_FAULT_PARAM", CM_TRUE, ATTR_NONE, "3000", NULL, NULL, "-", "[0,4924967295]", "GS_TYPE_INTEGER", NULL,
+        55, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_fi_custom_fault_value, dss_notify_fi_custom_fault_value, NULL,
+        NULL},
+#endif
 };
 
 static status_t dss_load_local_server_config_core(

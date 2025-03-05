@@ -192,6 +192,10 @@ static inline bool32 dss_is_cfg_inst_solo()
     return (g_inst_cfg->params.nodes_list.inst_cnt <= 1);
 }
 
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+status_t dss_load_fi_params(dss_config_t *inst_cfg);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

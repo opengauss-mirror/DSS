@@ -41,6 +41,7 @@
 #include "dss_fs_aux.h"
 #include "dss_syn_meta.h"
 #include "dss_thv.h"
+#include "dss_fault_injection.h"
 
 #include "cm_memory.h"
 
@@ -560,7 +561,7 @@ status_t dss_parse_vg_config(dss_vg_info_t *config, char *buf, uint32 buf_len, b
         cm_trim_text(&comment);
 
         if (vg_no >= DSS_MAX_VOLUME_GROUP_NUM) {
-            DSS_THROW_ERROR(ERR_DSS_CONFIG_LOAD, "volume group num exceed max vg num %u.", DSS_MAX_VOLUME_GROUP_NUM);
+            DSS_THROW_ERROR_EX(ERR_DSS_CONFIG_LOAD, "volume group num exceed max vg num %u.", DSS_MAX_VOLUME_GROUP_NUM);
             return CM_ERROR;
         }
         if (name.len == 0 || value.len == 0) {
@@ -570,12 +571,12 @@ status_t dss_parse_vg_config(dss_vg_info_t *config, char *buf, uint32 buf_len, b
 
         if (is_refresh && (vg_no < config->dest_vg_num)) {
             if (cm_compare_text_str(&name, config->volume_group[vg_no].vg_name) != 0) {
-                DSS_THROW_ERROR(ERR_DSS_CONFIG_LOAD, "volume group name [%s] not the same as before [%s].", name.str,
+                DSS_THROW_ERROR_EX(ERR_DSS_CONFIG_LOAD, "volume group name [%s] not the same as before [%s].", name.str,
                     config->volume_group[vg_no].vg_name);
                 return CM_ERROR;
             }
             if (cm_compare_text_str(&value, config->volume_group[vg_no].entry_path) != 0) {
-                DSS_THROW_ERROR(ERR_DSS_CONFIG_LOAD, "volume entry_path name [%s] not the same as before [%s].",
+                DSS_THROW_ERROR_EX(ERR_DSS_CONFIG_LOAD, "volume entry_path name [%s] not the same as before [%s].",
                     value.str, config->volume_group[vg_no].entry_path);
                 return CM_ERROR;
             }
@@ -1041,6 +1042,8 @@ status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry
     LOG_DEBUG_INF("Lock vg storage, lock vg:%s.", entry_path);
     int32 dss_mode = dss_storage_mode(inst_cfg);
     if (dss_mode == DSS_MODE_DISK) {
+        DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(
+            DSS_FI_SCOPE_CLI, DSS_FI_VGLOCK_LOCK_DISK, DSS_EXIT_LOG(CM_FALSE, "lock vg storage lock disk fail"));
         char lock_file[DSS_MAX_FILE_LEN];
         if (dss_pre_lockfile_name(entry_path, lock_file, inst_cfg) != CM_SUCCESS) {
             return CM_ERROR;
@@ -1054,12 +1057,18 @@ status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry
         flock(vglock_fp->_fileno, LOCK_EX);  // use flock to exclusive
         LOG_DEBUG_INF("DISK MODE, lock vg:%s, lock file:%s.", entry_path, lock_file);
     } else if (dss_mode == DSS_MODE_SHARE_DISK) {
+        DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_VGLOCK_LOCK_SHARE_DISK,
+            DSS_EXIT_LOG(CM_FALSE, "lock vg storage lock shared disk fail"));
+
         if (dss_lock_share_disk_vg(entry_path, inst_cfg) != CM_SUCCESS) {
             DSS_THROW_ERROR(ERR_DSS_VG_LOCK, entry_path);
             LOG_DEBUG_ERR("Failed to lock share disk vg, entry path %s.", entry_path);
             return CM_ERROR;
         }
     } else {
+        DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_VGLOCK_LOCK_SCSI_DISK,
+            DSS_EXIT_LOG(CM_FALSE, "lock vg storage lock scsi disk fail"));
+
         /* in standby cluster, we do not need try to lock(scsi3) xlog vg, xlog vg is a read only disk */
         if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
             return CM_SUCCESS;
@@ -1075,6 +1084,8 @@ status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry
 
 status_t dss_lock_vg_storage_r(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {
+    DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(
+        DSS_FI_SCOPE_CLI, DSS_FI_VGLOCK_FILE_LOCK_R, DSS_EXIT_LOG(CM_FALSE, "lock vg storage r fail"));
     if (dss_file_lock_vg_r(inst_cfg) != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to file read lock vg.");
         return CM_ERROR;
@@ -1090,6 +1101,8 @@ status_t dss_lock_vg_storage_r(dss_vg_info_item_t *vg_item, const char *entry_pa
 
 status_t dss_lock_vg_storage_w(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {
+    DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(
+        DSS_FI_SCOPE_CLI, DSS_FI_VGLOCK_FILE_LOCK_W, DSS_EXIT_LOG(CM_FALSE, "lock vg storage w fail"));
     if (dss_file_lock_vg_w(inst_cfg) != CM_SUCCESS) {
         return CM_ERROR;
     }

@@ -58,6 +58,7 @@
 #ifndef WIN32
 #include "config.h"
 #endif
+#include "dss_fault_injection.h"
 
 #ifdef WIN32
 #define DEF_DSS_VERSION "Windows does not support this feature because it is built using vs."
@@ -4563,10 +4564,30 @@ static status_t dss_check_user_permit()
     return CM_SUCCESS;
 }
 
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+static void *gs_dsscmd_fi_run_ctx = NULL;
+static status_t dss_init_fi_ctx()
+{
+    int32 fi_ctx_size = ddes_fi_get_context_size();
+    if (fi_ctx_size <= 0) {
+        LOG_RUN_ERR("Failed to get fi context size.");
+        return CM_ERROR;
+    }
+    gs_dsscmd_fi_run_ctx = malloc((uint32)fi_ctx_size);
+    if (gs_dsscmd_fi_run_ctx == NULL) {
+        LOG_RUN_ERR("Failed to alloc fi context");
+        return CM_ERROR;
+    }
+    ddes_fi_set_and_init_context(gs_dsscmd_fi_run_ctx);
+    return CM_SUCCESS;
+}
+#endif
+
 int main(int argc, char **argv)
 {
     DSS_RETURN_IF_ERROR(dss_check_user_permit());
     uint32 idx = 0;
+    status_t ret = CM_SUCCESS;
     bool8 go_ahead = CM_TRUE;
     bool8 is_interactive = cmd_check_run_interactive(argc, argv);
     if (!is_interactive) {
@@ -4575,11 +4596,22 @@ int main(int argc, char **argv)
             exit(help_ret);
         }
     }
+
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+    ret = dss_init_fi_ctx();
+    if (ret != CM_SUCCESS) {
+        DSS_PRINT_ERROR("dsscmd init fi ctx fail\n");
+        return ret;
+    }
+#endif
     dss_config_t *inst_cfg = dss_get_g_inst_cfg();
-    status_t ret = dss_set_cfg_dir(NULL, inst_cfg);
+    ret = dss_set_cfg_dir(NULL, inst_cfg);
     DSS_RETURN_IFERR2(ret, DSS_PRINT_ERROR("Environment variant DSS_HOME not found!\n"));
     ret = dss_load_local_server_config(inst_cfg);
     DSS_RETURN_IFERR2(ret, DSS_PRINT_ERROR("Failed to load local server config, status(%d).\n", ret));
+#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
+    CM_RETURN_IFERR(dss_load_fi_params(inst_cfg));
+#endif
     ret = cm_start_timer(g_timer());
     DSS_RETURN_IFERR2(ret, DSS_PRINT_ERROR("Aborted due to starting timer thread.\n"));
     ret = dss_init_loggers(inst_cfg, dss_get_cmd_log_def(), dss_get_cmd_log_def_count(), "dsscmd");
