@@ -636,7 +636,7 @@ static status_t dss_set_mes_message_pool(unsigned long long recv_msg_buf_size, m
         mpa->max_buf_size[prio] = mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_3].buf_size;
     }
 
-    mes_msg_pool_minimum_info_t minimum_info ={0};
+    mes_msg_pool_minimum_info_t minimum_info = {0};
     ret = mes_get_message_pool_minimum_info(profile, CM_FALSE, &minimum_info);
     if (ret != CM_SUCCESS) {
         LOG_RUN_ERR("[DSS] set mes message pool, get message pool minimum info failed");
@@ -747,44 +747,39 @@ static status_t dss_create_mes_session(void)
     return CM_SUCCESS;
 }
 
+void dss_mes_regist_other_proc()
+{
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    if (!g_dss_instance.is_maintain && inst_cfg->params.nodes_list.inst_cnt > 1) {
+        regist_remote_read_proc(dss_read_volume_remote);
+        regist_invalidate_other_nodes_proc(dss_invalidate_other_nodes);
+        regist_broadcast_check_file_open_proc(dss_broadcast_check_file_open);
+        regist_refresh_ft_by_primary_proc(dss_refresh_ft_by_primary);
+        regist_get_node_by_path_remote_proc(dss_get_node_by_path_remote);
+        regist_meta_syn2other_nodes_proc(dss_syn_data2other_nodes);
+    }
+}
+
 status_t dss_startup_mes(void)
 {
-    if (g_dss_instance.is_maintain) {
-        return CM_SUCCESS;
-    }
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    if (inst_cfg->params.nodes_list.inst_cnt <= 1) {
-        return CM_SUCCESS;
-    }
-
     status_t status = dss_register_proc();
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("dss_register_proc failed."));
+
+    status = dss_create_mes_session();
+    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("dss_set_mes_profile failed."));
 
     mes_profile_t profile;
     status = dss_set_mes_profile(&profile);
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("dss_set_mes_profile failed."));
 
-    status = dss_create_mes_session();
-    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("dss_set_mes_profile failed."));
+    dss_notify_regist_mes_func((dss_regist_mes_func_t)dss_mes_regist_other_proc);
 
-    regist_remote_read_proc(dss_read_volume_remote);
-    regist_invalidate_other_nodes_proc(dss_invalidate_other_nodes);
-    regist_broadcast_check_file_open_proc(dss_broadcast_check_file_open);
-    regist_refresh_ft_by_primary_proc(dss_refresh_ft_by_primary);
-    regist_get_node_by_path_remote_proc(dss_get_node_by_path_remote);
-    regist_meta_syn2other_nodes_proc(dss_syn_data2other_nodes);
+    dss_mes_regist_other_proc();
     return mes_init(&profile);
 }
 
 void dss_stop_mes(void)
 {
-    if (g_dss_instance.is_maintain) {
-        return;
-    }
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    if (g_inst_cfg != NULL && inst_cfg->params.nodes_list.inst_cnt <= 1) {
-        return;
-    }
     mes_uninit();
 }
 

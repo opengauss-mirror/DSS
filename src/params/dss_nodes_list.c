@@ -35,6 +35,12 @@
 #include "dss_log.h"
 #include "dss_diskgroup.h"
 
+static dss_regist_mes_func_t gs_dss_regist_mes_func = NULL;
+void dss_notify_regist_mes_func(dss_regist_mes_func_t dss_regist_mes_func)
+{
+    gs_dss_regist_mes_func = dss_regist_mes_func;
+}
+
 status_t dss_extract_nodes_list(char *nodes_list_str, dss_nodes_list_t *nodes_list)
 {
     status_t status = cm_split_mes_urls(nodes_list->nodes, nodes_list->ports, nodes_list_str);
@@ -112,23 +118,20 @@ status_t dss_verify_nodes_list(void *lex, void *def)
 // only replacement of old instances is allowed.
 static status_t check_nodes_list_validity(uint32 inst_cnt, const mes_addr_t *inst_addrs)
 {
-    if (inst_cnt != g_inst_cfg->params.nodes_list.inst_cnt) {
-        DSS_THROW_ERROR(
-            ERR_DSS_INVALID_PARAM, "instance_ids in DSS_NODES_LIST are not allowed to be changed dynamically");
+    if (inst_cnt < g_inst_cfg->params.nodes_list.inst_cnt) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "nodes in DSS_NODES_LIST not allowed to be reduction dynamically");
         return CM_ERROR;
     }
+
     for (uint32 i = 0; i < inst_cnt; ++i) {
         uint32 inst_id = inst_addrs[i].inst_id;
-        if (inst_addrs[i].port == 0) {
-            DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "IP ports in DSS_NODES_LIST cannot be zero");
+        if (inst_id != i || inst_id >= DSS_MAX_INSTANCES) {
+            DSS_THROW_ERROR(
+                ERR_DSS_INVALID_PARAM, "node id should start from 0, and in range [0, 63], and be continuous");
             return CM_ERROR;
         }
-        // If some instance's IP port in params is 0, it doesnot exist in this cluster.
-        // Meantime, IP port of this instance in the new DSS_NODES_LIST is not zero, which means
-        // the user is trying to add new instances.
-        if (g_inst_cfg->params.nodes_list.ports[inst_id] == 0) {
-            DSS_THROW_ERROR(
-                ERR_DSS_INVALID_PARAM, "instance_ids in DSS_NODES_LIST are not allowed to be changed dynamically");
+        if (inst_addrs[i].port == 0) {
+            DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "IP ports in DSS_NODES_LIST cannot be zero");
             return CM_ERROR;
         }
     }
@@ -138,13 +141,28 @@ static status_t check_nodes_list_validity(uint32 inst_cnt, const mes_addr_t *ins
 
 static status_t modify_ips_in_params(uint32 inst_cnt, const mes_addr_t *inst_addrs)
 {
+    uint64 inst_map = 0;
     for (uint32 i = 0; i < inst_cnt; ++i) {
         uint32 inst_id = inst_addrs[i].inst_id;
         g_inst_cfg->params.nodes_list.ports[inst_id] = inst_addrs[i].port;
         if (strcmp(g_inst_cfg->params.nodes_list.nodes[inst_id], inst_addrs[i].ip) != 0) {
             securec_check_ret(strcpy_sp(g_inst_cfg->params.nodes_list.nodes[inst_id], CM_MAX_IP_LEN, inst_addrs[i].ip));
         }
+        inst_map |= ((uint64)1 << i);
     }
+
+    uint32 old_inst_cnt = g_inst_cfg->params.nodes_list.inst_cnt;
+    if (inst_cnt != g_inst_cfg->params.nodes_list.inst_cnt) {
+        g_inst_cfg->params.nodes_list.inst_map = inst_map;
+        g_inst_cfg->params.nodes_list.inst_cnt = inst_cnt;
+    }
+
+    if (old_inst_cnt == 1 && g_inst_cfg->params.nodes_list.inst_cnt > 1 && gs_dss_regist_mes_func != NULL) {
+        gs_dss_regist_mes_func();
+    }
+
+    LOG_RUN_INF("current nodes cnt:%u.", g_inst_cfg->params.nodes_list.inst_cnt);
+
     return CM_SUCCESS;
 }
 
@@ -154,15 +172,18 @@ status_t dss_update_local_nodes_list(char *nodes_list_str)
     mes_addr_t *inst_addrs = NULL;
     CM_RETURN_IFERR(dss_alloc_and_extract_inst_addrs(nodes_list_str, &inst_cnt, &inst_addrs));
     CM_RETURN_IFERR(check_nodes_list_validity(inst_cnt, inst_addrs));
+
     status_t status = mes_update_instance(inst_cnt, inst_addrs);
     if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to update local mes connections.");
         CM_FREE_PTR(inst_addrs);
+        LOG_RUN_ERR("Failed to update local mes connections to:%s.", nodes_list_str);
         return status;
     }
+
     CM_RETURN_IFERR(modify_ips_in_params(inst_cnt, inst_addrs));
-    LOG_RUN_INF("Success to update local mes connections.");
     CM_FREE_PTR(inst_addrs);
+
+    LOG_RUN_INF("Success to update local mes connections to:%s.", nodes_list_str);
     return CM_SUCCESS;
 }
 
