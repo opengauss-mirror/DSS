@@ -186,11 +186,6 @@ static inline status_t dss_load_enable_core_state_collect_inner(char *value, dss
     return CM_SUCCESS;
 }
 
-static inline bool32 dss_is_cfg_inst_solo()
-{
-    return (g_inst_cfg->params.nodes_list.inst_cnt <= 1);
-}
-
 #ifdef __cplusplus
 }
 #endif
