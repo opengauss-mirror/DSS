@@ -40,7 +40,4 @@ status_t dss_extract_nodes_list(char *nodes_list_str, dss_nodes_list_t *nodes_li
 status_t dss_verify_nodes_list(void *lex, void *def);
 status_t dss_notify_dss_nodes_list(void *se, void *item, char *value);
 
-typedef void (*dss_regist_mes_func_t)();
-void dss_notify_regist_mes_func(dss_regist_mes_func_t dss_regist_mes_func);
-
 #endif

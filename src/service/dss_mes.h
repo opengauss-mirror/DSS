@@ -248,7 +248,6 @@ status_t dss_broadcast_check_file_open(dss_vg_info_item_t *vg_item, uint64 ftid,
 status_t dss_syn_data2other_nodes(dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack);
 
 void dss_check_mes_conn(uint64 cur_inst_map);
-void dss_mes_regist_other_proc();
 status_t dss_startup_mes(void);
 void dss_stop_mes(void);
 int32 dss_process_broadcast_ack(dss_notify_ack_msg_t *ack, dss_recv_msg_t *recv_msg_output);
