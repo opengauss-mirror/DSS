@@ -128,6 +128,7 @@ static inline void dss_session_detach_workthread_inner(dss_session_t *session)
     dss_workthread_t *workthread_ctx = (dss_workthread_t *)session->workthread_ctx;
     session->workthread_ctx = NULL;
     session->status = DSS_SESSION_STATUS_IDLE;
+    session->audit_info.is_forced = CM_FALSE;
     LOG_DEBUG_INF("[reactor] detach workthread %u to session %u sucessfully, active_sessions is %lld.",
         workthread_ctx->thread_obj->spid, session->id, g_dss_instance.active_sessions);
     return;

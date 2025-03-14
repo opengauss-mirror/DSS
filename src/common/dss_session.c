@@ -65,6 +65,7 @@ status_t dss_extend_session(uint32 extend_num)
         g_dss_session_ctrl.sessions[i]->is_closed = CM_TRUE;
         g_dss_session_ctrl.sessions[i]->put_log = CM_FALSE;
         g_dss_session_ctrl.sessions[i]->objectid = objectid;
+        g_dss_session_ctrl.sessions[i]->audit_info.is_forced = CM_FALSE;
         g_dss_session_ctrl.sessions[i]->is_holding_hotpatch_latch = CM_FALSE;
         g_dss_session_ctrl.alloc_sessions++;
     }
@@ -167,6 +168,7 @@ static status_t dss_init_session(dss_session_t *session, const cs_pipe_t *pipe)
     session->status = DSS_SESSION_STATUS_IDLE;
     session->client_version = DSS_PROTO_VERSION;
     session->proto_version = DSS_PROTO_VERSION;
+    session->audit_info.is_forced = CM_FALSE;
     errcode = memset_s(
         session->dss_session_stat, DSS_EVT_COUNT * sizeof(dss_stat_item_t), 0, DSS_EVT_COUNT * sizeof(dss_stat_item_t));
     securec_check_ret(errcode);
@@ -240,6 +242,7 @@ void dss_destroy_session_inner(dss_session_t *session)
     session->proto_version = DSS_PROTO_VERSION;
     session->put_log = CM_FALSE;
     session->is_holding_hotpatch_latch = CM_FALSE;
+    session->audit_info.is_forced = CM_FALSE;
 }
 void dss_destroy_session(dss_session_t *session)
 {
