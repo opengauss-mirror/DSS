@@ -461,7 +461,15 @@ status_t dss_init_cm(dss_instance_t *inst)
 #ifdef ENABLE_DSSTEST
     DSS_RETURN_IF_ERROR(dss_simulation_cm_res_mgr_init(value, &inst->cm_res.mgr, NULL));
 #else
+#ifdef OPENGAUSS
+    if (cm_res_mgr_init(value, &inst->cm_res.mgr, NULL) != CM_SUCCESS) {
+        LOG_RUN_ERR("dss init cm failed, error info:%s, OS errno:%d, OS errmsg:%s.",
+            cm_get_errormsg(cm_get_error_code()), errno, strerror(errno));
+        dss_exit(1);
+    }
+#else
     DSS_RETURN_IF_ERROR(cm_res_mgr_init(value, &inst->cm_res.mgr, NULL));
+#endif
 #endif
     status_t status =
         (status_t)cm_res_init(&inst->cm_res.mgr, (unsigned int)inst->inst_cfg.params.inst_id, DSS_CMS_RES_TYPE, NULL);
