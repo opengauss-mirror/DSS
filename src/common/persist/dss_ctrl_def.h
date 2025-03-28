@@ -219,7 +219,7 @@ typedef struct st_dss_core_ctrl {
     uint32 au_size;  // allocation unit size,4M,8M,16M,32M,64M
     uint32 volume_count;
     char fs_block_root[DSS_FS_BLOCK_ROOT_SIZE];  // dss_fs_block_root_t
-    char au_root[DSS_AU_ROOT_SIZE];              // 512-24-64,dss_au_root_t, recycle space entry
+    char au_root[DSS_AU_ROOT_SIZE];              // dss_au_root_t, recycle space entry
     char fs_aux_root[DSS_FS_AUX_ROOT_SIZE];      // dss_fs_aux_root_t
     char resv[DSS_CTRL_RESV_SIZE];
     dss_volume_attr_t volume_attrs[DSS_MAX_VOLUMES];

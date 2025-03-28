@@ -398,13 +398,12 @@ static void print_redo_add_or_remove_volume(dss_redo_entry_t *entry)
     (void)printf("    }\n");
 }
 
-static status_t rp_update_core_ctrl(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+static status_t rp_update_core_ctrl(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *redo_entry)
 {
     errno_t errcode = 0;
-    dss_core_ctrl_t *data = (dss_core_ctrl_t *)entry->data;
-    if (entry->size != 0 && vg_item->status == DSS_VG_STATUS_RECOVERY) {
-        errcode =
-            memcpy_s(vg_item->dss_ctrl->core_data, DSS_CORE_CTRL_SIZE, data, entry->size - sizeof(dss_redo_entry_t));
+    if (redo_entry->size != 0 && vg_item->status == DSS_VG_STATUS_RECOVERY) {
+        errcode = memcpy_s(vg_item->dss_ctrl->core_data, DSS_CORE_CTRL_SIZE, redo_entry->data,
+            redo_entry->size - sizeof(dss_redo_entry_t));
         securec_check_ret(errcode);
     }
     LOG_DEBUG_INF("[REDO] replay to update core ctrl, hwm:%llu.", vg_item->dss_ctrl->core.volume_attrs[0].hwm);
@@ -423,10 +422,10 @@ static status_t rb_update_core_ctrl(dss_session_t *session, dss_vg_info_item_t *
         vg_item, (int64)DSS_CTRL_CORE_OFFSET, vg_item->dss_ctrl->core_data, (int32)DSS_CORE_CTRL_SIZE, &remote);
 }
 
-static void print_redo_update_core_ctrl(dss_redo_entry_t *entry)
+static void print_redo_update_core_ctrl(dss_redo_entry_t *redo_entry)
 {
-    dss_core_ctrl_t *data = (dss_core_ctrl_t *)entry->data;
-    dss_printf_core_ctrl_base(data);
+    dss_core_ctrl_t *data = (dss_core_ctrl_t *)redo_entry->data;
+    dss_printf_core_ctrl_base(data, redo_entry->size - sizeof(dss_redo_entry_t));
 }
 
 void rp_init_block_addr_history(dss_block_addr_his_t *addr_his)
@@ -1357,9 +1356,9 @@ static status_t rp_redo_set_file_size_inner(
     if (!node) {
         DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FNODE_CHECK, "invalid ft node."));
     }
-    dss_redo_set_file_size_t *size_info = (dss_redo_set_file_size_t *)entry->data;
     DSS_LOG_DEBUG_OP("[REDO] Begin to replay set file: %s, size:%llu, oldsize:%llu, node size:%llu, vg name:%s.",
-        dss_display_metaid(size_info->ftid), size_info->size, size_info->oldsize, node->size, vg_item->vg_name);
+        dss_display_metaid(set_file_size->ftid), set_file_size->size, set_file_size->oldsize, node->size,
+        vg_item->vg_name);
 
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
         node->size = set_file_size->size;

@@ -44,7 +44,7 @@ void printf_dss_fs_aux_root(dss_fs_aux_root_t *root);
 void printf_dss_au_root(dss_au_root_t *au_root);
 void printf_dss_fs_block_root(dss_fs_block_root_t *root);
 void printf_dss_volume_attr(const dss_volume_attr_t *volume_attrs);
-void dss_printf_core_ctrl_base(dss_core_ctrl_t *core_ctrl);
+void dss_printf_core_ctrl_base(dss_core_ctrl_t *core_ctrl, uint32 redo_data_size);
 void printf_gft_root(gft_root_t *ft_root);
 void printf_gft_node(gft_node_t *gft_node, const char *tab);
 void printf_gft_list(gft_list_t *items);
