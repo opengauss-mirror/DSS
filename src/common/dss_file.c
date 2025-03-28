@@ -275,6 +275,8 @@ void dss_lock_vg_mem_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_it
 
 bool32 dss_lock_vg_mem_and_shm_timed_x(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     if (!dss_lock_vg_mem_timed_x(vg_item, wait_ticks)) {
         LOG_DEBUG_WAR("lock vg mem x timeout.");
         return CM_FALSE;
@@ -284,6 +286,7 @@ bool32 dss_lock_vg_mem_and_shm_timed_x(dss_session_t *session, dss_vg_info_item_
         LOG_DEBUG_WAR("lock vg shm x timeout.");
         return CM_FALSE;
     }
+    dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
     return CM_TRUE;
 }
 
@@ -304,8 +307,11 @@ void dss_lock_vg_mem_and_shm_ix2x(dss_session_t *session, dss_vg_info_item_t *vg
 
 void dss_lock_vg_mem_and_shm_degrade(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     dss_lock_vg_mem_degrade(vg_item);
     dss_lock_shm_meta_degrade(session, vg_item->vg_latch);
+    dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
 }
 
 void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item)
@@ -319,6 +325,8 @@ void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_it
 
 bool32 dss_lock_vg_mem_and_shm_timed_s(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     if (!dss_lock_vg_mem_timed_s(vg_item, wait_ticks)) {
         LOG_DEBUG_WAR("lock vg mem s timeout.");
         return CM_FALSE;
@@ -328,6 +336,7 @@ bool32 dss_lock_vg_mem_and_shm_timed_s(dss_session_t *session, dss_vg_info_item_
         LOG_DEBUG_WAR("lock vg shm s timeout.");
         return CM_FALSE;
     }
+    dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
     return CM_TRUE;
 }
 
@@ -3800,7 +3809,7 @@ status_t dss_invalidate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_i
         // let others can read disk or mem by force dss_latch_s_force before notify other nodes
         dss_lock_vg_mem_and_shm_x2ix(session, vg_item);
         status = invalidate_other_nodes_proc(
-            vg_item, (char *)&invalidate_meta_msg, sizeof(dss_invalidate_meta_msg_t), &invalid_ack);
+            session, vg_item, (char *)&invalidate_meta_msg, sizeof(dss_invalidate_meta_msg_t), &invalid_ack);
         // nned lock exec to finish truncate
         dss_lock_vg_mem_and_shm_ix2x(session, vg_item);
         if (status != CM_SUCCESS || !invalid_ack) {
@@ -3988,7 +3997,7 @@ bool32 dss_try_revalidate_file(dss_session_t *session, dss_vg_info_item_t *vg_it
 
         dss_set_is_refresh_ftid(node, CM_TRUE);
         dss_unlock_vg_mem_and_shm(session, vg_item);
-        status_t status = dss_refresh_ft_by_primary_proc(node->id, vg_item->id, vg_item->vg_name);
+        status_t status = dss_refresh_ft_by_primary_proc(session, node->id, vg_item->id, vg_item->vg_name);
         dss_lock_vg_mem_and_shm_x(session, vg_item);
         dss_set_is_refresh_ftid(node, CM_FALSE);
         if (status != CM_SUCCESS) {
@@ -4429,7 +4438,7 @@ status_t dss_check_open_file_local_and_remote(
     }
     if (broadcast_check_file_open_proc != NULL) {
         // broadcast to check file open
-        status = broadcast_check_file_open_proc(vg_item, DSS_ID_TO_U64(ftid), is_open);
+        status = broadcast_check_file_open_proc(session, vg_item, DSS_ID_TO_U64(ftid), is_open);
         DSS_RETURN_IFERR2(
             status, LOG_RUN_WAR("[DELAY_CLEAN]Failed check broadcast, ftid:%s.", dss_display_metaid(ftid)));
         if (*is_open) {

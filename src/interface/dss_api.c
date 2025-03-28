@@ -186,8 +186,10 @@ int dss_stat(const char *path, dss_stat_info_t item)
         }
     }
     int ret = dss_set_stat_info(item, node);
-    dss_session_end_stat(conn->session, &begin_tv, DSS_STAT);
     dss_leave_api(conn, CM_FALSE);
+    if (ret == CM_SUCCESS) {
+        dss_session_end_stat(conn->session, &begin_tv, DSS_STAT);
+    }
     return ret;
 }
 
@@ -281,12 +283,12 @@ int dss_fopen(const char *file, int flag, int *handle)
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fopen get conn error"));
 
     ret = dss_open_file_impl(conn, file, flag, handle);
+    dss_leave_api(conn, CM_TRUE);
     // if open fails, -1 is returned. DB determines based on -1
     if (ret == CM_SUCCESS) {
         *handle += DSS_HANDLE_BASE;
+        dss_session_end_stat(conn->session, &begin_tv, DSS_FOPEN);
     }
-    dss_session_end_stat(conn->session, &begin_tv, DSS_FOPEN);
-    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
@@ -315,11 +317,16 @@ int dss_is_maintain(unsigned int *is_maintain)
 
 int dss_set_main_inst(void)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     dss_conn_t *conn = NULL;
     status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when set main inst"));
     ret = dss_set_main_inst_on_server(conn);
     dss_leave_api(conn, CM_FALSE);
+    if (ret == CM_SUCCESS) {
+        dss_session_end_stat(conn->session, &begin_tv, DSS_SET_MAIN_INST);
+    }
     return (int)ret;
 }
 
@@ -459,10 +466,10 @@ int dss_pwrite(int handle, const void *buf, int size, long long offset)
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("pwrite get conn error."));
 
     ret = dss_pwrite_file_impl(conn, HANDLE_VALUE(handle), buf, size, offset);
+    dss_leave_api(conn, CM_TRUE);
     if (ret == CM_SUCCESS) {
         dss_session_end_stat(conn->session, &begin_tv, DSS_PWRITE);
     }
-    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
@@ -490,10 +497,10 @@ int dss_pread(int handle, void *buf, int size, long long offset, int *read_size)
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("pread get conn error."));
 
     ret = dss_pread_file_impl(conn, HANDLE_VALUE(handle), buf, size, offset, read_size);
+    dss_leave_api(conn, CM_TRUE);
     if (ret == CM_SUCCESS) {
         dss_session_end_stat(conn->session, &begin_tv, DSS_PREAD);
     }
-    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
@@ -532,11 +539,16 @@ int dss_frename(const char *src, const char *dst)
 
 int dss_ftruncate(int handle, long long length)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     dss_conn_t *conn = NULL;
     status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("ftruncate get conn error."));
     ret = dss_truncate_impl(conn, HANDLE_VALUE(handle), length);
     dss_leave_api(conn, CM_TRUE);
+    if (ret == CM_SUCCESS) {
+        dss_session_end_stat(conn->session, &begin_tv, DSS_FTRUNCATE);
+    }
     return (int)ret;
 }
 

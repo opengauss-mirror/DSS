@@ -272,10 +272,12 @@ uint32 dss_get_broadcast_proto_ver(uint64 succ_inst);
 
 status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result);
 status_t dss_invalidate_other_nodes(
-    dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack);
-status_t dss_broadcast_check_file_open(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
-status_t dss_syn_data2other_nodes(dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack);
-status_t dss_bcast_get_protocol_version(dss_get_version_output_t *get_version_output);
+    dss_session_t *session, dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack);
+status_t dss_broadcast_check_file_open(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
+status_t dss_syn_data2other_nodes(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack);
+status_t dss_bcast_get_protocol_version(dss_session_t *session, dss_get_version_output_t *get_version_output);
 
 void dss_check_mes_conn(uint64 cur_inst_map);
 void dss_mes_regist_other_proc();
@@ -292,8 +294,8 @@ void dss_proc_get_ft_block_req(dss_session_t *session, mes_msg_t *msg);
 status_t dss_read_volume_remote(const char *vg_name, dss_volume_t *volume, int64 offset, void *buf, int32 size);
 status_t dss_send2standby(big_packets_ctrl_t *ack, const char *buf);
 int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, uint32 version);
-status_t dss_join_cluster(bool32 *join_succ);
-status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg_name);
+status_t dss_join_cluster(dss_session_t *session, bool32 *join_succ);
+status_t dss_refresh_ft_by_primary(dss_session_t *session, dss_block_id_t blockid, uint32 vgid, char *vg_name);
 status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_path, gft_item_type_t type,
     dss_check_dir_output_t *output_info, int32 flag, bool32 is_throw_err);
 

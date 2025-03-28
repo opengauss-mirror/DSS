@@ -904,7 +904,7 @@ void dss_stop_mes(void)
     mes_uninit();
 }
 
-status_t dss_sync_bcast(dss_bcast_req_head_t *req, uint32 req_size, void *ack_msg_output)
+status_t dss_sync_bcast(dss_session_t *session, dss_bcast_req_head_t *req, uint32 req_size, void *ack_msg_output)
 {
     if (g_dss_instance.is_maintain) {
         return CM_SUCCESS;
@@ -915,6 +915,8 @@ status_t dss_sync_bcast(dss_bcast_req_head_t *req, uint32 req_size, void *ack_ms
     community.broadcast_proto_ver = dss_get_broadcast_proto_ver(0);
     community.timeout = param->mes_wait_timeout;
     status_t ret;
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     do {
         LOG_DEBUG_INF("[MES] notify other dss instance to do cmd %u.", req->type);
         dss_init_mes_head(&req->dss_head, DSS_CMD_REQ_BROADCAST, 0, (uint16)param->inst_id, CM_INVALID_ID16, req_size,
@@ -935,11 +937,13 @@ status_t dss_sync_bcast(dss_bcast_req_head_t *req, uint32 req_size, void *ack_ms
         LOG_RUN_ERR("[DSS]: Failed to notify other dss instance, cmd: %u, errcode:%d, "
                     "OS errno:%d, OS errmsg:%s.",
             req->type, cm_get_error_code(), errno, strerror(errno));
+        return ret;
     }
-    return ret;
+    dss_session_end_stat(session, &begin_tv, DSS_CMD_BROADCAST);
+    return CM_SUCCESS;
 }
 
-status_t dss_bcast_ask_file_open(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack)
+status_t dss_bcast_ask_file_open(dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack)
 {
     dss_req_check_open_file_t req;
     req.ftid = ftid;
@@ -952,14 +956,15 @@ status_t dss_bcast_ask_file_open(dss_vg_info_item_t *vg_item, uint64 ftid, bool3
     LOG_DEBUG_INF("[MES] notify other dss instance to do cmd %u, ftid:%llu in vg:%s.", req.bcast_head.type, ftid,
         vg_item->vg_name);
     dss_bcast_ack_bool_t recv_msg = {.default_ack = DSS_FALSE, .cmd_ack = DSS_FALSE};
-    DSS_RETURN_IF_ERROR(dss_sync_bcast((dss_bcast_req_head_t *)&req, sizeof(dss_req_check_open_file_t), &recv_msg));
+    DSS_RETURN_IF_ERROR(
+        dss_sync_bcast(session, (dss_bcast_req_head_t *)&req, sizeof(dss_req_check_open_file_t), &recv_msg));
     if (cmd_ack != NULL) {
         *cmd_ack = recv_msg.cmd_ack;
     }
     return CM_SUCCESS;
 }
 
-status_t dss_bcast_meta_data(dss_bcast_req_cmd_t cmd, char *data, uint32 size, bool32 *cmd_ack)
+status_t dss_bcast_meta_data(dss_session_t *session, dss_bcast_req_cmd_t cmd, char *data, uint32 size, bool32 *cmd_ack)
 {
     dss_req_meta_data_t req;
     req.bcast_head.type = cmd;
@@ -971,34 +976,36 @@ status_t dss_bcast_meta_data(dss_bcast_req_cmd_t cmd, char *data, uint32 size, b
     }
     dss_bcast_ack_bool_t recv_msg = {.default_ack = DSS_TRUE, .cmd_ack = DSS_TRUE};
     DSS_RETURN_IF_ERROR(
-        dss_sync_bcast((dss_bcast_req_head_t *)&req, OFFSET_OF(dss_req_meta_data_t, data) + size, &recv_msg));
+        dss_sync_bcast(session, (dss_bcast_req_head_t *)&req, OFFSET_OF(dss_req_meta_data_t, data) + size, &recv_msg));
     if (cmd_ack != NULL) {
         *cmd_ack = recv_msg.cmd_ack;
     }
     return CM_SUCCESS;
 }
 
-status_t dss_bcast_get_protocol_version(dss_get_version_output_t *get_version_output)
+status_t dss_bcast_get_protocol_version(dss_session_t *session, dss_get_version_output_t *get_version_output)
 {
     dss_req_common_t req;
     req.bcast_head.type = BCAST_REQ_GET_VERSION;
-    return dss_sync_bcast((dss_bcast_req_head_t *)&req, sizeof(dss_req_common_t), get_version_output);
+    return dss_sync_bcast(session, (dss_bcast_req_head_t *)&req, sizeof(dss_req_common_t), get_version_output);
 }
 
 status_t dss_invalidate_other_nodes(
-    dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack)
+    dss_session_t *session, dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack)
 {
-    return dss_bcast_meta_data(BCAST_REQ_INVALIDATE_META, meta_info, meta_info_size, cmd_ack);
+    return dss_bcast_meta_data(session, BCAST_REQ_INVALIDATE_META, meta_info, meta_info_size, cmd_ack);
 }
 
-status_t dss_broadcast_check_file_open(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack)
+status_t dss_broadcast_check_file_open(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack)
 {
-    return dss_bcast_ask_file_open(vg_item, ftid, cmd_ack);
+    return dss_bcast_ask_file_open(session, vg_item, ftid, cmd_ack);
 }
 
-status_t dss_syn_data2other_nodes(dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack)
+status_t dss_syn_data2other_nodes(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack)
 {
-    return dss_bcast_meta_data(BCAST_REQ_META_SYN, meta_syn, meta_syn_size, cmd_ack);
+    return dss_bcast_meta_data(session, BCAST_REQ_META_SYN, meta_syn, meta_syn_size, cmd_ack);
 }
 
 static void dss_check_inst_conn(uint32_t id, uint64 old_inst_stat, uint64 cur_inst_stat)
@@ -1116,9 +1123,8 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
                 CM_RETURN_IFERR(dss_session_check_killed(session));
                 continue;
             }
-        } else {
-            break;
         }
+        break;
     } while (CM_TRUE);
     // errcode|errmsg
     // data
@@ -1445,6 +1451,8 @@ static status_t dss_rec_msgs(ruid_type ruid, void *buf, uint32 size)
 static status_t dss_read_volume_remote_core(dss_session_t *session, dss_loaddisk_req_t *req, void *buf)
 {
     status_t ret = CM_ERROR;
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     do {
         dss_message_head_t *dss_head = &req->dss_head;
         LOG_DEBUG_INF("[MES] Ready msg cmd:%u, src node:%u, dst node:%u end", dss_head->dss_cmd,
@@ -1467,6 +1475,10 @@ static status_t dss_read_volume_remote_core(dss_session_t *session, dss_loaddisk
         }
         break;
     } while (CM_TRUE);
+    if (ret != CM_SUCCESS) {
+        return ret;
+    }
+    dss_session_end_stat(session, &begin_tv, DSS_CMD_LOAD_DISK);
     return ret;
 }
 
@@ -1511,7 +1523,7 @@ status_t dss_read_volume_remote(const char *vg_name, dss_volume_t *volume, int64
     return CM_SUCCESS;
 }
 
-status_t dss_join_cluster(bool32 *join_succ)
+status_t dss_join_cluster(dss_session_t *session, bool32 *join_succ)
 {
     *join_succ = CM_FALSE;
 
@@ -1523,6 +1535,8 @@ status_t dss_join_cluster(bool32 *join_succ)
 
     status_t remote_result;
     dss_join_cluster_ack_t ack;
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     status_t ret = dss_exec_on_remote(DSS_CMD_REQ_JOIN_CLUSTER, (char *)&req, sizeof(dss_join_cluster_req_t),
         (char *)&ack, sizeof(dss_join_cluster_ack_t), &remote_result);
     if (ret != CM_SUCCESS || remote_result != CM_SUCCESS) {
@@ -1534,6 +1548,7 @@ status_t dss_join_cluster(bool32 *join_succ)
     }
 
     LOG_DEBUG_INF("[MES] Try join cluster exec result:%u.", (uint32)*join_succ);
+    dss_session_end_stat(session, &begin_tv, DSS_CMD_JOIN_CLUSTER);
     return CM_SUCCESS;
 }
 
@@ -1629,10 +1644,13 @@ status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_pat
 
     status_t remote_result;
     dss_get_ft_block_ack_t ack;
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     status_t ret = dss_exec_on_remote(DSS_CMD_REQ_GET_FT_BLOCK, (char *)&req, sizeof(dss_get_ft_block_req_t),
         (char *)&ack, sizeof(dss_get_ft_block_ack_t), &remote_result);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("Try get node by path remote failed."));
     DSS_RETURN_IF_ERROR(remote_result);
+    dss_session_end_stat(session, &begin_tv, DSS_CMD_GET_FT_BLOCK);
     if (dss_cmp_blockid(ack.node_id, DSS_INVALID_64)) {
         DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft node id ack msg error.");
         return CM_ERROR;
@@ -1676,7 +1694,7 @@ status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_pat
     return dss_get_node_by_path_inner(session, output_info, &ack, ack_vg_item, &shm_block);
 }
 
-status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg_name)
+status_t dss_refresh_ft_by_primary(dss_session_t *session, dss_block_id_t blockid, uint32 vgid, char *vg_name)
 {
     LOG_DEBUG_INF("[MES] Try refresh ft by primary begin.");
 
@@ -1692,7 +1710,8 @@ status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg
 
     status_t remote_result;
     dss_refresh_ft_ack_t ack;
-
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     status_t ret = dss_exec_on_remote(DSS_CMD_REQ_REFRESH_FT, (char *)&req, sizeof(dss_refresh_ft_req_t), (char *)&ack,
         sizeof(dss_refresh_ft_ack_t), &remote_result);
     if (ret != CM_SUCCESS || remote_result != CM_SUCCESS) {
@@ -1705,7 +1724,7 @@ status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg
         LOG_DEBUG_ERR("Try refresh ft by primary ack is not ok.");
         return CM_ERROR;
     }
-
+    dss_session_end_stat(session, &begin_tv, DSS_CMD_REFRESH_FT);
     return CM_SUCCESS;
 }
 
