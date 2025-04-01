@@ -3608,7 +3608,7 @@ static void getcfg_help(const char *prog_name, int print_flag)
 static status_t getcfg_proc(void)
 {
     char *name = cmd_getcfg_args[DSS_ARG_IDX_0].input_args;
-    const char *input_args = cmd_touch_args[DSS_CMD_TOUCH_ARGS_UDS].input_args;
+    const char *input_args = cmd_getcfg_args[DSS_CMD_TOUCH_ARGS_UDS].input_args;
     dss_conn_t *conn = dss_get_connection_opt(input_args);
     if (conn == NULL) {
         return CM_ERROR;
