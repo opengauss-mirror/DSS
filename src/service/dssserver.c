@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include "dss_blackbox.h"
+#include "dss_dyn.h"
 #endif
 #include "cm_types.h"
 #include "cm_signal.h"
@@ -77,6 +78,11 @@ static void dss_close_background_task(dss_instance_t *inst)
 {
     uint32 bg_task_base_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
     for (uint32 i = 0; i < DSS_BACKGROUND_TASK_NUM; i++) {
+#ifdef WIN32
+        if (i == DSS_DYN_LOG_TASK) {
+            continue;
+        }
+#endif
         uint32 bg_task_id = bg_task_base_id + i;
         if (inst->threads[bg_task_id].id != 0) {
             cm_close_thread(&inst->threads[bg_task_id]);
@@ -276,6 +282,17 @@ static status_t dss_alarm_check_background_task(dss_instance_t *inst)
     return status;
 }
 
+#ifndef WIN32
+static status_t dss_dyn_log_background_task(dss_instance_t *inst)
+{
+    LOG_RUN_INF("create dss dyn log background task.");
+    uint32 dyn_log_thread_id = dss_get_dyn_log_task_idx();
+    status_t status =
+        cm_create_thread(dss_dyn_log_proc, 0, &g_dss_instance, &(g_dss_instance.threads[dyn_log_thread_id]));
+    return status;
+}
+#endif
+
 static status_t dss_init_background_tasks(void)
 {
     status_t status = dss_recovery_background_task(&g_dss_instance);
@@ -304,6 +321,13 @@ static status_t dss_init_background_tasks(void)
         LOG_RUN_ERR("Create dss vg usage alarm background task failed.");
         return status;
     }
+#ifndef WIN32
+    status = dss_dyn_log_background_task(&g_dss_instance);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Create dss dyn log background task failed.");
+        return status;
+    }
+#endif
     return status;
 }
 
@@ -379,6 +403,24 @@ static void dss_srv_usage()
                  "\t -h                 show the help information.\n"
                  "\t -D                 specify dss server home path.\n");
 }
+#ifndef WIN32
+status_t dss_set_signal_block()
+{
+    int32 error;
+    sigset_t sign_old_mask;
+    (void)sigprocmask(0, NULL, &sign_old_mask);
+    (void)sigprocmask(SIG_UNBLOCK, &sign_old_mask, NULL);
+    sigset_t block_sigs;
+    sigemptyset(&block_sigs);
+    sigaddset(&block_sigs, SIG_DYN_LOG);
+    error = pthread_sigmask(SIG_BLOCK, &block_sigs, NULL);
+    if (error != EOK) {
+        printf("Fail to set sigmask, error: %d.\n", error);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+#endif
 
 int main(int argc, char **argv)
 {
@@ -406,9 +448,10 @@ int main(int argc, char **argv)
         return CM_ERROR;
     }
 #ifndef WIN32
-    sigset_t sign_old_mask;
-    (void)sigprocmask(0, NULL, &sign_old_mask);
-    (void)sigprocmask(SIG_UNBLOCK, &sign_old_mask, NULL);
+    if (dss_set_signal_block() != CM_SUCCESS) {
+        (void)fflush(stdout);
+        return CM_ERROR;
+    }
     regist_exit_proc(dss_exit_proc);
 #endif
     if (dss_startup(&g_dss_instance, dss_args) != CM_SUCCESS) {

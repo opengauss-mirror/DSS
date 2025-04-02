@@ -396,6 +396,7 @@ status_t dss_try_write_zero_one_au(
 void dss_alarm_check_vg_usage(dss_session_t *session);
 status_t dss_check_open_file_local_and_remote(
     dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t ftid, bool32 *is_open);
+status_t dss_calculate_vg_usage(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 *usage);
 #ifdef __cplusplus
 }
 #endif
