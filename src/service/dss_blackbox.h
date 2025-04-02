@@ -32,6 +32,15 @@
 extern "C" {
 #endif
 
+#define DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, format, ...) \
+    do {                                                     \
+        if (log_id == LOG_BLACKBOX) {                        \
+            LOG_BLACKBOX_INF(format, ##__VA_ARGS__);         \
+        } else {                                             \
+            LOG_DYNAMIC_INF(format, ##__VA_ARGS__);          \
+        }                                                    \
+    } while (0)
+
 static inline status_t dss_write_shm_memory_file_inner(int32 handle, int64 *length, const void* buffer, int32 size)
 {
     status_t ret = cm_write_file(handle, buffer, size);
@@ -44,6 +53,11 @@ static inline status_t dss_write_shm_memory_file_inner(int32 handle, int64 *leng
 status_t dss_sigcap_handle_reg();
 status_t dss_update_state_file(bool32 coredump);
 void dss_exit_proc(int32 exit_code);
+void dss_sig_collect_all_backtrace(uint32 log_id);
+void dss_print_global_variable(uint32 log_id);
+void dss_print_effect_param(uint32 log_id);
+void dss_write_shm_memory(uint32 log_id);
+
 #ifdef __cplusplus
 }
 #endif

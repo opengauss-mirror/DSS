@@ -156,6 +156,7 @@ dss_log_def_t g_dss_instance_log[] = {
     {LOG_ALARM, "dssinstance_alarm.log"},
     {LOG_AUDIT, "audit/dssinstance.aud"},
     {LOG_BLACKBOX, "blackbox/dssinstance.blog"},
+    {LOG_DYNAMIC, "dyn/dssinstance.dynlog"},
 };
 
 uint32 g_dss_warn_id[] = {

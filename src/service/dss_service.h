@@ -43,6 +43,7 @@ typedef struct st_dss_cmd_hdl {
 } dss_cmd_hdl_t;
 #ifndef WIN32
 status_t dss_signal_proc(void);
+status_t dss_set_signal_block();
 status_t dss_signal_proc_with_graceful_exit(void);
 #endif
 #define DSS_PROCESS_GET_MASTER_ID 50
