@@ -42,7 +42,7 @@ typedef struct st_dss_meta_syn_msg {
     uint32 vg_id;
     uint32 meta_type;
     uint32 meta_len;
-    char meta[DSS_MAX_META_BLOCK_SIZE];
+    char meta[DSS_FILE_SPACE_BLOCK_SIZE];
 } dss_meta_syn_t;
 
 typedef struct st_dss_invalidate_meta_msg {
