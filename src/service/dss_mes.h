@@ -113,7 +113,6 @@ typedef enum st_dss_bcast_req_cmd {
 typedef enum st_dss_bcast_ack_cmd {
     BCAST_ACK_DEL_FILE = 0,
     BCAST_ACK_INVALIDATE_META,
-    BCAST_ACK_META_SYN,
     BCAST_ACK_END
 } dss_bcast_ack_cmd_t;
 
@@ -123,15 +122,17 @@ typedef struct st_dss_bcast_req {
     char buffer[4];
 } dss_bcast_req_t;
 
-typedef struct st_dss_recv_msg {
-    bool32 handle_recv_msg;
-    bool32 cmd_ack;
+typedef struct st_dss_bcast_community {
     uint32 broadcast_proto_ver;
-    uint64 version_not_match_inst;
     uint64 succ_inst;
-    bool32 ignore_ack;
+    uint64 version_not_match_inst;
+    uint32 timeout;
+} dss_bcast_community_t;
+
+typedef struct st_dss_bcast_ack_bool {
     bool32 default_ack;
-} dss_recv_msg_t;
+    bool32 cmd_ack;
+} dss_bcast_ack_bool_t;
 
 typedef struct st_dss_message_head {
     uint32 msg_proto_ver;
@@ -146,25 +147,37 @@ typedef struct st_dss_message_head {
     uint8 reserve[64];
 } dss_message_head_t;
 
-typedef struct st_dss_notify_req_msg {
+typedef struct st_dss_bcast_req_head {
     dss_message_head_t dss_head;
     dss_bcast_req_cmd_t type;
-    uint64 ftid;
-    char vg_name[DSS_MAX_NAME_LEN];
-} dss_notify_req_msg_t;
+} dss_bcast_req_head_t;
 
-typedef struct st_dss_notify_req_msg_ex {
-    dss_message_head_t dss_head;
-    dss_bcast_req_cmd_t type;
-    uint32 data_size;
-    char data[DSS_MAX_META_BLOCK_SIZE];
-} dss_notify_req_msg_ex_t;
-typedef struct st_dss_notify_ack_msg {
+typedef struct st_dss_bcast_ack_head {
     dss_message_head_t dss_head;
     dss_bcast_ack_cmd_t type;
+} dss_bcast_ack_head_t;
+
+typedef struct st_dss_req_common {
+    dss_bcast_req_head_t bcast_head;
+} dss_req_common_t;
+
+typedef struct st_dss_req_check_open_file {
+    dss_bcast_req_head_t bcast_head;
+    uint64 ftid;
+    char vg_name[DSS_MAX_NAME_LEN];
+} dss_req_check_open_file_t;
+
+typedef struct st_dss_req_meta_data {
+    dss_bcast_req_head_t bcast_head;
+    uint32 data_size;
+    char data[DSS_MAX_META_BLOCK_SIZE];
+} dss_req_meta_data_t;
+
+typedef struct st_dss_ack_common {
+    dss_bcast_ack_head_t bcast_head;
     int32 result;
     bool32 cmd_ack;
-} dss_notify_ack_msg_t;
+} dss_ack_common_t;
 
 typedef struct st_dss_remote_exec_succ_ack {
     dss_message_head_t ack_head;
@@ -232,10 +245,15 @@ typedef struct st_get_ft_block_ack {
     char parent_block[DSS_BLOCK_SIZE];
 } dss_get_ft_block_ack_t;
 
+typedef struct st_dss_bcast_context {
+    char *req_msg;
+    unsigned int req_len;
+    char *ack_msg;
+    unsigned int ack_len;
+} dss_bcast_context_t;
+
 #define DSS_MES_MSG_HEAD_SIZE (sizeof(dss_message_head_t))
 uint32 dss_get_broadcast_proto_ver(uint64 succ_inst);
-status_t dss_notify_sync(char *buffer, uint32 size, dss_recv_msg_t *recv_msg);
-status_t dss_notify_sync_ex(char *buffer, uint32 size, dss_recv_msg_t *recv_msg);
 
 status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result);
 status_t dss_notify_expect_bool_ack(dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *cmd_ack);
@@ -251,7 +269,7 @@ void dss_check_mes_conn(uint64 cur_inst_map);
 void dss_mes_regist_other_proc();
 status_t dss_startup_mes(void);
 void dss_stop_mes(void);
-int32 dss_process_broadcast_ack(dss_notify_ack_msg_t *ack, dss_recv_msg_t *recv_msg_output);
+int32 dss_proc_broadcast_ack_single(dss_bcast_ack_head_t *ack_head, void *ack_buf);
 void dss_proc_broadcast_req(dss_session_t *session, mes_msg_t *msg);
 void dss_proc_syb2active_req(dss_session_t *session, mes_msg_t *msg);
 void dss_proc_loaddisk_req(dss_session_t *session, mes_msg_t *msg);

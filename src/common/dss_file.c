@@ -3682,16 +3682,6 @@ void dss_validate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, g
 dss_invalidate_other_nodes_proc_t invalidate_other_nodes_proc = NULL;
 dss_broadcast_check_file_open_proc_t broadcast_check_file_open_proc = NULL;
 
-status_t dss_invalidate_other_nodes_proc(
-    dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack)
-{
-    if (!invalidate_other_nodes_proc) {
-        *cmd_ack = CM_TRUE;
-        return CM_SUCCESS;
-    }
-    return invalidate_other_nodes_proc(vg_item, meta_info, meta_info_size, cmd_ack);
-}
-
 void regist_invalidate_other_nodes_proc(dss_invalidate_other_nodes_proc_t proc)
 {
     invalidate_other_nodes_proc = proc;

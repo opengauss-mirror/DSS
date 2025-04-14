@@ -107,6 +107,67 @@ static inline dss_remote_ack_hdl_t *dss_get_remote_ack_handle(int32 cmd)
     }
     return NULL;
 }
+// bcast processers
+static inline void dss_set_ack_common(dss_bcast_context_t *bcast_ctx, bool32 ret_val)
+{
+    bcast_ctx->ack_len = sizeof(dss_ack_common_t);
+    dss_ack_common_t *ack = (dss_ack_common_t *)bcast_ctx->ack_msg;
+    ack->cmd_ack = ret_val;
+}
+
+status_t dss_process_check_open_file(dss_session_t *session, dss_bcast_context_t *bcast_ctx)
+{
+    if (bcast_ctx->req_len < sizeof(dss_req_check_open_file_t)) {
+        LOG_RUN_ERR("[MES] invalid message req size %u", bcast_ctx->req_len);
+        return CM_ERROR;
+    }
+    dss_req_check_open_file_t *req = (dss_req_check_open_file_t *)bcast_ctx->req_msg;
+    bool32 check_ret = CM_FALSE;
+    status_t ret = dss_check_open_file_remote(session, req->vg_name, req->ftid, &check_ret);
+    if (ret != CM_SUCCESS) {
+        return ret;
+    }
+    dss_set_ack_common(bcast_ctx, check_ret);
+    return CM_SUCCESS;
+}
+
+status_t dss_process_invalidate_meta(dss_session_t *session, dss_bcast_context_t *bcast_ctx)
+{
+    dss_req_meta_data_t *req_ex = (dss_req_meta_data_t *)bcast_ctx->req_msg;
+    bool32 invalidate_ret = CM_FALSE;
+    status_t ret = dss_invalidate_meta_remote(
+        session, (dss_invalidate_meta_msg_t *)req_ex->data, req_ex->data_size, &invalidate_ret);
+    if (ret != CM_SUCCESS) {
+        return ret;
+    }
+    dss_set_ack_common(bcast_ctx, invalidate_ret);
+    return CM_SUCCESS;
+}
+
+status_t dss_process_sync_meta(dss_session_t *session, dss_bcast_context_t *bcast_ctx)
+{
+    dss_req_meta_data_t *req_ex = (dss_req_meta_data_t *)bcast_ctx->req_msg;
+    bool32 sync_ret = CM_FALSE;
+    status_t ret = dss_meta_syn_remote(session, (dss_meta_syn_t *)req_ex->data, req_ex->data_size, &sync_ret);
+    if (ret != CM_SUCCESS) {
+        return ret;
+    }
+    dss_set_ack_common(bcast_ctx, sync_ret);
+    return CM_SUCCESS;
+}
+typedef status_t (*dss_bcast_proc_func)(dss_session_t *session, dss_bcast_context_t *bcast_ctx);
+typedef struct st_dss_bcast_hdl {
+    dss_bcast_proc_func boc_proc;
+    bool32 need_ack;
+    dss_bcast_ack_cmd_t ack_cmd;
+} dss_bcast_hdl_t;
+
+// warning: if add new broadcast req, please consider the impact of expired broadcast messages on the standby server
+static dss_bcast_hdl_t g_dss_bcast_handle[BCAST_REQ_END] = {
+    [BCAST_REQ_DEL_DIR_FILE] = {dss_process_check_open_file, DSS_TRUE, BCAST_ACK_DEL_FILE},
+    [BCAST_REQ_INVALIDATE_META] = {dss_process_invalidate_meta, DSS_TRUE, BCAST_ACK_INVALIDATE_META},
+    [BCAST_REQ_META_SYN] = {dss_process_sync_meta, DSS_FALSE, BCAST_ACK_END},
+};
 
 static void dss_init_mes_head(dss_message_head_t *head, uint32 cmd, uint32 flags, uint16 src_inst, uint16 dst_inst,
     uint32 size, uint32 version, ruid_type ruid)
@@ -122,83 +183,69 @@ static void dss_init_mes_head(dss_message_head_t *head, uint32 cmd, uint32 flags
     head->flags = flags | dss_get_cmd_prio_id(cmd);
 }
 
-static dss_bcast_ack_cmd_t dss_get_bcast_ack_cmd(dss_bcast_req_cmd_t bcast_op)
+static inline dss_bcast_ack_cmd_t dss_get_bcast_ack_cmd(dss_bcast_req_cmd_t bcast_op)
 {
-    switch (bcast_op) {
-        case BCAST_REQ_DEL_DIR_FILE:
-            return BCAST_ACK_DEL_FILE;
-        case BCAST_REQ_INVALIDATE_META:
-            return BCAST_ACK_INVALIDATE_META;
-        case BCAST_REQ_META_SYN:
-            return BCAST_ACK_META_SYN;
-        default:
-            LOG_RUN_ERR("Invalid broadcast request type");
-            break;
+    if (bcast_op >= ELEMENT_COUNT(g_dss_bcast_handle)) {
+        LOG_RUN_ERR("Invalid broadcast request type");
+        return BCAST_ACK_END;
     }
-    return BCAST_ACK_END;
+    return g_dss_bcast_handle[bcast_op].ack_cmd;
 }
-// warning: if add new broadcast req, please consider the impact of expired broadcast messages on the standby server
-static void dss_proc_broadcast_req_inner(dss_session_t *session, dss_notify_req_msg_t *req)
+
+static inline bool32 dss_bcast_need_ack(dss_bcast_req_cmd_t bcast_op)
 {
-    status_t status = CM_ERROR;
-    bool32 cmd_ack = CM_FALSE;
-    dss_notify_req_msg_ex_t *req_ex = NULL;
-    switch (req->type) {
-        case BCAST_REQ_DEL_DIR_FILE:
-            status = dss_check_open_file_remote(session, req->vg_name, req->ftid, &cmd_ack);
-            break;
-        case BCAST_REQ_INVALIDATE_META:
-            req_ex = (dss_notify_req_msg_ex_t *)req;
-            status = dss_invalidate_meta_remote(
-                session, (dss_invalidate_meta_msg_t *)req_ex->data, req_ex->data_size, &cmd_ack);
-            break;
-        case BCAST_REQ_META_SYN:
-            req_ex = (dss_notify_req_msg_ex_t *)req;
-            status = dss_meta_syn_remote(session, (dss_meta_syn_t *)req_ex->data, req_ex->data_size, &cmd_ack);
-            return;
-        default:
-            LOG_RUN_ERR("invalid broadcast req type");
-            return;
-    }
-    if (cm_get_error_code() == ERR_DSS_SHM_LOCK_TIMEOUT) {
-        LOG_RUN_ERR("broadcast is breaked by shm lock timeout.");
-        return;
-    }
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    dss_params_t *param = &inst_cfg->params;
-    dss_message_head_t *req_head = &req->dss_head;
-    uint16 dst_inst = req_head->src_inst;
-    uint16 src_inst = (uint16)param->inst_id;
-    uint32 version = req_head->msg_proto_ver;
-    ruid_type ruid = req_head->ruid;
-    dss_notify_ack_msg_t ack_check;
-    dss_init_mes_head(&ack_check.dss_head, DSS_CMD_ACK_BROADCAST_WITH_MSG, 0, src_inst, dst_inst,
-        sizeof(dss_notify_ack_msg_t), version, ruid);
-    ack_check.type = dss_get_bcast_ack_cmd(req->type);
-    ack_check.result = status;
-    ack_check.cmd_ack = cmd_ack;
-    int ret =
-        mes_send_response(dst_inst, ack_check.dss_head.flags, ruid, (char *)&ack_check, sizeof(dss_notify_ack_msg_t));
+    DSS_ASSERT_LOG(bcast_op < ELEMENT_COUNT(g_dss_bcast_handle), "invalid bcast cmd %u", bcast_op);
+    return g_dss_bcast_handle[bcast_op].need_ack;
+}
+
+static void dss_send_bcast_ack(dss_bcast_context_t *bcast_ctx, status_t result)
+{
+    dss_bcast_req_head_t *req_head = (dss_bcast_req_head_t *)bcast_ctx->req_msg;
+    uint16 dst_inst = req_head->dss_head.src_inst;
+    uint16 src_inst = req_head->dss_head.dst_inst;
+    uint32 version = req_head->dss_head.msg_proto_ver;
+    ruid_type ruid = req_head->dss_head.ruid;
+
+    dss_bcast_ack_head_t *ack_head = (dss_bcast_ack_head_t *)bcast_ctx->ack_msg;
+    dss_init_mes_head(
+        &ack_head->dss_head, DSS_CMD_ACK_BROADCAST_WITH_MSG, 0, src_inst, dst_inst, bcast_ctx->ack_len, version, ruid);
+    ack_head->type = dss_get_bcast_ack_cmd(req_head->type);
+    ack_head->dss_head.result = result;
+    int ret = mes_send_response(dst_inst, ack_head->dss_head.flags, ruid, bcast_ctx->ack_msg, bcast_ctx->ack_len);
     if (ret != CM_SUCCESS) {
         LOG_DEBUG_ERR("[MES] send message failed, src inst(%hhu), dst inst(%hhu) ret(%d) ", src_inst, dst_inst, ret);
         return;
     }
-    DSS_LOG_DEBUG_OP("[MES] Succeed to send message, notify %llu  result: %u. cmd=%u, src_inst=%hhu, dst_inst=%hhu.",
-        req->ftid, cmd_ack, ack_check.dss_head.dss_cmd, ack_check.dss_head.src_inst, ack_check.dss_head.dst_inst);
+    DSS_LOG_DEBUG_OP("[MES] Succeed to send message, result: %u. cmd=%u, src_inst=%hhu, dst_inst=%hhu.", result,
+        ack_head->type, ack_head->dss_head.src_inst, ack_head->dss_head.dst_inst);
 }
 
-int32 dss_process_broadcast_ack(dss_notify_ack_msg_t *ack, dss_recv_msg_t *recv_msg_output)
+static void dss_send_bcast_ack_common(dss_bcast_context_t *bcast_ctx, status_t ret)
+{
+    bcast_ctx->ack_len = sizeof(dss_ack_common_t);
+    dss_send_bcast_ack(bcast_ctx, ret);
+}
+
+int32 dss_proc_broadcast_ack_single(dss_bcast_ack_head_t *ack_head, void *ack_msg_output)
 {
     int32 ret = ERR_DSS_MES_ILL;
-    switch (ack->type) {
+    switch (ack_head->type) {
         case BCAST_ACK_DEL_FILE:
         case BCAST_ACK_INVALIDATE_META:
-        case BCAST_ACK_META_SYN:
+            if (ack_head->dss_head.size < sizeof(dss_ack_common_t)) {
+                DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
+                return ERR_DSS_MES_ILL;
+            }
+            dss_ack_common_t *ack = (dss_ack_common_t *)ack_head;
+            dss_bcast_ack_bool_t *ack_bool = (dss_bcast_ack_bool_t *)ack_msg_output;
             ret = ack->result;
-            // recv_msg_output->cmd_ack init-ed with the deault, if some node not the same with the default, let's cover
+            // ack_bool->cmd_ack init-ed with the deault, if some node not the same with the default, let's cover
             // the default value
-            if (ret == CM_SUCCESS && recv_msg_output->default_ack != ack->cmd_ack) {
-                recv_msg_output->cmd_ack = ack->cmd_ack;
+            if (ret == CM_SUCCESS && ack_bool->default_ack != ack->cmd_ack) {
+                ack_bool->cmd_ack = ack->cmd_ack;
+            }
+            if (ret != CM_SUCCESS) {
+                DSS_THROW_ERROR(ERR_DSS_FILE_OPENING_REMOTE, ack_head->dss_head.src_inst, ack_head->dss_head.dss_cmd);
             }
             break;
         default:
@@ -229,20 +276,33 @@ static void dss_ack_version_not_match(dss_session_t *session, dss_message_head_t
         src_inst, dst_inst, version);
 }
 
+#define DSS_BOC_ACK_MSG_LEN ((int)128)
 void dss_proc_broadcast_req(dss_session_t *session, mes_msg_t *msg)
 {
     if (dss_need_exec_local()) {
-        LOG_RUN_INF("No need to solve broadcast msg when the current node is master.");
+        LOG_RUN_WAR("No need to solve broadcast msg when the current node is master.");
         return;
     }
-    if (msg->size < OFFSET_OF(dss_notify_req_msg_t, type)) {
-        LOG_DEBUG_ERR("invalid message req size");
+    if (msg->size < sizeof(dss_bcast_req_head_t)) {
+        LOG_RUN_ERR("[MES] invalid message req size %u", msg->size);
         return;
     }
-    dss_notify_req_msg_t *req = (dss_notify_req_msg_t *)msg->buffer;
-    LOG_DEBUG_INF("[MES] Try proc broadcast req, head cmd is %u, req cmd is %u.", req->dss_head.dss_cmd, req->type);
-    dss_proc_broadcast_req_inner(session, req);
-    return;
+    dss_bcast_req_head_t *req_head = (dss_bcast_req_head_t *)msg->buffer;
+    char ack_msg[DSS_BOC_ACK_MSG_LEN] = {0};
+    dss_bcast_context_t bcast_ctx = {.req_msg = msg->buffer, .req_len = msg->size, .ack_msg = ack_msg, .ack_len = 0};
+    if (req_head->type >= ELEMENT_COUNT(g_dss_bcast_handle)) {
+        dss_send_bcast_ack_common(&bcast_ctx, ERR_DSS_UNSUPPORTED_CMD);
+        return;
+    }
+    dss_bcast_hdl_t *boc_handler = &g_dss_bcast_handle[req_head->type];
+    if (boc_handler->boc_proc == NULL) {
+        dss_send_bcast_ack_common(&bcast_ctx, ERR_DSS_UNSUPPORTED_CMD);
+        return;
+    }
+    status_t ret = boc_handler->boc_proc(session, &bcast_ctx);
+    if (boc_handler->need_ack) {
+        dss_send_bcast_ack(&bcast_ctx, ret);
+    }
 }
 
 static void dss_set_cluster_proto_vers(uint8 inst_id, uint32 version)
@@ -262,27 +322,27 @@ static void dss_set_cluster_proto_vers(uint8 inst_id, uint32 version)
     } while (!set_flag);
 }
 
-static int dss_handle_broadcast_msg(mes_msg_list_t *responses, dss_recv_msg_t *recv_msg_output)
+static int dss_proc_broadcast_ack_inner(
+    mes_msg_list_t *responses, dss_bcast_community_t *community, void *ack_msg_output)
 {
     int ret;
-    dss_message_head_t *ack_head;
+    dss_bcast_ack_head_t *ack_head;
     uint32 src_inst;
     for (uint32 i = 0; i < responses->count; i++) {
         mes_msg_t *msg = &responses->messages[i];
-        ack_head = (dss_message_head_t *)msg->buffer;
+        ack_head = (dss_bcast_ack_head_t *)msg->buffer;
         src_inst = responses->messages[i].src_inst;
-        dss_set_cluster_proto_vers((uint8)src_inst, ack_head->sw_proto_ver);
-        if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {
-            recv_msg_output->version_not_match_inst |= ((uint64)0x1 << src_inst);
+        dss_set_cluster_proto_vers((uint8)src_inst, ack_head->dss_head.sw_proto_ver);
+        if (ack_head->dss_head.result == ERR_DSS_VERSION_NOT_MATCH) {
+            community->version_not_match_inst |= ((uint64)0x1 << src_inst);
             continue;
         }
-        if (ack_head->size < sizeof(dss_notify_ack_msg_t)) {
+        if (ack_head->dss_head.size < sizeof(dss_bcast_ack_head_t)) {
             DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
             return ERR_DSS_MES_ILL;
         }
-        dss_notify_ack_msg_t *ack = (dss_notify_ack_msg_t *)ack_head;
-        ret = dss_process_broadcast_ack(ack, recv_msg_output);
-        DSS_RETURN_IFERR2(ret, DSS_THROW_ERROR(ERR_DSS_FILE_OPENING_REMOTE, ack_head->src_inst, ack_head->dss_cmd));
+        ret = dss_proc_broadcast_ack_single(ack_head, ack_msg_output);
+        DSS_RETURN_IF_ERROR(ret);
     }
     return DSS_SUCCESS;
 }
@@ -294,16 +354,16 @@ static void dss_release_broadcast_msg(mes_msg_list_t *responses)
     }
 }
 
-static int dss_handle_recv_broadcast_msg(
-    ruid_type ruid, uint32 timeout, uint64 *succ_ack_inst, dss_recv_msg_t *recv_msg_output)
+static int dss_proc_broadcast_ack(
+    ruid_type ruid, dss_bcast_community_t *community, uint64 *succ_ack_inst, void *ack_msg_output)
 {
     mes_msg_list_t responses;
-    int ret = mes_broadcast_get_response(ruid, &responses, timeout);
+    int ret = mes_broadcast_get_response(ruid, &responses, community->timeout);
     if (ret != DSS_SUCCESS) {
         LOG_DEBUG_INF("[MES] Try broadcast get response failed, ret is %d, ruid is %llu.", ret, ruid);
         return ret;
     }
-    ret = dss_handle_broadcast_msg(&responses, recv_msg_output);
+    ret = dss_proc_broadcast_ack_inner(&responses, community, ack_msg_output);
     if (ret != DSS_SUCCESS) {
         dss_release_broadcast_msg(&responses);
         LOG_DEBUG_INF("[MES] Try broadcast get response failed, ret is %d, ruid is %llu.", ret, ruid);
@@ -314,7 +374,7 @@ static int dss_handle_recv_broadcast_msg(
         uint32 src_inst = responses.messages[i].src_inst;
         *succ_ack_inst |= ((uint64)0x1 << src_inst);
     }
-    *succ_ack_inst = *succ_ack_inst & (~recv_msg_output->version_not_match_inst);
+    *succ_ack_inst = *succ_ack_inst & (~community->version_not_match_inst);
     dss_release_broadcast_msg(&responses);
     return ret;
 }
@@ -362,7 +422,7 @@ void dss_get_valid_inst(uint64 valid_inst, uint32 *arr, uint32 count)
 
 #define DSS_BROADCAST_MSG_TRY_MAX 5
 #define DSS_BROADCAST_MSG_TRY_SLEEP_TIME 200
-static status_t dss_broadcast_msg_with_try(dss_message_head_t *dss_head, dss_recv_msg_t *recv_msg, unsigned int timeout)
+static status_t dss_broadcast_msg(dss_bcast_req_head_t *req, dss_bcast_community_t *community, void *ack_msg_output)
 {
     int32 ret = DSS_SUCCESS;
 
@@ -373,7 +433,7 @@ static status_t dss_broadcast_msg_with_try(dss_message_head_t *dss_head, dss_rec
     uint32 i = 0;
     // init last send err with all
     uint64 cur_work_inst_map = dss_get_inst_work_status();
-    uint64 snd_err_inst_map = (~recv_msg->succ_inst & cur_work_inst_map);
+    uint64 snd_err_inst_map = (~community->succ_inst & cur_work_inst_map);
     uint64 last_inst_inst_map = 0;
     uint64 new_added_inst_map = 0;
     uint64 valid_inst = 0;
@@ -383,26 +443,26 @@ static status_t dss_broadcast_msg_with_try(dss_message_head_t *dss_head, dss_rec
         cm_reset_error();
         valid_inst_mask = ((cur_work_inst_map & snd_err_inst_map) | new_added_inst_map);
         valid_inst = (param->nodes_list.inst_map) & (~((uint64)0x1 << (uint64)(param->inst_id))) & valid_inst_mask;
-        valid_inst = (~recv_msg->version_not_match_inst & valid_inst);
+        valid_inst = (~community->version_not_match_inst & valid_inst);
         if (valid_inst == 0) {
-            if (recv_msg->version_not_match_inst != 0) {
-                recv_msg->version_not_match_inst = 0;
+            if (community->version_not_match_inst != 0) {
+                community->version_not_match_inst = 0;
                 return ERR_DSS_VERSION_NOT_MATCH;
             }
             LOG_DEBUG_INF("[MES] No inst need to broadcast.");
             return CM_SUCCESS;
         }
-        LOG_DEBUG_INF("[MES] Try broadcast num is %u, head cmd is %u.", i, dss_head->dss_cmd);
+        LOG_DEBUG_INF("[MES] Try broadcast num is %u, head cmd is %u.", i, req->type);
         uint32 count = cm_bitmap64_count(valid_inst);
         uint32 valid_inst_arr[DSS_MAX_INSTANCES] = {0};
         dss_get_valid_inst(valid_inst, valid_inst_arr, count);
-        (void)mes_broadcast_request_sp(
-            (inst_type *)valid_inst_arr, count, dss_head->flags, &dss_head->ruid, (char *)dss_head, dss_head->size);
+        (void)mes_broadcast_request_sp((inst_type *)valid_inst_arr, count, req->dss_head.flags, &req->dss_head.ruid,
+            (char *)req, req->dss_head.size);
         succ_req_inst = valid_inst;
-        if (!recv_msg->ignore_ack) {
-            ret = dss_handle_recv_broadcast_msg(dss_head->ruid, timeout, &succ_ack_inst, recv_msg);
+        if (dss_bcast_need_ack(req->type)) {
+            ret = dss_proc_broadcast_ack(req->dss_head.ruid, community, &succ_ack_inst, ack_msg_output);
         } else {
-            dss_handle_discard_recv_broadcast_msg(dss_head->ruid);
+            dss_handle_discard_recv_broadcast_msg(req->dss_head.ruid);
             ret = CM_SUCCESS;
             succ_ack_inst = succ_req_inst;
         }
@@ -411,11 +471,11 @@ static status_t dss_broadcast_msg_with_try(dss_message_head_t *dss_head, dss_rec
         LOG_DEBUG_INF(
             "[MES] Try broadcast num is %u, valid_inst is %llu, succ_inst is %llu.", i, valid_inst, succ_inst);
         if (succ_inst != 0) {
-            recv_msg->succ_inst = recv_msg->succ_inst | succ_inst;
+            community->succ_inst = community->succ_inst | succ_inst;
         }
         if (ret == CM_SUCCESS && succ_req_inst == succ_ack_inst) {
-            if (recv_msg->version_not_match_inst != 0) {
-                recv_msg->version_not_match_inst = 0;
+            if (community->version_not_match_inst != 0) {
+                community->version_not_match_inst = 0;
                 return ERR_DSS_VERSION_NOT_MATCH;
             }
             return ret;
@@ -432,11 +492,6 @@ static status_t dss_broadcast_msg_with_try(dss_message_head_t *dss_head, dss_rec
     DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Failed to broadcast msg with try.");
     LOG_RUN_ERR("[DSS] THROW UP ERROR WHEN BROADCAST FAILED, errcode:%d", cm_get_error_code());
     return CM_ERROR;
-}
-
-static status_t dss_broadcast_msg(char *req_buf, uint32 size, dss_recv_msg_t *recv_msg, unsigned int timeout)
-{
-    return dss_broadcast_msg_with_try((dss_message_head_t *)req_buf, recv_msg, timeout);
 }
 
 static bool32 dss_check_srv_status(mes_msg_t *msg)
@@ -783,54 +838,28 @@ void dss_stop_mes(void)
     mes_uninit();
 }
 
-status_t dss_notify_sync(char *buffer, uint32 size, dss_recv_msg_t *recv_msg)
-{
-    CM_ASSERT(buffer != NULL);
-    CM_ASSERT(size < SIZE_K(1));
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    uint32 timeout = inst_cfg->params.mes_wait_timeout;
-    status_t status = dss_broadcast_msg(buffer, size, recv_msg, timeout);
-    return status;
-}
-
-status_t dss_notify_sync_ex(char *buffer, uint32 size, dss_recv_msg_t *recv_msg)
-{
-    CM_ASSERT(buffer != NULL);
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    uint32 timeout = inst_cfg->params.mes_wait_timeout;
-    status_t status = dss_broadcast_msg(buffer, size, recv_msg, timeout);
-    return status;
-}
-
-status_t dss_notify_expect_bool_ack(dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *cmd_ack)
+status_t dss_sync_boc(dss_bcast_req_head_t *req, uint32 req_size, void *ack_msg_output)
 {
     if (g_dss_instance.is_maintain) {
         return CM_SUCCESS;
     }
-    dss_recv_msg_t recv_msg = {CM_TRUE, *cmd_ack, DSS_PROTO_VERSION, 0, 0, CM_FALSE, *cmd_ack};
-    recv_msg.broadcast_proto_ver = dss_get_broadcast_proto_ver(0);
-    dss_notify_req_msg_t req;
-    status_t ret;
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     dss_params_t *param = &inst_cfg->params;
+    dss_bcast_community_t community = {0};
+    community.broadcast_proto_ver = dss_get_broadcast_proto_ver(0);
+    community.timeout = param->mes_wait_timeout;
+    status_t ret;
     do {
-        req.ftid = ftid;
-        req.type = cmd;
-        errno_t err = strncpy_s(req.vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name, strlen(vg_item->vg_name));
-        if (err != EOK) {
-            DSS_THROW_ERROR(ERR_SYSTEM_CALL, err);
-            return CM_ERROR;
-        }
-        LOG_DEBUG_INF("[MES] notify other dss instance to do cmd %u, ftid:%llu in vg:%s.", cmd, ftid, vg_item->vg_name);
-        dss_init_mes_head(&req.dss_head, DSS_CMD_REQ_BROADCAST, 0, (uint16)param->inst_id, CM_INVALID_ID16,
-            sizeof(dss_notify_req_msg_t), recv_msg.broadcast_proto_ver, 0);
-        ret = dss_notify_sync((char *)&req, req.dss_head.size, &recv_msg);
+        LOG_DEBUG_INF("[MES] notify other dss instance to do cmd %u.", req->type);
+        dss_init_mes_head(&req->dss_head, DSS_CMD_REQ_BROADCAST, 0, (uint16)param->inst_id, CM_INVALID_ID16, req_size,
+            community.broadcast_proto_ver, 0);
+        ret = dss_broadcast_msg(req, &community, ack_msg_output);
         if (ret == ERR_DSS_VERSION_NOT_MATCH) {
-            uint32 new_proto_ver = dss_get_broadcast_proto_ver(recv_msg.succ_inst);
+            uint32 new_proto_ver = dss_get_broadcast_proto_ver(community.succ_inst);
             LOG_RUN_INF("[CHECK_PROTO]broadcast msg proto version has changed, old is %hhu, new is %hhu",
-                recv_msg.broadcast_proto_ver, new_proto_ver);
-            recv_msg.broadcast_proto_ver = new_proto_ver;
-            recv_msg.version_not_match_inst = 0;
+                community.broadcast_proto_ver, new_proto_ver);
+            community.broadcast_proto_ver = new_proto_ver;
+            community.version_not_match_inst = 0;
             // if msg has been changed, need rewrite req
             continue;
         } else {
@@ -838,83 +867,67 @@ status_t dss_notify_expect_bool_ack(dss_vg_info_item_t *vg_item, dss_bcast_req_c
         }
     } while (CM_TRUE);
     if (ret != CM_SUCCESS) {
-        LOG_RUN_ERR("[DSS]: Failed to notify other dss instance, cmd: %u, file: %llu, vg: %s, errcode:%d, "
+        LOG_RUN_ERR("[DSS]: Failed to notify other dss instance, cmd: %u, errcode:%d, "
                     "OS errno:%d, OS errmsg:%s.",
-            cmd, ftid, vg_item->vg_name, cm_get_error_code(), errno, strerror(errno));
+            req->type, cm_get_error_code(), errno, strerror(errno));
         return CM_ERROR;
     }
-    *cmd_ack = recv_msg.cmd_ack;
     return ret;
 }
 
-status_t dss_notify_data_expect_bool_ack(
-    dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, char *data, uint32 size, bool32 *cmd_ack)
+status_t dss_bcast_ask_file_open(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack)
 {
-    if (g_dss_instance.is_maintain) {
-        return CM_SUCCESS;
-    }
-    dss_recv_msg_t recv_msg = {CM_TRUE, CM_TRUE, DSS_PROTO_VERSION, 0, 0, CM_FALSE, CM_TRUE};
-    if (cmd_ack) {
-        recv_msg.cmd_ack = *cmd_ack;
-        recv_msg.default_ack = *cmd_ack;
-    } else {
-        recv_msg.ignore_ack = CM_TRUE;
-    }
-    recv_msg.broadcast_proto_ver = dss_get_broadcast_proto_ver(0);
-    dss_notify_req_msg_ex_t req;
-    status_t status;
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    dss_params_t *param = &inst_cfg->params;
-    do {
-        req.type = cmd;
-        errno_t err = memcpy_s(req.data, sizeof(req.data), data, size);
-        if (err != EOK) {
-            DSS_THROW_ERROR(ERR_SYSTEM_CALL, err);
-            return CM_ERROR;
-        }
-        req.data_size = size;
-        LOG_DEBUG_INF("notify other dss instance to do cmd %u, in vg:%s.", cmd, vg_item->vg_name);
-        dss_init_mes_head(&req.dss_head, DSS_CMD_REQ_BROADCAST, 0, (uint16)param->inst_id, CM_INVALID_ID16,
-            (OFFSET_OF(dss_notify_req_msg_ex_t, data) + size), recv_msg.broadcast_proto_ver, 0);
-        status = dss_notify_sync_ex((char *)&req, req.dss_head.size, &recv_msg);
-        if (status == ERR_DSS_VERSION_NOT_MATCH) {
-            uint32 new_proto_ver = dss_get_broadcast_proto_ver(recv_msg.succ_inst);
-            LOG_RUN_INF("[CHECK_PROTO]broadcast msg proto version has changed, old is %hhu, new is %hhu",
-                recv_msg.broadcast_proto_ver, new_proto_ver);
-            recv_msg.broadcast_proto_ver = new_proto_ver;
-            recv_msg.version_not_match_inst = 0;
-            // if msg need changed, need rewrite req
-            continue;
-        } else {
-            break;
-        }
-    } while (CM_TRUE);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("[DSS] Failed to notify other dss instance, cmd: %u, vg%s, errcode:%d, "
-                    "OS errno:%d, OS errmsg:%s.",
-            cmd, vg_item->vg_name, cm_get_error_code(), errno, strerror(errno));
+    dss_req_check_open_file_t req;
+    req.ftid = ftid;
+    req.bcast_head.type = BCAST_REQ_DEL_DIR_FILE;
+    errno_t err = strncpy_s(req.vg_name, DSS_MAX_NAME_LEN, vg_item->vg_name, strlen(vg_item->vg_name));
+    if (err != EOK) {
+        DSS_THROW_ERROR(ERR_SYSTEM_CALL, err);
         return CM_ERROR;
     }
-    if (cmd_ack) {
+    LOG_DEBUG_INF("[MES] notify other dss instance to do cmd %u, ftid:%llu in vg:%s.", req.bcast_head.type, ftid,
+        vg_item->vg_name);
+    dss_bcast_ack_bool_t recv_msg = {.default_ack = DSS_FALSE, .cmd_ack = DSS_FALSE};
+    DSS_RETURN_IF_ERROR(dss_sync_boc((dss_bcast_req_head_t *)&req, sizeof(dss_req_check_open_file_t), &recv_msg));
+    if (cmd_ack != NULL) {
         *cmd_ack = recv_msg.cmd_ack;
     }
-    return status;
+    return CM_SUCCESS;
+}
+
+status_t dss_bcast_meta_data(dss_bcast_req_cmd_t cmd, char *data, uint32 size, bool32 *cmd_ack)
+{
+    dss_req_meta_data_t req;
+    req.bcast_head.type = cmd;
+    req.data_size = size;
+    errno_t err = memcpy_s(req.data, sizeof(req.data), data, size);
+    if (err != EOK) {
+        DSS_THROW_ERROR(ERR_SYSTEM_CALL, err);
+        return CM_ERROR;
+    }
+    dss_bcast_ack_bool_t recv_msg = {.default_ack = DSS_TRUE, .cmd_ack = DSS_TRUE};
+    DSS_RETURN_IF_ERROR(
+        dss_sync_boc((dss_bcast_req_head_t *)&req, OFFSET_OF(dss_req_meta_data_t, data) + size, &recv_msg));
+    if (cmd_ack != NULL) {
+        *cmd_ack = recv_msg.cmd_ack;
+    }
+    return CM_SUCCESS;
 }
 
 status_t dss_invalidate_other_nodes(
     dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack)
 {
-    return dss_notify_data_expect_bool_ack(vg_item, BCAST_REQ_INVALIDATE_META, meta_info, meta_info_size, cmd_ack);
+    return dss_bcast_meta_data(BCAST_REQ_INVALIDATE_META, meta_info, meta_info_size, cmd_ack);
 }
 
 status_t dss_broadcast_check_file_open(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack)
 {
-    return dss_notify_expect_bool_ack(vg_item, BCAST_REQ_DEL_DIR_FILE, ftid, cmd_ack);
+    return dss_bcast_ask_file_open(vg_item, ftid, cmd_ack);
 }
 
 status_t dss_syn_data2other_nodes(dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack)
 {
-    return dss_notify_data_expect_bool_ack(vg_item, BCAST_REQ_META_SYN, meta_syn, meta_syn_size, cmd_ack);
+    return dss_bcast_meta_data(BCAST_REQ_META_SYN, meta_syn, meta_syn_size, cmd_ack);
 }
 
 static void dss_check_inst_conn(uint32_t id, uint64 old_inst_stat, uint64 cur_inst_stat)
