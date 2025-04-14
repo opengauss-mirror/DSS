@@ -155,18 +155,100 @@ status_t dss_process_sync_meta(dss_session_t *session, dss_bcast_context_t *bcas
     dss_set_ack_common(bcast_ctx, sync_ret);
     return CM_SUCCESS;
 }
+
+status_t dss_process_get_version(dss_session_t *session, dss_bcast_context_t *bcast_ctx)
+{
+    if (bcast_ctx->req_len < sizeof(dss_req_common_t)) {
+        LOG_RUN_ERR("[MES] invalid message req size %u", bcast_ctx->req_len);
+        return CM_ERROR;
+    }
+    bcast_ctx->ack_len = sizeof(dss_ack_get_version_t);
+    dss_ack_get_version_t *ack = (dss_ack_get_version_t *)bcast_ctx->ack_msg;
+    ack->version = DSS_PROTO_VERSION;
+    return CM_SUCCESS;
+}
+
+// bcast ack processers
+status_t dss_process_ack_check_open_file(dss_bcast_ack_head_t *ack_head, void *ack_msg_output)
+{
+    if (ack_head->dss_head.size < sizeof(dss_ack_common_t)) {
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
+        return ERR_DSS_MES_ILL;
+    }
+    dss_ack_common_t *ack = (dss_ack_common_t *)ack_head;
+    if (ack->result != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_FILE_OPENING_REMOTE, ack_head->dss_head.src_inst, ack_head->dss_head.dss_cmd);
+        return ack->result;
+    }
+    dss_bcast_ack_bool_t *ack_bool = (dss_bcast_ack_bool_t *)ack_msg_output;
+    if (ack_bool->default_ack != ack->cmd_ack) {
+        ack_bool->cmd_ack = ack->cmd_ack;
+    }
+    return CM_SUCCESS;
+}
+
+status_t dss_process_ack_invalidate_meta(dss_bcast_ack_head_t *ack_head, void *ack_msg_output)
+{
+    if (ack_head->dss_head.size < sizeof(dss_ack_common_t)) {
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
+        return ERR_DSS_MES_ILL;
+    }
+    dss_ack_common_t *ack = (dss_ack_common_t *)ack_head;
+    dss_bcast_ack_bool_t *ack_bool = (dss_bcast_ack_bool_t *)ack_msg_output;
+    if (ack->result != CM_SUCCESS) {
+        return ack->result;
+    }
+    // ack_bool->cmd_ack init-ed with the deault, if some node not the same with the default, let's cover
+    // the default value
+    if (ack_bool->default_ack != ack->cmd_ack) {
+        ack_bool->cmd_ack = ack->cmd_ack;
+    }
+    return CM_SUCCESS;
+}
+
+status_t dss_process_ack_get_version(dss_bcast_ack_head_t *ack_head, void *ack_msg_output)
+{
+    if (ack_head->dss_head.size < sizeof(dss_ack_get_version_t)) {
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
+        return ERR_DSS_MES_ILL;
+    }
+    dss_ack_get_version_t *ack = (dss_ack_get_version_t *)ack_head;
+    if (ack->bcast_head.dss_head.result != CM_SUCCESS) {
+        return ack->bcast_head.dss_head.result;
+    }
+    dss_get_version_output_t *get_version_output = (dss_get_version_output_t *)ack_msg_output;
+    if (ack->version != DSS_PROTO_VERSION) {
+        get_version_output->all_same = DSS_FALSE;
+    }
+    if (ack->version < get_version_output->min_version) {
+        get_version_output->min_version = ack->version;
+    }
+    return CM_SUCCESS;
+}
+
 typedef status_t (*dss_bcast_proc_func)(dss_session_t *session, dss_bcast_context_t *bcast_ctx);
+typedef status_t (*dss_bcast_ack_proc_func)(dss_bcast_ack_head_t *ack_head, void *ack_msg_output);
 typedef struct st_dss_bcast_hdl {
-    dss_bcast_proc_func boc_proc;
+    dss_bcast_proc_func proc_func;
     bool32 need_ack;
     dss_bcast_ack_cmd_t ack_cmd;
 } dss_bcast_hdl_t;
+typedef struct st_dss_bcast_ack_hdl {
+    dss_bcast_ack_proc_func proc_func;
+} dss_bcast_ack_hdl_t;
 
 // warning: if add new broadcast req, please consider the impact of expired broadcast messages on the standby server
 static dss_bcast_hdl_t g_dss_bcast_handle[BCAST_REQ_END] = {
     [BCAST_REQ_DEL_DIR_FILE] = {dss_process_check_open_file, DSS_TRUE, BCAST_ACK_DEL_FILE},
     [BCAST_REQ_INVALIDATE_META] = {dss_process_invalidate_meta, DSS_TRUE, BCAST_ACK_INVALIDATE_META},
     [BCAST_REQ_META_SYN] = {dss_process_sync_meta, DSS_FALSE, BCAST_ACK_END},
+    [BCAST_REQ_GET_VERSION] = {dss_process_get_version, DSS_TRUE, BCAST_ACK_GET_VERSION},
+};
+
+static dss_bcast_ack_hdl_t g_dss_bcast_ack_handle[BCAST_ACK_END] = {
+    [BCAST_ACK_DEL_FILE] = {dss_process_ack_check_open_file},
+    [BCAST_ACK_INVALIDATE_META] = {dss_process_ack_invalidate_meta},
+    [BCAST_ACK_GET_VERSION] = {dss_process_ack_get_version},
 };
 
 static void dss_init_mes_head(dss_message_head_t *head, uint32 cmd, uint32 flags, uint16 src_inst, uint16 dst_inst,
@@ -228,31 +310,14 @@ static void dss_send_bcast_ack_common(dss_bcast_context_t *bcast_ctx, status_t r
 
 int32 dss_proc_broadcast_ack_single(dss_bcast_ack_head_t *ack_head, void *ack_msg_output)
 {
-    int32 ret = ERR_DSS_MES_ILL;
-    switch (ack_head->type) {
-        case BCAST_ACK_DEL_FILE:
-        case BCAST_ACK_INVALIDATE_META:
-            if (ack_head->dss_head.size < sizeof(dss_ack_common_t)) {
-                DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
-                return ERR_DSS_MES_ILL;
-            }
-            dss_ack_common_t *ack = (dss_ack_common_t *)ack_head;
-            dss_bcast_ack_bool_t *ack_bool = (dss_bcast_ack_bool_t *)ack_msg_output;
-            ret = ack->result;
-            // ack_bool->cmd_ack init-ed with the deault, if some node not the same with the default, let's cover
-            // the default value
-            if (ret == CM_SUCCESS && ack_bool->default_ack != ack->cmd_ack) {
-                ack_bool->cmd_ack = ack->cmd_ack;
-            }
-            if (ret != CM_SUCCESS) {
-                DSS_THROW_ERROR(ERR_DSS_FILE_OPENING_REMOTE, ack_head->dss_head.src_inst, ack_head->dss_head.dss_cmd);
-            }
-            break;
-        default:
-            LOG_DEBUG_ERR("invalid broadcast ack type");
-            break;
+    if (ack_head->type >= ELEMENT_COUNT(g_dss_bcast_ack_handle)) {
+        return ERR_DSS_UNSUPPORTED_CMD;
     }
-    return ret;
+    dss_bcast_ack_hdl_t *ack_handler = &g_dss_bcast_ack_handle[ack_head->type];
+    if (ack_handler->proc_func == NULL) {
+        return ERR_DSS_UNSUPPORTED_CMD;
+    }
+    return ack_handler->proc_func(ack_head, ack_msg_output);
 }
 
 static void dss_ack_version_not_match(dss_session_t *session, dss_message_head_t *req_head, uint32 version)
@@ -276,7 +341,7 @@ static void dss_ack_version_not_match(dss_session_t *session, dss_message_head_t
         src_inst, dst_inst, version);
 }
 
-#define DSS_BOC_ACK_MSG_LEN ((int)128)
+#define DSS_BCAST_ACK_MSG_LEN ((int)128)
 void dss_proc_broadcast_req(dss_session_t *session, mes_msg_t *msg)
 {
     if (dss_need_exec_local()) {
@@ -288,18 +353,18 @@ void dss_proc_broadcast_req(dss_session_t *session, mes_msg_t *msg)
         return;
     }
     dss_bcast_req_head_t *req_head = (dss_bcast_req_head_t *)msg->buffer;
-    char ack_msg[DSS_BOC_ACK_MSG_LEN] = {0};
+    char ack_msg[DSS_BCAST_ACK_MSG_LEN] = {0};
     dss_bcast_context_t bcast_ctx = {.req_msg = msg->buffer, .req_len = msg->size, .ack_msg = ack_msg, .ack_len = 0};
     if (req_head->type >= ELEMENT_COUNT(g_dss_bcast_handle)) {
         dss_send_bcast_ack_common(&bcast_ctx, ERR_DSS_UNSUPPORTED_CMD);
         return;
     }
     dss_bcast_hdl_t *boc_handler = &g_dss_bcast_handle[req_head->type];
-    if (boc_handler->boc_proc == NULL) {
+    if (boc_handler->proc_func == NULL) {
         dss_send_bcast_ack_common(&bcast_ctx, ERR_DSS_UNSUPPORTED_CMD);
         return;
     }
-    status_t ret = boc_handler->boc_proc(session, &bcast_ctx);
+    status_t ret = boc_handler->proc_func(session, &bcast_ctx);
     if (boc_handler->need_ack) {
         dss_send_bcast_ack(&bcast_ctx, ret);
     }
@@ -487,11 +552,13 @@ static status_t dss_broadcast_msg(dss_bcast_req_head_t *req, dss_bcast_community
         new_added_inst_map = (~last_inst_inst_map & cur_work_inst_map);
         cm_sleep(DSS_BROADCAST_MSG_TRY_SLEEP_TIME);
         i++;
-    } while (i < DSS_BROADCAST_MSG_TRY_MAX);
-    cm_reset_error();
-    DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Failed to broadcast msg with try.");
+    } while (i < DSS_BROADCAST_MSG_TRY_MAX && ret != ERR_DSS_UNSUPPORTED_CMD);
+    if (ret != ERR_DSS_UNSUPPORTED_CMD) {
+        cm_reset_error();
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Failed to broadcast msg with try.");
+    }
     LOG_RUN_ERR("[DSS] THROW UP ERROR WHEN BROADCAST FAILED, errcode:%d", cm_get_error_code());
-    return CM_ERROR;
+    return ret;
 }
 
 static bool32 dss_check_srv_status(mes_msg_t *msg)
@@ -838,7 +905,7 @@ void dss_stop_mes(void)
     mes_uninit();
 }
 
-status_t dss_sync_boc(dss_bcast_req_head_t *req, uint32 req_size, void *ack_msg_output)
+status_t dss_sync_bcast(dss_bcast_req_head_t *req, uint32 req_size, void *ack_msg_output)
 {
     if (g_dss_instance.is_maintain) {
         return CM_SUCCESS;
@@ -870,7 +937,6 @@ status_t dss_sync_boc(dss_bcast_req_head_t *req, uint32 req_size, void *ack_msg_
         LOG_RUN_ERR("[DSS]: Failed to notify other dss instance, cmd: %u, errcode:%d, "
                     "OS errno:%d, OS errmsg:%s.",
             req->type, cm_get_error_code(), errno, strerror(errno));
-        return CM_ERROR;
     }
     return ret;
 }
@@ -888,7 +954,7 @@ status_t dss_bcast_ask_file_open(dss_vg_info_item_t *vg_item, uint64 ftid, bool3
     LOG_DEBUG_INF("[MES] notify other dss instance to do cmd %u, ftid:%llu in vg:%s.", req.bcast_head.type, ftid,
         vg_item->vg_name);
     dss_bcast_ack_bool_t recv_msg = {.default_ack = DSS_FALSE, .cmd_ack = DSS_FALSE};
-    DSS_RETURN_IF_ERROR(dss_sync_boc((dss_bcast_req_head_t *)&req, sizeof(dss_req_check_open_file_t), &recv_msg));
+    DSS_RETURN_IF_ERROR(dss_sync_bcast((dss_bcast_req_head_t *)&req, sizeof(dss_req_check_open_file_t), &recv_msg));
     if (cmd_ack != NULL) {
         *cmd_ack = recv_msg.cmd_ack;
     }
@@ -907,11 +973,18 @@ status_t dss_bcast_meta_data(dss_bcast_req_cmd_t cmd, char *data, uint32 size, b
     }
     dss_bcast_ack_bool_t recv_msg = {.default_ack = DSS_TRUE, .cmd_ack = DSS_TRUE};
     DSS_RETURN_IF_ERROR(
-        dss_sync_boc((dss_bcast_req_head_t *)&req, OFFSET_OF(dss_req_meta_data_t, data) + size, &recv_msg));
+        dss_sync_bcast((dss_bcast_req_head_t *)&req, OFFSET_OF(dss_req_meta_data_t, data) + size, &recv_msg));
     if (cmd_ack != NULL) {
         *cmd_ack = recv_msg.cmd_ack;
     }
     return CM_SUCCESS;
+}
+
+status_t dss_bcast_get_protocol_version(dss_get_version_output_t *get_version_output)
+{
+    dss_req_common_t req;
+    req.bcast_head.type = BCAST_REQ_GET_VERSION;
+    return dss_sync_bcast((dss_bcast_req_head_t *)&req, sizeof(dss_req_common_t), get_version_output);
 }
 
 status_t dss_invalidate_other_nodes(

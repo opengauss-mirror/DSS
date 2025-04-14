@@ -199,6 +199,7 @@ typedef struct st_dss_disk_group_header_t {
     dss_bak_level_e bak_level;
     uint32 ft_node_ratio;  // ft_node is created for every ft_node_ratio bytes of space
     uint64 bak_ft_offset;  // Start position of the backup ft_node array
+    uint32 proto_version;  // no support downgrade
 } dss_vg_header_t;
 
 typedef dss_vg_header_t dss_volume_header_t;

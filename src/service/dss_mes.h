@@ -102,25 +102,6 @@ typedef struct st_dss_mes_actlist {
     uint32 count;
     dss_mes_actnode_t node[0];
 } dss_mes_actlist_t;
-// clang-format off
-typedef enum st_dss_bcast_req_cmd {
-    BCAST_REQ_DEL_DIR_FILE = 0,
-    BCAST_REQ_INVALIDATE_META,
-    BCAST_REQ_META_SYN,
-    BCAST_REQ_END
-} dss_bcast_req_cmd_t;
-
-typedef enum st_dss_bcast_ack_cmd {
-    BCAST_ACK_DEL_FILE = 0,
-    BCAST_ACK_INVALIDATE_META,
-    BCAST_ACK_END
-} dss_bcast_ack_cmd_t;
-
-// clang-format on
-typedef struct st_dss_bcast_req {
-    dss_bcast_req_cmd_t type;
-    char buffer[4];
-} dss_bcast_req_t;
 
 typedef struct st_dss_bcast_community {
     uint32 broadcast_proto_ver;
@@ -133,6 +114,32 @@ typedef struct st_dss_bcast_ack_bool {
     bool32 default_ack;
     bool32 cmd_ack;
 } dss_bcast_ack_bool_t;
+
+typedef struct st_dss_get_version_output {
+    bool32 all_same;
+    uint32 min_version;
+} dss_get_version_output_t;
+
+/*--------------------The following structures involve protocols and cannot be modified-------------------------------*/
+typedef enum st_dss_bcast_req_cmd {
+    BCAST_REQ_DEL_DIR_FILE = 0,
+    BCAST_REQ_INVALIDATE_META,
+    BCAST_REQ_META_SYN,
+    BCAST_REQ_GET_VERSION,
+    BCAST_REQ_END
+} dss_bcast_req_cmd_t;
+
+typedef enum st_dss_bcast_ack_cmd {
+    BCAST_ACK_DEL_FILE = 0,
+    BCAST_ACK_INVALIDATE_META,
+    BCAST_ACK_GET_VERSION,
+    BCAST_ACK_END
+} dss_bcast_ack_cmd_t;
+
+typedef struct st_dss_bcast_req {
+    dss_bcast_req_cmd_t type;
+    char buffer[4];
+} dss_bcast_req_t;
 
 typedef struct st_dss_message_head {
     uint32 msg_proto_ver;
@@ -178,6 +185,11 @@ typedef struct st_dss_ack_common {
     int32 result;
     bool32 cmd_ack;
 } dss_ack_common_t;
+
+typedef struct st_dss_ack_get_version {
+    dss_bcast_ack_head_t bcast_head;
+    uint32 version;
+} dss_ack_get_version_t;
 
 typedef struct st_dss_remote_exec_succ_ack {
     dss_message_head_t ack_head;
@@ -264,6 +276,7 @@ status_t dss_invalidate_other_nodes(
     dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack);
 status_t dss_broadcast_check_file_open(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
 status_t dss_syn_data2other_nodes(dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack);
+status_t dss_bcast_get_protocol_version(dss_get_version_output_t *get_version_output);
 
 void dss_check_mes_conn(uint64 cur_inst_map);
 void dss_mes_regist_other_proc();

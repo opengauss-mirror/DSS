@@ -943,6 +943,16 @@ void dss_show_version(char *version)
 #endif
 }
 
+int dss_enable_upgrades(void)
+{
+    dss_conn_t *conn = NULL;
+    status_t ret = dss_enter_api(&conn);
+    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when enable upgrades"));
+    ret = dss_enable_upgrades_on_server(conn);
+    dss_leave_api(conn, CM_FALSE);
+    return (int)ret;
+}
+
 #ifdef __cplusplus
 }
 #endif

@@ -647,6 +647,11 @@ status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock)
         LOG_RUN_ERR("Invalid vg %s ctrl", vg_item->vg_name);
         return CM_ERROR;
     }
+    if (vg_item->id == 0 && vg_item->dss_ctrl->vg_info.proto_version > DSS_PROTO_VERSION) {
+        LOG_RUN_ERR("Protocol version %u larger than software version %u.", vg_item->dss_ctrl->vg_info.proto_version,
+            DSS_PROTO_VERSION);
+        return CM_ERROR;
+    }
 
     date_t date = cm_timeval2date(vg_item->dss_ctrl->vg_info.create_time);
     time_t time = cm_date2time(date);

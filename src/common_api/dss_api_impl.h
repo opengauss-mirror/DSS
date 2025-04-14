@@ -274,6 +274,7 @@ status_t dss_get_time_stat_on_server(dss_conn_t *conn, dss_stat_item_t *time_sta
 status_t dss_set_main_inst_on_server(dss_conn_t *conn);
 status_t dss_disable_grab_lock_on_server(dss_conn_t *conn);
 status_t dss_enable_grab_lock_on_server(dss_conn_t *conn);
+status_t dss_enable_upgrades_on_server(dss_conn_t *conn);
 
 #define DSS_SET_PTR_VALUE_IF_NOT_NULL(ptr, value) \
     do {                                          \

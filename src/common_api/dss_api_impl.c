@@ -3106,6 +3106,11 @@ static status_t dss_decode_query_hotpatch(dss_packet_t *ack_pack, void *ack)
     return CM_SUCCESS;
 }
 
+status_t dss_enable_upgrades_on_server(dss_conn_t *conn)
+{
+    return dss_msg_interact(conn, DSS_CMD_ENABLE_UPGRADES, NULL, NULL);
+}
+
 typedef status_t (*dss_encode_packet_proc_t)(dss_conn_t *conn, dss_packet_t *pack, void *send_info);
 typedef status_t (*dss_decode_packet_proc_t)(dss_packet_t *ack_pack, void *ack);
 typedef struct st_dss_packet_proc {
@@ -3140,6 +3145,7 @@ dss_packet_proc_t g_dss_packet_proc[DSS_CMD_END] = {[DSS_CMD_MKDIR] = {dss_encod
     [DSS_CMD_SET_MAIN_INST] = {NULL, NULL, "set main inst"},
     [DSS_CMD_DISABLE_GRAB_LOCK] = {NULL, NULL, "disable grab lock"},
     [DSS_CMD_ENABLE_GRAB_LOCK] = {NULL, NULL, "enable grab lock"},
+    [DSS_CMD_ENABLE_UPGRADES] = {NULL, NULL, "enable upgrades"},
     [DSS_CMD_HANDSHAKE] = {dss_encode_handshake, dss_decode_handshake, "handshake with server"},
     [DSS_CMD_FALLOCATE_FILE] = {dss_encode_fallocate_file, NULL, "fallocate file"},
     [DSS_CMD_HOTPATCH] = {dss_encode_hotpatch, NULL, "hotpatch"},
