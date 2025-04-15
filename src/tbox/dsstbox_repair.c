@@ -450,6 +450,7 @@ static status_t repair_set_volume_attr(char *item_ptr, text_t *key, text_t *valu
 static status_t repair_set_au_size(char *item_ptr, text_t *key, text_t *value)
 {
     DSS_RETURN_IF_ERROR(check_no_sub_meta_member(key));
+    value->str[value->len] = '\0';
     status_t status = cmd_check_au_size(value->str);
     DSS_RETURN_IF_ERROR(status);
     uint32 val;
