@@ -86,6 +86,7 @@ void cmd_parse_clean(dss_args_t *cmd_args_set, int set_size);
 status_t cmd_check_au_size(const char *au_size_str);
 status_t dss_load_local_server_config(dss_config_t *inst_cfg);
 status_t cmd_check_uint64(const char *lsn_str);
+status_t cmd_check_uint32(const char *str);
 status_t cmd_check_dss_home(const char *dss_home);
 status_t cmd_check_convert_dss_home(const char *input_args, void **convert_result, int *convert_size);
 status_t cmd_realpath_home(const char *input_args, char **convert_result, int *convert_size);

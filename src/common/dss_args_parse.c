@@ -304,6 +304,17 @@ status_t cmd_check_uint64(const char *str)
     return CM_SUCCESS;
 }
 
+status_t cmd_check_uint32(const char *str)
+{
+    uint32 num;
+    status_t status = cm_str2uint32(str, &num);
+    if (status == CM_ERROR) {
+        DSS_PRINT_ERROR("%s is not a valid uint32\n", str);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
 status_t set_config_info(char *home, dss_config_t *inst_cfg)
 {
     status_t status;

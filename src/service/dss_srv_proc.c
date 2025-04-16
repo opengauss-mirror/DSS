@@ -168,7 +168,7 @@ status_t dss_check_vg_ft_dir(dss_session_t *session, dss_vg_info_item_t **vg_ite
 
     dss_vg_info_item_t *tmp_vg_item = *vg_item;
     dss_check_dir_output_t output_info = {node, &tmp_vg_item, parent_node, CM_TRUE};
-    status_t status = dss_check_dir(session, path, type, &output_info, OWRONLY, CM_TRUE);
+    status_t status = dss_check_dir(session, path, type, &output_info, O_WRONLY, CM_TRUE);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to check dir, errcode: %d.", status);
         return status;

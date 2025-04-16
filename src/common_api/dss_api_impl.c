@@ -885,6 +885,13 @@ status_t dss_query_hotpatch_impl(dss_conn_t *conn, dss_hp_info_view_t *hp_info_v
     return CM_SUCCESS;
 }
 
+status_t dss_kill_session_impl(dss_conn_t *conn, uint32 sid)
+{
+    CM_CHECK_NULL_PTR(conn);
+    CM_RETURN_IFERR(dss_msg_interact(conn, DSS_CMD_KILL_SESSION, (void *)&sid, NULL));
+    return CM_SUCCESS;
+}
+
 status_t dss_create_file_impl(dss_conn_t *conn, const char *file_path, int flag)
 {
     LOG_DEBUG_INF("dss create file entry, file path:%s, flag:%d", file_path, flag);
@@ -3095,6 +3102,17 @@ static status_t dss_decode_query_hotpatch(dss_packet_t *ack_pack, void *ack)
     return CM_SUCCESS;
 }
 
+static status_t dss_encode_kill_session(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    if (conn->proto_version < DSS_VERSION_3) {
+        DSS_THROW_ERROR(ERR_DSS_UNSUPPORTED_CMD, "kill_session", conn->proto_version, (uint32)DSS_VERSION_3);
+        return CM_ERROR;
+    }
+    uint32 sid = *((uint32 *)send_info);
+    CM_RETURN_IFERR(dss_put_int32(pack, sid));
+    return CM_SUCCESS;
+}
+
 status_t dss_enable_upgrades_on_server(dss_conn_t *conn)
 {
     return dss_msg_interact(conn, DSS_CMD_ENABLE_UPGRADES, NULL, NULL);
@@ -3138,6 +3156,7 @@ dss_packet_proc_t g_dss_packet_proc[DSS_CMD_END] = {[DSS_CMD_MKDIR] = {dss_encod
     [DSS_CMD_HANDSHAKE] = {dss_encode_handshake, dss_decode_handshake, "handshake with server"},
     [DSS_CMD_FALLOCATE_FILE] = {dss_encode_fallocate_file, NULL, "fallocate file"},
     [DSS_CMD_HOTPATCH] = {dss_encode_hotpatch, NULL, "hotpatch"},
+    [DSS_CMD_KILL_SESSION] = {dss_encode_kill_session, NULL, "kill session"},
     [DSS_CMD_EXIST] = {dss_encode_exist, dss_decode_exist, "exist"},
     [DSS_CMD_READLINK] = {dss_encode_readlink, dss_decode_readlink, "read link"},
     [DSS_CMD_GET_FTID_BY_PATH] = {dss_encode_get_ft_id_by_path, dss_decode_get_ft_id_by_path, "get ftid by path"},

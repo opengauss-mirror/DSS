@@ -76,6 +76,7 @@ typedef enum {
     DSS_CMD_ENABLE_GRAB_LOCK,
     DSS_CMD_HOTPATCH,
     DSS_CMD_ENABLE_UPGRADES,
+    DSS_CMD_KILL_SESSION,
     DSS_CMD_MODIFY_END = 127,
     DSS_CMD_QUERY_BEGIN = DSS_CMD_MODIFY_END,
     DSS_CMD_HANDSHAKE = DSS_CMD_QUERY_BEGIN,
@@ -98,7 +99,8 @@ char *dss_get_cmd_desc(dss_cmd_type_e cmd_type);
 static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 {
     return ((type == DSS_CMD_GET_INST_STATUS) || (type == DSS_CMD_HANDSHAKE) || (type == DSS_CMD_STOP_SERVER) ||
-            (type == DSS_CMD_ENABLE_GRAB_LOCK) || (type == DSS_CMD_SETCFG) || (type == DSS_CMD_GETCFG));
+            (type == DSS_CMD_ENABLE_GRAB_LOCK) || (type == DSS_CMD_SETCFG) || (type == DSS_CMD_GETCFG) ||
+            (type == DSS_CMD_KILL_SESSION));
 }
 
 typedef struct st_dss_packet_head {

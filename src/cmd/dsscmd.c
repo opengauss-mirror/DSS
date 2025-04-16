@@ -4307,6 +4307,98 @@ static status_t query_hotpatch_proc(void)
     return status;
 }
 
+static void kill_session_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage: %s kill_session <-s session_id> [-U UDS:socket_domain]\n", prog_name);
+    (void)printf(
+        "[client command] kill DSS session, which would disable the in-use session to respond to further requests.\n");
+    (void)printf("-s/--session_id <session_id>, <required>, the session_id of the session to kill.\n");
+    (void)printf("-f/--force, [optional], force to execute without confirmation.\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    help_param_uds();
+}
+
+static dss_args_t cmd_kill_session_args[] = {
+    {'s', "session_id", CM_TRUE, CM_TRUE, cmd_check_uint32, NULL, NULL, 0, NULL, NULL, 0},
+    {'f', "force", CM_FALSE, CM_FALSE, NULL, NULL, NULL, 0, NULL, NULL, 0},
+    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
+        0},
+};
+
+static dss_args_set_t cmd_kill_session_args_set = {
+    cmd_kill_session_args,
+    sizeof(cmd_kill_session_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+#define DSS_KILL_SESSION_CONFIRM_RETRY_TIMES 3
+
+static void dss_kill_session_confirm()
+{
+#ifdef WIN32
+    return;
+#else
+    char user_confirm[DSS_MAX_CMD_LEN] = {'\0'};
+    for (int i = DSS_KILL_SESSION_CONFIRM_RETRY_TIMES; i > 0; --i) {
+        (void)printf("Warning: command \"kill_session\" is of highly dangerous "
+                     "which might cause fatal damage on the clients if wrongly inputed.\n"
+                     "Confirm and continue? Type in y/yes or n/no, and you have %d chances left:",
+            i);
+        (void)fflush(stdout);
+        if (NULL == fgets(user_confirm, sizeof(user_confirm), stdin)) {
+            (void)printf("\n");
+            break;
+        }
+
+        if (cm_strcmpni(user_confirm, "y\n", sizeof("y\n")) == 0 ||
+            cm_strcmpni(user_confirm, "yes\n", sizeof("yes\n")) == 0) {
+            LOG_RUN_INF("User input %s, operation confirmed.", user_confirm);
+            (void)printf("USER CONFIRMED.\n");
+            return;
+        } else if (cm_strcmpni(user_confirm, "n\n", sizeof("n\n")) == 0 ||
+                   cm_strcmpni(user_confirm, "no\n", sizeof("no\n")) == 0) {
+            break;
+        } else {
+            (void)printf("\n");
+        }
+    }
+    DSS_PRINT_RUN_ERROR("User CANCELED.\n");
+    (void)fflush(stdout);
+    _exit(1);
+#endif
+}
+
+#define DSS_CMD_KILL_SESSION_ARGS_SID 0
+#define DSS_CMD_KILL_SESSION_ARGS_FORCE 1
+#define DSS_CMD_KILL_SESSION_ARGS_UDS 2
+
+static status_t kill_session_proc(void)
+{
+    if (!cmd_kill_session_args[DSS_CMD_KILL_SESSION_ARGS_FORCE].inputed) {
+        dss_kill_session_confirm();
+    }
+
+    dss_conn_t *conn = dss_get_connection_opt(cmd_kill_session_args[DSS_CMD_KILL_SESSION_ARGS_UDS].input_args);
+    DSS_RETURN_IFERR2((conn == NULL ? CM_ERROR : CM_SUCCESS), DSS_PRINT_ERROR("Failed to get uds connection.\n"));
+
+    uint32 sid = 0;
+    status_t ret = cm_str2uint32(cmd_kill_session_args[DSS_CMD_KILL_SESSION_ARGS_SID].input_args, &sid);
+    if (ret != CM_SUCCESS) {
+        DSS_PRINT_ERROR("The value of sid is invalid.\n");
+        return ret;
+    }
+    LOG_RUN_INF("Try to kill DSS session %u.", sid);
+    ret = dss_kill_session_impl(conn, sid);
+    if (ret == CM_SUCCESS) {
+        DSS_PRINT_INF("Success to kill DSS session %u.\n", sid);
+    } else {
+        DSS_PRINT_RUN_ERROR("Failed to kill DSS session %u.\n", sid);
+    }
+    return ret;
+}
+
 // clang-format off
 dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set, true},
                                       {"lsvg", lsvg_help, lsvg_proc, &cmd_lsvg_args_set, false},
@@ -4356,7 +4448,9 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set,
                                       {"query_hotpatch", query_hotpatch_help, query_hotpatch_proc,
                                           &cmd_query_hotpatch_args_set, false},
                                       {"query_latch_remain", query_latch_remain_help, query_latch_remain_proc,
-                                          &cmd_query_latch_remain_args_set, false}};
+                                          &cmd_query_latch_remain_args_set, false},
+                                      {"kill_session", kill_session_help, kill_session_proc,
+                                          &cmd_kill_session_args_set, true}};
 
 void clean_cmd()
 {

@@ -67,6 +67,7 @@ status_t dss_extend_session(uint32 extend_num)
         g_dss_session_ctrl.sessions[i]->objectid = objectid;
         g_dss_session_ctrl.sessions[i]->audit_info.is_forced = CM_FALSE;
         g_dss_session_ctrl.sessions[i]->is_holding_hotpatch_latch = CM_FALSE;
+        g_dss_session_ctrl.sessions[i]->is_killed = CM_FALSE;
         g_dss_session_ctrl.alloc_sessions++;
     }
     LOG_RUN_INF("Succeed to extend sessions to %u.", g_dss_session_ctrl.alloc_sessions);
@@ -173,6 +174,7 @@ static status_t dss_init_session(dss_session_t *session, const cs_pipe_t *pipe)
         session->dss_session_stat, DSS_EVT_COUNT * sizeof(dss_stat_item_t), 0, DSS_EVT_COUNT * sizeof(dss_stat_item_t));
     securec_check_ret(errcode);
     session->is_holding_hotpatch_latch = CM_FALSE;
+    session->is_killed = CM_FALSE;
     return CM_SUCCESS;
 }
 
@@ -227,6 +229,21 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
     return CM_SUCCESS;
 }
 
+status_t dss_session_check_killed(dss_session_t *session)
+{
+    // If the error code ERR_DSS_SESSION_KILLED has been throwed in previous sub-routine,
+    // just return CM_ERROR directly without throwing it again.
+    if (cm_get_error_code() == ERR_DSS_SESSION_KILLED) {
+        return CM_ERROR;
+    }
+    if (session->is_killed) {
+        DSS_THROW_ERROR(ERR_DSS_SESSION_KILLED, session->id);
+        LOG_RUN_ERR("[DSS Kill Session] Session %u is killed.", session->id);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
 void dss_destroy_session_inner(dss_session_t *session)
 {
     if (session->connected == CM_TRUE) {
@@ -242,6 +259,7 @@ void dss_destroy_session_inner(dss_session_t *session)
     session->proto_version = DSS_PROTO_VERSION;
     session->put_log = CM_FALSE;
     session->is_holding_hotpatch_latch = CM_FALSE;
+    session->is_killed = CM_FALSE;
     session->audit_info.is_forced = CM_FALSE;
 }
 void dss_destroy_session(dss_session_t *session)

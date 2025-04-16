@@ -28,9 +28,11 @@
 #include "cm_defs.h"
 #include "cm_thread_pool.h"
 #include "cm_date.h"
+#include "cm_atomic.h"
 #include "cs_packet.h"
 #include "cs_pipe.h"
 #include "dss_defs.h"
+#include "dss_errno.h"
 #include "dss_au.h"
 #include "dss_log.h"
 #include "dss_protocol.h"
@@ -140,8 +142,11 @@ typedef struct st_dss_session {
     bool8 is_direct;
     bool8 put_log;
     bool8 is_holding_hotpatch_latch;
+    bool8 is_killed;
     spinlock_t shm_lock;  // for control current rw of the same session in shm
 } dss_session_t;
+
+status_t dss_session_check_killed(dss_session_t *session);
 
 static inline char *dss_init_sendinfo_buf(char *input)
 {

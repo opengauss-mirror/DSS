@@ -61,6 +61,7 @@ static char *g_dss_cmd_desc[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_ENABLE_GRAB_LOCK)] = "enable grab cm lock",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_HOTPATCH)] = "hotpatch operation",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_ENABLE_UPGRADES)] = "enable upgrades",
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_KILL_SESSION)] = "kill session",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_HANDSHAKE)] = "handshake with server",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST)] = "exist item",
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_READLINK)] = "readlink",

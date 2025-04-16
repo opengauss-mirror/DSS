@@ -94,6 +94,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_SESSION_INVALID_ID] = "Invalid session %d",
     [ERR_DSS_SESSION_CREATE] = "Create new DSS session failed, no free sessions, %d sessions used.",
     [ERR_DSS_SESSION_EXTEND] = "Extend DSS session failed, reason : %s.",
+    [ERR_DSS_SESSION_KILLED] = "DSS session %u is killed.",
     [ERR_DSS_INVALID_PARAM] = "Invalid DSS parameter: %s",
     [ERR_DSS_NO_SPACE] = "DSS no space in the vg",
     [ERR_DSS_ENV_NOT_INITIALIZED] = "The DSS env has not been initialized.",
