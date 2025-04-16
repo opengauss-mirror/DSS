@@ -141,6 +141,7 @@ static status_t dss_initial_vg_ctrl(
     dss_set_software_version(&vg_ctrl->vg_info, (uint32)DSS_SOFTWARE_VERSION);
     vg_ctrl->vg_info.vol_type.id = 0;
     vg_ctrl->vg_info.vol_type.type = DSS_VOLUME_TYPE_MANAGER;
+    vg_ctrl->vg_info.proto_version = DSS_PROTO_VERSION;
     errcode = strncpy_s(
         vg_ctrl->vg_info.vol_type.entry_volume_name, DSS_MAX_VOLUME_PATH_LEN, volume_name, strlen(volume_name));
     if (errcode != EOK) {

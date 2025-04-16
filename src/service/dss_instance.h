@@ -111,6 +111,7 @@ extern dss_instance_t g_dss_instance;
 
 status_t dss_start_lsnr(dss_instance_t *inst);
 void dss_uninit_cm(dss_instance_t *inst);
+status_t dss_write_global_version_to_disk(dss_vg_info_item_t *vg_item, uint32 min_version);
 void dss_check_peer_inst(dss_instance_t *inst, uint64 inst_id);
 void dss_free_log_ctrl();
 status_t dss_alloc_vg_item_redo_log_buf(dss_vg_info_item_t *vg_item);

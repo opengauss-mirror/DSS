@@ -136,6 +136,7 @@ status_t dss_init_vol_handle(dss_vg_info_item_t *vg_item, int32 flags, dss_vol_h
 void dss_destroy_vol_handle(dss_vg_info_item_t *vg_item, dss_vol_handles_t *vol_handles, uint32 size);
 extern dss_vg_info_t *g_vgs_info;
 #define VGS_INFO (g_vgs_info)
+#define DSS_GET_PROTOCOL_VER (g_vgs_info->volume_group[0].dss_ctrl->vg_info.proto_version)
 status_t dss_check_volume(dss_vg_info_item_t *vg_item, uint32 volumeid);
 uint32_t dss_find_volume(dss_vg_info_item_t *vg_item, const char *volume_name);
 uint32_t dss_find_free_volume_id(const dss_vg_info_item_t *vg_item);

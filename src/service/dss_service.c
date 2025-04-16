@@ -1301,6 +1301,36 @@ static status_t dss_process_enable_grab_lock(dss_session_t *session)
     return CM_SUCCESS;
 }
 
+static status_t dss_process_enable_upgrades(dss_session_t *session)
+{
+    dss_config_t *cfg = dss_get_inst_cfg();
+    uint32 curr_id = (uint32)(cfg->params.inst_id);
+    dss_get_version_output_t get_version_output = {.all_same = DSS_TRUE, .min_version = DSS_PROTO_VERSION};
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
+        "enable upgrades", curr_id));
+    int ret = dss_bcast_get_protocol_version(&get_version_output);
+    if (ret != CM_SUCCESS) {
+        // If any node return ERR_DSS_UNSUPPORTED_CMD, we assume old node exists.
+        if (ret == ERR_DSS_UNSUPPORTED_CMD || ret == ERR_MES_WAIT_OVERTIME) {
+            cm_reset_error();
+            DSS_THROW_ERROR(ERR_DSS_VERSION_NOT_ALL_SAME);
+            return ERR_DSS_VERSION_NOT_ALL_SAME;
+        }
+        cm_reset_error();
+        DSS_THROW_ERROR(ERR_DSS_VERSION_BCAST_ERROR);
+        return ERR_DSS_VERSION_BCAST_ERROR;
+    }
+    if (!get_version_output.all_same) {
+        DSS_THROW_ERROR(ERR_DSS_VERSION_NOT_ALL_SAME);
+        return ERR_DSS_VERSION_NOT_ALL_SAME;
+    }
+    dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[0];
+    if (get_version_output.min_version > vg_item->dss_ctrl->vg_info.proto_version) {
+        return dss_write_global_version_to_disk(vg_item, get_version_output.min_version);
+    }
+    return CM_SUCCESS;
+}
+
 static dss_cmd_hdl_t g_dss_cmd_handle[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     // modify
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_MKDIR)] = {DSS_CMD_MKDIR, dss_process_mkdir, NULL, CM_TRUE},
@@ -1338,6 +1368,8 @@ static dss_cmd_hdl_t g_dss_cmd_handle[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_ENABLE_GRAB_LOCK)] = {DSS_CMD_ENABLE_GRAB_LOCK, dss_process_enable_grab_lock, NULL,
         CM_FALSE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_HOTPATCH)] = {DSS_CMD_HOTPATCH, dss_process_hotpatch, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ENABLE_UPGRADES)] = {DSS_CMD_ENABLE_UPGRADES, dss_process_enable_upgrades, NULL,
+        CM_TRUE},
     // query
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_HANDSHAKE)] = {DSS_CMD_HANDSHAKE, dss_process_handshake, NULL, CM_FALSE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST)] = {DSS_CMD_EXIST, dss_process_exist, NULL, CM_FALSE},
@@ -1388,7 +1420,8 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
 
     if ((handle == NULL) || (handle->proc == NULL)) {
         LOG_DEBUG_ERR("the req cmd: %d is not valid.", session->recv_pack.head->cmd);
-        return CM_ERROR;
+        // In rolling upgrade scenarios, the source node needs to detect error code.
+        return ERR_DSS_UNSUPPORTED_CMD;
     }
 
     status_t status;

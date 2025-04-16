@@ -137,6 +137,8 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_HP_LIB_PATCH_PERMISSION] = "Invalid permission of patch file %s, X00 is expected.",
     [ERR_DSS_HP_VERSION_DISMATCH] = "Dismatch between patch info version(%s) and dssserver version(%s).",
     [ERR_DSS_HP_PATCH_INFO_LOST] = "Patch info of number %d is lost in patch.info file.",
+    [ERR_DSS_VERSION_NOT_ALL_SAME] = "Failed to enable upgrades when the version of some node is not the latest.",
+    [ERR_DSS_VERSION_BCAST_ERROR] = "Failed to get version by broadcast.",
     [ERR_DSS_MASTER_CHANGE] = "Master id has changed.",
     [ERR_DSS_RECOVER_CAUSE_BREAK] = "Req break by recovery.",
 };

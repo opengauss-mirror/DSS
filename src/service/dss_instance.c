@@ -443,6 +443,24 @@ status_t dss_start_lsnr(dss_instance_t *inst)
     return cs_start_uds_lsnr(&inst->lsnr, dss_lsnr_proc);
 }
 
+status_t dss_write_global_version_to_disk(dss_vg_info_item_t *vg_item, uint32 min_version)
+{
+    dss_lock_vg_mem_and_shm_x(g_dss_instance.handle_session, vg_item);
+    vg_item->dss_ctrl->vg_info.proto_version = min_version;
+    vg_item->dss_ctrl->vg_info.checksum = dss_get_checksum(vg_item->dss_ctrl->vg_data, DSS_VG_DATA_SIZE);
+    LOG_RUN_INF("write proto_version %u to disk.", min_version);
+    status_t status =
+        dss_write_ctrl_to_disk(vg_item, (int64)DSS_CTRL_VG_DATA_OFFSET, vg_item->dss_ctrl->vg_data, DSS_VG_DATA_SIZE);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("write proto_version %u to disk failed.", min_version);
+        dss_unlock_vg_mem_and_shm(g_dss_instance.handle_session, vg_item);
+        return CM_ERROR;
+    }
+    dss_unlock_vg_mem_and_shm(g_dss_instance.handle_session, vg_item);
+    LOG_RUN_INF("write proto_version to disk successful.");
+    return CM_SUCCESS;
+}
+
 status_t dss_init_cm(dss_instance_t *inst)
 {
     inst->cm_res.is_valid = CM_FALSE;
