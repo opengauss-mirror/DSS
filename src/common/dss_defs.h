@@ -362,6 +362,16 @@ extern "C" {
         }                                                                              \
     } while (0)
 
+#define DSS_EXIT_LOG(condition, format, ...)                                           \
+    do {                                                                               \
+        if (SECUREC_UNLIKELY(!(condition))) {                                          \
+            LOG_RUN_ERR(format, ##__VA_ARGS__);                                        \
+            LOG_RUN_ERR("Assertion throws an exception at line %u", (uint32)__LINE__); \
+            cm_fync_logfile();                                                         \
+            exit(-1);                                                                  \
+        }                                                                              \
+    } while (0)
+
 #define DSS_BYTE_BITS_SIZE 8
 
 // if want change the default, compile the dss with set DSS_PAGE_SIZE=page_size_you_want
