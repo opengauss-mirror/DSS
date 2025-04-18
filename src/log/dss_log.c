@@ -69,7 +69,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_FILE_PATH_ILL] = "Path %s decode error %s",
     [ERR_DSS_FILE_INVALID_SIZE] = "Invalid extend offset %lld, size %d.",
     [ERR_DSS_DIR_REMOVE_NOT_EMPTY] = "The dir is not empty, can not remove.",
-    [ERR_DSS_DIR_CREATE_DUPLICATED] = "Make dir or Create file failed, %s has already existed",
+    [ERR_DSS_DIR_CREATE_DUPLICATED] = "Make dir or Create file failed, %s has already existed.",
     [ERR_DSS_LINK_READ_NOT_LINK] = "The path %s is not a soft link.",
     [ERR_DSS_LINK_CREATE] = "Failed to create symbolic link, reason %s",
     [ERR_DSS_CONFIG_FILE_OVERSIZED] = "The size of config file %s is too large",
@@ -110,7 +110,8 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_INIT_LOGGER_FAILED] = "Log init failed.",
     [ERR_DSS_OUT_OF_MEM] = "Failed to apply for memory.",
     [ERR_DSS_INVALID_ID] = "Invalid %s id : %llu.",
-    [ERR_DSS_PROCESS_REMOTE] = "Failed to process remote, errcode: %d, errmsg: %s.",
+    // Without . at the end, encapsulates error information of other error codes
+    [ERR_DSS_PROCESS_REMOTE] = "Failed to process remote, errcode: %d, errmsg: %s",
     [ERR_DSS_CONNECT_FAILED] = "Failed to connect dss server, errcode: %d, errmsg: %s.",
     [ERR_DSS_VERSION_NOT_MATCH] =
         "[CHECK_PROTO]Protocol version need be changed, old protocol version is %u, new protocol version is %u.",
