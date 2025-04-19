@@ -1635,8 +1635,8 @@ static status_t query_latch_remain_proc(void)
     DSS_PRINT_INF("Begin to query latch remain.\n");
     int64 inst_id;
     status_t status = cm_str2bigint(cmd_query_latch_remain_args[DSS_ARG_IDX_0].input_args, &inst_id);
-    DSS_RETURN_IFERR2(
-        status, DSS_PRINT_ERROR("inst_id:%s is not a valid int64.\n", cmd_query_latch_remain_args[DSS_ARG_IDX_0].input_args));
+    DSS_RETURN_IFERR2(status,
+        DSS_PRINT_ERROR("inst_id:%s is not a valid int64.\n", cmd_query_latch_remain_args[DSS_ARG_IDX_0].input_args));
     char *home = cmd_query_latch_remain_args[DSS_ARG_IDX_2].input_args;
     int64 type = DSS_LATCH_ALL;
     if (cmd_query_latch_remain_args[DSS_ARG_IDX_1].inputed) {
@@ -2273,7 +2273,7 @@ static status_t showdisk_proc(void)
         DSS_PRINT_ERROR("Failed to load config info!\n");
         return status;
     }
-    status = dss_load_vg_conf_info(&g_vgs_info, inst_cfg);
+    status = dss_load_vg_conf_info(inst_cfg);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load vg info from config, errcode is %d.\n", status);
         return status;
@@ -3613,8 +3613,8 @@ static status_t getcfg_proc(void)
     if (conn == NULL) {
         return CM_ERROR;
     }
-    char value[DSS_PARAM_BUFFER_SIZE] = {0};
-    status_t status = dss_getcfg_impl(conn, name, value, DSS_PARAM_BUFFER_SIZE);
+    char value[CM_PARAM_BUFFER_SIZE] = {0};
+    status_t status = dss_getcfg_impl(conn, name, value, CM_PARAM_BUFFER_SIZE);
     if (status != CM_SUCCESS) {
         if (strlen(value) != 0 && cm_str_equal_ins(name, "SSL_PWD_CIPHERTEXT")) {
             LOG_DEBUG_ERR("Failed to get cfg, name is %s, value is ***.\n", name);

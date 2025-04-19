@@ -70,10 +70,12 @@ status_t dss_try_conn(dss_conn_opt_t *options, dss_conn_t *conn);
 void dss_clt_env_init(void);
 status_t dss_enter_api(dss_conn_t **conn);
 void dss_leave_api(dss_conn_t *conn, bool32 get_api_volume_error);
+status_t dss_connect(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn);
+void dss_disconnect(dss_conn_t *conn);
+void dss_init_conn(dss_conn_t *conn);
 
 #ifdef __cplusplus
 }
 #endif
 
-
-#endif // __DSS_CLI_CONN_H__
+#endif  // __DSS_CLI_CONN_H__

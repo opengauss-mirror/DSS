@@ -38,7 +38,7 @@
 extern "C" {
 #endif
 
-typedef struct st_dss_conn dss_conn_t; 
+typedef struct st_dss_conn dss_conn_t;
 typedef struct st_dss_conn_opt dss_conn_opt_t;
 
 typedef struct st_dss_rw_param {
@@ -191,20 +191,17 @@ typedef struct st_dss_query_hotpatch_recv_info {
     dss_hp_info_view_t *hp_info_view;  // Location of output buffer must be specified before decoding.
 } dss_query_hotpatch_recv_info_t;
 
-
 #define DSSAPI_BLOCK_SIZE 512
 #define DSS_HOME "DSS_HOME"
 #define SYS_HOME "HOME"
 #define DSS_DEFAULT_UDS_PATH "UDS:/tmp/.dss_unix_d_socket"
-#define SESSION_LOCK_TIMEOUT 500 // tickets
+#define SESSION_LOCK_TIMEOUT 500  // tickets
 
 status_t dss_load_ctrl_sync(dss_conn_t *conn, const char *vg_name, uint32 index);
 status_t dss_add_or_remove_volume(dss_conn_t *conn, const char *vg_name, const char *volume_name, uint8 cmd);
 status_t dss_kick_host_sync(dss_conn_t *conn, int64 kick_hostid);
 status_t dss_alloc_conn(dss_conn_t **conn);
 void dss_free_conn(dss_conn_t *conn);
-status_t dss_connect(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn);
-void dss_disconnect(dss_conn_t *conn);
 
 // NOTE:just for dsscmd because not support many threads in one process.
 status_t dss_connect_ex(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn);

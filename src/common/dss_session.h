@@ -67,8 +67,6 @@ typedef enum st_dss_background_task_type {
 typedef struct st_dss_bg_task_info {
     uint32 task_num_max;
     uint32 my_task_id;
-    uint32 vg_id_beg;
-    uint32 vg_id_end;
     void *task_args;
 } dss_bg_task_info_t;
 

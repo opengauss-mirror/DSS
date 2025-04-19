@@ -150,6 +150,8 @@ static void handle_main_wait(void)
         if (!g_dss_instance.is_maintain) {
             dss_check_peer_inst(&g_dss_instance, DSS_INVALID_ID64);
         }
+        g_dss_instance.is_handle_main_wait = CM_TRUE;
+        CM_MFENCE;
         if (periods == MILLISECS_PER_SECOND * SECONDS_PER_DAY / interval) {
             periods = 0;
             dss_ssl_ca_cert_expire();
@@ -159,6 +161,10 @@ static void handle_main_wait(void)
         }
 
         dss_clean_all_sessions_latch();
+
+        (void)dss_refresh_load_vg_info_and_recover(g_dss_instance.handle_session, &g_dss_instance);
+
+        g_dss_instance.is_handle_main_wait = CM_FALSE;
         cm_sleep(interval);
         periods++;
     } while (CM_TRUE);
@@ -203,27 +209,12 @@ static status_t dss_create_bg_task_set(dss_instance_t *inst, char *task_name, ui
         task_num = max_task_num;
     }
 
-    uint32 vg_per_task = g_vgs_info->group_num / task_num;
-    uint32 vg_left = g_vgs_info->group_num % task_num;
-
-    uint32 vg_id = 0;
-    uint32 cur_range = 0;
-
     for (uint32 i = 0; i < task_num; i++) {
         bg_task_info_set[i].task_num_max = task_num;
         bg_task_info_set[i].my_task_id = i;
-        bg_task_info_set[i].vg_id_beg = vg_id;
         bg_task_info_set[i].task_args = task_args;
-        if (vg_left > 0) {
-            cur_range = vg_per_task + 1;
-            vg_left--;
-        } else {
-            cur_range = vg_per_task;
-        }
-        bg_task_info_set[i].vg_id_end = bg_task_info_set[i].vg_id_beg + cur_range;
-        vg_id = bg_task_info_set[i].vg_id_end;
-        LOG_RUN_INF("task:%s id:%u, vg_range:[%u-%u).", task_name, bg_task_info_set[i].my_task_id,
-            bg_task_info_set[i].vg_id_beg, bg_task_info_set[i].vg_id_end);
+
+        LOG_RUN_INF("task_num_max:%u, my_task_id:%u, task:%su).", task_num, bg_task_info_set[i].my_task_id, task_name);
 
         uint32 work_idx = get_bg_task_idx(i);
         status_t status = cm_create_thread(bg_task_entry, 0, &(bg_task_info_set[i]), &(inst->threads[work_idx]));

@@ -723,7 +723,6 @@ static status_t dss_add_buffer_cache(dss_session_t *session, dss_vg_info_item_t 
 
         block_ctrl = DSS_GET_BLOCK_CTRL_FROM_META(meta_addr);
         block_id_tmp = ((dss_common_block_t *)meta_addr)->id;
-        block_ctrl->type = type;
         if ((block_ctrl->hash == hash) && (dss_buffer_cache_key_compare(&block_id_tmp, &add_block_id) == CM_TRUE)) {
             dss_unlock_shm_meta_bucket(session, &bucket->enque_lock);
             if (((dss_common_block_t *)meta_addr)->type != type) {
@@ -1194,7 +1193,7 @@ void dss_recycle_meta(dss_session_t *session, dss_bg_task_info_t *bg_task_info, 
 
     LOG_DEBUG_INF("try recycle meta, trigger_enable:%u", (uint32)trigger_enable);
     // do recycle meta for vg one by one
-    for (uint32_t i = bg_task_info->vg_id_beg; i < bg_task_info->vg_id_end; i++) {
+    for (uint32_t i = bg_task_info->my_task_id; i < g_vgs_info->group_num; i += bg_task_info->task_num_max) {
         dss_recycle_meta_by_vg(session, &g_vgs_info->volume_group[i], recycle_meta_args, trigger_enable);
     }
 
@@ -1213,7 +1212,7 @@ void dss_buffer_recycle_disable(dss_block_ctrl_t *block_ctrl, bool8 recycle_disa
 void dss_set_recycle_meta_args_to_vg(dss_bg_task_info_t *bg_task_info)
 {
     // do recycle meta for vg one by one
-    for (uint32_t i = bg_task_info->vg_id_beg; i < bg_task_info->vg_id_end; i++) {
+    for (uint32_t i = bg_task_info->my_task_id; i < g_vgs_info->group_num; i += bg_task_info->task_num_max) {
         g_vgs_info->volume_group[i].recycle_meta_desc.task_args = bg_task_info->task_args;
     }
 }

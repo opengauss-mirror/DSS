@@ -39,6 +39,7 @@ status_t dss_recover_from_slot_inner(dss_session_t *session, dss_vg_info_item_t 
 status_t dss_load_log_buffer_from_offset(dss_vg_info_item_t *vg_item, bool8 *need_recovery);
 status_t dss_load_log_buffer_from_slot(dss_vg_info_item_t *vg_item, bool8 *need_recovery);
 status_t dss_read_redolog_from_disk(dss_vg_info_item_t *vg_item, uint32 volume_id, int64 offset, char *buf, int32 size);
+status_t dss_recover_redo_log_with_range(dss_session_t *session, uint32 vg_beg, uint32 vg_end);
 
 #ifdef __cplusplus
 }
