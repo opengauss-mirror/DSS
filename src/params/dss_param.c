@@ -195,6 +195,9 @@ static config_item_t g_dss_params[] = {
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     {"VG_SPACE_USAGE_LWM", CM_TRUE, ATTR_READONLY, "75", NULL, NULL, "-", "[0, 100]", "GS_TYPE_INTEGER", NULL, 61,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"DELAY_CLEAN_SEARCH_FRAGMENT", CM_TRUE, ATTR_NONE, "128", NULL, NULL, "-", "[0,1024]", "GS_TYPE_INTEGER", NULL, 62,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_delay_clean_search_fragment, dss_notify_delay_clean_search_fragment,
+        NULL, NULL},
 };
 
 static const char *g_dss_config_file = (const char *)"dss_inst.ini";
@@ -701,6 +704,26 @@ static status_t dss_load_delay_clean_interval(dss_config_t *inst_cfg)
     return dss_load_delay_clean_interval_core(value, inst_cfg);
 }
 
+status_t dss_load_delay_clean_search_fragment_core(char *value, dss_config_t *inst_cfg)
+{
+    uint32 delay_clean_search_fragment;
+    status_t status = cm_str2uint32(value, &delay_clean_search_fragment);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DELAY_CLEAN_SEARCH_FRAGMENT"));
+
+    if (delay_clean_search_fragment > DSS_MAX_DELAY_CLEAN_SEARCH_FRAGMENT) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DELAY_CLEAN_SEARCH_FRAGMENT"));
+    }
+    inst_cfg->params.delay_clean_search_fragment = delay_clean_search_fragment;
+    LOG_RUN_INF("DELAY_CLEAN_SEARCH_FRAGMENT = %u.", inst_cfg->params.delay_clean_search_fragment);
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_delay_clean_search_fragment(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "DELAY_CLEAN_SEARCH_FRAGMENT");
+    return dss_load_delay_clean_search_fragment_core(value, inst_cfg);
+}
+
 #if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
 static status_t dss_load_fi_param_value(
     dss_config_t *inst_cfg, char *cfg_name, unsigned int cfg_type, unsigned int cfg_max)
@@ -871,7 +894,7 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_xlog_vg_id(inst_cfg));
     CM_RETURN_IFERR(dss_load_enable_core_state_collect(inst_cfg));
     CM_RETURN_IFERR(dss_load_delay_clean_interval(inst_cfg));
-
+    CM_RETURN_IFERR(dss_load_delay_clean_search_fragment(inst_cfg));
 #if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
     if (dss_is_server()) {
         CM_RETURN_IFERR(dss_load_fi_params(inst_cfg));

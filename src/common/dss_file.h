@@ -53,9 +53,11 @@ status_t dss_find_vg_by_dir(const char *dir_path, char *name, dss_vg_info_item_t
 
 void dss_lock_vg_mem_s_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item);
+bool32 dss_lock_vg_mem_and_shm_timed_x(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks);
 void dss_lock_vg_mem_and_shm_x2ix(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_and_shm_ix2x(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item);
+bool32 dss_lock_vg_mem_and_shm_timed_s(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks);
 void dss_lock_vg_mem_and_shm_s_force(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_unlock_vg_mem_and_shm(dss_session_t *session, dss_vg_info_item_t *vg_item);
 void dss_lock_vg_mem_and_shm_ex_s(dss_session_t *session, char *vg_name);
@@ -97,7 +99,6 @@ void dss_free_ft_node(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node, bool32 real_del);
 gft_node_t *dss_get_next_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node);
 bool32 dss_is_last_tree_node(gft_node_t *node);
-void dss_delay_clean_all_vg(dss_session_t *session);
 gft_node_t *dss_find_ft_node(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, bool8 skip_del);
 gft_node_t *dss_get_ft_node_by_ftid(
@@ -393,6 +394,8 @@ status_t dss_write_zero2au(char *op_desc, dss_vg_info_item_t *vg_item, uint64 fi
 status_t dss_try_write_zero_one_au(
     char *desc, dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, int64 offset);
 void dss_alarm_check_vg_usage(dss_session_t *session);
+status_t dss_check_open_file_local_and_remote(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t ftid, bool32 *is_open);
 #ifdef __cplusplus
 }
 #endif

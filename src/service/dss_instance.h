@@ -106,6 +106,7 @@ status_t dss_lock_instance(void);
 status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args);
 
 extern dss_instance_t g_dss_instance;
+extern char* g_delete_buf;
 #define ZFS_INST (&g_dss_instance)
 #define ZFS_CFG (&g_dss_instance.inst_cfg)
 
@@ -125,6 +126,8 @@ void dss_recovery_when_primary(dss_session_t *session, dss_instance_t *inst, uin
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id);
 void dss_get_cm_lock_and_recover(thread_t *thread);
 void dss_delay_clean_proc(thread_t *thread);
+status_t dss_delay_clean_background_task(dss_instance_t *inst);
+void dss_close_delay_clean_background_task(dss_instance_t *inst);
 void dss_hashmap_dynamic_extend_and_redistribute_proc(thread_t *thread);
 bool32 dss_check_join_cluster();
 void dss_check_unreg_volume(dss_session_t *session);

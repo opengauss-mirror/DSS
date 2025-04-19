@@ -33,6 +33,11 @@ void dss_latch_s(latch_t *latch)
     cm_latch_s(latch, DSS_DEFAULT_SESSIONID, CM_FALSE, NULL);
 }
 
+bool32 dss_latch_timed_s(latch_t *latch, uint32 wait_ticks)
+{
+    return cm_latch_timed_s(latch, wait_ticks, CM_FALSE, NULL);
+}
+
 void dss_latch_x(latch_t *latch)
 {
     cm_latch_x(latch, DSS_DEFAULT_SESSIONID, NULL);

@@ -142,6 +142,8 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_VERSION_BCAST_ERROR] = "Failed to get version by broadcast.",
     [ERR_DSS_MASTER_CHANGE] = "Master id has changed.",
     [ERR_DSS_RECOVER_CAUSE_BREAK] = "Req break by recovery.",
+    [ERR_DSS_DELETE_QUEUE_IS_FULL] = "Delete queue is full.",
+    [ERR_DSS_SEARCH_STACK_IS_FULL] = "Search stack is full.",
 };
 
 dss_log_def_t g_dss_cmd_log[] = {

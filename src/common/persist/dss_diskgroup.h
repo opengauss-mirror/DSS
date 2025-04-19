@@ -143,6 +143,8 @@ uint32_t dss_find_free_volume_id(const dss_vg_info_item_t *vg_item);
 status_t dss_cmp_volume_head(dss_vg_info_item_t *vg_item, const char *volume_name, uint32 id);
 status_t dss_check_lock_remain_inner(
     int32 dss_mode, dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id, bool32 *is_remain);
+bool32 dss_lock_vg_mem_timed_x(dss_vg_info_item_t *vg_item, uint32 wait_ticks);
+bool32 dss_lock_vg_mem_timed_s(dss_vg_info_item_t *vg_item, uint32 wait_ticks);
 static inline dss_vg_info_item_t *dss_get_first_vg_item()
 {
     return &g_vgs_info->volume_group[0];
