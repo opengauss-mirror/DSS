@@ -147,6 +147,11 @@ uint32 dss_get_alarm_check_task_idx(void)
     return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_ALARM_CHECK_TASK;
 }
 
+uint32 dss_get_dyn_log_task_idx(void)
+{
+    return (dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM) + DSS_DYN_LOG_TASK;
+}
+
 static status_t dss_init_session(dss_session_t *session, const cs_pipe_t *pipe)
 {
     dss_latch_stack_t *latch_stack = &session->latch_stack;
@@ -220,6 +225,7 @@ status_t dss_create_session(const cs_pipe_t *pipe, dss_session_t **session)
     DSS_RETURN_IF_ERROR(dss_init_session(*session, pipe));
     return CM_SUCCESS;
 }
+
 void dss_destroy_session_inner(dss_session_t *session)
 {
     if (session->connected == CM_TRUE) {

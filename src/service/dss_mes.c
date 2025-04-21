@@ -724,7 +724,6 @@ static status_t dss_register_proc(void)
     return CM_SUCCESS;
 }
 
-#define DSS_MES_PRIO_CNT 2
 static status_t dss_set_mes_message_pool(unsigned long long recv_msg_buf_size, mes_profile_t *profile)
 {
     LOG_DEBUG_INF("mes message pool size:%llu", recv_msg_buf_size);

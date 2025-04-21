@@ -807,7 +807,7 @@ void dss_recovery_when_standby(dss_session_t *session, dss_instance_t *inst, uin
 */
 void dss_get_cm_lock_and_recover_inner(dss_session_t *session, dss_instance_t *inst)
 {
-    cm_latch_x(&g_dss_instance.switch_latch, DSS_DEFAULT_SESSIONID, LATCH_STAT(LATCH_SWITCH));
+    cm_latch_x(&g_dss_instance.switch_latch, session->id, LATCH_STAT(LATCH_SWITCH));
     uint32 old_master_id = dss_get_master_id();
     bool32 grab_lock = CM_FALSE;
     uint32 master_id = DSS_INVALID_ID32;
