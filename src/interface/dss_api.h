@@ -210,7 +210,7 @@ DSS_DECLARE void dss_show_version(char *version);
 DSS_DECLARE void dss_show_version(char *version);
 DSS_DECLARE void dss_register_exit_callback(dss_exit_callback_t dss_exit_proc);
 // upgrade
-int dss_enable_upgrades(void);
+DSS_DECLARE int dss_enable_upgrades(void);
 
 #ifdef __cplusplus
 }
