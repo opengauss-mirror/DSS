@@ -359,13 +359,13 @@ void dss_proc_broadcast_req(dss_session_t *session, mes_msg_t *msg)
         dss_send_bcast_ack_common(&bcast_ctx, ERR_DSS_UNSUPPORTED_CMD);
         return;
     }
-    dss_bcast_hdl_t *boc_handler = &g_dss_bcast_handle[req_head->type];
-    if (boc_handler->proc_func == NULL) {
+    dss_bcast_hdl_t *bcast_handler = &g_dss_bcast_handle[req_head->type];
+    if (bcast_handler->proc_func == NULL) {
         dss_send_bcast_ack_common(&bcast_ctx, ERR_DSS_UNSUPPORTED_CMD);
         return;
     }
-    status_t ret = boc_handler->proc_func(session, &bcast_ctx);
-    if (boc_handler->need_ack) {
+    status_t ret = bcast_handler->proc_func(session, &bcast_ctx);
+    if (bcast_handler->need_ack) {
         dss_send_bcast_ack(&bcast_ctx, ret);
     }
 }
@@ -929,9 +929,8 @@ status_t dss_sync_bcast(dss_bcast_req_head_t *req, uint32 req_size, void *ack_ms
             community.version_not_match_inst = 0;
             // if msg has been changed, need rewrite req
             continue;
-        } else {
-            break;
         }
+        break;
     } while (CM_TRUE);
     if (ret != CM_SUCCESS) {
         LOG_RUN_ERR("[DSS]: Failed to notify other dss instance, cmd: %u, errcode:%d, "
