@@ -198,9 +198,9 @@ static void dss_dyn_log_sign_func(dss_session_t *session, siginfo_t *siginfo)
     (void)cm_date2str(g_timer()->now, "yyyy-mm-dd hh24:mi:ss.ff3", date, CM_MAX_TIME_STRLEN);
     LOG_DYNAMIC_INF("begin one record, time: %s", date);
     LOG_DYNAMIC_INF("\n===============================threads backtrace===============================\n");
-    dss_sig_collect_all_backtrace(LOG_DYNAMIC);
-    dss_print_global_variable(LOG_DYNAMIC);
-    dss_print_effect_param(LOG_DYNAMIC);
+    dss_sig_collect_all_backtrace(CM_LOG_DYNAMIC);
+    dss_print_global_variable(CM_LOG_DYNAMIC);
+    dss_print_effect_param(CM_LOG_DYNAMIC);
     dss_print_latch_info();
     dss_print_shm_pool_info();
     dss_print_open_file_info();
@@ -208,7 +208,7 @@ static void dss_dyn_log_sign_func(dss_session_t *session, siginfo_t *siginfo)
     dss_print_reactor_info();
     dss_print_vg_usage_info(session);
     dss_print_mes_message();
-    dss_write_shm_memory(LOG_DYNAMIC);
+    dss_write_shm_memory(CM_LOG_DYNAMIC);
     (void)cm_date2str(g_timer()->now, "yyyy-mm-dd hh24:mi:ss.ff3", date, CM_MAX_TIME_STRLEN);
     LOG_DYNAMIC_INF("end one record, time: %s.\n\n", date);
 }
