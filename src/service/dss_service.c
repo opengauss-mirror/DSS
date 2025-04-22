@@ -1256,7 +1256,7 @@ static status_t dss_process_disable_grab_lock(dss_session_t *session)
     status_t ret;
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(
         session->audit_info.resource, DSS_AUDIT_MODIFY, "%u if it is master to disable grab lock", curr_id));
-    if (g_dss_instance.is_maintain || g_dss_instance.inst_cfg.params.nodes_list.inst_cnt <= 1) {
+    if (g_dss_instance.is_maintain) {
         LOG_RUN_ERR("[RELEASE LOCK]No need to disable grab lock when dssserver is maintain or just one inst.");
         return CM_ERROR;
     }

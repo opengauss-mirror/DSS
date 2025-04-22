@@ -3359,7 +3359,7 @@ status_t dss_do_fallocate(dss_session_t *session, dss_node_data_t *node_data)
 
     dss_vg_info_item_t *vg_item = dss_find_vg_item_by_id(node_data->vgid);
     if (vg_item == NULL) {
-        DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("Failed to find vg, vg id:%u.", node_data->vgid),
+        DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("Failed to find vg, vg id %u.", node_data->vgid),
             DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "vg id", (uint64)node_data->vgid));
     }
     node_data->vg_name = (char *)vg_item->vg_name;
@@ -4356,7 +4356,8 @@ void dss_clean_all_sessions_latch()
     }
 }
 
-status_t dss_check_open_file_local_and_remote(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t ftid, bool32 *is_open)
+status_t dss_check_open_file_local_and_remote(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t ftid, bool32 *is_open)
 {
     LOG_DEBUG_INF("[DELAY_CLEAN]Delay File begin to check ftid:%s.", dss_display_metaid(ftid));
     // check delay file open local

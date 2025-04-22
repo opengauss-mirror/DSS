@@ -758,7 +758,7 @@ void dss_init_cm_res(dss_instance_t *inst)
 #ifdef ENABLE_DSSTEST
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 {
-    if (g_simulation_cm.simulation) {
+    if (cm_res->is_valid && g_simulation_cm.simulation) {
         int ret = cm_res_get_lock_owner(&cm_res->mgr, DSS_CM_LOCK, master_id);
         if (ret != CM_SUCCESS) {
             return ret;
@@ -779,6 +779,10 @@ status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 #else
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 {
+    if (!cm_res->is_init) {
+        LOG_RUN_WAR("[RECOVERY]cm is not init.");
+        return CM_ERROR;
+    }
     int ret = cm_res_get_lock_owner(&cm_res->mgr, DSS_CM_LOCK, master_id);
     if (ret == CM_RES_TIMEOUT) {
         LOG_RUN_ERR("Try to get lock owner failed, cm error : %d.", ret);
@@ -797,7 +801,11 @@ status_t dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 t
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     *master_id = DSS_INVALID_ID32;
-    if (inst->is_maintain || inst->inst_cfg.params.nodes_list.inst_cnt <= 1) {
+#ifdef ENABLE_DSSTEST
+    if (inst->is_maintain) {
+#else
+    if (inst->is_maintain || !inst->cm_res.is_valid) {
+#endif
         *grab_lock = CM_TRUE;
         LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5,
             "[RECOVERY]Set curr_id %u to be primary when dssserver is maintain or just one inst.",
@@ -805,12 +813,9 @@ status_t dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 t
         *master_id = (uint32)inst_cfg->params.inst_id;
         return CM_SUCCESS;
     }
-    dss_cm_res *cm_res = &inst->cm_res;
-    if (!cm_res->is_init) {
-        return CM_SUCCESS;
-    }
+
     status_t ret = CM_SUCCESS;
-    ret = dss_get_cm_res_lock_owner(cm_res, master_id);
+    ret = dss_get_cm_res_lock_owner(&inst->cm_res, master_id);
     DSS_RETURN_IFERR2(ret, LOG_RUN_WAR("Failed to get cm lock owner, if DSS is normal open ignore the log."));
     if (*master_id == DSS_INVALID_ID32) {
         if (!try_lock) {
@@ -822,7 +827,7 @@ status_t dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 t
             dss_set_master_id(DSS_INVALID_ID32);
             return CM_ERROR;
         }
-        ret = cm_res_lock(&cm_res->mgr, DSS_CM_LOCK);
+        ret = cm_res_lock(&inst->cm_res.mgr, DSS_CM_LOCK);
         *grab_lock = ((int)ret == CM_RES_SUCCESS);
         if (*grab_lock) {
             *master_id = (uint32)inst->inst_cfg.params.inst_id;
@@ -924,6 +929,10 @@ void dss_recovery_when_standby(dss_session_t *session, dss_instance_t *inst, uin
 */
 void dss_get_cm_lock_and_recover_inner(dss_session_t *session, dss_instance_t *inst)
 {
+    if (!inst->cm_res.is_init && !inst->is_maintain) {
+        LOG_RUN_INF("[RECOVERY]cm_res is not init!.");
+        return;
+    }
     cm_latch_x(&g_dss_instance.switch_latch, session->id, LATCH_STAT(LATCH_SWITCH));
     uint32 old_master_id = dss_get_master_id();
     bool32 grab_lock = CM_FALSE;
@@ -1087,14 +1096,6 @@ void dss_hashmap_dynamic_extend_and_redistribute_proc(thread_t *thread)
 }
 static void dss_check_peer_inst_inner(dss_instance_t *inst)
 {
-    /**
-     * During installation initialization, db_init depends on the DSS server. However, the CMS is not started.
-     * Therefore, cm_init cannot be invoked during the DSS server startup.
-     * Here, cm_init is invoked before the CM interface is invoked at first time.
-     */
-    if (SECUREC_UNLIKELY(!inst->cm_res.is_init)) {
-        dss_init_cm_res(inst);
-    }
     if (inst->cm_res.is_valid) {
 #ifdef ENABLE_DSSTEST
         dss_check_peer_by_simulation_cm(inst);
@@ -1108,6 +1109,14 @@ static void dss_check_peer_inst_inner(dss_instance_t *inst)
 
 void dss_check_peer_inst(dss_instance_t *inst, uint64 inst_id)
 {
+    /**
+     * During installation initialization, db_init depends on the DSS server. However, the CMS is not started.
+     * Therefore, cm_init cannot be invoked during the DSS server startup.
+     * Here, cm_init is invoked before the CM interface is invoked at first time.
+     */
+    if (SECUREC_UNLIKELY(!inst->cm_res.is_init)) {
+        dss_init_cm_res(inst);
+    }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     if (inst_cfg->params.nodes_list.inst_cnt <= 1) {
         return;
