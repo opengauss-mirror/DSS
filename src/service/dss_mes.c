@@ -648,8 +648,8 @@ static void dss_process_message(uint32 work_idx, ruid_type ruid, mes_msg_t *msg)
 {
     cm_reset_error();
 
-    DDES_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(
-        DSS_FI_MES_PROC_ENTER, cm_sleep(ddes_fi_get_entry_value(DDES_FI_TYPE_CUSTOM_FAULT)));
+    DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(
+        DSS_FI_SCOPE_SERVER, DSS_FI_MES_PROC_ENTER, cm_sleep(ddes_fi_get_entry_value(DDES_FI_TYPE_CUSTOM_FAULT)));
 
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 mes_sess_cnt = inst_cfg->params.channel_num + inst_cfg->params.work_thread_cnt;
