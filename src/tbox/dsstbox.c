@@ -409,9 +409,9 @@ static status_t repair_proc(void)
         status = dss_repair_fs_aux(&input);
     } else {
         DSS_PRINT_RUN_ERROR("[TBOX][REPAIR] Only support -t "
-                           "[fs_block|ft_block|core_ctrl|volume_header|software_version|"
-                           "root_ft_block|volume_ctrl|fs_aux_block], "
-                           "your type is %s.\n",
+                            "[fs_block|ft_block|core_ctrl|volume_header|software_version|"
+                            "root_ft_block|volume_ctrl|fs_aux_block], "
+                            "your type is %s.\n",
             input.type);
         status = CM_ERROR;
     }
@@ -571,7 +571,7 @@ static status_t miner_proc(void)
         DSS_PRINT_ERROR("[TBOX][MINER]DSS init loggers failed!\n");
         return status;
     }
-    status = dss_load_vg_conf_info(&g_vgs_info, &inst_cfg);
+    status = dss_load_vg_conf_info(&inst_cfg);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("[TBOX][MINER]Failed to load vg info from config, errcode is %d.\n", status);
         return status;

@@ -57,6 +57,98 @@ typedef struct str_files_rw_ctx {
     int64 offset;
 } files_rw_ctx_t;
 
+static status_t dss_syn_vg_item_from_server(uint32 vg_id_vg, uint32 vg_id_end)
+{
+    for (uint32 i = vg_id_vg; i < vg_id_end; i++) {
+        dss_share_vg_item_t *share_vg_item = dss_get_vg_item_by_id(CM_FALSE, i);
+        if (share_vg_item == NULL) {
+            LOG_RUN_ERR("Failed to get vg item %u from shm!", i);
+            DSS_THROW_ERROR(ERR_DSS_GA_INIT, "failed to get vg_item %u from shm!", i);
+            return CM_ERROR;
+        }
+
+        // syn the info from server by shm
+        (void)memcpy_s(g_vgs_info->volume_group[i].vg_name, DSS_MAX_NAME_LEN, share_vg_item->vg_name, DSS_MAX_NAME_LEN);
+        (void)memcpy_s(g_vgs_info->volume_group[i].entry_path, DSS_MAX_VOLUME_PATH_LEN, share_vg_item->entry_path,
+            DSS_MAX_VOLUME_PATH_LEN);
+        g_vgs_info->volume_group[i].share_vg_item = share_vg_item;
+        g_vgs_info->volume_group[i].objectid = share_vg_item->objectid;
+        g_vgs_info->volume_group[i].buffer_cache = &share_vg_item->buffer_cache;
+        g_vgs_info->volume_group[i].dss_ctrl = &share_vg_item->dss_ctrl;
+        g_vgs_info->volume_group[i].vg_latch = &share_vg_item->vg_latch;
+        g_vgs_info->volume_group[i].id = share_vg_item->id;
+
+        (void)cm_attach_shm(SHM_TYPE_HASH, g_vgs_info->volume_group[i].buffer_cache->shm_id, 0, CM_SHM_ATTACH_RW);
+
+        LOG_RUN_INF("success syn vg item id [%u] vg_name [%s] entry_path[%s] from server", i,
+            g_vgs_info->volume_group[i].vg_name, g_vgs_info->volume_group[i].entry_path);
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_init_vg_item_from_server()
+{
+    status_t status = dss_init_vg_info();
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to init vg info");
+        return CM_ERROR;
+    }
+
+    // get the first vg info by shm from server
+    dss_share_vg_item_t *share_vg_item = dss_get_vg_item_by_id(CM_FALSE, 0);
+    if (share_vg_item == NULL) {
+        LOG_RUN_ERR("Failed to get vg_item %u from shm!", 0);
+        DSS_THROW_ERROR(ERR_DSS_GA_INIT, "failed to get vg_item %u from shm!", 0);
+        return CM_ERROR;
+    }
+
+    status = dss_syn_vg_item_from_server(0, share_vg_item->all_vg_item_cnt);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to refresh vg item");
+        return CM_ERROR;
+    }
+    g_vgs_info->group_num = share_vg_item->all_vg_item_cnt;
+    return CM_SUCCESS;
+}
+
+static status_t dss_refresh_vg_item_from_server()
+{
+    status_t status =
+        dss_syn_vg_item_from_server(g_vgs_info->group_num, g_vgs_info->volume_group[0].share_vg_item->all_vg_item_cnt);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to refresh vg_item");
+        return CM_ERROR;
+    }
+
+    if (g_vgs_info->group_num != g_vgs_info->volume_group[0].share_vg_item->all_vg_item_cnt) {
+        g_vgs_info->group_num = g_vgs_info->volume_group[0].share_vg_item->all_vg_item_cnt;
+        LOG_RUN_INF("success syn vg item to server to:%d", g_vgs_info->group_num);
+    }
+
+    return CM_SUCCESS;
+}
+
+static dss_vg_info_item_t *dss_find_vg_item_with_refresh(const char *vg_name)
+{
+    dss_env_t *dss_env = dss_get_env();
+    if (!dss_env->initialized) {
+        return NULL;
+    }
+    // may server add vg items
+    if (g_vgs_info->group_num < g_vgs_info->volume_group[0].share_vg_item->all_vg_item_cnt) {
+        dss_latch_x(&dss_env->latch);
+        if (g_vgs_info->group_num < g_vgs_info->volume_group[0].share_vg_item->all_vg_item_cnt) {
+            status_t status = dss_refresh_vg_item_from_server();
+            if (status != CM_SUCCESS) {
+                dss_unlatch(&dss_env->latch);
+                return NULL;
+            }
+        }
+        dss_unlatch(&dss_env->latch);
+    }
+    return dss_find_vg_item(vg_name);
+}
+
 status_t dss_load_ctrl_sync(dss_conn_t *conn, const char *vg_name, uint32 index)
 {
     CM_RETURN_IFERR(dss_check_name(vg_name));
@@ -456,92 +548,6 @@ status_t dss_apply_refresh_file_table(dss_conn_t *conn, dss_dir_t *dir)
     return status;
 }
 
-static inline void dss_init_conn(dss_conn_t *conn)
-{
-    conn->flag = CM_FALSE;
-    conn->cli_vg_handles = NULL;
-    conn->session = NULL;
-}
-
-status_t dss_alloc_conn(dss_conn_t **conn)
-{
-    dss_conn_t *_conn = (dss_conn_t *)cm_malloc_align(DSSAPI_BLOCK_SIZE, sizeof(dss_conn_t));
-    if (_conn != NULL) {
-        dss_init_conn(_conn);
-        *conn = _conn;
-        return CM_SUCCESS;
-    }
-
-    return CM_ERROR;
-}
-
-void dss_free_conn(dss_conn_t *conn)
-{
-    DSS_FREE_POINT(conn);
-    return;
-}
-
-static status_t dss_check_url_format(const char *url, text_t *uds)
-{
-    uint32 len = (uint32)strlen(url);
-    if (len <= uds->len) {
-        return CM_ERROR;
-    }
-
-    return (cm_strcmpni(url, uds->str, uds->len) != 0) ? CM_ERROR : CM_SUCCESS;
-}
-
-status_t dss_connect(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn)
-{
-    if (server_locator == NULL) {
-        DSS_THROW_ERROR(ERR_DSS_UDS_INVALID_URL, "NULL", 0);
-        return CM_ERROR;
-    }
-
-    if ((conn->flag == CM_TRUE) && (conn->pipe.link.uds.closed == CM_FALSE)) {
-        return CM_SUCCESS;
-    }
-
-    conn->flag = CM_FALSE;
-    text_t uds = {"UDS:", 4};
-    if (dss_check_url_format(server_locator, &uds) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_UDS_INVALID_URL, server_locator, strlen(server_locator));
-        return ERR_DSS_UDS_INVALID_URL;
-    }
-    conn->cli_vg_handles = NULL;
-    conn->pipe.options = 0;
-    int32 timeout = options != NULL ? options->timeout : g_dss_uds_conn_timeout;
-    conn->pipe.connect_timeout = timeout < 0 ? DSS_UDS_CONNECT_TIMEOUT : timeout;
-    conn->pipe.socket_timeout = DSS_UDS_SOCKET_TIMEOUT;
-    conn->pipe.link.uds.sock = CS_INVALID_SOCKET;
-    conn->pipe.link.uds.closed = CM_TRUE;
-    conn->pipe.type = CS_TYPE_DOMAIN_SCOKET;
-    conn->session = NULL;
-    status_t ret = cs_connect_ex(
-        server_locator, &conn->pipe, NULL, (const char *)(server_locator + uds.len), (const char *)CM_NULL_TEXT.str);
-    if (ret != CM_SUCCESS) {
-        LOG_DEBUG_ERR("connect server failed, uds path:%s", server_locator);
-        return ret;
-    }
-    dss_init_packet(&conn->pack, conn->pipe.options);
-
-    conn->flag = CM_TRUE;
-
-    return CM_SUCCESS;
-}
-
-void dss_disconnect(dss_conn_t *conn)
-{
-    dss_set_thv_run_ctx_item(DSS_THV_RUN_CTX_ITEM_SESSION, NULL);
-    if (conn->flag == CM_TRUE) {
-        cs_disconnect(&conn->pipe);
-        dss_free_packet_buffer(&conn->pack);
-        conn->flag = CM_FALSE;
-    }
-
-    return;
-}
-
 status_t dss_init_vol_handle_sync(dss_conn_t *conn)
 {
     if (!conn->flag) {
@@ -557,24 +563,12 @@ status_t dss_init_vol_handle_sync(dss_conn_t *conn)
         return CM_ERROR;
     }
 
-    status_t status;
     dss_cli_vg_handles_t *cli_vg_handles = (dss_cli_vg_handles_t *)(conn->cli_vg_handles);
-
-    int cli_flags = DSS_CLI_OPEN_FLAG;
-    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+    for (uint32 i = 0; i < DSS_MAX_VOLUME_GROUP_NUM; i++) {
         for (uint32 vid = 0; vid < DSS_MAX_VOLUMES; ++vid) {
             cli_vg_handles->vg_vols[i].volume_handle[vid].handle = DSS_INVALID_HANDLE;
             cli_vg_handles->vg_vols[i].volume_handle[vid].unaligned_handle = DSS_INVALID_HANDLE;
             cli_vg_handles->vg_vols[i].volume_handle[vid].id = vid;
-        }
-
-        status = dss_init_vol_handle(&g_vgs_info->volume_group[i], cli_flags, &cli_vg_handles->vg_vols[i]);
-        if (status != CM_SUCCESS) {
-            for (int32 j = (int32)(i - 1); j >= 0; j--) {
-                dss_destroy_vol_handle(&g_vgs_info->volume_group[j], &cli_vg_handles->vg_vols[j], DSS_MAX_VOLUMES);
-            }
-            DSS_FREE_POINT(conn->cli_vg_handles);
-            return status;
         }
     }
 
@@ -678,8 +672,8 @@ status_t dss_cli_session_lock(dss_conn_t *conn, dss_session_t *session)
             conn->cli_info.connect_time);
         LOG_RUN_ERR("Failed to check session %u, session thread id is %u, connect_time is %llu, conn thread id is %u, "
                     "connect_time is %llu",
-                    session->id, session->cli_info.thread_id, session->cli_info.connect_time, conn->cli_info.thread_id,
-                    conn->cli_info.connect_time);
+            session->id, session->cli_info.thread_id, session->cli_info.connect_time, conn->cli_info.thread_id,
+            conn->cli_info.connect_time);
         cm_spin_unlock(&session->shm_lock);
         LOG_DEBUG_INF("Succeed to unlock session %u shm lock", session->id);
         return CM_ERROR;
@@ -734,7 +728,7 @@ status_t dss_remove_dir_impl(dss_conn_t *conn, const char *dir, bool32 recursive
 
 static dss_dir_t *dss_open_dir_impl_core(dss_conn_t *conn, dss_find_node_t *find_node)
 {
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(find_node->vg_name);
+    dss_vg_info_item_t *vg_item = dss_find_vg_item_with_refresh(find_node->vg_name);
     if (vg_item == NULL) {
         LOG_RUN_ERR("Failed to find vg, %s.", find_node->vg_name);
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, find_node->vg_name);
@@ -925,7 +919,7 @@ status_t dss_find_vg_by_file_path(const char *path, dss_vg_info_item_t **vg_item
     status_t status = dss_get_name_from_path(path, &beg_pos, vg_name);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to get name from path:%s, status:%d.", path, status));
 
-    *vg_item = dss_find_vg_item(vg_name);
+    *vg_item = dss_find_vg_item_with_refresh(vg_name);
     if (*vg_item == NULL) {
         LOG_DEBUG_ERR("Failed to find VG:%s.", vg_name);
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
@@ -967,7 +961,7 @@ gft_node_t *dss_get_node_by_path_impl(dss_conn_t *conn, const char *path)
     if (dss_get_ftid_by_path_on_server(conn, path, &ftid, (char *)vg_name) != CM_SUCCESS) {
         return NULL;
     }
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
+    dss_vg_info_item_t *vg_item = dss_find_vg_item_with_refresh(vg_name);
     if (vg_item == NULL) {
         LOG_DEBUG_ERR("Failed to find vg,vg name %s.", vg_name);
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
@@ -999,9 +993,9 @@ status_t dss_init_file_context(
     return CM_SUCCESS;
 }
 
-/*  
+/*
 1 after extend success, will generate new linked list
-context[file_run_ctx->files->group_num - 1] [0]->context[file_run_ctx->files->group_num - 1] 
+context[file_run_ctx->files->group_num - 1] [0]->context[file_run_ctx->files->group_num - 1]
 [1]->...->context[file_run_ctx->files->group_num - 1] [DSS_FILE_CONTEXT_PER_GROUP - 1]
 2 insert new linked list head into the old linked list
 */
@@ -1090,7 +1084,7 @@ status_t dss_open_file_impl(dss_conn_t *conn, const char *file_path, int flag, i
     LOG_DEBUG_INF("dss begin to open file, file path:%s, flag:%d", file_path, flag);
     DSS_RETURN_IF_ERROR(dss_check_device_path(file_path));
     DSS_RETURN_IF_ERROR(dss_open_file_on_server(conn, file_path, flag, &find_node));
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(find_node->vg_name);
+    dss_vg_info_item_t *vg_item = dss_find_vg_item_with_refresh(find_node->vg_name);
     if (vg_item == NULL) {
         LOG_RUN_ERR("Failed to find vg, vg name %s.", find_node->vg_name);
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, find_node->vg_name);
@@ -1565,9 +1559,9 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
                 volume.name_p, vol_offset, real_size, node->name, node->size, node->written_size);
 #if defined(_DEBUG) && !defined(OPENGAUSS)
             if (CM_STR_EQUAL(context->vg_item->vg_name, "dss_data") && !CM_STR_BEGIN_WITH(node->name, "ctrl")) {
-                    LOG_DEBUG_INF("dss pwrite file %s, vol_offset:%lld, head:%u-%u", node->name, vol_offset,
-                        *(uint16 *)((char*)buf + sizeof(uint32)), *(uint32 *)buf);
-                }
+                LOG_DEBUG_INF("dss pwrite file %s, vol_offset:%lld, head:%u-%u", node->name, vol_offset,
+                    *(uint16 *)((char *)buf + sizeof(uint32)), *(uint32 *)buf);
+            }
 #endif
             status = dss_write_volume(&volume, (int64)vol_offset, buf, real_size);
         }
@@ -2035,15 +2029,10 @@ status_t dss_init(uint32 max_open_files, char *home)
 #endif
     }
     CM_RETURN_IFERR(dss_init_shm(dss_env, home));
-    status_t status = dss_get_vg_info();
+    CM_RETURN_IFERR(dss_init_files(dss_env, max_open_files));
+    status_t status = dss_init_vg_item_from_server();
     if (status != CM_SUCCESS) {
         return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "Failed to get shared vg info", status);
-    }
-    CM_RETURN_IFERR(dss_init_files(dss_env, max_open_files));
-
-    for (int32_t i = 0; i < (int32_t)g_vgs_info->group_num; i++) {
-        dss_vg_info_item_t *item = &g_vgs_info->volume_group[i];
-        (void)cm_attach_shm(SHM_TYPE_HASH, item->buffer_cache->shm_id, 0, CM_SHM_ATTACH_RW);
     }
 
     status = cm_create_thread(dss_heartbeat_entry, SIZE_K(512), NULL, &dss_env->thread_heartbeat);
@@ -2405,7 +2394,7 @@ status_t get_au_size_impl(dss_conn_t *conn, int handle, long long *au_size)
 
 status_t dss_compare_size_equal_impl(const char *vg_name, long long *au_size)
 {
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
+    dss_vg_info_item_t *vg_item = dss_find_vg_item_with_refresh(vg_name);
     if (vg_name == NULL || vg_item == NULL) {
         dss_free_vg_info();
         LOG_DEBUG_ERR("Failed to find vg info from config, vg name is null\n");

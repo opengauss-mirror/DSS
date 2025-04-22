@@ -81,16 +81,22 @@ typedef struct st_dss_allvg_vlm_space_t {
 
 typedef handle_t dss_directory_t;  // dss_dir_t
 
+status_t dss_check_dup_vg(dss_vg_info_t *config, uint32 vg_no, bool32 *result);
 // create vg only use in tool
 status_t dss_create_vg(const char *vg_name, const char *volume_name, dss_config_t *inst_cfg, uint32 size);
-status_t dss_load_vg_conf_info(dss_vg_info_t **vgs, const dss_config_t *inst_cfg);
+status_t dss_read_vg_config_file(const char *file_name, char *buf, uint32 *buf_len, bool32 read_only);
+status_t dss_parse_vg_config(dss_vg_info_t *config, char *buf, uint32 buf_len, bool32 is_refresh);
+status_t dss_load_vg_conf_info(const dss_config_t *inst_cfg);
+dss_vg_info_t *dss_get_vg_info_ptr();
 void dss_free_vg_info();
 dss_vg_info_item_t *dss_find_vg_item(const char *vg_name);
 dss_vg_info_item_t *dss_find_vg_item_by_id(uint32 vg_id);
+dss_share_vg_item_t *dss_get_vg_item_by_id(bool32 is_server, uint32 id);
 
-status_t dss_get_vg_info();
-status_t dss_load_vg_info_and_recover(bool8 need_recovery);
+status_t dss_init_vg_info();
 status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock);
+void dss_refresh_vg_info_update_vg_num(dss_vg_info_t *vgs_info);
+status_t dss_load_vg_info_and_recover_with_range(uint32 vg_beg, uint32 vg_end, bool8 need_recovery);
 
 status_t dss_load_vg_ctrl_part(dss_vg_info_item_t *vg_item, int64 offset, void *buf, int32 size, bool32 *remote);
 status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item);

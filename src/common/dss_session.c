@@ -100,9 +100,7 @@ uint32 dss_get_udssession_startid(void)
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 start_sid = (uint32)DSS_BACKGROUND_TASK_NUM;
-    if (inst_cfg->params.nodes_list.inst_cnt > 1) {
-        start_sid = start_sid + inst_cfg->params.channel_num + inst_cfg->params.work_thread_cnt;
-    }
+    start_sid = start_sid + inst_cfg->params.channel_num + inst_cfg->params.work_thread_cnt;
     return start_sid;
 }
 

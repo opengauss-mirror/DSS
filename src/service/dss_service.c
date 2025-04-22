@@ -988,7 +988,7 @@ void dss_wait_session_pause(dss_instance_t *inst)
 void dss_wait_background_pause(dss_instance_t *inst)
 {
     LOG_DEBUG_INF("Begin to set background paused.");
-    while (inst->is_cleaning || inst->is_checking) {
+    while (inst->is_cleaning || inst->is_checking || inst->is_handle_main_wait) {
         cm_sleep(1);
     }
     LOG_DEBUG_INF("Succeed to pause background task.");
@@ -1172,7 +1172,7 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
             return CM_ERROR;
         }
         if (!cm_latch_timed_x(
-            &g_dss_instance.switch_latch, session->id, DSS_PROCESS_REMOTE_INTERVAL, LATCH_STAT(LATCH_SWITCH))) {
+                &g_dss_instance.switch_latch, session->id, DSS_PROCESS_REMOTE_INTERVAL, LATCH_STAT(LATCH_SWITCH))) {
             LOG_RUN_INF("[SWITCH] Spin switch lock timed out, just continue.");
             continue;
         }
@@ -1308,8 +1308,8 @@ static status_t dss_process_enable_upgrades(dss_session_t *session)
     dss_config_t *cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)(cfg->params.inst_id);
     dss_get_version_output_t get_version_output = {.all_same = DSS_TRUE, .min_version = DSS_PROTO_VERSION};
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
-        "enable upgrades", curr_id));
+    DSS_RETURN_IF_ERROR(
+        dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "enable upgrades", curr_id));
     int ret = dss_bcast_get_protocol_version(&get_version_output);
     if (ret != CM_SUCCESS) {
         // If any node return ERR_DSS_UNSUPPORTED_CMD, we assume old node exists.
