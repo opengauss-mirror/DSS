@@ -435,6 +435,10 @@ void dss_write_shm_memory(uint32 log_id)
         DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "printf dss_shm_file failed.");
         return;
     }
+    log_file_handle_t *log_file_handle = cm_log_logger_file(log_id);
+    if (log_file_handle->file_handle == CM_INVALID_FD) {
+        cm_log_create_dir(log_file_handle);
+    }
     if (cm_open_file_ex(file_name, O_SYNC | O_CREAT | O_RDWR | O_TRUNC | O_BINARY, S_IRUSR | S_IWUSR, &handle) !=
         CM_SUCCESS) {
         DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "open %s failed.", file_name);
