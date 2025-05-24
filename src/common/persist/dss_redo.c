@@ -1149,12 +1149,12 @@ static void print_redo_free_ft_node(dss_redo_entry_t *entry)
     (void)printf("    }\n");
 }
 
-status_t rp_redo_recycle_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rp_redo_move_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
 
-    dss_redo_recycle_ft_node_t *data = (dss_redo_recycle_ft_node_t *)entry->data;
+    dss_redo_move_ft_node_t *data = (dss_redo_move_ft_node_t *)entry->data;
     bool32 check_version = CM_FALSE;
 
     if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
@@ -1171,7 +1171,7 @@ status_t rp_redo_recycle_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_
     gft_node_t *node;
     dss_ft_block_t *cur_block = NULL;
 
-    for (uint32 i = 0; i < DSS_REDO_RECYCLE_FT_NODE_NUM; i++) {
+    for (uint32 i = 0; i < DSS_REDO_MOVE_FT_NODE_NUM; i++) {
         if (dss_cmp_auid(data->node[i].id, CM_INVALID_ID64)) {
             continue;
         }
@@ -1195,13 +1195,13 @@ status_t rp_redo_recycle_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_
     return CM_SUCCESS;
 }
 
-status_t rb_redo_recycle_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+status_t rb_redo_move_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(entry != NULL);
 
     status_t status;
-    dss_redo_recycle_ft_node_t *data = (dss_redo_recycle_ft_node_t *)entry->data;
+    dss_redo_move_ft_node_t *data = (dss_redo_move_ft_node_t *)entry->data;
     bool32 check_version = CM_FALSE;
 
     if (entry->size == 0) {
@@ -1211,7 +1211,7 @@ status_t rb_redo_recycle_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_
     gft_node_t *node;
     dss_ft_block_t *cur_block = NULL;
     bool32 cmp;
-    for (uint32 i = 0; i < DSS_REDO_RECYCLE_FT_NODE_NUM; i++) {
+    for (uint32 i = 0; i < DSS_REDO_MOVE_FT_NODE_NUM; i++) {
         cmp = dss_cmp_auid(data->node[i].id, CM_INVALID_ID64);
         if (cmp) {
             continue;
@@ -1230,11 +1230,103 @@ status_t rb_redo_recycle_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_
     return CM_SUCCESS;
 }
 
-static void print_redo_recycle_ft_node(dss_redo_entry_t *entry)
+static void print_redo_move_ft_node(dss_redo_entry_t *entry)
 {
-    dss_redo_recycle_ft_node_t *data = (dss_redo_recycle_ft_node_t *)entry->data;
-    (void)printf("    recycle_ft_node = {\n");
-    for (uint32 i = 0; i < DSS_REDO_RECYCLE_FT_NODE_NUM; i++) {
+    dss_redo_move_ft_node_t *data = (dss_redo_move_ft_node_t *)entry->data;
+    (void)printf("    move_ft_node = {\n");
+    for (uint32 i = 0; i < DSS_REDO_MOVE_FT_NODE_NUM; i++) {
+        if (dss_cmp_auid(data->node[i].id, CM_INVALID_ID64)) {
+            continue;
+        }
+        (void)printf("    gft_node[%u] = {\n", i);
+        printf_gft_node(&data->node[i], "    ");
+        (void)printf("    }\n");
+    }
+    (void)printf("    }\n");
+}
+
+static status_t rp_redo_remove_ft_node_core(dss_session_t *session, dss_vg_info_item_t *vg_item,
+    dss_root_ft_block_t *ft_block, dss_redo_remove_ft_node_t *data, bool32 check_version)
+{
+    status_t status = CM_SUCCESS;
+    dss_block_addr_his_t addr_his;
+    rp_init_block_addr_history(&addr_his);
+    rp_insert_block_addr_history(&addr_his, ft_block);
+
+    gft_node_t *node;
+    dss_ft_block_t *cur_block = NULL;
+    bool32 cmp;
+    for (uint32 i = 0; i < DSS_REDO_REMOVE_FT_NODE_NUM; i++) {
+        cmp = dss_cmp_auid(data->node[i].id, CM_INVALID_ID64);
+        if (cmp) {
+            continue;
+        }
+        node = dss_get_ft_node_by_ftid(session, vg_item, data->node[i].id, check_version, CM_FALSE);
+        if (!node) {
+            return CM_ERROR;
+        }
+        cur_block = dss_get_ft_by_node(node);
+        if (vg_item->status == DSS_VG_STATUS_RECOVERY) {
+            *node = data->node[i];
+        }
+
+        cur_block = dss_get_ft_by_node(node);
+        if (rp_check_block_addr(&addr_his, cur_block) && vg_item->status != DSS_VG_STATUS_RECOVERY) {
+            DSS_LOG_DEBUG_OP("[REDO] Replay remove ft node, block has updated, cur_block:%p, node id: %s.", cur_block,
+                dss_display_metaid(node->id));
+            continue;  // already update the block to disk
+        }
+
+        DSS_LOG_DEBUG_OP(
+            "[REDO] Replay remove ft node, cur_block:%p, node id: %s.", cur_block, dss_display_metaid(node->id));
+
+        status = dss_update_ft_block_disk(vg_item, cur_block, data->node[i].id);
+        if (status != CM_SUCCESS) {
+            return status;
+        }
+        rp_insert_block_addr_history(&addr_his, cur_block);
+    }
+    DSS_LOG_DEBUG_OP("[REDO] Succeed to replay remove ft node, vg name:%s.", vg_item->vg_name);
+    return CM_SUCCESS;
+}
+
+status_t rp_redo_remove_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+{
+    CM_ASSERT(vg_item != NULL);
+    CM_ASSERT(entry != NULL);
+
+    dss_redo_remove_ft_node_t *data = (dss_redo_remove_ft_node_t *)entry->data;
+    dss_root_ft_block_t *ft_block = DSS_GET_ROOT_BLOCK(vg_item->dss_ctrl);
+    if (entry->size == 0) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_REDO_ILL, "invalid entry log size 0."));
+    }
+
+    bool32 check_version = (vg_item->status == DSS_VG_STATUS_RECOVERY);
+    return rp_redo_remove_ft_node_core(session, vg_item, ft_block, data, check_version);
+}
+
+status_t rb_redo_remove_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)
+{
+    CM_ASSERT(vg_item != NULL);
+    CM_ASSERT(entry != NULL);
+
+    dss_redo_remove_ft_node_t *data = (dss_redo_remove_ft_node_t *)entry->data;
+
+    if (entry->size == 0) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_REDO_ILL, "invalid entry log size 0."));
+    }
+
+    return rb_rollback_ft_block(session, vg_item, data->node, DSS_REDO_REMOVE_FT_NODE_NUM);
+}
+
+static void print_redo_remove_ft_node(dss_redo_entry_t *entry)
+{
+    dss_redo_remove_ft_node_t *data = (dss_redo_remove_ft_node_t *)entry->data;
+    (void)printf("    remove_ft_node = {\n");
+    (void)printf("      ft_root = {\n");
+    printf_gft_root(&data->ft_root);
+    (void)printf("      }\n");
+    for (uint32 i = 0; i < DSS_REDO_REMOVE_FT_NODE_NUM; i++) {
         if (dss_cmp_auid(data->node[i].id, CM_INVALID_ID64)) {
             continue;
         }
@@ -1875,7 +1967,7 @@ static dss_redo_handler_t g_dss_handlers[] = {
     // recycle gft_node to gft->free_list
     {DSS_RT_FREE_FILE_TABLE_NODE, rp_redo_free_ft_node, rb_redo_free_ft_node, print_redo_free_ft_node},
     // recycle gft_node to dss_ctrl->core.au_root->free_root
-    {DSS_RT_RECYCLE_FILE_TABLE_NODE, rp_redo_recycle_ft_node, rb_redo_recycle_ft_node, print_redo_recycle_ft_node},
+    {DSS_RT_MOVE_FILE_TABLE_NODE, rp_redo_move_ft_node, rb_redo_move_ft_node, print_redo_move_ft_node},
     {DSS_RT_SET_FILE_SIZE, rp_redo_set_file_size, rb_redo_set_file_size, print_redo_set_file_size},
     {DSS_RT_RENAME_FILE, rp_redo_rename_file, rb_redo_rename_file, print_redo_rename_file},
 
@@ -1901,6 +1993,7 @@ static dss_redo_handler_t g_dss_handlers[] = {
         print_redo_set_fs_aux_block_batch},
     {DSS_RT_TRUNCATE_FS_BLOCK_BATCH, rp_redo_truncate_fs_block_batch, rb_redo_truncate_fs_block_batch,
         print_redo_truncate_fs_block_batch},
+    {DSS_RT_REMOVE_FILE_TABLE_NODE, rp_redo_remove_ft_node, rb_redo_remove_ft_node, print_redo_remove_ft_node},
 };
 
 static status_t dss_replay(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_redo_entry_t *entry)

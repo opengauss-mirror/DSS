@@ -97,6 +97,7 @@ void dss_free_ft_node_inner(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node, bool32 real_del);
 void dss_free_ft_node(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node, bool32 real_del);
+void dss_remove_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node);
 gft_node_t *dss_get_next_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node);
 bool32 dss_is_last_tree_node(gft_node_t *node);
 gft_node_t *dss_find_ft_node(
@@ -147,7 +148,7 @@ void dss_init_fs_block_head(dss_fs_block_t *fs_block);
 dss_fs_block_t *dss_find_fs_block(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node,
     dss_block_id_t block_id, bool32 check_version, ga_obj_id_t *out_obj_id, uint16 index);
 
-status_t dss_check_rename_path(dss_session_t *session, const char *src_path, const char *dst_path, text_t *dst_name);
+status_t dss_check_rename_path(const char *src_path, const char *dst_path, text_t *dst_name, bool32 *is_cross_dir);
 status_t dss_get_name_from_path(const char *path, uint32_t *beg_pos, char *name);
 status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_type_t type,
     dss_check_dir_output_t *output_info, bool32 is_throw_err);
@@ -168,7 +169,8 @@ status_t dss_refresh_vginfo(dss_vg_info_item_t *vg_item);
 status_t dss_get_fs_block_info_by_offset(
     int64 offset, uint64 au_size, uint32 *block_count, uint32 *block_au_count, uint32 *au_offset);
 status_t dss_check_open_file_remote(dss_session_t *session, const char *vg_name, uint64 ftid, bool32 *is_open);
-void dss_mv_to_recycle_dir(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node);
+void dss_mv_to_specific_dir(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, gft_node_t *specific_node);
 status_t dss_recycle_empty_file(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node);
 status_t dss_check_file(dss_vg_info_item_t *vg_item);

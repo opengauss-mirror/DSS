@@ -107,6 +107,15 @@ typedef union st_gft_node {
     char ft_node[256];  // to ensure that the structure size is 256
 } gft_node_t;
 
+typedef struct st_dss_rename_info_t {
+    gft_node_t *src_node;
+    gft_node_t *dst_node;
+    const char *src_path;
+    const char *dst_path;
+    char *dst_name;
+    bool32 is_cross_dir;
+} dss_rename_info_t;
+
 typedef struct st_gft_block_info {
     gft_node_t *ft_node;
 } gft_block_info_t;
