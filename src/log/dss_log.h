@@ -61,6 +61,7 @@ typedef struct st_dss_audit_assist {
 
 typedef struct st_dss_audit_info {
     char *action;
+    bool8 is_forced;
     char resource[DSS_MAX_AUDIT_PATH_LENGTH];
 } dss_audit_info_t;
 

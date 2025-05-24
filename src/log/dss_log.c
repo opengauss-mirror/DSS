@@ -497,11 +497,11 @@ void sql_record_audit_log(void *sess, status_t status, uint8 cmd_type)
     }
     dss_session_t *session = (dss_session_t *)sess;
     uint32 audit_level = cm_log_param_instance()->audit_level;
-    if ((audit_level & DSS_AUDIT_MODIFY) == 0 && cmd_type >= DSS_CMD_MODIFY_BEGIN && cmd_type < DSS_CMD_MODIFY_END) {
-        return;
+    bool need_record =
+        session->audit_info.is_forced ||
+        ((audit_level && DSS_AUDIT_MODIFY) != 0 && cmd_type >= DSS_CMD_MODIFY_BEGIN && cmd_type < DSS_CMD_MODIFY_END) ||
+        ((audit_level && DSS_AUDIT_QUERY) != 0 && cmd_type >= DSS_CMD_QUERY_BEGIN && cmd_type < DSS_CMD_QUERY_END);
+    if (need_record) {
+        sql_audit_log(session, status, cmd_type);
     }
-    if ((audit_level & DSS_AUDIT_QUERY) == 0 && cmd_type >= DSS_CMD_QUERY_BEGIN && cmd_type < DSS_CMD_QUERY_END) {
-        return;
-    }
-    sql_audit_log(session, status, cmd_type);
 }

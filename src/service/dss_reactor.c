@@ -30,6 +30,8 @@
 extern "C" {
 #endif
 
+#define DSS_REACTOR_WAIT_TIME 50
+
 status_t dss_reactor_set_oneshot(dss_session_t *session)
 {
     struct epoll_event ev;
@@ -44,22 +46,31 @@ status_t dss_reactor_set_oneshot(dss_session_t *session)
     return CM_SUCCESS;
 }
 
-static dss_workthread_t *dss_reactor_get_workthread(reactor_t *reactor)
+static dss_workthread_t *dss_reactor_get_workthread(dss_workthread_t *workthread_ctx, uint32 workthread_cnt)
 {
     uint32 pos = 0;
-    for (pos = 0; pos < reactor->workthread_count; pos++) {
-        if (reactor->workthread_ctx[pos].status == THREAD_STATUS_IDLE &&
-            reactor->workthread_ctx[pos].thread_obj->task == NULL) {
+    for (pos = 0; pos < workthread_cnt; pos++) {
+        if (workthread_ctx[pos].status == THREAD_STATUS_IDLE && workthread_ctx[pos].thread_obj->task == NULL) {
             break;
         }
     }
 
-    if (pos == reactor->workthread_count) {
+    if (pos == workthread_cnt) {
         return NULL;
     }
 
-    reactor->workthread_ctx[pos].status = THREAD_STATUS_PROCESSSING;
-    return &reactor->workthread_ctx[pos];
+    workthread_ctx[pos].status = THREAD_STATUS_PROCESSSING;
+    return &workthread_ctx[pos];
+}
+
+static void dss_reactor_disconnect_msg_proc(void *param)
+{
+    dss_workthread_t *workthread_ctx = (dss_workthread_t *)param;
+    pooling_thread_t *thread_obj = workthread_ctx->thread_obj;
+    dss_session_t *session = (dss_session_t *)workthread_ctx->current_session;
+    LOG_DEBUG_INF("session %u with disconnector %u begin.", session->id, thread_obj->spid);
+    dss_clean_reactor_session(session);
+    LOG_DEBUG_WAR("session %u is closed.", session->id);
 }
 
 static void dss_reactor_session_entry(void *param)
@@ -87,32 +98,59 @@ static void dss_reactor_session_entry(void *param)
     }
 }
 
-void dss_reactor_attach_workthread(dss_session_t *session)
+static bool32 dss_reactor_need_quit_waiting(reactor_t *reactor, struct epoll_event *event)
 {
+    dss_session_t *session = (dss_session_t *)event->data.ptr;
+    if (reactor->status != REACTOR_STATUS_RUNNING || reactor->iothread.closed) {
+        LOG_DEBUG_WAR("[reactor] reactor is not running, quit and set oneshot for session %u", session->id);
+        if (dss_reactor_set_oneshot(session) != CM_SUCCESS) {
+            LOG_RUN_ERR("[reactor] set oneshot flag of socket failed, session %u, events %u, reactor %u, os error %d",
+                session->id, event->events, ((reactor_t *)session->reactor)->id, cm_get_sock_error());
+        }
+        return CM_TRUE;
+    }
+    if (cm_event_timedwait(&reactor->idle_evnt, DSS_REACTOR_WAIT_TIME) != CM_SUCCESS) {
+        LOG_DEBUG_ERR("[reactor] workthreads are busy, quit and set oneshot for session %u", session->id);
+        if (dss_reactor_set_oneshot(session) != CM_SUCCESS) {
+            LOG_RUN_ERR("[reactor] set oneshot flag of socket failed, session %u, events %u, reactor %u, os error %d",
+                session->id, event->events, ((reactor_t *)session->reactor)->id, cm_get_sock_error());
+        }
+        return CM_TRUE;
+    }
+    return CM_FALSE;
+}
+
+void dss_reactor_attach_workthread_for_disconnection_msg(struct epoll_event *event)
+{
+    dss_session_t *session = (dss_session_t *)event->data.ptr;
     reactor_t *reactor = (reactor_t *)session->reactor;
     if (reactor == NULL) {
         return;
     }
     while (CM_TRUE) {
         cm_thread_lock(&reactor->lock);
-        dss_workthread_t *workthread_ctx = dss_reactor_get_workthread(reactor);
+        dss_workthread_t *workthread_ctx = dss_reactor_get_workthread(reactor->disconnector_ctx, DSS_DISCONNECTOR_NUM);
+        if (workthread_ctx == NULL) {
+            // If disconnector_pool is busy, try from workthread_pool.
+            workthread_ctx = dss_reactor_get_workthread(reactor->workthread_ctx, reactor->workthread_count);
+        }
         if (workthread_ctx != NULL) {
-            workthread_ctx->task.action = dss_reactor_session_entry;
+            workthread_ctx->task.action = dss_reactor_disconnect_msg_proc;
             workthread_ctx->current_session = session;
             workthread_ctx->task.param = workthread_ctx;
             session->workthread_ctx = workthread_ctx;
             cm_dispatch_pooling_thread(workthread_ctx->thread_obj, &workthread_ctx->task);
-            LOG_DEBUG_INF("[reactor] attach workthread %u to session %u sucessfully, active_sessions is %lld.", workthread_ctx->thread_obj->spid,
-                session->id, g_dss_instance.active_sessions);
-            break;
-        }
-        if (reactor->status != REACTOR_STATUS_RUNNING || reactor->iothread.closed) {
-            break;
+            LOG_DEBUG_INF("[reactor] attach workthread %u to session %u sucessfully, active_sessions is %lld.",
+                workthread_ctx->thread_obj->spid, session->id, g_dss_instance.active_sessions);
+            cm_thread_unlock(&reactor->lock);
+            return;
         }
         cm_thread_unlock(&reactor->lock);
-        cm_event_wait(&reactor->idle_evnt);
+        // Judge whether to try again or not.
+        if (dss_reactor_need_quit_waiting(reactor, event)) {
+            return;
+        }
     }
-    cm_thread_unlock(&reactor->lock);
 }
 
 static inline void dss_reset_workthread_ctx(dss_workthread_t *workthread_ctx)
@@ -144,18 +182,74 @@ void dss_session_detach_workthread(dss_session_t *session)
     cm_event_notify(&reactor->idle_evnt);
 }
 
-static void dss_reactor_poll_events(reactor_t *reactor)
+static void dss_reactor_peek_disconnection_msgs(
+    reactor_t *reactor, struct epoll_event *evs, bool32 *processed, uint32 ev_cnt)
 {
-    dss_session_t *sess = NULL;
-    int loop, nfds;
-    struct epoll_event events[DSS_EV_WAIT_NUM];
-    struct epoll_event *ev = NULL;
+    for (uint32 i = 0; i < ev_cnt; ++i) {
+        if (evs[i].events & EPOLLHUP) {
+            processed[i] = CM_TRUE;
+            dss_reactor_attach_workthread_for_disconnection_msg(&evs[i]);
+        } else {
+            processed[i] = CM_FALSE;
+        }
+    }
+}
 
+// return CM_TRUE: This event has been processed or neglected.
+// return CM_FALSE: This event cannot be processed because of exhaustation of workthread_pool.
+static bool32 dss_reactor_try_attach_workthread(struct epoll_event *ev)
+{
+    dss_session_t *session = (dss_session_t *)ev->data.ptr;
+    reactor_t *reactor = (reactor_t *)session->reactor;
+    cm_thread_lock(&reactor->lock);
+    dss_workthread_t *workthread_ctx = dss_reactor_get_workthread(reactor->workthread_ctx, reactor->workthread_count);
+    if (workthread_ctx == NULL) {
+        cm_thread_unlock(&reactor->lock);
+        return CM_FALSE;
+    }
+    workthread_ctx->task.action = dss_reactor_session_entry;
+    workthread_ctx->current_session = session;
+    workthread_ctx->task.param = workthread_ctx;
+    session->workthread_ctx = workthread_ctx;
+    cm_dispatch_pooling_thread(workthread_ctx->thread_obj, &workthread_ctx->task);
+    LOG_DEBUG_INF("[reactor] attach workthread %u to session %u successfully, active_sessions is %lld.",
+        workthread_ctx->thread_obj->spid, session->id, g_dss_instance.active_sessions);
+    cm_thread_unlock(&reactor->lock);
+    return CM_TRUE;
+}
+
+static void dss_reactor_process_events(reactor_t *reactor, struct epoll_event *evs, uint32 ev_cnt)
+{
+    bool32 processed[DSS_EV_WAIT_NUM];
+    // Firstly peek disconnection msgs.
+    dss_reactor_peek_disconnection_msgs(reactor, evs, processed, ev_cnt);
+    uint32 loop = 0;
+    while (loop < ev_cnt && (!reactor->iothread.closed)) {
+        // Some events might have already been processed in dss_reactor_peek_disconnection_msgs.
+        if (processed[loop]) {
+            ++loop;
+            continue;
+        }
+        if (dss_reactor_try_attach_workthread(&evs[loop])) {
+            processed[loop] = CM_TRUE;
+            ++loop;
+            continue;
+        }
+        if (dss_reactor_need_quit_waiting(reactor, &evs[loop])) {
+            processed[loop] = CM_TRUE;
+            ++loop;
+            continue;
+        }
+    }
+}
+
+static void dss_reactor_routine(reactor_t *reactor)
+{
     if (reactor->status != REACTOR_STATUS_RUNNING) {
         return;
     }
-
-    nfds = epoll_wait(reactor->epollfd, events, DSS_EV_WAIT_NUM, DSS_EV_WAIT_TIMEOUT);
+    struct epoll_event events[DSS_EV_WAIT_NUM];
+    int nfds = epoll_wait(reactor->epollfd, events, DSS_EV_WAIT_NUM, DSS_EV_WAIT_TIMEOUT);
     if (nfds == -1) {
         if (errno != EINTR) {
             LOG_RUN_ERR("Failed to wait for connection request, OS error:%d", cm_get_os_error());
@@ -167,20 +261,7 @@ static void dss_reactor_poll_events(reactor_t *reactor)
         return;
     }
 
-    for (loop = 0; loop < nfds; ++loop) {
-        ev = &events[loop];
-        sess = (dss_session_t *)ev->data.ptr;
-        if (reactor->status != REACTOR_STATUS_RUNNING) {
-            if (dss_reactor_set_oneshot(sess) != CM_SUCCESS) {
-                LOG_RUN_ERR("[reactor] set oneshot flag of socket failed, session %u, "
-                            "reactor %u, os error %d, event %u",
-                    sess->id, reactor->id, cm_get_sock_error(), ev->events);
-            }
-            continue;
-        }
-
-        dss_reactor_attach_workthread(sess);
-    }
+    dss_reactor_process_events(reactor, events, (uint32)nfds);
 }
 
 static void dss_reactor_entry(thread_t *thread)
@@ -189,7 +270,7 @@ static void dss_reactor_entry(thread_t *thread)
     cm_set_thread_name("reactor");
     LOG_RUN_INF("reactor thread[%d] started.", reactor->id);
     while (!thread->closed) {
-        dss_reactor_poll_events(reactor);
+        dss_reactor_routine(reactor);
         if (reactor->status == REACTOR_STATUS_PAUSING) {
             reactor->status = REACTOR_STATUS_PAUSED;
         }
@@ -198,29 +279,43 @@ static void dss_reactor_entry(thread_t *thread)
     (void)epoll_close(reactor->epollfd);
 }
 
-static status_t dss_reactor_start_threadpool(reactor_t *reactor)
+static status_t dss_init_workthread_pool(dss_workthread_t *ctx, cm_thread_pool_t *pool, uint32 count)
 {
-    // init thread pool
-    cm_init_thread_pool(&reactor->workthread_pool);
-    cm_init_thread_lock(&reactor->lock);
-    status_t ret = cm_create_thread_pool(&reactor->workthread_pool, SIZE_K(512), reactor->workthread_count);
+    cm_init_thread_pool(pool);
+    status_t ret = cm_create_thread_pool(pool, SIZE_K(512), count);
     if (ret != CM_SUCCESS) {
         LOG_RUN_ERR("[reactor] failed to create reactor work thread pool, errno %d", cm_get_os_error());
         return ret;
     }
 
     pooling_thread_t *poolingthread = NULL;
-    for (uint32 pos = 0; pos < reactor->workthread_count; pos++) {
-        if (cm_get_idle_pooling_thread(&reactor->workthread_pool, &poolingthread) != CM_SUCCESS) {
+    for (uint32 pos = 0; pos < count; pos++) {
+        if (cm_get_idle_pooling_thread(pool, &poolingthread) != CM_SUCCESS) {
             LOG_RUN_ERR("[reactor] failed to get idle work thread pool, errno %d", cm_get_os_error());
             return CM_ERROR;
         }
-        reactor->workthread_ctx[pos].thread_obj = poolingthread;
-        reactor->workthread_ctx[pos].status = THREAD_STATUS_IDLE;
-        reactor->workthread_ctx[pos].task.action = NULL;
-        reactor->workthread_ctx[pos].task.param = NULL;
+        ctx[pos].thread_obj = poolingthread;
+        ctx[pos].status = THREAD_STATUS_IDLE;
+        ctx[pos].task.action = NULL;
+        ctx[pos].task.param = NULL;
     }
+    return CM_SUCCESS;
+}
 
+static status_t dss_reactor_start_threadpool(reactor_t *reactor)
+{
+    cm_init_thread_lock(&reactor->lock);
+    status_t ret =
+        dss_init_workthread_pool(reactor->workthread_ctx, &reactor->workthread_pool, reactor->workthread_count);
+    if (ret != CM_SUCCESS) {
+        LOG_RUN_ERR("[reactor] failed to init workthread_pool.");
+        return ret;
+    }
+    ret = dss_init_workthread_pool(reactor->disconnector_ctx, &reactor->disconnector_pool, DSS_DISCONNECTOR_NUM);
+    if (ret != CM_SUCCESS) {
+        LOG_RUN_ERR("[reactor] failed to init disconnector_pool.");
+        return ret;
+    }
     return CM_SUCCESS;
 }
 
@@ -329,6 +424,7 @@ void dss_destroy_reactors()
         }
         reactor->status = REACTOR_STATUS_STOPPED;
         cm_destroy_thread_pool(&reactor->workthread_pool);
+        cm_destroy_thread_pool(&reactor->disconnector_pool);
     }
     pool->reactor_count = 0;
     CM_FREE_PTR(pool->reactor_arr);
