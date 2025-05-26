@@ -795,8 +795,13 @@ static status_t dss_process_get_inst_status(dss_session_t *session)
 }
 static status_t dss_process_get_time_stat(dss_session_t *session)
 {
+    dss_stat_item_t stat_tmp[DSS_EVT_COUNT] = {0};
     uint64 size = sizeof(dss_stat_item_t) * DSS_EVT_COUNT;
+    dss_stat_item_t *stat_last = NULL;
     dss_stat_item_t *time_stat = NULL;
+    int isWsr;
+    dss_init_get(&session->recv_pack);
+    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &isWsr));
     DSS_RETURN_IF_ERROR(dss_reserv_text_buf(&session->send_pack, (uint32)size, (char **)&time_stat));
 
     errno_t errcode = memset_s(time_stat, (size_t)size, 0, (size_t)size);
@@ -806,20 +811,57 @@ static status_t dss_process_get_time_stat(dss_session_t *session)
     cm_spin_lock(&session_ctrl->lock, NULL);
     for (uint32 i = 0; i < session_ctrl->alloc_sessions; i++) {
         tmp_session = session_ctrl->sessions[i];
-        if (tmp_session->is_used && !tmp_session->is_closed) {
+        if (tmp_session->is_used) {
             for (uint32 j = 0; j < DSS_EVT_COUNT; j++) {
                 int64 count = (int64)tmp_session->dss_session_stat[j].wait_count;
                 int64 total_time = (int64)tmp_session->dss_session_stat[j].total_wait_time;
-                int64 max_sgl_time = (int64)tmp_session->dss_session_stat[j].max_single_time;
+                stat_tmp[j].wait_count += count;
+                stat_tmp[j].total_wait_time += total_time;
 
-                time_stat[j].wait_count += count;
-                time_stat[j].total_wait_time += total_time;
-                time_stat[j].max_single_time = (atomic_t)MAX((int64)time_stat[j].max_single_time, max_sgl_time);
-
-                (void)cm_atomic_add(&tmp_session->dss_session_stat[j].wait_count, -count);
-                (void)cm_atomic_add(&tmp_session->dss_session_stat[j].total_wait_time, -total_time);
-                (void)cm_atomic_cas(&tmp_session->dss_session_stat[j].max_single_time, max_sgl_time, 0);
+                if (isWsr == 0) {
+                    int64 max_sgl_time = (int64)tmp_session->dss_session_stat[j].max_single_time;
+                    if (max_sgl_time > stat_tmp[j].max_single_time) {
+                        stat_tmp[j].max_single_time = max_sgl_time;
+                        stat_tmp[j].max_date = tmp_session->dss_session_stat[j].max_date;
+                    }
+                    (void)cm_atomic_cas(&tmp_session->dss_session_stat[j].max_single_time, max_sgl_time, 0);
+                    tmp_session->dss_session_stat[j].max_date = 0;
+                }
             }
+        }
+    }
+
+    for (uint32 j = 0; j < DSS_EVT_COUNT; j++) {
+        int64 count = (int64)session_ctrl->stat_g[j].wait_count;
+        int64 total_time = (int64)session_ctrl->stat_g[j].total_wait_time;
+        stat_tmp[j].wait_count += count;
+        stat_tmp[j].total_wait_time += total_time;
+        if (isWsr == 0) {
+            int64 max_sgl_time = (int64)session_ctrl->stat_g[j].max_single_time;
+            if (max_sgl_time > stat_tmp[j].max_single_time) {
+                stat_tmp[j].max_single_time = max_sgl_time;
+                stat_tmp[j].max_date = session_ctrl->stat_g[j].max_date;
+            }
+            (void)cm_atomic_cas(&session_ctrl->stat_g[j].max_single_time, max_sgl_time, 0);
+            session_ctrl->stat_g[j].max_date = 0;
+        }
+    }
+    if (isWsr == 1) {
+        for (uint32 j = 0; j < DSS_EVT_COUNT; j++) {
+            time_stat[j] = stat_tmp[j];
+        }
+    } else {
+        stat_last = session_ctrl->stat_last_cmd;
+        for (uint32 j = 0; j < DSS_EVT_COUNT; j++) {
+            time_stat[j].wait_count = stat_tmp[j].wait_count - stat_last[j].wait_count;
+            time_stat[j].total_wait_time = stat_tmp[j].total_wait_time - stat_last[j].total_wait_time;
+            time_stat[j].max_single_time = stat_tmp[j].max_single_time;
+            time_stat[j].max_date= stat_tmp[j].max_date;
+
+            stat_last[j].wait_count = stat_tmp[j].wait_count;
+            stat_last[j].total_wait_time = stat_tmp[j].total_wait_time;
+            stat_last[j].max_single_time = stat_tmp[j].max_single_time;
+            stat_last[j].max_date = stat_tmp[j].max_date;
         }
     }
     cm_spin_unlock(&session_ctrl->lock);

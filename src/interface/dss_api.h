@@ -135,6 +135,8 @@ typedef enum en_dss_conn_opt_key {
 
 typedef struct st_dss_dirent *dss_dir_item_t;
 typedef struct st_dss_stat *dss_stat_info_t;
+typedef struct st_dss_stat_item *dss_stats_item_info_t;
+
 typedef void (*dss_log_output)(dss_log_id_t log_type, dss_log_level_t log_level, const char *code_file_name,
     unsigned int code_line_num, const char *module_name, const char *format, ...);
 typedef void (*dss_exit_callback_t)(int exit_code);
@@ -200,6 +202,8 @@ DSS_DECLARE int dss_is_maintain(unsigned int *is_maintain);
 DSS_DECLARE int dss_stat(const char *path, dss_stat_info_t item);
 DSS_DECLARE int dss_lstat(const char *path, dss_stat_info_t item);
 DSS_DECLARE int dss_fstat(int handle, dss_stat_info_t item);
+
+DSS_DECLARE int dss_inst_stats(dss_stats_item_info_t item, int stats_size);
 
 // config
 DSS_DECLARE int dss_setcfg(const char *name, const char *value, const char *scope);

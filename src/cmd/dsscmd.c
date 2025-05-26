@@ -37,6 +37,7 @@
 #include "cm_utils.h"
 #include "cm_signal.h"
 #include "cm_sec_file.h"
+#include "cm_log.h"
 
 #include "dss_errno.h"
 #include "dss_defs.h"
@@ -1062,23 +1063,28 @@ static status_t ts_proc(void)
     }
 
     dss_stat_item_t time_stat[DSS_EVT_COUNT];
-    status = dss_get_time_stat_on_server(conn, time_stat, DSS_EVT_COUNT);
+    char max_date_str[CM_MAX_TIME_STRLEN + 1] = {0};
+    status = dss_get_time_stat_on_server(conn, time_stat, DSS_EVT_COUNT, 0);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to get time stat.\n");
         return CM_ERROR;
     }
-    (void)printf("|      event     |   count   | total_wait_time | avg_wait_time | max_single_time \n");
-    (void)printf("+------------------------+-----------+-----------------+---------------+-----------------\n");
+    (void)printf("|      event             |   count   | total_wait_time | avg_wait_time | max_single_time | max_date  "
+                 "              \n");
+    (void)printf("+------------------------+-----------+-----------------+---------------+-----------------|-----------"
+                 "--------------\n");
     for (int i = 0; i < DSS_EVT_COUNT; i++) {
         if (time_stat[i].wait_count == 0) {
-            (void)printf("|%-24s|%-11d|%-17d|%-15d|%-17d\n", dss_get_stat_event(i), 0, 0, 0, 0);
+            (void)printf("|%-24s|%-11d|%-17d|%-15d|%-17d|%-25s\n", dss_get_stat_event(i), 0, 0, 0, 0, " ");
             continue;
         }
-        (void)printf("|%-24s|%-11lld|%-17lld|%-15lld|%-17lld\n", dss_get_stat_event(i), time_stat[i].wait_count,
+        (void)cm_date2str(time_stat[i].max_date, "yyyy-mm-dd hh24:mi:ss", max_date_str, CM_MAX_TIME_STRLEN);
+        (void)printf("|%-24s|%-11lld|%-17lld|%-15lld|%-17lld|%-25s\n", dss_get_stat_event(i), time_stat[i].wait_count,
             time_stat[i].total_wait_time, time_stat[i].total_wait_time / time_stat[i].wait_count,
-            time_stat[i].max_single_time);
+            time_stat[i].max_single_time, max_date_str);
     }
-    (void)printf("+------------------------+-----------+-----------------+---------------+-----------------\n");
+    (void)printf("+------------------------+-----------+-----------------+---------------+-----------------|-----------"
+                 "--------------\n");
     return CM_SUCCESS;
 }
 

@@ -244,6 +244,33 @@ status_t dss_session_check_killed(dss_session_t *session)
     return CM_SUCCESS;
 }
 
+static void dss_clean_session_status(dss_session_t *session)
+{
+    if (!session->is_used) {
+        return;
+    }
+    dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
+
+    for (uint32 j = 0; j < DSS_EVT_COUNT; j++) {
+        int64 count = (int64)session->dss_session_stat[j].wait_count;
+        int64 total_time = (int64)session->dss_session_stat[j].total_wait_time;
+        int64 max_sgl_time = (int64)session->dss_session_stat[j].max_single_time;
+
+        (void)cm_atomic_add(&session_ctrl->stat_g[j].wait_count, count);
+        (void)cm_atomic_add(&session_ctrl->stat_g[j].total_wait_time, total_time);
+        if (max_sgl_time > session_ctrl->stat_g[j].max_single_time) {
+            (void)cm_atomic_cas(
+                &session_ctrl->stat_g[j].max_single_time, session_ctrl->stat_g[j].max_single_time, max_sgl_time);
+            session_ctrl->stat_g[j].max_date = session->dss_session_stat[j].max_date;
+        }
+
+        (void)cm_atomic_add(&session->dss_session_stat[j].wait_count, -count);
+        (void)cm_atomic_add(&session->dss_session_stat[j].total_wait_time, -total_time);
+        (void)cm_atomic_cas(&session->dss_session_stat[j].max_single_time, max_sgl_time, 0);
+        session->dss_session_stat[j].max_date = 0;
+    }
+}
+
 void dss_destroy_session_inner(dss_session_t *session)
 {
     if (session->connected == CM_TRUE) {
@@ -251,6 +278,7 @@ void dss_destroy_session_inner(dss_session_t *session)
         session->connected = CM_FALSE;
     }
     g_dss_session_ctrl.used_count--;
+    dss_clean_session_status(session);
     session->is_closed = CM_TRUE;
     session->is_used = CM_FALSE;
     errno_t ret = memset_sp(&session->cli_info, sizeof(session->cli_info), 0, sizeof(session->cli_info));
@@ -262,6 +290,7 @@ void dss_destroy_session_inner(dss_session_t *session)
     session->is_killed = CM_FALSE;
     session->audit_info.is_forced = CM_FALSE;
 }
+
 void dss_destroy_session(dss_session_t *session)
 {
     cm_spin_lock(&g_dss_session_ctrl.lock, NULL);

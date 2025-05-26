@@ -527,9 +527,15 @@ status_t dss_reopen_volume_handle(dss_conn_t *conn, dss_file_context_t *context,
 status_t dss_lock_vg_s(dss_vg_info_item_t *vg_item, dss_session_t *session)
 {
     dss_latch_offset_t latch_offset;
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     latch_offset.type = DSS_LATCH_OFFSET_SHMOFFSET;
     latch_offset.offset.shm_offset = dss_get_vg_latch_shm_offset(vg_item);
-    return dss_cli_lock_shm_meta_s(session, &latch_offset, vg_item->vg_latch, NULL);
+    status_t  ret = dss_cli_lock_shm_meta_s(session, &latch_offset, vg_item->vg_latch, NULL);
+    if (ret == CM_SUCCESS) {
+        dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
+    }
+    return ret;
 }
 
 status_t dss_apply_refresh_file_table(dss_conn_t *conn, dss_dir_t *dir)
@@ -1140,6 +1146,9 @@ status_t dss_latch_context_by_handle(
     }
 
     dss_file_context_t *file_cxt = dss_get_file_context_by_handle(file_run_ctx, handle);
+
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     dss_latch(&file_cxt->latch, latch_mode, ((dss_session_t *)conn->session)->id);
     if (file_cxt->flag == DSS_FILE_CONTEXT_FLAG_FREE) {
         dss_unlatch(&file_cxt->latch);
@@ -1156,6 +1165,7 @@ status_t dss_latch_context_by_handle(
     }
 
     *context = file_cxt;
+    dss_session_end_stat(conn->session, &begin_tv, DSS_LATCH_CONTEXT);
     return CM_SUCCESS;
 }
 
@@ -2481,10 +2491,10 @@ status_t dss_get_inst_status_on_server(dss_conn_t *conn, dss_server_status_t *ds
     return CM_SUCCESS;
 }
 
-status_t dss_get_time_stat_on_server(dss_conn_t *conn, dss_stat_item_t *time_stat, uint64 size)
+status_t dss_get_time_stat_on_server(dss_conn_t *conn, dss_stats_item_info_t time_stat, uint64 size, int isWsr)
 {
     text_t stat_info = CM_NULL_TEXT;
-    DSS_RETURN_IF_ERROR(dss_msg_interact(conn, DSS_CMD_GET_TIME_STAT, NULL, (void *)&stat_info));
+    DSS_RETURN_IF_ERROR(dss_msg_interact(conn, DSS_CMD_GET_TIME_STAT, (void *)&isWsr, (void *)&stat_info));
     for (uint64 i = 0; i < DSS_EVT_COUNT; i++) {
         time_stat[i] = *(dss_stat_item_t *)(stat_info.str + i * (uint64)sizeof(dss_stat_item_t));
     }
@@ -2847,6 +2857,12 @@ static status_t dss_decode_get_inst_status(dss_packet_t *ack_pack, void *ack)
     return CM_SUCCESS;
 }
 
+static status_t dss_encode_get_time_stat(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
+{
+    CM_RETURN_IFERR(dss_put_int32(pack, (uint32) * ((int32 *)send_info)));
+    return CM_SUCCESS;
+}
+
 static status_t dss_decode_get_time_stat(dss_packet_t *ack_pack, void *ack)
 {
     text_t *time_stat = (text_t *)ack;
@@ -3162,7 +3178,7 @@ dss_packet_proc_t g_dss_packet_proc[DSS_CMD_END] = {[DSS_CMD_MKDIR] = {dss_encod
     [DSS_CMD_GET_FTID_BY_PATH] = {dss_encode_get_ft_id_by_path, dss_decode_get_ft_id_by_path, "get ftid by path"},
     [DSS_CMD_GETCFG] = {dss_encode_getcfg, dss_decode_getcfg, "getcfg"},
     [DSS_CMD_GET_INST_STATUS] = {NULL, dss_decode_get_inst_status, "get inst status"},
-    [DSS_CMD_GET_TIME_STAT] = {NULL, dss_decode_get_time_stat, "get time stat"},
+    [DSS_CMD_GET_TIME_STAT] = {dss_encode_get_time_stat, dss_decode_get_time_stat, "get time stat"},
     [DSS_CMD_QUERY_HOTPATCH] = {dss_encode_query_hotpatch, dss_decode_query_hotpatch, "query hotpatch"}};
 
 status_t dss_decode_packet(dss_packet_proc_t *make_proc, dss_packet_t *ack_pack, void *ack)

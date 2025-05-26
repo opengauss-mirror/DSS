@@ -89,6 +89,7 @@ void dss_clt_env_init(void)
         }
         cm_unlatch(&g_dss_conn_info.conn_latch, NULL);
     }
+    DSS_RETURN_DRIECT_IFERR(cm_start_timer(g_timer()));
 }
 
 status_t dss_try_conn(dss_conn_opt_t *options, dss_conn_t *conn)
