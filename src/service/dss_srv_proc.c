@@ -82,11 +82,11 @@ static status_t dss_rename_file_check(
     dss_check_dir_output_t output_info = {&(rename_info->src_node), NULL, NULL, CM_TRUE};
     dss_vg_info_item_t *file_vg_item = *vg_item;
     output_info.item = &file_vg_item;
-    status = dss_check_dir(session, rename_info->src_path, GFT_FILE, &output_info, CM_TRUE);
+    status = dss_check_dir(session, rename_info->src_path, GFT_FILE, &output_info, O_WRONLY, CM_TRUE);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check src dir,errcode:%d.", cm_get_error_code()));
 
     dss_check_dir_output_t output_info_tmp = {&(rename_info->dst_node), NULL, NULL, CM_TRUE};
-    if (dss_check_dir(session, rename_info->dst_path, GFT_FILE, &output_info_tmp, CM_TRUE) != CM_SUCCESS) {
+    if (dss_check_dir(session, rename_info->dst_path, GFT_FILE, &output_info_tmp, O_WRONLY, CM_TRUE) != CM_SUCCESS) {
         int32 errcode = cm_get_error_code();
         if (errcode != ERR_DSS_FILE_NOT_EXIST) {
             return CM_ERROR;
@@ -96,7 +96,7 @@ static status_t dss_rename_file_check(
         char dst_dir[DSS_FILE_PATH_MAX_LENGTH];
         DSS_RETURN_VALUE_IF_HOOK(!dss_get_dst_directory(dst_dir, rename_info->dst_path), CM_ERROR,
             LOG_DEBUG_ERR("Failed to obtain the directory of the path(%s).", rename_info->dst_path));
-        status = dss_check_dir(session, dst_dir, GFT_PATH, &output_info_tmp, CM_TRUE);
+        status = dss_check_dir(session, dst_dir, GFT_PATH, &output_info_tmp, O_WRONLY, CM_TRUE);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check dst dir,errcode:%d.", cm_get_error_code()));
     } else {
         DSS_THROW_ERROR(ERR_DSS_FILE_RENAME_EXIST, "cannot rename a existed file.");
@@ -168,7 +168,7 @@ status_t dss_check_vg_ft_dir(dss_session_t *session, dss_vg_info_item_t **vg_ite
 
     dss_vg_info_item_t *tmp_vg_item = *vg_item;
     dss_check_dir_output_t output_info = {node, &tmp_vg_item, parent_node, CM_TRUE};
-    status_t status = dss_check_dir(session, path, type, &output_info, CM_TRUE);
+    status_t status = dss_check_dir(session, path, type, &output_info, OWRONLY, CM_TRUE);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to check dir, errcode: %d.", status);
         return status;
