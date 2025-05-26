@@ -260,6 +260,7 @@ status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ac
 status_t dss_fallocate_impl(dss_conn_t *conn, int handle, int mode, long long int offset, long long int length);
 status_t dss_hotpatch_impl(dss_conn_t *conn, const char *hp_cmd_str, const char *patch_path);
 status_t dss_query_hotpatch_impl(dss_conn_t *conn, dss_hp_info_view_t *hp_info_view);
+status_t dss_kill_session_impl(dss_conn_t *conn, uint32 sid);
 
 void dss_set_conn_wait_event(dss_conn_t *conn, dss_wait_event_e event);
 void dss_unset_conn_wait_event(dss_conn_t *conn);

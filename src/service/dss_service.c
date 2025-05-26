@@ -112,6 +112,7 @@ static status_t dss_process_remote(dss_session_t *session)
                 LOG_RUN_INF("Req break if currid is equal to remoteid, just try again.");
                 return CM_ERROR;
             }
+            CM_RETURN_IFERR(dss_session_check_killed(session));
             continue;
         }
         break;
@@ -873,6 +874,28 @@ static status_t dss_process_hotpatch_inner(dss_session_t *session)
     return CM_SUCCESS;
 }
 
+static status_t dss_process_kill_session(dss_session_t *session)
+{
+    uint32 sid_to_kill;
+    dss_init_get(&session->recv_pack);
+    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&sid_to_kill));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "kill session %u", sid_to_kill));
+    if (sid_to_kill == session->id) {
+        DSS_THROW_ERROR(ERR_DSS_SESSION_KILLED, (int32)sid_to_kill);
+        LOG_RUN_ERR("[DSS Kill Session] Session cannot kill itself.");
+        return CM_ERROR;
+    }
+    dss_session_t *session_to_kill = dss_get_session(sid_to_kill);
+    if (session_to_kill == NULL || sid_to_kill < dss_get_udssession_startid() || !session_to_kill->is_used ||
+        !session_to_kill->connected) {
+        LOG_RUN_ERR("[DSS Kill Session] Trying to break a invalid session by sid[%u].", sid_to_kill);
+        DSS_THROW_ERROR(ERR_DSS_SESSION_KILLED, (int32)sid_to_kill);
+        return CM_ERROR;
+    }
+    session_to_kill->is_killed = CM_TRUE;
+    return CM_SUCCESS;
+}
+
 static status_t dss_process_hotpatch(dss_session_t *session)
 {
     if (dss_hp_check_is_inited() != CM_SUCCESS) {
@@ -1370,6 +1393,7 @@ static dss_cmd_hdl_t g_dss_cmd_handle[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_HOTPATCH)] = {DSS_CMD_HOTPATCH, dss_process_hotpatch, NULL, CM_FALSE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_ENABLE_UPGRADES)] = {DSS_CMD_ENABLE_UPGRADES, dss_process_enable_upgrades, NULL,
         CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_KILL_SESSION)] = {DSS_CMD_KILL_SESSION, dss_process_kill_session, NULL, CM_FALSE},
     // query
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_HANDSHAKE)] = {DSS_CMD_HANDSHAKE, dss_process_handshake, NULL, CM_FALSE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST)] = {DSS_CMD_EXIST, dss_process_exist, NULL, CM_FALSE},
@@ -1435,6 +1459,7 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
             if (g_dss_instance.status != DSS_STATUS_OPEN && g_dss_instance.status != DSS_STATUS_PREPARE) {
                 LOG_RUN_INF("Req forbided by recovery for cmd:%u", (uint32)session->recv_pack.head->cmd);
                 dss_dec_active_sessions(session);
+                CM_RETURN_IFERR(dss_session_check_killed(session));
                 cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
                 continue;
             }
@@ -1446,6 +1471,7 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
         if (status != CM_SUCCESS &&
             (cm_get_error_code() == ERR_DSS_RECOVER_CAUSE_BREAK || cm_get_error_code() == ERR_DSS_MASTER_CHANGE)) {
             LOG_RUN_INF("Req breaked by error %d for cmd:%u", cm_get_error_code(), session->recv_pack.head->cmd);
+            CM_RETURN_IFERR(dss_session_check_killed(session));
             cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
             continue;
         }
@@ -1460,13 +1486,15 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
     return status;
 }
 
-void dss_process_cmd_wait_be_open(dss_session_t *session)
+status_t dss_process_cmd_wait_be_open(dss_session_t *session)
 {
     while (g_dss_instance.status != DSS_STATUS_OPEN) {
+        CM_RETURN_IFERR(dss_session_check_killed(session));
         DSS_GET_CM_LOCK_LONG_SLEEP;
         LOG_RUN_INF("The status %d of instance %lld is not open, just wait.\n", (int32)g_dss_instance.status,
             dss_get_inst_cfg()->params.inst_id);
     }
+    return CM_SUCCESS;
 }
 
 status_t dss_process_command(dss_session_t *session)
@@ -1488,23 +1516,34 @@ status_t dss_process_command(dss_session_t *session)
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to read message sent by %s.", session->cli_info.process_name);
         session->is_closed = CM_TRUE;
-        return CM_ERROR;
+        return status;
     }
+
+    status = dss_session_check_killed(session);
+    if (status != CM_SUCCESS) {
+        dss_return_error(session);
+        return status;
+    }
+
     status = dss_check_proto_version(session);
     if (status != CM_SUCCESS) {
         dss_return_error(session);
-        return CM_ERROR;
+        return status;
     }
 
     if (!dss_can_cmd_type_no_open(session->recv_pack.head->cmd)) {
-        dss_process_cmd_wait_be_open(session);
+        status = dss_process_cmd_wait_be_open(session);
+        if (status != CM_SUCCESS) {
+            dss_return_error(session);
+            return status;
+        }
     }
 
     status = dss_exec_cmd(session, CM_TRUE);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to execute command:%d.", session->recv_pack.head->cmd);
         dss_return_error(session);
-        return CM_ERROR;
+        return status;
     } else {
         dss_return_success(session);
     }

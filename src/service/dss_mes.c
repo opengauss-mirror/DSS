@@ -1113,6 +1113,7 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
                 dss_head.msg_proto_ver = new_proto_ver;
                 // if msg version has changed, please motify your change
                 mes_release_msg(&msg);
+                CM_RETURN_IFERR(dss_session_check_killed(session));
                 continue;
             }
         } else {
@@ -1188,6 +1189,7 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
         if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {
             // if msg version has changed, please motify your change
             mes_release_msg(&msg);
+            CM_RETURN_IFERR(dss_session_check_killed(session));
             continue;
         }
         break;
@@ -1457,6 +1459,8 @@ static status_t dss_read_volume_remote_core(dss_session_t *session, dss_loaddisk
         // 3. receive msg from remote
         ret = dss_rec_msgs(dss_head->ruid, buf, req->size);
         if (ret == ERR_DSS_VERSION_NOT_MATCH) {
+            // check whether the session is killed before continue the loop.
+            CM_RETURN_IFERR(dss_session_check_killed(session));
             req->dss_head.msg_proto_ver = dss_get_remote_proto_ver(req->dss_head.dst_inst);
             // if msg version has changed, please motify your change
             continue;

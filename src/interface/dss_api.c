@@ -953,6 +953,16 @@ int dss_enable_upgrades(void)
     return (int)ret;
 }
 
+int dss_kill_session(unsigned int sid)
+{
+    dss_conn_t *conn = NULL;
+    status_t ret = dss_enter_api(&conn);
+    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when killing dss session"));
+    ret = dss_kill_session_impl(conn, sid);
+    dss_leave_api(conn, CM_FALSE);
+    return (int)ret;
+}
+
 #ifdef __cplusplus
 }
 #endif
