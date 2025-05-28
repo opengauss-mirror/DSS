@@ -59,6 +59,7 @@
 #include "config.h"
 #endif
 #include "dss_fault_injection.h"
+#include "dsscmd_fuse.h"
 
 #ifdef WIN32
 #define DEF_DSS_VERSION "Windows does not support this feature because it is built using vs."
@@ -905,6 +906,41 @@ static status_t adv_proc(void)
         DSS_PRINT_INF("Succeed to add volume online, vg_name is %s, volume path is %s.\n", vg_name, vol_path);
     }
     return status;
+}
+
+static dss_args_t cmd_mount_args[] = {
+    {'d', "dir", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
+    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
+        0},
+};
+static dss_args_set_t cmd_mount_args_set = {
+    cmd_mount_args,
+    sizeof(cmd_mount_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+static void mount_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:%s mount -d mountpoint [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("\nuse \"fusermount -u -z mountpoint\" to unmount\n");
+}
+
+static status_t mount_proc(void)
+{
+    const char *mount_dir = cmd_mount_args[DSS_ARG_IDX_0].input_args;
+#ifndef WIN32
+    const char *uds_path = cmd_mount_args[DSS_ARG_IDX_1].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(uds_path);
+    DSS_RETURN_IFERR2((conn == NULL) ? CM_ERROR : CM_SUCCESS, DSS_PRINT_ERROR("Failed to get uds connection.\n"));
+
+    // get server locator
+    char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
+    status_t status = get_default_server_locator(server_locator);
+    DSS_RETURN_IF_ERROR(status);
+    const char *cur_uds = (uds_path == NULL) ? server_locator : uds_path;
+    DSS_RETURN_IF_ERROR(dss_set_svr_path(cur_uds));
+#endif
+    return my_fuse_main(mount_dir);
 }
 
 static dss_args_t cmd_mkdir_args[] = {
@@ -4450,7 +4486,9 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set,
                                       {"query_latch_remain", query_latch_remain_help, query_latch_remain_proc,
                                           &cmd_query_latch_remain_args_set, false},
                                       {"kill_session", kill_session_help, kill_session_proc,
-                                          &cmd_kill_session_args_set, true}};
+                                          &cmd_kill_session_args_set, true},
+                                      {"mount", mount_help, mount_proc,
+                                          &cmd_mount_args_set, true},};
 
 void clean_cmd()
 {
