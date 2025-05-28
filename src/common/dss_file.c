@@ -266,8 +266,11 @@ void dss_lock_vg_mem_s_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_
 
 void dss_lock_vg_mem_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     dss_lock_vg_mem_x(vg_item);
     dss_enter_shm_x(session, vg_item);
+    dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
 }
 
 bool32 dss_lock_vg_mem_and_shm_timed_x(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks)
@@ -292,8 +295,11 @@ void dss_lock_vg_mem_and_shm_x2ix(dss_session_t *session, dss_vg_info_item_t *vg
 
 void dss_lock_vg_mem_and_shm_ix2x(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     dss_lock_vg_mem_ix2x(vg_item);
     dss_lock_shm_meta_ix2x(session, vg_item->vg_latch);
+    dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
 }
 
 void dss_lock_vg_mem_and_shm_degrade(dss_session_t *session, dss_vg_info_item_t *vg_item)
@@ -304,8 +310,11 @@ void dss_lock_vg_mem_and_shm_degrade(dss_session_t *session, dss_vg_info_item_t 
 
 void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     dss_lock_vg_mem_s(vg_item);
     dss_enter_shm_s(session, vg_item, CM_FALSE, SPIN_WAIT_FOREVER);
+    dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
 }
 
 bool32 dss_lock_vg_mem_and_shm_timed_s(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks)
@@ -324,8 +333,11 @@ bool32 dss_lock_vg_mem_and_shm_timed_s(dss_session_t *session, dss_vg_info_item_
 
 void dss_lock_vg_mem_and_shm_s_force(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     dss_lock_vg_mem_s_force(vg_item);
     dss_enter_shm_s(session, vg_item, CM_TRUE, SPIN_WAIT_FOREVER);
+    dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
 }
 
 void dss_unlock_vg_mem_and_shm(dss_session_t *session, dss_vg_info_item_t *vg_item)

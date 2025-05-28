@@ -268,7 +268,7 @@ status_t dss_msg_interact_with_stat(dss_conn_t *conn, uint8 cmd, void *send_info
 
 status_t dss_close_file_on_server(dss_conn_t *conn, dss_vg_info_item_t *vg_item, uint64 fid, ftid_t ftid);
 status_t dss_get_inst_status_on_server(dss_conn_t *conn, dss_server_status_t *dss_status);
-status_t dss_get_time_stat_on_server(dss_conn_t *conn, dss_stat_item_t *time_stat, uint64 size);
+status_t dss_get_time_stat_on_server(dss_conn_t *conn, dss_stats_item_info_t time_stat, uint64 size, int isWsr);
 status_t dss_set_main_inst_on_server(dss_conn_t *conn);
 status_t dss_disable_grab_lock_on_server(dss_conn_t *conn);
 status_t dss_enable_grab_lock_on_server(dss_conn_t *conn);

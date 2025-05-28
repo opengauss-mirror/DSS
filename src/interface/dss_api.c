@@ -223,6 +223,23 @@ int dss_fstat(int handle, dss_stat_info_t item)
     return (int)ret;
 }
 
+int dss_inst_stats(dss_stats_item_info_t item, int stats_size)
+{
+    dss_conn_t *conn = NULL;
+    if (item == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "dss_stats_item_info_t");
+        return DSS_ERROR;
+    }
+    status_t ret = dss_enter_api(&conn);
+    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("dss_inst_stats get conn error"));
+    ret = dss_get_time_stat_on_server(conn, item, DSS_EVT_COUNT, 1);
+    if (ret != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to get time stat.");
+        return DSS_ERROR;
+    }
+    return (int)ret;
+}
+
 int dss_dclose(dss_dir_handle dir)
 {
     dss_conn_t *conn = NULL;

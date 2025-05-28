@@ -45,12 +45,15 @@ typedef enum en_dss_wait_event {
     DSS_FOPEN,
     DSS_STAT,
     DSS_FIND_FT_ON_SERVER,
+    DSS_LOCK_VG,
+    DSS_LATCH_CONTEXT,
     DSS_EVT_COUNT,
 } dss_wait_event_e;
 
 typedef struct st_dss_stat_item {
     atomic_t total_wait_time;
     atomic_t max_single_time;
+    volatile date_t max_date;
     atomic_t wait_count;
 } dss_stat_item_t;
 
@@ -64,7 +67,7 @@ static inline void dss_begin_stat(timeval_t *begin_tv)
     (void)cm_gettimeofday(begin_tv);
 }
 
-static inline void dss_end_stat_base(dss_stat_item_t *stat_item, timeval_t *begin_tv)
+static void dss_end_stat_base(dss_stat_item_t *stat_item, timeval_t *begin_tv)
 {
     timeval_t end_tv;
     uint64 usecs;
@@ -72,8 +75,11 @@ static inline void dss_end_stat_base(dss_stat_item_t *stat_item, timeval_t *begi
     (void)cm_gettimeofday(&end_tv);
     usecs = (uint64)TIMEVAL_DIFF_US(begin_tv, &end_tv);
     (void)cm_atomic_add(&stat_item->total_wait_time, (int64)usecs);
-    (void)cm_atomic_set(&stat_item->max_single_time, (int64)MAX((uint64)stat_item->max_single_time, usecs));
     (void)cm_atomic_inc(&stat_item->wait_count);
+    if ((int64)usecs > stat_item->max_single_time) {
+        (void)cm_atomic_set(&stat_item->max_single_time, (int64)MAX((uint64)stat_item->max_single_time, usecs));
+        stat_item->max_date = g_timer()->now;
+    }
 }
 
 static inline void dss_end_stat_ex(dss_stat_ctx_t *stat_ctx, dss_stat_item_t *stat_item, timeval_t *begin_tv)

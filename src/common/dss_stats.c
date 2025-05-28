@@ -40,6 +40,8 @@ const char *g_dss_stat_events[DSS_EVT_COUNT] = {
     [DSS_FOPEN] = "DSS File Open",
     [DSS_STAT] = "DSS Stat",
     [DSS_FIND_FT_ON_SERVER] = "Find File Node On Server",
+    [DSS_LOCK_VG] = "DSS Lock Vg",
+    [DSS_LATCH_CONTEXT] = "DSS Latch Context",
 };
 
 const char *dss_get_stat_event(dss_wait_event_e event)

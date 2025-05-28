@@ -117,7 +117,7 @@ typedef enum en_dss_session_status {
 typedef struct st_dss_session {
     spinlock_t lock;  // for control current rw of the same session in server
     uint32 id;
-    bool32 is_closed;
+    volatile bool32 is_closed;
     bool32 is_used;
     bool32 connected;
     bool32 reactor_added;
@@ -166,6 +166,8 @@ typedef struct st_dss_session_ctrl {
     uint32 used_count;
     uint32 total;
     uint32 alloc_sessions;
+    dss_stat_item_t stat_g[DSS_EVT_COUNT];
+    dss_stat_item_t stat_last_cmd[DSS_EVT_COUNT];
     dss_session_t **sessions;
 } dss_session_ctrl_t;
 
