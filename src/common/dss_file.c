@@ -4212,13 +4212,16 @@ status_t dss_check_rename_path(const char *src_path, const char *dst_path, text_
     cm_str2text((char *)src_path, &src_name);
     if (!cm_fetch_rtext(&src_name, '/', '\0', &src_dir)) {
         DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("not a complete absolute path name(%s %s)", T2S(&src_dir), src_path),
-            DSS_THROW_ERROR(ERR_DSS_FILE_RENAME, "can not change path."));
+            DSS_THROW_ERROR_EX(
+                ERR_DSS_FILE_RENAME, "not a complete absolute path name(%s %s)", T2S(&src_dir), src_path));
     }
 
     text_t dst_dir;
     cm_str2text((char *)dst_path, dst_name);
     if (!cm_fetch_rtext(dst_name, '/', '\0', &dst_dir)) {
-        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("not a complete absolute path name(%s %s)", T2S(&dst_dir), dst_path));
+        DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("not a complete absolute path name(%s %s)", T2S(&dst_dir), dst_path),
+            DSS_THROW_ERROR_EX(
+                ERR_DSS_FILE_RENAME, "not a complete absolute path name(%s %s)", T2S(&dst_dir), dst_path));
     }
 
     if (cm_text_equal(&src_dir, &dst_dir) == CM_FALSE) {
