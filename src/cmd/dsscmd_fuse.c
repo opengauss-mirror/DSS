@@ -198,6 +198,68 @@ int my_release2(const char *path, struct fuse2_file_info *file_info)
     return my_release_common(path, &file_info->fh);
 }
 
+int traverse_dir_size(char *dss_path, struct stat *stat_buf)
+{
+    int ret = 0;
+    char child_path[DSS_FUSE_PATH_MAX_SIZE];
+    DIR *dir = opendir_dev(dss_path);
+    if (dir == NULL) {
+        return RET_EIO;
+    }
+
+    struct dirent *entry = NULL;
+    while ((entry = readdir_dev(dir)) != NULL) {
+        struct stat child_stat = { 0 };
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        if (snprintf_s(child_path, DSS_FUSE_PATH_MAX_SIZE, DSS_FUSE_PATH_MAX_SIZE - 1,
+            "%s/%s", dss_path, entry->d_name) == -1) {
+            ret = RET_ENAMETOOLONG;
+            break;
+        }
+
+        if (lstat_dev(child_path, &child_stat) != 0) {
+            ret = RET_EIO;
+            break;
+        }
+
+        if (S_ISDIR(child_stat.st_mode)) {
+            if ((ret = traverse_dir_size(child_path, &child_stat)) != 0) {
+                break;
+            }
+        }
+
+        stat_buf->st_blksize = DSS_BLOCK_SIZE;
+        stat_buf->st_blocks = stat_buf->st_blocks + child_stat.st_blocks;
+    }
+
+    (void)closedir_dev(dir);
+    return ret;
+}
+
+int traverse_root_dir_size(dss_vg_info_t *vgs_info, struct stat *stat_buf)
+{
+    int ret = 0;
+    char child_path[DSS_FUSE_PATH_MAX_SIZE];
+
+    for (uint32 i = 0; i < vgs_info->group_num; i++) {
+        if (snprintf_s(child_path, DSS_FUSE_PATH_MAX_SIZE, DSS_FUSE_PATH_MAX_SIZE - 1,
+        "+%s", vgs_info->volume_group[i].vg_name) == -1) {
+            ret = RET_ENAMETOOLONG;
+            break;
+        }
+
+        ret = traverse_dir_size(child_path, stat_buf);
+        if (ret != 0) {
+            break;
+        }
+    }
+
+    return ret;
+}
+
 int get_dir_links(char *dss_path, struct stat *stat_buf)
 {
     int ret = 0;
@@ -264,7 +326,7 @@ int my_getattr_common(const char *path, struct stat *stat_buf)
         stat_buf->st_mtime = stat_buf->st_ctime;
         stat_buf->st_atime = stat_buf->st_ctime;
         stat_buf->st_nlink = 2 + vgs_info->group_num;
-        return 0;
+        return traverse_root_dir_size(vgs_info, stat_buf);
     } else {
         if (stat_dev(dss_path, stat_buf) != 0) {
             return (errno == ENOENT || errno == ERR_DSS_VG_NOT_EXIST) ? RET_ENOENT : 0;
@@ -273,6 +335,9 @@ int my_getattr_common(const char *path, struct stat *stat_buf)
         if (S_ISDIR(stat_buf->st_mode)) {
             int ret = 0;
             if ((ret = get_dir_links(dss_path, stat_buf)) != 0) {
+                return ret;
+            }
+            if ((ret = traverse_dir_size(dss_path, stat_buf)) != 0) {
                 return ret;
             }
         } else {

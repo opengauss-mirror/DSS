@@ -33,6 +33,7 @@
 #include "securec.h"
 #include "dss_api.h"
 #include "dss_errno.h"
+#include "dss_defs.h"
 #include "dsscmd_native_api.h"
 #include "dsscmd_fs_api.h"
 
@@ -423,6 +424,8 @@ int native_stat_file(const char *path, struct stat *buf)
     }
     // total size, in bytes
     buf->st_size = (long)st.written_size;
+    buf->st_blksize = DSS_BLOCK_SIZE;
+    buf->st_blocks = (buf->st_size + DSS_BLOCK_SIZE - 1) / DSS_BLOCK_SIZE;
     // time of last modification
     buf->st_mtime = st.update_time;
     buf->st_uid = getuid();
