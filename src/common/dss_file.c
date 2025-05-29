@@ -3808,8 +3808,7 @@ status_t dss_invalidate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_i
         dss_invalidate_meta_msg_t invalidate_meta_msg = {vg_item->id, DSS_BLOCK_TYPE_FT, DSS_ID_TO_U64(node->id)};
         // let others can read disk or mem by force dss_latch_s_force before notify other nodes
         dss_lock_vg_mem_and_shm_x2ix(session, vg_item);
-        status = invalidate_other_nodes_proc(
-            session, vg_item, (char *)&invalidate_meta_msg, sizeof(dss_invalidate_meta_msg_t), &invalid_ack);
+        status = invalidate_other_nodes_proc(session, vg_item, &invalidate_meta_msg, &invalid_ack);
         // nned lock exec to finish truncate
         dss_lock_vg_mem_and_shm_ix2x(session, vg_item);
         if (status != CM_SUCCESS || !invalid_ack) {

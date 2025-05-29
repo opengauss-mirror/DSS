@@ -31,6 +31,7 @@
 #include "dss_param.h"
 #include "dss_meta_buf.h"
 #include "dss_session.h"
+#include "dss_bcast_def.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -376,7 +377,7 @@ static inline dss_file_context_t *dss_get_file_context_by_handle(dss_file_run_ct
 }
 // this is need to re-consturct the code-file-place
 typedef status_t (*dss_invalidate_other_nodes_proc_t)(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack);
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_invalidate_meta_msg_t *meta_info, bool32 *cmd_ack);
 void regist_invalidate_other_nodes_proc(dss_invalidate_other_nodes_proc_t proc);
 typedef status_t (*dss_broadcast_check_file_open_proc_t)(
     dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
