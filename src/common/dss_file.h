@@ -376,12 +376,14 @@ static inline dss_file_context_t *dss_get_file_context_by_handle(dss_file_run_ct
 }
 // this is need to re-consturct the code-file-place
 typedef status_t (*dss_invalidate_other_nodes_proc_t)(
-    dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack);
+    dss_session_t *session, dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack);
 void regist_invalidate_other_nodes_proc(dss_invalidate_other_nodes_proc_t proc);
-typedef status_t (*dss_broadcast_check_file_open_proc_t)(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
+typedef status_t (*dss_broadcast_check_file_open_proc_t)(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
 void regist_broadcast_check_file_open_proc(dss_broadcast_check_file_open_proc_t proc);
 
-typedef status_t (*dss_refresh_ft_by_primary_proc_t)(dss_block_id_t blockid, uint32 vgid, char *vg_name);
+typedef status_t (*dss_refresh_ft_by_primary_proc_t)(
+    dss_session_t *session, dss_block_id_t blockid, uint32 vgid, char *vg_name);
 void regist_refresh_ft_by_primary_proc(dss_refresh_ft_by_primary_proc_t proc);
 typedef status_t (*dss_get_node_by_path_remote_proc_t)(dss_session_t *session, const char *dir_path,
     gft_item_type_t type, dss_check_dir_output_t *output_info, int32 flag, bool32 is_throw_err);

@@ -47,6 +47,14 @@ typedef enum en_dss_wait_event {
     DSS_FIND_FT_ON_SERVER,
     DSS_LOCK_VG,
     DSS_LATCH_CONTEXT,
+    DSS_FTRUNCATE,
+    DSS_SET_MAIN_INST,
+    DSS_CMD_BROADCAST,
+    DSS_CMD_SYB2ACTIVE,
+    DSS_CMD_LOAD_DISK,
+    DSS_CMD_JOIN_CLUSTER,
+    DSS_CMD_REFRESH_FT,
+    DSS_CMD_GET_FT_BLOCK,
     DSS_EVT_COUNT,
 } dss_wait_event_e;
 

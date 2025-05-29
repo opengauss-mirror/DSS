@@ -42,6 +42,14 @@ const char *g_dss_stat_events[DSS_EVT_COUNT] = {
     [DSS_FIND_FT_ON_SERVER] = "Find File Node On Server",
     [DSS_LOCK_VG] = "DSS Lock Vg",
     [DSS_LATCH_CONTEXT] = "DSS Latch Context",
+    [DSS_FTRUNCATE] = "DSS Ftruncate",
+    [DSS_SET_MAIN_INST] = "DSS Set Main Inst",
+    [DSS_CMD_BROADCAST] = "DSS Cmd Boradcast",
+    [DSS_CMD_SYB2ACTIVE] = "DSS Cmd Syb2Active",
+    [DSS_CMD_LOAD_DISK] = "DSS Cmd Load Disk",
+    [DSS_CMD_JOIN_CLUSTER] = "DSS Cmd Join Cluster",
+    [DSS_CMD_REFRESH_FT] = "DSS Cmd Refresh Ft",
+    [DSS_CMD_GET_FT_BLOCK] = "DSS Cmd Get Ft Block",
 };
 
 const char *dss_get_stat_event(dss_wait_event_e event)

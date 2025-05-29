@@ -90,6 +90,8 @@ static status_t dss_process_remote(dss_session_t *session)
     LOG_DEBUG_INF("Start processing remote requests(%d), remote node(%u),current node(%u).",
         session->recv_pack.head->cmd, remoteid, currid);
     status_t remote_result = CM_ERROR;
+    timeval_t begin_tv;
+    dss_begin_stat(&begin_tv);
     while (CM_TRUE) {
         if (get_instance_status_proc() == DSS_STATUS_RECOVERY) {
             DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
@@ -119,6 +121,7 @@ static status_t dss_process_remote(dss_session_t *session)
     }
     LOG_DEBUG_INF("The remote request(%d) is processed successfully, remote node(%u),current node(%u), result(%u).",
         session->recv_pack.head->cmd, remoteid, currid, remote_result);
+    dss_session_end_stat(session, &begin_tv, DSS_CMD_SYB2ACTIVE);
     return remote_result;
 }
 
@@ -1373,7 +1376,7 @@ static status_t dss_process_enable_upgrades(dss_session_t *session)
     uint32 curr_id = (uint32)(cfg->params.inst_id);
     dss_get_version_output_t get_version_output = {.all_same = DSS_TRUE, .min_version = DSS_PROTO_VERSION};
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "enable upgrades", curr_id));
-    int ret = dss_bcast_get_protocol_version(&get_version_output);
+    int ret = dss_bcast_get_protocol_version(session, &get_version_output);
     if (ret != CM_SUCCESS) {
         // If any node return ERR_DSS_UNSUPPORTED_CMD, we assume old node exists.
         if (ret == ERR_DSS_UNSUPPORTED_CMD || ret == ERR_MES_WAIT_OVERTIME) {

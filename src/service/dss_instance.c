@@ -902,7 +902,7 @@ void dss_recovery_when_standby(dss_session_t *session, dss_instance_t *inst, uin
         dss_set_server_status_flag(DSS_STATUS_READONLY);
         LOG_RUN_INF("[RECOVERY]inst %u set status flag %u when not get cm lock.", curr_id, DSS_STATUS_READONLY);
     }
-    if (!dss_check_join_cluster()) {
+    if (!dss_check_join_cluster(session)) {
         dss_set_master_id(old_master_id);
         dss_set_server_status_flag(old_status);
         LOG_RUN_INF("[RECOVERY]inst %u reset status flag %d and master_id %u when join failed.", curr_id, old_status,
@@ -1147,7 +1147,7 @@ void dss_set_inst_work_status(uint64 cur_inst_map)
     (void)cm_atomic_set((atomic_t *)&g_dss_instance.inst_work_status_map, (int64)cur_inst_map);
 }
 
-bool32 dss_check_join_cluster()
+bool32 dss_check_join_cluster(dss_session_t *session)
 {
     if (g_dss_instance.is_join_cluster) {
         return CM_TRUE;
@@ -1159,7 +1159,7 @@ bool32 dss_check_join_cluster()
     } else {
         // try register to new master to join
         bool32 join_succ = CM_FALSE;
-        status_t status = dss_join_cluster(&join_succ);
+        status_t status = dss_join_cluster(session, &join_succ);
         if (status != CM_SUCCESS) {
             LOG_RUN_ERR("Join cluster fail, wait next try.");
             cm_reset_error();

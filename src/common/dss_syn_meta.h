@@ -62,7 +62,7 @@ status_t dss_invalidate_meta_remote(
     dss_session_t *session, dss_invalidate_meta_msg_t *invalidate_meta_msg, uint32 size, bool32 *invalid_ack);
 
 typedef status_t (*dss_meta_syn2other_nodes_proc_t)(
-    dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack);
+    dss_session_t *session, dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack);
 void regist_meta_syn2other_nodes_proc(dss_meta_syn2other_nodes_proc_t proc);
 
 #ifdef __cplusplus

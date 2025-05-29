@@ -1076,13 +1076,13 @@ static status_t rp_redo_free_ft_node_core(dss_session_t *session, dss_vg_info_it
 
         cur_block = dss_get_ft_by_node(node);
         if (rp_check_block_addr(&addr_his, cur_block) && vg_item->status != DSS_VG_STATUS_RECOVERY) {
-            DSS_LOG_DEBUG_OP("[REDO] Replay free ft node, block has updated, cur_block:%p, node id: %s.", cur_block,
-                dss_display_metaid(node->id));
+            DSS_LOG_DEBUG_OP("[REDO] Replay free ft node, block has updated, cur_block_id:%s, node id: %s.",
+                dss_display_metaid(cur_block->common.id), dss_display_metaid(node->id));
             continue;  // already update the block to disk
         }
 
-        DSS_LOG_DEBUG_OP(
-            "[REDO] Replay free ft node, cur_block:%p, node id: %s.", cur_block, dss_display_metaid(node->id));
+        DSS_LOG_DEBUG_OP("[REDO] Replay free ft node, cur_block_id:%s, node id: %s.",
+            dss_display_metaid(cur_block->common.id), dss_display_metaid(node->id));
 
         status = dss_update_ft_block_disk(vg_item, cur_block, data->node[i].id);
         if (status != CM_SUCCESS) {
@@ -1191,7 +1191,7 @@ status_t rp_redo_move_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
         CM_RETURN_IFERR(dss_update_ft_block_disk(vg_item, cur_block, data->node[i].id));
         rp_insert_block_addr_history(&addr_his, cur_block);
     }
-    LOG_DEBUG_INF("[REDO] Succeed to replay recycle ft node, vg name:%s.", vg_item->vg_name);
+    LOG_DEBUG_INF("[REDO] Succeed to replay move ft node, vg name:%s.", vg_item->vg_name);
     return CM_SUCCESS;
 }
 

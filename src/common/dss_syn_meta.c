@@ -116,7 +116,7 @@ void dss_syn_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block
         dss_unlock_vg_mem_and_shm(session, vg_item);
 
         (void)meta_syn2other_nodes_proc(
-            vg_item, (char *)&meta_syn, (OFFSET_OF(dss_meta_syn_t, meta) + meta_syn.meta_len), NULL);
+            session, vg_item, (char *)&meta_syn, (OFFSET_OF(dss_meta_syn_t, meta) + meta_syn.meta_len), NULL);
         LOG_DEBUG_INF("syn meta file:%llu file_ver:%llu, vg:%u, block:%llu type:%u, with version:%llu.", meta_syn.fid,
             meta_syn.file_ver, meta_syn.vg_id, meta_syn.meta_block_id, meta_syn.meta_type, meta_syn.syn_meta_version);
     }

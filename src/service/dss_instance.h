@@ -130,7 +130,7 @@ void dss_delay_clean_proc(thread_t *thread);
 status_t dss_delay_clean_background_task(dss_instance_t *inst);
 void dss_close_delay_clean_background_task(dss_instance_t *inst);
 void dss_hashmap_dynamic_extend_and_redistribute_proc(thread_t *thread);
-bool32 dss_check_join_cluster();
+bool32 dss_check_join_cluster(dss_session_t *session);
 void dss_check_unreg_volume(dss_session_t *session);
 void dss_meta_syn_proc(thread_t *thread);
 void dss_recycle_meta_proc(thread_t *thread);
