@@ -243,7 +243,7 @@ static status_t dss_init_log_file(log_param_t *log_param, dss_config_t *inst_cfg
     return CM_SUCCESS;
 }
 
-static status_t dss_init_log_home_ex(dss_config_t *inst_cfg, char *log_parm_value, char *log_param_name, char *log_dir)
+status_t dss_init_log_home_ex(dss_config_t *inst_cfg, char *log_parm_value, char *log_param_name, char *log_dir)
 {
     errno_t errcode = 0;
     bool32 verify_flag = CM_FALSE;

@@ -178,7 +178,7 @@ uint32 dss_get_cmd_log_def_count();
 void dss_set_error_ex(const char *file, uint32 line, cm_errno_t code, const char *format, ...);
 
 char *dss_get_print_tab(uint8 level);
-
+status_t dss_init_log_home_ex(dss_config_t *inst_cfg, char *log_parm_value, char *log_param_name, char *log_dir);
 #ifdef __cplusplus
 }
 #endif
