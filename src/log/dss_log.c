@@ -507,3 +507,18 @@ void sql_record_audit_log(void *sess, status_t status, uint8 cmd_type)
         sql_audit_log(session, status, cmd_type);
     }
 }
+
+void dss_set_error_ex(const char *file, uint32 line, cm_errno_t code, const char *format, ...)
+{
+    va_list args;
+
+    va_start(args, format);
+    char tmp[CM_MAX_LOG_CONTENT_LENGTH];
+    errno_t err = vsnprintf_s(tmp, CM_MAX_LOG_CONTENT_LENGTH, CM_MAX_LOG_CONTENT_LENGTH - 1, format, args);
+    if (SECUREC_UNLIKELY(err == -1)) {
+        LOG_RUN_ERR("Secure C lib has thrown an error %d while setting error, %s:%u", err, file, line);
+    }
+    cm_set_error(file, line, code, g_dss_error_desc[code], tmp);
+
+    va_end(args);
+}
