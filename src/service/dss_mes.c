@@ -133,10 +133,13 @@ status_t dss_process_check_open_file(dss_session_t *session, dss_bcast_context_t
 
 status_t dss_process_invalidate_meta(dss_session_t *session, dss_bcast_context_t *bcast_ctx)
 {
-    dss_req_meta_data_t *req_ex = (dss_req_meta_data_t *)bcast_ctx->req_msg;
+    if (bcast_ctx->req_len < sizeof(dss_req_invalid_meta_t)) {
+        LOG_RUN_ERR("[MES] invalid message req size %u", bcast_ctx->req_len);
+        return CM_ERROR;
+    }
+    dss_req_invalid_meta_t *req = (dss_req_invalid_meta_t *)bcast_ctx->req_msg;
     bool32 invalidate_ret = CM_FALSE;
-    status_t ret = dss_invalidate_meta_remote(
-        session, (dss_invalidate_meta_msg_t *)req_ex->data, req_ex->data_size, &invalidate_ret);
+    status_t ret = dss_invalidate_meta_remote(session, &req->data, &invalidate_ret);
     if (ret != CM_SUCCESS) {
         return ret;
     }
@@ -146,9 +149,24 @@ status_t dss_process_invalidate_meta(dss_session_t *session, dss_bcast_context_t
 
 status_t dss_process_sync_meta(dss_session_t *session, dss_bcast_context_t *bcast_ctx)
 {
-    dss_req_meta_data_t *req_ex = (dss_req_meta_data_t *)bcast_ctx->req_msg;
+    uint32 msg_min_size = OFFSET_OF(dss_req_meta_data_t, data) + OFFSET_OF(dss_meta_syn_t, meta);
+    if (bcast_ctx->req_len < msg_min_size) {
+        LOG_RUN_ERR("[MES] invalid message req size %u", bcast_ctx->req_len);
+        return CM_ERROR;
+    }
+    dss_req_meta_data_t *req = (dss_req_meta_data_t *)bcast_ctx->req_msg;
+    dss_meta_syn_t *meta_syn = &req->data;
+    if (meta_syn->meta_type >= DSS_BLOCK_TYPE_MAX) {
+        LOG_RUN_ERR("[MES] invalid message meta type %u", meta_syn->meta_type);
+        return CM_ERROR;
+    }
+    uint32 expected_meta_len = dss_buffer_cache_get_block_size(meta_syn->meta_type);
+    if (bcast_ctx->req_len < msg_min_size + expected_meta_len) {
+        LOG_RUN_ERR("[MES] invalid message req size %u", bcast_ctx->req_len);
+        return CM_ERROR;
+    }
     bool32 sync_ret = CM_FALSE;
-    status_t ret = dss_meta_syn_remote(session, (dss_meta_syn_t *)req_ex->data, req_ex->data_size, &sync_ret);
+    status_t ret = dss_meta_syn_remote(session, meta_syn, &sync_ret);
     if (ret != CM_SUCCESS) {
         return ret;
     }
@@ -964,12 +982,12 @@ status_t dss_bcast_ask_file_open(dss_session_t *session, dss_vg_info_item_t *vg_
     return CM_SUCCESS;
 }
 
-status_t dss_bcast_meta_data(dss_session_t *session, dss_bcast_req_cmd_t cmd, char *data, uint32 size, bool32 *cmd_ack)
+status_t dss_bcast_meta_data(dss_session_t *session,  char *data, uint32 size, bool32 *cmd_ack)
 {
     dss_req_meta_data_t req;
-    req.bcast_head.type = cmd;
+    req.bcast_head.type = BCAST_REQ_META_SYN;
     req.data_size = size;
-    errno_t err = memcpy_s(req.data, sizeof(req.data), data, size);
+    errno_t err = memcpy_s(&req.data, sizeof(dss_meta_syn_t), data, size);
     if (err != EOK) {
         DSS_THROW_ERROR(ERR_SYSTEM_CALL, err);
         return CM_ERROR;
@@ -977,6 +995,21 @@ status_t dss_bcast_meta_data(dss_session_t *session, dss_bcast_req_cmd_t cmd, ch
     dss_bcast_ack_bool_t recv_msg = {.default_ack = DSS_TRUE, .cmd_ack = DSS_TRUE};
     DSS_RETURN_IF_ERROR(
         dss_sync_bcast(session, (dss_bcast_req_head_t *)&req, OFFSET_OF(dss_req_meta_data_t, data) + size, &recv_msg));
+    if (cmd_ack != NULL) {
+        *cmd_ack = recv_msg.cmd_ack;
+    }
+    return CM_SUCCESS;
+}
+
+status_t dss_bcast_invalid_meta_data(dss_session_t *session, dss_invalidate_meta_msg_t *meta_info, bool32 *cmd_ack)
+{
+    dss_req_invalid_meta_t req;
+    req.bcast_head.type = BCAST_REQ_INVALIDATE_META;
+    req.data_size = (uint32)sizeof(dss_invalidate_meta_msg_t);
+    req.data = *meta_info;
+    dss_bcast_ack_bool_t recv_msg = {.default_ack = DSS_TRUE, .cmd_ack = DSS_TRUE};
+    DSS_RETURN_IF_ERROR(
+        dss_sync_bcast(session, (dss_bcast_req_head_t *)&req, sizeof(dss_req_invalid_meta_t), &recv_msg));
     if (cmd_ack != NULL) {
         *cmd_ack = recv_msg.cmd_ack;
     }
@@ -991,9 +1024,9 @@ status_t dss_bcast_get_protocol_version(dss_session_t *session, dss_get_version_
 }
 
 status_t dss_invalidate_other_nodes(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack)
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_invalidate_meta_msg_t *meta_info, bool32 *cmd_ack)
 {
-    return dss_bcast_meta_data(session, BCAST_REQ_INVALIDATE_META, meta_info, meta_info_size, cmd_ack);
+    return dss_bcast_invalid_meta_data(session, meta_info, cmd_ack);
 }
 
 status_t dss_broadcast_check_file_open(
@@ -1005,7 +1038,7 @@ status_t dss_broadcast_check_file_open(
 status_t dss_syn_data2other_nodes(
     dss_session_t *session, dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack)
 {
-    return dss_bcast_meta_data(session, BCAST_REQ_META_SYN, meta_syn, meta_syn_size, cmd_ack);
+    return dss_bcast_meta_data(session, meta_syn, meta_syn_size, cmd_ack);
 }
 
 static void dss_check_inst_conn(uint32_t id, uint64 old_inst_stat, uint64 cur_inst_stat)

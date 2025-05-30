@@ -28,6 +28,7 @@
 #include "mes_interface.h"
 #include "dss_file_def.h"
 #include "dss_session.h"
+#include "dss_bcast_def.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -178,8 +179,14 @@ typedef struct st_dss_req_check_open_file {
 typedef struct st_dss_req_meta_data {
     dss_bcast_req_head_t bcast_head;
     uint32 data_size;
-    char data[DSS_MAX_META_BLOCK_SIZE];
+    dss_meta_syn_t data;
 } dss_req_meta_data_t;
+
+typedef struct st_dss_req_invalid_meta {
+    dss_bcast_req_head_t bcast_head;
+    uint32 data_size;  // just for compatibility,fixed value:sizeof(dss_invalidate_meta_msg_t)
+    dss_invalidate_meta_msg_t data;
+} dss_req_invalid_meta_t;
 
 typedef struct st_dss_ack_common {
     dss_bcast_ack_head_t bcast_head;
@@ -272,7 +279,7 @@ uint32 dss_get_broadcast_proto_ver(uint64 succ_inst);
 
 status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result);
 status_t dss_invalidate_other_nodes(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack);
+    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_invalidate_meta_msg_t *meta_info, bool32 *cmd_ack);
 status_t dss_broadcast_check_file_open(
     dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
 status_t dss_syn_data2other_nodes(
