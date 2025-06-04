@@ -64,7 +64,7 @@ typedef enum en_dss_fi_point_name {
     DSS_FI_SHM_LOCK_UNLATCH_STACK_SET = 4023,
     DSS_FI_SHM_LOCK_UNLATCH_STACK_TOP_SET = 4024,
 
-    DSS_FI_DEFORE_LOG_FLUSH = 4025,
+    DSS_FI_BEFORE_LOG_FLUSH = 4025,
     DSS_FI_AFTER_LOG_FLUSH = 4026,
     DSS_FI_ENTRY_END = 6000,
 } dss_fi_point_name_e;
