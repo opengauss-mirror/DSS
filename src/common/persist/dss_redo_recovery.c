@@ -570,6 +570,7 @@ status_t dss_recover_redo_log_with_range(dss_session_t *session, uint32 vg_beg, 
                 return CM_ERROR;
             }
         }
+        LOG_RUN_INF("recover redo logs item(s), vg [%u] vg_name [%s]", i, g_vgs_info->volume_group[i].vg_name);
     }
     return status;
 }
