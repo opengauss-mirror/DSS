@@ -1372,10 +1372,8 @@ static status_t dss_process_enable_grab_lock(dss_session_t *session)
 
 static status_t dss_process_enable_upgrades(dss_session_t *session)
 {
-    dss_config_t *cfg = dss_get_inst_cfg();
-    uint32 curr_id = (uint32)(cfg->params.inst_id);
     dss_get_version_output_t get_version_output = {.all_same = DSS_TRUE, .min_version = DSS_PROTO_VERSION};
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "enable upgrades", curr_id));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "enable upgrades"));
     int ret = dss_bcast_get_protocol_version(session, &get_version_output);
     if (ret != CM_SUCCESS) {
         // If any node return ERR_DSS_UNSUPPORTED_CMD, we assume old node exists.
