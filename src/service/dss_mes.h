@@ -123,49 +123,6 @@ typedef struct st_dss_get_version_output {
 } dss_get_version_output_t;
 
 /*--------------------The following structures involve protocols and cannot be modified-------------------------------*/
-typedef enum st_dss_bcast_req_cmd {
-    BCAST_REQ_DEL_DIR_FILE = 0,
-    BCAST_REQ_INVALIDATE_META,
-    BCAST_REQ_META_SYN,
-    BCAST_REQ_GET_VERSION,
-    BCAST_REQ_END
-} dss_bcast_req_cmd_t;
-
-typedef enum st_dss_bcast_ack_cmd {
-    BCAST_ACK_DEL_FILE = 0,
-    BCAST_ACK_INVALIDATE_META,
-    BCAST_ACK_GET_VERSION,
-    BCAST_ACK_END
-} dss_bcast_ack_cmd_t;
-
-typedef struct st_dss_bcast_req {
-    dss_bcast_req_cmd_t type;
-    char buffer[4];
-} dss_bcast_req_t;
-
-typedef struct st_dss_message_head {
-    uint32 msg_proto_ver;
-    uint32 sw_proto_ver;
-    uint16 src_inst;
-    uint16 dst_inst;
-    uint32 dss_cmd;
-    uint32 size;
-    uint32 flags;
-    ruid_type ruid;
-    int32 result;
-    uint8 reserve[64];
-} dss_message_head_t;
-
-typedef struct st_dss_bcast_req_head {
-    dss_message_head_t dss_head;
-    dss_bcast_req_cmd_t type;
-} dss_bcast_req_head_t;
-
-typedef struct st_dss_bcast_ack_head {
-    dss_message_head_t dss_head;
-    dss_bcast_ack_cmd_t type;
-} dss_bcast_ack_head_t;
-
 typedef struct st_dss_req_common {
     dss_bcast_req_head_t bcast_head;
 } dss_req_common_t;
@@ -175,12 +132,6 @@ typedef struct st_dss_req_check_open_file {
     uint64 ftid;
     char vg_name[DSS_MAX_NAME_LEN];
 } dss_req_check_open_file_t;
-
-typedef struct st_dss_req_meta_data {
-    dss_bcast_req_head_t bcast_head;
-    uint32 data_size;
-    dss_meta_syn_t data;
-} dss_req_meta_data_t;
 
 typedef struct st_dss_req_invalid_meta {
     dss_bcast_req_head_t bcast_head;
@@ -282,8 +233,7 @@ status_t dss_invalidate_other_nodes(
     dss_session_t *session, dss_vg_info_item_t *vg_item, dss_invalidate_meta_msg_t *meta_info, bool32 *cmd_ack);
 status_t dss_broadcast_check_file_open(
     dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
-status_t dss_syn_data2other_nodes(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack);
+status_t dss_syn_data2other_nodes(dss_session_t *session, dss_req_meta_data_t *req, bool32 *cmd_ack);
 status_t dss_bcast_get_protocol_version(dss_session_t *session, dss_get_version_output_t *get_version_output);
 
 void dss_check_mes_conn(uint64 cur_inst_map);
