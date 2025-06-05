@@ -1008,6 +1008,19 @@ int dss_kill_session(unsigned int sid)
     return (int)ret;
 }
 
+int dss_reopen_vg_handle(const char *name)
+{
+    status_t ret = CM_SUCCESS;
+#ifdef OPENGAUSS
+    dss_conn_t *conn = NULL;
+    ret = dss_enter_api(&conn);
+    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("refresh vg handle"));
+    ret = dss_reopen_vg_handel_impl(conn, name);
+    dss_leave_api(conn, CM_FALSE);
+#endif
+    return (int)ret;
+}
+
 #ifdef __cplusplus
 }
 #endif
