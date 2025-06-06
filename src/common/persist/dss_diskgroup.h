@@ -109,20 +109,14 @@ void dss_file_unlock_vg(void);
 status_t dss_lock_disk_vg(const char *entry_path, dss_config_t *inst_cfg);
 status_t dss_lock_share_disk_vg(const char *entry_path, dss_config_t *inst_cfg);
 
-void dss_unlock_vg_raid(dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id);
-void dss_unlock_vg_share_disk(dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id);
-void dss_unlock_vg(int32 dss_mode, dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id);
-
+status_t dss_unlock_vg_raid(dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id);
+status_t dss_unlock_vg_share_disk(dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id);
+status_t dss_unlock_vg(int32 dss_mode, dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id);
 status_t dss_lock_vg_storage_r(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
 status_t dss_lock_vg_storage_w(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
-void dss_unlock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
+status_t dss_unlock_vg_storage(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
 status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
-void dss_unlock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
-status_t dss_check_lock_instid(
-    int32 dss_mode, dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id, bool32 *is_lock);
-status_t dss_check_lock_instid_share_disk(
-    dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id, bool32 *is_lock);
-
+status_t dss_unlock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg);
 status_t dss_add_volume(dss_session_t *session, const char *vg_name, const char *volume_name);
 status_t dss_remove_volume(dss_session_t *session, const char *vg_name, const char *volume_name);
 status_t dss_load_ctrl(dss_session_t *session, const char *vg_name, uint32 index);
@@ -146,7 +140,10 @@ status_t dss_check_volume(dss_vg_info_item_t *vg_item, uint32 volumeid);
 uint32_t dss_find_volume(dss_vg_info_item_t *vg_item, const char *volume_name);
 uint32_t dss_find_free_volume_id(const dss_vg_info_item_t *vg_item);
 status_t dss_cmp_volume_head(dss_vg_info_item_t *vg_item, const char *volume_name, uint32 id);
-
+status_t dss_check_lock_remain_inner(
+    int32 dss_mode, dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id, bool32 *is_remain);
+bool32 dss_lock_vg_mem_timed_x(dss_vg_info_item_t *vg_item, uint32 wait_ticks);
+bool32 dss_lock_vg_mem_timed_s(dss_vg_info_item_t *vg_item, uint32 wait_ticks);
 static inline dss_vg_info_item_t *dss_get_first_vg_item()
 {
     return &g_vgs_info->volume_group[0];

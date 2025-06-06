@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include "dss_blackbox.h"
+#include "dss_dyn.h"
 #endif
 #include "cm_types.h"
 #include "cm_signal.h"
@@ -77,6 +78,11 @@ static void dss_close_background_task(dss_instance_t *inst)
 {
     uint32 bg_task_base_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
     for (uint32 i = 0; i < DSS_BACKGROUND_TASK_NUM; i++) {
+#ifdef WIN32
+        if (i == DSS_DYN_LOG_TASK) {
+            continue;
+        }
+#endif
         uint32 bg_task_id = bg_task_base_id + i;
         if (inst->threads[bg_task_id].id != 0) {
             cm_close_thread(&inst->threads[bg_task_id]);
@@ -88,13 +94,14 @@ static void dss_close_thread(dss_instance_t *inst)
 {
     // pause lsnr thread
     uds_lsnr_t *lsnr = &inst->lsnr;
+    cm_latch_x(&inst->uds_lsnr_latch, DSS_DEFAULT_SESSIONID, NULL);
     cs_pause_uds_lsnr(lsnr);
+    cm_unlatch(&inst->uds_lsnr_latch, NULL);
     // close worker thread
     dss_destroy_reactors();
 
     if (inst->threads != NULL) {
         dss_close_background_task(inst);
-        DSS_FREE_POINT(inst->threads);
     }
 
     // close lsnr thread
@@ -125,6 +132,9 @@ static void dss_clean_server()
 {
     dss_close_thread(&g_dss_instance);
     dss_stop_mes();
+    // may be close delete clean thread in mes, so after stop mes to free threads
+    DSS_FREE_POINT(g_dss_instance.threads);
+    DSS_FREE_POINT(g_delete_buf);
     dss_uninit_cm(&g_dss_instance);
     dss_free_log_ctrl();
     if (g_dss_instance.lock_fd != CM_INVALID_INT32) {
@@ -169,15 +179,6 @@ static status_t dss_recovery_background_task(dss_instance_t *inst)
     uint32 recovery_thread_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
     status_t status = cm_create_thread(
         dss_get_cm_lock_and_recover, 0, &g_dss_instance, &(g_dss_instance.threads[recovery_thread_id]));
-    return status;
-}
-
-static status_t dss_delay_clean_background_task(dss_instance_t *inst)
-{
-    LOG_RUN_INF("create dss delay clean background task.");
-    uint32 delay_clean_idx = dss_get_delay_clean_task_idx();
-    status_t status =
-        cm_create_thread(dss_delay_clean_proc, 0, &g_dss_instance, &(g_dss_instance.threads[delay_clean_idx]));
     return status;
 }
 
@@ -272,6 +273,26 @@ static status_t dss_create_recycle_meta_bg_task_set(dss_instance_t *inst)
     return status;
 }
 
+static status_t dss_alarm_check_background_task(dss_instance_t *inst)
+{
+    LOG_RUN_INF("create dss alarm check background task.");
+    uint32 vg_usgae_alarm_thread_id = dss_get_alarm_check_task_idx();
+    status_t status =
+        cm_create_thread(dss_alarm_check_proc, 0, &g_dss_instance, &(g_dss_instance.threads[vg_usgae_alarm_thread_id]));
+    return status;
+}
+
+#ifndef WIN32
+static status_t dss_dyn_log_background_task(dss_instance_t *inst)
+{
+    LOG_RUN_INF("create dss dyn log background task.");
+    uint32 dyn_log_thread_id = dss_get_dyn_log_task_idx();
+    status_t status =
+        cm_create_thread(dss_dyn_log_proc, 0, &g_dss_instance, &(g_dss_instance.threads[dyn_log_thread_id]));
+    return status;
+}
+#endif
+
 static status_t dss_init_background_tasks(void)
 {
     status_t status = dss_recovery_background_task(&g_dss_instance);
@@ -279,12 +300,6 @@ static status_t dss_init_background_tasks(void)
         LOG_RUN_ERR("Create dss recovery background task failed.");
         return status;
     }
-    status = dss_delay_clean_background_task(&g_dss_instance);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("Create dss delay clean background task failed.");
-        return status;
-    }
-
     status = dss_create_meta_syn_bg_task_set(&g_dss_instance);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Create dss syn meta background task failed.");
@@ -301,7 +316,19 @@ static status_t dss_init_background_tasks(void)
         LOG_RUN_ERR("Create dss recycle meta background task failed.");
         return status;
     }
-    return CM_SUCCESS;
+    status = dss_alarm_check_background_task(&g_dss_instance);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Create dss vg usage alarm background task failed.");
+        return status;
+    }
+#ifndef WIN32
+    status = dss_dyn_log_background_task(&g_dss_instance);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Create dss dyn log background task failed.");
+        return status;
+    }
+#endif
+    return status;
 }
 
 typedef status_t (*dss_srv_arg_parser)(int argc, char **argv, int *argIdx, dss_srv_args_t *dss_args);
@@ -376,6 +403,24 @@ static void dss_srv_usage()
                  "\t -h                 show the help information.\n"
                  "\t -D                 specify dss server home path.\n");
 }
+#ifndef WIN32
+status_t dss_set_signal_block()
+{
+    int32 error;
+    sigset_t sign_old_mask;
+    (void)sigprocmask(0, NULL, &sign_old_mask);
+    (void)sigprocmask(SIG_UNBLOCK, &sign_old_mask, NULL);
+    sigset_t block_sigs;
+    sigemptyset(&block_sigs);
+    sigaddset(&block_sigs, SIG_DYN_LOG);
+    error = pthread_sigmask(SIG_BLOCK, &block_sigs, NULL);
+    if (error != EOK) {
+        printf("Fail to set sigmask, error: %d.\n", error);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+#endif
 
 int main(int argc, char **argv)
 {
@@ -403,9 +448,10 @@ int main(int argc, char **argv)
         return CM_ERROR;
     }
 #ifndef WIN32
-    sigset_t sign_old_mask;
-    (void)sigprocmask(0, NULL, &sign_old_mask);
-    (void)sigprocmask(SIG_UNBLOCK, &sign_old_mask, NULL);
+    if (dss_set_signal_block() != CM_SUCCESS) {
+        (void)fflush(stdout);
+        return CM_ERROR;
+    }
     regist_exit_proc(dss_exit_proc);
 #endif
     if (dss_startup(&g_dss_instance, dss_args) != CM_SUCCESS) {
@@ -438,6 +484,8 @@ int main(int argc, char **argv)
     }
     (void)printf("DSS SERVER STARTED.\n");
     LOG_RUN_INF("DSS SERVER STARTED.\n");
+    log_param_t *log_param = cm_log_param_instance();
+    log_param->log_instance_starting = CM_FALSE;
     handle_main_wait();
     (void)printf("DSS SERVER END.\n");
     LOG_RUN_INF("DSS SERVER END.\n");

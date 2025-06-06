@@ -85,6 +85,11 @@ static void cm_destroy_thv(pointer_t thread_var)
     }
 }
 
+void dss_destroy_thv(thv_type_e type)
+{
+    cm_destroy_thv(&g_thv_addr[type]);
+}
+
 status_t cm_create_thv_ctrl(void)
 {
     int32 ret = pthread_key_create(&g_thv_key, cm_destroy_thv);

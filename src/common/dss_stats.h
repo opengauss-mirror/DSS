@@ -35,6 +35,8 @@ extern "C" {
 typedef enum en_dss_wait_event {
     DSS_PREAD = 0,
     DSS_PWRITE,
+    DSS_FREAD,
+    DSS_FWRITE,
     DSS_PREAD_SYN_META,
     DSS_PWRITE_SYN_META,
     DSS_PREAD_DISK,

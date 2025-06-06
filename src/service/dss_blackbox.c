@@ -113,51 +113,89 @@ void dss_get_signal_info(int signum, char *buf, uint32 buf_size)
 #endif
 }
 
-static void dss_sig_collect_uds_lsnr_bt(void)
+static void dss_sig_collect_uds_lsnr_bt(uint32 log_id)
 {
     uds_lsnr_t *lsnr = &g_dss_instance.lsnr;
     if (lsnr->status == LSNR_STATUS_RUNNING) {
-        cm_sig_collect_backtrace(LOG_BLACKBOX, &lsnr->thread, "uds_lsnr");
+        cm_sig_collect_backtrace(log_id, &lsnr->thread, "uds_lsnr");
     }
 }
 
-static void dss_sig_collect_timer_bt(void)
+static void dss_sig_collect_timer_bt(uint32 log_id)
 {
     gs_timer_t *timer = g_timer();
     if (!timer->init) {
         return;
     }
-    cm_sig_collect_backtrace(LOG_BLACKBOX, &timer->thread, "timer");
+    cm_sig_collect_backtrace(log_id, &timer->thread, "timer");
 }
 
-static void dss_sig_collect_recovery_bt(void)
+static void dss_sig_collect_recovery_bt(uint32 log_id)
 {
-    if (g_dss_instance.is_maintain) {
-        LOG_BLACKBOX_INF("%s", "No dss recovery background task when dss is maintain.");
-        return;
-    }
     uint32 recovery_thread_id = dss_get_udssession_startid() - (uint32)DSS_BACKGROUND_TASK_NUM;
-    cm_sig_collect_backtrace(LOG_BLACKBOX, &(g_dss_instance.threads[recovery_thread_id]), "recovery");
+    cm_sig_collect_backtrace(log_id, &(g_dss_instance.threads[recovery_thread_id]), "recovery");
 }
 
-static void dss_sig_collect_mes_task_bt(void)
+static void dss_sig_collect_hashmap_dynamic_extend_and_redistribute_bt(uint32 log_id)
+{
+    uint32 hashmap_extend_idx = dss_get_hashmap_dynamic_extend_task_idx();
+    cm_sig_collect_backtrace(
+        log_id, &(g_dss_instance.threads[hashmap_extend_idx]), "hashmap_dynamic_extend_and_redistribute");
+}
+
+static void dss_sig_collect_alarm_check_bt(uint32 log_id)
+{
+    uint32 vg_usage_thread_id = dss_get_alarm_check_task_idx();
+    cm_sig_collect_backtrace(log_id, &(g_dss_instance.threads[vg_usage_thread_id]), "alarm_check");
+}
+
+static void dss_sig_collect_delay_clean_bt(uint32 log_id)
+{
+    uint32 delay_clean_thread_id = dss_get_delay_clean_task_idx();
+    cm_sig_collect_backtrace(log_id, &(g_dss_instance.threads[delay_clean_thread_id]), "delay_clean");
+}
+
+static void dss_sig_collect_recycle_meta_task_bt(uint32 log_id)
+{
+    uint32 task_num = g_vgs_info->group_num;
+    if (task_num > DSS_RECYLE_META_TASK_NUM_MAX) {
+        task_num = DSS_RECYLE_META_TASK_NUM_MAX;
+    }
+    for (uint32 i = 0; i < task_num; i++) {
+        uint32 work_idx = dss_get_recycle_meta_task_idx(i);
+        cm_sig_collect_backtrace(log_id, &(g_dss_instance.threads[work_idx]), "recycle_meta %u", i);
+    }
+}
+
+static void dss_sig_collect_meta_syn_bt(uint32 log_id)
+{
+    uint32 task_num = g_vgs_info->group_num;
+    if (task_num > DSS_META_SYN_BG_TASK_NUM_MAX) {
+        task_num = DSS_META_SYN_BG_TASK_NUM_MAX;
+    }
+    for (uint32 i = 0; i < task_num; i++) {
+        uint32 work_idx = dss_get_meta_syn_task_idx(i);
+        cm_sig_collect_backtrace(log_id, &(g_dss_instance.threads[work_idx]), "meta_syn %u", i);
+    }
+}
+static void dss_sig_collect_mes_task_bt(uint32 log_id)
 {
     uint32 count = mes_get_started_task_count(CM_FALSE);
     for (uint32 i = 0; i < count; i++) {
-        cm_sig_collect_backtrace(LOG_BLACKBOX, &MES_GLOBAL_INST_MSG.recv_mq.tasks[i].thread, "mes task %d", i);
+        cm_sig_collect_backtrace(log_id, &MES_GLOBAL_INST_MSG.recv_mq.tasks[i].thread, "mes task %d", i);
     }
 }
 
-static void dss_sig_collect_mes_listener_bt(void)
+static void dss_sig_collect_mes_listener_bt(uint32 log_id)
 {
     mes_lsnr_t *lsnr = &MES_GLOBAL_INST_MSG.mes_ctx.lsnr;
     if (MES_GLOBAL_INST_MSG.profile.pipe_type == MES_TYPE_TCP) {
         tcp_lsnr_t *tcp_lsnr = &lsnr->tcp;
-        cm_sig_collect_backtrace(LOG_BLACKBOX, &tcp_lsnr->thread, "tcp lsnr");
+        cm_sig_collect_backtrace(log_id, &tcp_lsnr->thread, "tcp lsnr");
     }
 }
 
-static void dss_sig_collect_reactor_bt(void)
+static void dss_sig_collect_reactor_bt(uint32 log_id)
 {
     reactor_t *reactor = NULL;
     reactors_t *pool = &g_dss_instance.reactors;
@@ -166,24 +204,26 @@ static void dss_sig_collect_reactor_bt(void)
         if (reactor->status != REACTOR_STATUS_RUNNING) {
             continue;
         }
-        cm_sig_collect_backtrace(LOG_BLACKBOX, &reactor->iothread, "reactor %d", i);
+        cm_sig_collect_backtrace(log_id, &reactor->iothread, "reactor %d", i);
     }
 }
 
-static void dss_sig_collect_background_bt(void)
+static void dss_sig_collect_background_bt(uint32 log_id)
 {
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    if (!g_dss_instance.is_maintain && inst_cfg->params.inst_cnt >= 1) {
-        dss_sig_collect_mes_task_bt();
-        dss_sig_collect_mes_listener_bt();
-    }
-    dss_sig_collect_recovery_bt();
-    dss_sig_collect_uds_lsnr_bt();
-    dss_sig_collect_timer_bt();
-    dss_sig_collect_reactor_bt();
+    dss_sig_collect_mes_task_bt(log_id);
+    dss_sig_collect_mes_listener_bt(log_id);
+    dss_sig_collect_recovery_bt(log_id);
+    dss_sig_collect_hashmap_dynamic_extend_and_redistribute_bt(log_id);
+    dss_sig_collect_delay_clean_bt(log_id);
+    dss_sig_collect_alarm_check_bt(log_id);
+    dss_sig_collect_meta_syn_bt(log_id);
+    dss_sig_collect_recycle_meta_task_bt(log_id);
+    dss_sig_collect_uds_lsnr_bt(log_id);
+    dss_sig_collect_timer_bt(log_id);
+    dss_sig_collect_reactor_bt(log_id);
 }
 
-static void dss_sig_collect_work_session_bt(void)
+static void dss_sig_collect_work_session_bt(uint32 log_id)
 {
     dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
     for (uint32 i = 0; i < session_ctrl->alloc_sessions; i++) {
@@ -193,40 +233,51 @@ static void dss_sig_collect_work_session_bt(void)
         }
         dss_workthread_t *workthread_ctx = (dss_workthread_t *)session->workthread_ctx;
         if (workthread_ctx != NULL && workthread_ctx->status == THREAD_STATUS_PROCESSSING) {
-            cm_sig_collect_backtrace(LOG_BLACKBOX, &workthread_ctx->thread_obj->thread, "session %d", session->id);
+            cm_sig_collect_backtrace(log_id, &workthread_ctx->thread_obj->thread, "session %d", session->id);
         }
     }
 }
 
-void dss_sig_collect_all_backtrace(void)
+void dss_sig_collect_all_backtrace(uint32 log_id)
 {
-    dss_sig_collect_work_session_bt();
-    dss_sig_collect_background_bt();
+    dss_sig_collect_work_session_bt(log_id);
+    dss_sig_collect_background_bt(log_id);
 }
 
-void dss_print_global_variable(void)
+void dss_print_global_variable(uint32 log_id)
 {
-    LOG_BLACKBOX_INF("\n===============================GLOABL VARIABLE===============================\n");
-    LOG_BLACKBOX_INF("g_is_dss_read_write is %u\n", dss_get_server_status_flag());
-    LOG_BLACKBOX_INF("g_master_instance_id is %u\n", dss_get_master_id());
-    LOG_BLACKBOX_INF("dss_instance status is %u, inst_work_status_map is %llu, is_maintain is %u.\n",
-        (uint32)g_dss_instance.status, g_dss_instance.inst_work_status_map, (uint32)g_dss_instance.is_maintain);
+    DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "\n===============================global variable===============================\n");
+    DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "g_is_dss_read_write is %u\n", dss_get_server_status_flag());
+    DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "g_master_instance_id is %u\n", dss_get_master_id());
+    DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "dss_instance status is %u, is_maintain is %u.\n",
+        (uint32)g_dss_instance.status, (uint32)g_dss_instance.is_maintain);
+    dss_config_t *cfg = dss_get_inst_cfg();
+    dss_nodes_list_t nodes_list = cfg->params.nodes_list;
+    DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "inst cnt is %u, inst_map is %llu, inst_work_status_map is %llu.\n",
+        nodes_list.inst_cnt, nodes_list.inst_map, g_dss_instance.inst_work_status_map);
+    for (uint32 i = 0; i < DSS_MAX_INSTANCES; i++) {
+        if (nodes_list.ports[i] != 0) {
+            DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(
+                log_id, "%u: node_ip is %s, port is %hu.\n", i, nodes_list.nodes[i], nodes_list.ports[i]);
+        }
+    }
 }
 
-void dss_print_effect_param(void)
+void dss_print_effect_param(uint32 log_id)
 {
     uint32 audit_level = cm_log_param_instance()->audit_level;
     uint32 log_level = cm_log_param_instance()->log_level;
-    LOG_BLACKBOX_INF("\n===============================EFFECT PARAM===============================\n");
-    LOG_BLACKBOX_INF("_LOG_LEVEL is %u.\n", log_level);
-    LOG_BLACKBOX_INF("_AUDIT_LEVEL is %u.\n", audit_level);
+    DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(
+        log_id, "\n===============================key param===============================\n");
+    DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "_LOG_LEVEL is %u.\n", log_level);
+    DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "_AUDIT_LEVEL is %u.\n", audit_level);
 }
 
-void dss_write_block_pool(int32 handle, int64 *length, ga_pool_id_e pool_id)
+void dss_write_block_pool(uint32 log_id, int32 handle, int64 *length, ga_pool_id_e pool_id)
 {
     ga_pool_t *pool = &g_app_pools[GA_POOL_IDX((uint32)pool_id)];
     if (pool == NULL) {
-        LOG_BLACKBOX_INF("Failed to get ga pool\n.");
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to get ga pool\n.");
         return;
     }
     if (pool->ctrl->ex_count > GA_MAX_EXTENDED_POOLS) {
@@ -239,123 +290,127 @@ void dss_write_block_pool(int32 handle, int64 *length, ga_pool_id_e pool_id)
     uint64 total_size = pool->capacity + ex_pool_size * pool->ctrl->ex_count;
     status_t ret = dss_write_shm_memory_file_inner(handle, length, &total_size, sizeof(uint64));
     if (ret != CM_SUCCESS) {
-        LOG_BLACKBOX_INF("Failed to write ga pool size, pool id is %u\n.", (uint32)pool_id);
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to write ga pool size, pool id is %u\n.", (uint32)pool_id);
     }
     ret = dss_write_shm_memory_file_inner(handle, length, (char *)pool->addr, (int32)pool->capacity);
     if (ret != CM_SUCCESS) {
-        LOG_BLACKBOX_INF("Failed to write init ga pool, pool id is %u\n.", (uint32)pool_id);
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to write init ga pool, pool id is %u\n.", (uint32)pool_id);
     }
     for (uint32 i = 0; i < pool->ctrl->ex_count; i++) {
-        (void)dss_write_shm_memory_file_inner(handle, length, pool->ex_pool_addr[i], (int32)ex_pool_size);
-        LOG_BLACKBOX_INF("Failed to write extend ga pool, pool id is %u, ex_num is %u\n.", (uint32)pool_id, i);
+        ret = dss_write_shm_memory_file_inner(handle, length, pool->ex_pool_addr[i], (int32)ex_pool_size);
+        if (ret != CM_SUCCESS) {
+            DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(
+                log_id, "Failed to write extend ga pool, pool id is %u, ex_num is %u\n.", (uint32)pool_id, i);
+        }
     }
 }
 
-static void dss_update_shm_memory_length(int32 handle, int64 length, int64 begin)
+static void dss_update_shm_memory_length(uint32 log_id, int32 handle, int64 length, int64 begin)
 {
     int64 end = cm_seek_file(handle, 0, SEEK_CUR);
     if (end == -1) {
-        LOG_BLACKBOX_INF("Failed to seek file %d", handle);
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to seek file %d", handle);
         return;
     }
     int64 offset = cm_seek_file(handle, begin, SEEK_SET);
     if (offset == -1) {
-        LOG_BLACKBOX_INF("Failed to seek file %d", handle);
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to seek file %d", handle);
         return;
     }
     status_t ret = cm_write_file(handle, &length, sizeof(int64));
     if (ret != CM_SUCCESS) {
-        LOG_BLACKBOX_INF("Failed to update length %lld\n.", length);
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to update length %lld\n.", length);
     }
     offset = cm_seek_file(handle, end, SEEK_SET);
     if (offset == -1) {
-        LOG_BLACKBOX_INF("Failed to seek file %d", handle);
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to seek file %d", handle);
     }
 }
 
 // length| vg_num| software_version|vg_name|dss_ctrl|software_version|vg_name|dss_ctrl|...
-void dss_write_share_vg_info(int32 handle)
+void dss_write_share_vg_info(uint32 log_id, int32 handle)
 {
     int64 length = 0;
     int64 begin = cm_seek_file(handle, 0, SEEK_CUR);
     if (begin == -1) {
-        LOG_BLACKBOX_INF("Failed to seek file %d", handle);
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to seek file %d", handle);
     }
     status_t status = dss_write_shm_memory_file_inner(handle, &length, &length, sizeof(int64));
     if (status != CM_SUCCESS) {
-        LOG_BLACKBOX_INF("Failed to write length %lld\n.", length);
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to write length %lld\n.", length);
     }
     status = dss_write_shm_memory_file_inner(handle, &length, &g_vgs_info->group_num, sizeof(uint32_t));
     if (status != CM_SUCCESS) {
-        LOG_BLACKBOX_INF("Failed to write vg num %u\n.", g_vgs_info->group_num);
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to write vg num %u\n.", g_vgs_info->group_num);
     }
     for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
         dss_vg_info_item_t *vg = &g_vgs_info->volume_group[i];
         uint32 software_version = dss_get_software_version(&vg->dss_ctrl->vg_info);
         status = dss_write_shm_memory_file_inner(handle, &length, &software_version, sizeof(uint32_t));
         if (status != CM_SUCCESS) {
-            LOG_BLACKBOX_INF("Failed to write software version %u.\n", software_version);
+            DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to write software version %u.\n", software_version);
         }
         status = dss_write_shm_memory_file_inner(handle, &length, vg->dss_ctrl->vg_info.vg_name, DSS_MAX_NAME_LEN);
         if (status != CM_SUCCESS) {
-            LOG_BLACKBOX_INF("Failed to write vg name %s\n.", vg->dss_ctrl->vg_info.vg_name);
+            DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to write vg name %s\n.", vg->dss_ctrl->vg_info.vg_name);
         }
         status = dss_write_shm_memory_file_inner(handle, &length, vg->dss_ctrl, sizeof(dss_ctrl_t));
         if (status != CM_SUCCESS) {
-            LOG_BLACKBOX_INF("Failed to write ctrl info of vg %u\n.", i);
+            DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to write ctrl info of vg %u\n.", i);
         }
     }
-    dss_update_shm_memory_length(handle, length, begin);
+    dss_update_shm_memory_length(log_id, handle, length, begin);
 }
 
 // length|
 // vg_num|vg_name|size|dirs|vg_name|size|dirs|...|pool_size|pool->addr|pool->ex_pool_addr[0]|...|pool->ex_pool_addr[excount-1]|...
-void dss_write_hashmap_and_pool_info(int32 handle)
+void dss_write_hashmap_and_pool_info(uint32 log_id, int32 handle)
 {
     int64 length = 0;
     int64 begin = cm_seek_file(handle, 0, SEEK_CUR);
     if (begin == -1) {
-        LOG_BLACKBOX_INF("Failed to seek file %d", handle);
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to seek file %d", handle);
     }
     status_t ret = dss_write_shm_memory_file_inner(handle, &length, &length, sizeof(int64));
     if (ret != CM_SUCCESS) {
-        LOG_BLACKBOX_INF("Failed to write length %lld\n.", length);
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to write length %lld\n.", length);
     }
     ret = dss_write_shm_memory_file_inner(handle, &length, &g_vgs_info->group_num, sizeof(uint32_t));
     if (ret != CM_SUCCESS) {
-        LOG_BLACKBOX_INF("Failed to write vg num %u\n.", g_vgs_info->group_num);
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to write vg num %u\n.", g_vgs_info->group_num);
     }
     uint64 dir_size = DSS_MAX_SEGMENT_NUM * (uint32)sizeof(uint32_t);
     for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
         dss_vg_info_item_t *vg = &g_vgs_info->volume_group[i];
         ret = dss_write_shm_memory_file_inner(handle, &length, vg->dss_ctrl->vg_info.vg_name, DSS_MAX_NAME_LEN);
         if (ret != CM_SUCCESS) {
-            LOG_BLACKBOX_INF("Failed to write vg name %s\n.", vg->dss_ctrl->vg_info.vg_name);
+            DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to write vg name %s\n.", vg->dss_ctrl->vg_info.vg_name);
         }
         ret = dss_write_shm_memory_file_inner(handle, &length, vg->buffer_cache, sizeof(shm_hashmap_t));
         if (ret != CM_SUCCESS) {
-            LOG_BLACKBOX_INF("Failed to write vg buffer cache %s\n.", vg->dss_ctrl->vg_info.vg_name);
+            DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(
+                log_id, "Failed to write vg buffer cache %s\n.", vg->dss_ctrl->vg_info.vg_name);
         }
         shm_hash_ctrl_t *hash_ctrl = &vg->buffer_cache->hash_ctrl;
         uint32 *dirs = (uint32 *)OFFSET_TO_ADDR(hash_ctrl->dirs);
         ret = dss_write_shm_memory_file_inner(handle, &length, (char *)dirs, (int32)dir_size);
         if (ret != CM_SUCCESS) {
-            LOG_BLACKBOX_INF("Failed to write hashmap dir of vg %u\n.", i);
+            DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "Failed to write hashmap dir of vg %u\n.", i);
         }
     }
-    dss_write_block_pool(handle, &length, GA_8K_POOL);
-    dss_write_block_pool(handle, &length, GA_16K_POOL);
-    dss_write_block_pool(handle, &length, GA_FS_AUX_POOL);
-    dss_write_block_pool(handle, &length, GA_SEGMENT_POOL);
-    dss_update_shm_memory_length(handle, length, begin);
+    dss_write_block_pool(log_id, handle, &length, GA_8K_POOL);
+    dss_write_block_pool(log_id, handle, &length, GA_16K_POOL);
+    dss_write_block_pool(log_id, handle, &length, GA_FS_AUX_POOL);
+    dss_write_block_pool(log_id, handle, &length, GA_SEGMENT_POOL);
+    dss_update_shm_memory_length(log_id, handle, length, begin);
 }
 
-void dss_write_shm_memory(void)
+void dss_write_shm_memory(uint32 log_id)
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     bool32 blackbox_detail_on = inst_cfg->params.blackbox_detail_on;
     if (!blackbox_detail_on) {
-        LOG_BLACKBOX_INF("_BLACKBOX_DETAIL_ON is FALSE, no need to print shm_memory\n.");
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "_BLACKBOX_DETAIL_ON is FALSE, no need to print shm_memory.\n.");
         return;
     }
     int32 handle = 0;
@@ -365,22 +420,32 @@ void dss_write_shm_memory(void)
     errno_t errcode = snprintf_s(timestamp, CM_MAX_NAME_LEN, CM_MAX_NAME_LEN - 1, "%4u%02u%02u%02u%02u%02u%03u",
         detail.year, detail.mon, detail.day, detail.hour, detail.min, detail.sec, detail.millisec);
     if (SECUREC_UNLIKELY(errcode == -1)) {
-        LOG_BLACKBOX_INF("print dss_shm_file failed.");
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "print dss_shm_file failed.");
         return;
     }
-    errcode = snprintf_s(file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/%s/%s_%s",
-        cm_log_param_instance()->log_home, "blackbox", "dss_shm", timestamp);
+    if (log_id == LOG_BLACKBOX) {
+        errcode = snprintf_s(file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/%s/%s_%s",
+            cm_log_param_instance()->log_home, "blackbox", "dss_shm", timestamp);
+    } else {
+        errcode = snprintf_s(file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/%s/%s_%s",
+            cm_log_param_instance()->log_home, "dyn", "dss_shm", timestamp);
+    }
+    
     if (SECUREC_UNLIKELY(errcode == -1)) {
-        LOG_BLACKBOX_INF("printf dss_shm_file failed.");
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "printf dss_shm_file failed.");
         return;
+    }
+    log_file_handle_t *log_file_handle = cm_log_logger_file(log_id);
+    if (log_file_handle->file_handle == CM_INVALID_FD) {
+        cm_log_create_dir(log_file_handle);
     }
     if (cm_open_file_ex(file_name, O_SYNC | O_CREAT | O_RDWR | O_TRUNC | O_BINARY, S_IRUSR | S_IWUSR, &handle) !=
         CM_SUCCESS) {
-        LOG_BLACKBOX_INF("open %s failed.", file_name);
+        DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "open %s failed.", file_name);
         return;
     }
-    dss_write_share_vg_info(handle);
-    dss_write_hashmap_and_pool_info(handle);
+    dss_write_share_vg_info(log_id, handle);
+    dss_write_hashmap_and_pool_info(log_id, handle);
     cm_close_file(handle);
 }
 static void sig_print_excep_info(box_excp_item_t *excep_info, int32 sig_num, siginfo_t *siginfo, void *context)
@@ -400,10 +465,10 @@ static void sig_print_excep_info(box_excp_item_t *excep_info, int32 sig_num, sig
     cm_save_proc_maps_file(excep_info);
     cm_save_proc_meminfo_file();
     LOG_BLACKBOX_INF("\n===============================threads backtrace===============================\n");
-    dss_sig_collect_all_backtrace();
-    dss_print_global_variable();
-    dss_print_effect_param();
-    dss_write_shm_memory();
+    dss_sig_collect_all_backtrace(LOG_BLACKBOX);
+    dss_print_global_variable(LOG_BLACKBOX);
+    dss_print_effect_param(LOG_BLACKBOX);
+    dss_write_shm_memory(LOG_BLACKBOX);
 }
 
 uint32 g_sign_mutex = 0;
@@ -545,7 +610,7 @@ status_t dss_sigcap_handle_reg()
         }
     }
     for (uint32 sig_num = SIGRTMIN; sig_num <= SIGRTMAX; sig_num++) {
-        if (sig_num == SIG_BACKTRACE || sig_num == SIG_HOTPATCH) {
+        if (sig_num == SIG_BACKTRACE || sig_num == SIG_HOTPATCH || sig_num == SIG_DYN_LOG) {
             continue;
         }
         if (dss_sigcap_reg_proc(sig_num) != CM_SUCCESS) {

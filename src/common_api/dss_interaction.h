@@ -47,6 +47,7 @@ typedef struct st_dss_conn {
 #ifdef ENABLE_DSSTEST
     pid_t conn_pid;
 #endif
+    dss_cli_info_t cli_info;
 } dss_conn_t;
 
 int dss_get_pack_err(dss_conn_t *conn, dss_packet_t *pack);

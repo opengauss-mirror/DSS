@@ -124,8 +124,9 @@ static status_t cmd_check_zero_or_one(const char *zero_or_one_str)
 static status_t cmd_check_uds(const char *uds)
 {
     const char *uds_prefix = "UDS:";
-    if (strlen(uds) < strlen(uds_prefix) || memcmp(uds, uds_prefix, strlen(uds_prefix)) != 0) {
-        DSS_PRINT_ERROR("uds name should start with %s.\n", uds_prefix);
+    /* if uds path only has "UDS:", it is invalid */
+    if (strlen(uds) <= strlen(uds_prefix) || memcmp(uds, uds_prefix, strlen(uds_prefix)) != 0) {
+        DSS_PRINT_ERROR("uds name should start with %s, also it should not be empty.\n", uds_prefix);
         return CM_ERROR;
     }
     return dss_check_path(uds + strlen(uds_prefix));
@@ -688,7 +689,7 @@ static void lsvg_printf_vg_info(
         (void)printf("   vg_used:%.05f\n", dss_vg_used);
         (void)printf("   vg_used_percent:%.2lf\n", dss_vg_used_percent);
     } else {
-        (void)printf("%-14s%-20u%-20.05f %-20.05f %-20.05f %-20.2lf\n", vg_vlm_info->vg_name, vg_vlm_info->volume_count,
+        (void)printf("%-64s%-20u%-20.05f %-20.05f %-20.05f %-20.2lf\n", vg_vlm_info->vg_name, vg_vlm_info->volume_count,
             dss_vg_size, dss_vg_free, dss_vg_used, dss_vg_used_percent);
     }
 }
@@ -742,7 +743,7 @@ static status_t lsvg_info(dss_conn_t *connection, const char *measure, bool32 de
 
     if (!detail) {
         (void)printf(
-            "%-14s%-20s%-20s %-20s %-20s %-20s\n", "vg_name", "volume_count", "size", "free", "used", "percent(%)");
+            "%-64s%-20s%-20s %-20s %-20s %-20s\n", "vg_name", "volume_count", "size", "free", "used", "percent(%)");
     }
 
     for (uint32 vg_id = 0; vg_id < (uint32)allvg_vlm_space_info->group_num; vg_id++) {
@@ -1590,6 +1591,67 @@ static status_t inq_reg_proc(void)
     }
     return status;
 }
+static status_t cmd_check_query_latch_type(const char *type_str)
+{
+    uint32 type;
+    status_t ret = cm_str2uint32(type_str, &type);
+    if (ret != CM_SUCCESS) {
+        DSS_PRINT_ERROR("The value of type is invalid.\n");
+        return CM_ERROR;
+    }
+    if (type < DSS_LATCH_ALL || type > DSS_DISK_LATCH) {
+        DSS_PRINT_ERROR("The value of inst_id should be in [%u, %u].\n", DSS_LATCH_ALL, DSS_DISK_LATCH);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+static dss_args_t cmd_query_latch_remain_args[] = {
+    {'i', "inst_id", CM_TRUE, CM_TRUE, cmd_check_inst_id, NULL, NULL, 0, NULL, NULL, 0},
+    {'t', "type", CM_FALSE, CM_TRUE, cmd_check_query_latch_type, NULL, NULL, 0, NULL, NULL, 0},
+    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
+        NULL, NULL, 0},
+};
+
+static dss_args_set_t cmd_query_latch_remain_args_set = {
+    cmd_query_latch_remain_args,
+    sizeof(cmd_query_latch_remain_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+static void query_latch_remain_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:%s query_latch_remain <-i inst_id> [-t type] [-D DSS_HOME]\n", prog_name);
+    (void)printf("[raid command]check whether the latch remain of inst_id\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    (void)printf("-i/--inst_id <inst_id>, <required>, the id of the host need to query\n");
+    (void)printf("-t/--type <type>, [optional], the type of the latch need to query, the default value is 0\n");
+    help_param_dsshome();
+}
+
+static status_t query_latch_remain_proc(void)
+{
+    DSS_PRINT_INF("Begin to query latch remain.\n");
+    int64 inst_id;
+    status_t status = cm_str2bigint(cmd_query_latch_remain_args[DSS_ARG_IDX_0].input_args, &inst_id);
+    DSS_RETURN_IFERR2(
+        status, DSS_PRINT_ERROR("inst_id:%s is not a valid int64.\n", cmd_query_latch_remain_args[DSS_ARG_IDX_0].input_args));
+    char *home = cmd_query_latch_remain_args[DSS_ARG_IDX_2].input_args;
+    int64 type = DSS_LATCH_ALL;
+    if (cmd_query_latch_remain_args[DSS_ARG_IDX_1].inputed) {
+        status = cm_str2bigint(cmd_query_latch_remain_args[DSS_ARG_IDX_1].input_args, &type);
+        DSS_RETURN_IFERR2(status,
+            DSS_PRINT_ERROR("type:%s is not a valid int64.\n", cmd_query_latch_remain_args[DSS_ARG_IDX_1].input_args));
+    }
+    status = dss_query_latch_remain(home, inst_id, type);
+    if (status == CM_ERROR) {
+        DSS_PRINT_ERROR("Failed to query inst %lld latch type %lld.\n", inst_id, type);
+    } else {
+        DSS_PRINT_INF("Succeed to query inst %lld latch type %lld.\n", inst_id, type);
+    }
+    return status;
+}
 
 static dss_args_set_t cmd_lscli_args_set = {
     NULL,
@@ -1606,7 +1668,7 @@ static void lscli_help(const char *prog_name, int print_flag)
 static status_t lscli_proc(void)
 {
     errno_t errcode;
-    dss_cli_info cli_info;
+    dss_cli_info_t cli_info;
 
     cli_info.cli_pid = cm_sys_pid();
     status_t status = cm_sys_process_start_time(cli_info.cli_pid, &cli_info.start_time);
@@ -3446,6 +3508,7 @@ static status_t encrypt_proc(void)
         DSS_PRINT_ERROR("Failed to encrypt password.\n");
         return CM_ERROR;
     }
+    LOG_RUN_INF("[ENCRYPT]Succeed to encrypt password.\n");
     (void)(memset_s(plain, CM_PASSWD_MAX_LEN + 1, 0, CM_PASSWD_MAX_LEN + 1));
     status = dss_save_random_file(cipher.rand, RANDOM_LEN + 1);
     if (status != CM_SUCCESS) {
@@ -4273,7 +4336,9 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set,
                                         &cmd_enable_grab_lock_args_set, true},
                                       {"hotpatch", hotpatch_help, hotpatch_proc, &cmd_hotpatch_args_set, true},
                                       {"query_hotpatch", query_hotpatch_help, query_hotpatch_proc,
-                                          &cmd_query_hotpatch_args_set, false}};
+                                          &cmd_query_hotpatch_args_set, false},
+                                      {"query_latch_remain", query_latch_remain_help, query_latch_remain_proc,
+                                          &cmd_query_latch_remain_args_set, false}};
 
 void clean_cmd()
 {

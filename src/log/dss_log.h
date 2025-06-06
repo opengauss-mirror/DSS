@@ -73,6 +73,21 @@ typedef struct st_dss_audit_assist {
         cm_reset_error();                                                            \
     } while (0)
 
+#define DSS_PRINT_RUN_ERROR(fmt, ...)                                                \
+    do {                                                                             \
+        (void)printf(fmt, ##__VA_ARGS__);                                            \
+        LOG_RUN_ERR(fmt, ##__VA_ARGS__);                                             \
+        int32 errcode_print;                                                         \
+        const char *errmsg_print = NULL;                                             \
+        cm_get_error(&errcode_print, &errmsg_print);                                 \
+        if (errcode_print != 0) {                                                    \
+            LOG_RUN_ERR(" detail reason [%d] : %s", errcode_print, errmsg_print);    \
+            (void)printf(" detail reason [%d] : %s\n", errcode_print, errmsg_print); \
+            (void)fflush(stdout);                                                    \
+        }                                                                            \
+        cm_reset_error();                                                            \
+    } while (0)
+
 #define DSS_PRINT_INF(fmt, ...)            \
     do {                                   \
         (void)printf(fmt, ##__VA_ARGS__);  \
@@ -95,8 +110,32 @@ typedef struct st_dss_audit_assist {
         cm_set_error((char *)__FILE_NAME__, (uint32)__LINE__, (cm_errno_t)error_no, format, ##__VA_ARGS__); \
     } while (0)
 
+/*
+ * warning id is composed of source + module + object + code
+ * source -- DN(10)/CM(11)/OM(12)/DM(20)/DSS(30)
+ * module -- File(01)/Transaction(02)/HA(03)/Log(04)/Buffer(05)/Space(06)/Server(07)
+ * object -- Host Resource(01)/Run Environment(02)/Cluster Status(03)/
+ *           Instance Status(04)/Database Status(05)/Database Object(06)
+ * code   -- 0001 and so on
+ */
+/*
+ * one warn must modify  warn_id_t
+ *                       warn_name_t
+ *                       g_warn_id
+ *                       g_warning_desc
+ */
+typedef enum dss_warn_id {
+    WARN_DSS_SPACEUSAGE_ID = 3006060001,
+} dss_warn_id_t;
+
+typedef enum dss_warn_name {
+    WARN_DSS_SPACEUSAGE, /* dss vg space */
+} dss_warn_name_t;
+
 #define DSS_ERROR_COUNT 3000
 extern const char *g_dss_error_desc[DSS_ERROR_COUNT];
+extern char *g_dss_warn_desc[];
+extern uint32 g_dss_warn_id[];
 status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32 log_def_count, char *name);
 void sql_record_audit_log(void *sess, status_t status, uint8 cmd_type);
 dss_log_def_t *dss_get_instance_log_def();

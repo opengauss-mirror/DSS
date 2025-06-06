@@ -171,17 +171,22 @@ static void dss_clean_session_hotpatch_latch(dss_session_t *session)
 
 void dss_release_session_res(dss_session_t *session)
 {
+    dss_server_session_lock(session);
     dss_clean_session_latch(session, CM_FALSE);
     dss_clean_session_hotpatch_latch(session);
     dss_clean_open_files(session);
-    dss_destroy_session(session);
+    dss_destroy_session_inner(session);
+    cm_spin_unlock(&session->shm_lock);
+    LOG_DEBUG_INF("Succeed to unlock session %u shm lock", session->id);
+    cm_spin_unlock(&session->lock);
 }
 
 status_t dss_process_single_cmd(dss_session_t **session)
 {
     status_t status = dss_process_command(*session);
     if ((*session)->is_closed) {
-        LOG_RUN_INF("Session:%u end to do service.", (*session)->id);
+        LOG_RUN_INF("Session:%u end to do service, thread id is %u, connect time is %llu, try to clean source.",
+            (*session)->id, (*session)->cli_info.thread_id, (*session)->cli_info.connect_time);
         dss_clean_reactor_session(*session);
         *session = NULL;
     } else {
@@ -546,11 +551,11 @@ static status_t dss_process_handshake(dss_session_t *session)
     session->client_version = dss_get_version(&session->recv_pack);
     uint32 current_proto_ver = dss_get_master_proto_ver();
     session->proto_version = MIN(session->client_version, current_proto_ver);
-    dss_cli_info *cli_info;
-    DSS_RETURN_IF_ERROR(dss_get_data(&session->recv_pack, sizeof(dss_cli_info), (void **)&cli_info));
+    dss_cli_info_t *cli_info;
+    DSS_RETURN_IF_ERROR(dss_get_data(&session->recv_pack, sizeof(dss_cli_info_t), (void **)&cli_info));
     errno_t errcode;
     cm_spin_lock(&session->lock, NULL);
-    errcode = memcpy_s(&session->cli_info, sizeof(dss_cli_info), cli_info, sizeof(dss_cli_info));
+    errcode = memcpy_s(&session->cli_info, sizeof(dss_cli_info_t), cli_info, sizeof(dss_cli_info_t));
     cm_spin_unlock(&session->lock);
     securec_check_ret(errcode);
     LOG_RUN_INF(
@@ -978,18 +983,25 @@ void dss_wait_session_pause(dss_instance_t *inst)
 void dss_wait_background_pause(dss_instance_t *inst)
 {
     LOG_DEBUG_INF("Begin to set background paused.");
-    while (inst->is_cleaning) {
+    while (inst->is_cleaning || inst->is_checking) {
         cm_sleep(1);
     }
     LOG_DEBUG_INF("Succeed to pause background task.");
 }
 
-void dss_set_session_running(dss_instance_t *inst)
+void dss_set_session_running(dss_instance_t *inst, uint32 sid)
 {
     LOG_DEBUG_INF("Begin to set session running.");
+    cm_latch_x(&inst->uds_lsnr_latch, sid, NULL);
+    if (inst->abort_status) {
+        LOG_RUN_INF("dssserver is aborting, no need to set sessions running.");
+        cm_unlatch(&inst->uds_lsnr_latch, NULL);
+        return;
+    }
     uds_lsnr_t *lsnr = &inst->lsnr;
     dss_continue_reactors();
     lsnr->status = LSNR_STATUS_RUNNING;
+    cm_unlatch(&inst->uds_lsnr_latch, NULL);
     LOG_DEBUG_INF("Succeed to run all sessions.");
 }
 
@@ -1052,11 +1064,12 @@ static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 swi
     dss_wait_session_pause(&g_dss_instance);
     g_dss_instance.status = DSS_STATUS_SWITCH;
     dss_wait_background_pause(&g_dss_instance);
+    dss_close_delay_clean_background_task(&g_dss_instance);
 #ifdef ENABLE_DSSTEST
     dss_set_server_status_flag(DSS_STATUS_READONLY);
     LOG_RUN_INF("[SWITCH]inst %u set status flag %u when trans lock.", curr_id, DSS_STATUS_READONLY);
     dss_set_master_id((uint32)switch_id);
-    dss_set_session_running(&g_dss_instance);
+    dss_set_session_running(&g_dss_instance, session->id);
     g_dss_instance.status = DSS_STATUS_OPEN;
 #endif
     status_t ret = CM_SUCCESS;
@@ -1066,7 +1079,7 @@ static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 swi
         LOG_RUN_INF("[SWITCH]inst %u set status flag %u when trans lock.", curr_id, DSS_STATUS_READONLY);
         ret = cm_res_trans_lock(&g_dss_instance.cm_res.mgr, DSS_CM_LOCK, (uint32)switch_id);
         if (ret != CM_SUCCESS) {
-            dss_set_session_running(&g_dss_instance);
+            dss_set_session_running(&g_dss_instance, session->id);
             dss_set_server_status_flag(DSS_STATUS_READWRITE);
             LOG_RUN_INF("[SWITCH]inst %u set status flag %u when failed to trans lock.", curr_id, DSS_STATUS_READWRITE);
             g_dss_instance.status = DSS_STATUS_OPEN;
@@ -1074,10 +1087,10 @@ static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 swi
             return ret;
         }
         dss_set_master_id((uint32)switch_id);
-        dss_set_session_running(&g_dss_instance);
+        dss_set_session_running(&g_dss_instance, session->id);
         g_dss_instance.status = DSS_STATUS_OPEN;
     } else {
-        dss_set_session_running(&g_dss_instance);
+        dss_set_session_running(&g_dss_instance, session->id);
         g_dss_instance.status = DSS_STATUS_OPEN;
         LOG_RUN_ERR("[SWITCH]Only with cm can switch lock.");
         return CM_ERROR;
@@ -1194,6 +1207,7 @@ static status_t dss_process_disable_grab_lock_inner(dss_session_t *session, uint
         dss_wait_session_pause(&g_dss_instance);
         g_dss_instance.status = DSS_STATUS_SWITCH;
         dss_wait_background_pause(&g_dss_instance);
+        dss_close_delay_clean_background_task(&g_dss_instance);
         dss_set_server_status_flag(DSS_STATUS_READONLY);
         LOG_RUN_INF("[RELEASE LOCK]inst %u set status flag %u when release lock.", curr_id, DSS_STATUS_READONLY);
         ret = cm_res_unlock(&g_dss_instance.cm_res.mgr, DSS_CM_LOCK);
@@ -1212,12 +1226,12 @@ static status_t dss_process_disable_grab_lock_inner(dss_session_t *session, uint
                             "lock_owner_id is %u.",
                     curr_id, DSS_STATUS_READONLY, (int32)ret, lock_owner_id);
             }
-            dss_set_session_running(&g_dss_instance);
+            dss_set_session_running(&g_dss_instance, session->id);
             LOG_RUN_ERR("[RELEASE LOCK] cm release lock failed from %u.", curr_id);
             return CM_ERROR;
         }
         dss_set_master_id(DSS_INVALID_ID32);
-        dss_set_session_running(&g_dss_instance);
+        dss_set_session_running(&g_dss_instance, session->id);
     } else {
         LOG_RUN_ERR("[RELEASE LOCK] Only with cm can release lock.");
         return CM_ERROR;
@@ -1233,7 +1247,7 @@ static status_t dss_process_disable_grab_lock(dss_session_t *session)
     status_t ret;
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(
         session->audit_info.resource, DSS_AUDIT_MODIFY, "%u if it is master to disable grab lock", curr_id));
-    if (g_dss_instance.is_maintain || g_dss_instance.inst_cfg.params.inst_cnt <= 1) {
+    if (g_dss_instance.is_maintain || g_dss_instance.inst_cfg.params.nodes_list.inst_cnt <= 1) {
         LOG_RUN_ERR("[RELEASE LOCK]No need to disable grab lock when dssserver is maintain or just one inst.");
         return CM_ERROR;
     }

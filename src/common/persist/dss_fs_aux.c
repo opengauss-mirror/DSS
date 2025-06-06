@@ -211,6 +211,7 @@ status_t dss_format_fs_aux(dss_session_t *session, dss_vg_info_item_t *vg_item, 
     dss_fs_aux_t *block = NULL;
     for (uint32 i = 0; i < block_num; i++) {
         block = (dss_fs_aux_t *)dss_buffer_get_meta_addr(GA_FS_AUX_POOL, obj_id);
+        CM_ASSERT(block != NULL);
         dss_format_fs_aux_inner(dss_ctrl, block, i, auid);
 
         ga_obj_id.obj_id = obj_id;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
  *
  * DSS is licensed under Mulan PSL v2.
  * You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -13,37 +13,31 @@
  * See the Mulan PSL v2 for more details.
  * -------------------------------------------------------------------------
  *
- * dss_stack.h
+ * dss_dyn.h
  *
  *
  * IDENTIFICATION
- *    src/common/dss_stack.h
+ *    src/service/dss_dyn.h
  *
  * -------------------------------------------------------------------------
  */
-#ifndef __DSS_STACK_H_
-#define __DSS_STACK_H_
 
-#include "cm_types.h"
+#ifndef __DSS_DYN_H__
+#define __DSS_DYN_H__
+#ifndef _WIN32
+
+#include "cm_thread.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define DSS_MAX_STACK_DEPTH 32
-typedef struct tagknl_stack {
-    uint32 depth;
-    uint32 buff_pos;
-    uint32 indicator[DSS_MAX_STACK_DEPTH];
-    uint32 size;
-    uint32 reserve;
-    char *buff;
-} dss_stack;
-char *dss_get_stack_pos(dss_stack *stack, uint32 depth);
-void dss_pop_ex(dss_stack *stack, uint32 depth);
+#define DSS_LOCK_TIMEOUT_FOR_DYN 100
+#define DSS_DYN_SIG_WAIT_TIME_NS 400000000
+void dss_dyn_log_proc(thread_t *thread);
 
 #ifdef __cplusplus
 }
 #endif
-
+#endif
 #endif

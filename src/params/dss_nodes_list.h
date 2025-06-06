@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2024-2024. All rights reserved.
  *
  * DSS is licensed under Mulan PSL v2.
  * You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -13,37 +13,31 @@
  * See the Mulan PSL v2 for more details.
  * -------------------------------------------------------------------------
  *
- * dss_stack.h
+ * dss_nodes_list.h
  *
  *
  * IDENTIFICATION
- *    src/common/dss_stack.h
+ *    src/params/dss_nodes_list.h
  *
  * -------------------------------------------------------------------------
  */
-#ifndef __DSS_STACK_H_
-#define __DSS_STACK_H_
+
+#ifndef __DSS_NODES_LIST_H__
+#define __DSS_NODES_LIST_H__
 
 #include "cm_types.h"
+#include "cm_defs.h"
+#include "dss_defs.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+typedef struct st_dss_nodes_list {
+    uint32 inst_cnt;
+    uint64 inst_map;
+    char nodes[DSS_MAX_INSTANCES][CM_MAX_IP_LEN];
+    uint16 ports[DSS_MAX_INSTANCES];
+} dss_nodes_list_t;
 
-#define DSS_MAX_STACK_DEPTH 32
-typedef struct tagknl_stack {
-    uint32 depth;
-    uint32 buff_pos;
-    uint32 indicator[DSS_MAX_STACK_DEPTH];
-    uint32 size;
-    uint32 reserve;
-    char *buff;
-} dss_stack;
-char *dss_get_stack_pos(dss_stack *stack, uint32 depth);
-void dss_pop_ex(dss_stack *stack, uint32 depth);
-
-#ifdef __cplusplus
-}
-#endif
+status_t dss_extract_nodes_list(char *nodes_list_str, dss_nodes_list_t *nodes_list);
+status_t dss_verify_nodes_list(void *lex, void *def);
+status_t dss_notify_dss_nodes_list(void *se, void *item, char *value);
 
 #endif

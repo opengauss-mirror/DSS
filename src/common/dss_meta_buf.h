@@ -70,7 +70,7 @@ void dss_enter_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item);
 bool32 dss_enter_shm_time_x(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks);
 void dss_enter_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item, bool32 is_force, int32 timeout);
 void dss_leave_shm(dss_session_t *session, dss_vg_info_item_t *vg_item);
-
+bool32 dss_enter_shm_timed_s(dss_session_t *session, dss_vg_info_item_t *vg_item, bool32 is_force, int32 timeout);
 dss_block_ctrl_t *dss_buffer_get_block_ctrl_addr(ga_pool_id_e pool_id, uint32 object_id);
 char *dss_buffer_get_meta_addr(ga_pool_id_e pool_id, uint32 object_id);
 

@@ -85,11 +85,11 @@ static config_item_t g_dss_params[] = {
     {"_SHM_KEY", CM_TRUE, ATTR_READONLY, "1", NULL, NULL, "-", "[1,64]", "GS_TYPE_INTEGER", NULL, 17, EFFECT_REBOOT,
         CFG_INS, NULL, NULL, NULL, NULL},
 #ifdef OPENGAUSS
-    {"DSS_NODES_LIST", CM_TRUE, ATTR_READONLY, "0:127.0.0.1:1611", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 18,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"DSS_NODES_LIST", CM_TRUE, ATTR_NONE, "0:127.0.0.1:1611", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 18,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_nodes_list, dss_notify_dss_nodes_list, NULL, NULL},
 #else
-    {"DSS_NODES_LIST", CM_TRUE, ATTR_READONLY, "0|127.0.0.1|1611", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 18,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"DSS_NODES_LIST", CM_TRUE, ATTR_NONE, "0|127.0.0.1|1611", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 18,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_nodes_list, dss_notify_dss_nodes_list, NULL, NULL},
 #endif
     {"INTERCONNECT_TYPE", CM_TRUE, ATTR_READONLY, "TCP", NULL, NULL, "-", "TCP,RDMA", "GS_TYPE_VARCHAR", NULL, 19,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
@@ -144,7 +144,7 @@ static config_item_t g_dss_params[] = {
     {"_ENABLE_CORE_STATE_COLLECT", CM_TRUE, ATTR_NONE, "FALSE", NULL, NULL, "-", "[FALSE,TRUE]", "GS_TYPE_BOOLEAN",
         NULL, 44, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_enable_core_state_collect,
         dss_notify_enable_core_state_collect, NULL, NULL},
-    {"DELAY_CLEAN_INTERVAL", CM_TRUE, ATTR_NONE, "100", NULL, NULL, "-", "[5,1000000]", "GS_TYPE_INTEGER", NULL, 45,
+    {"DELAY_CLEAN_INTERVAL", CM_TRUE, ATTR_NONE, "5", NULL, NULL, "-", "[5,1000000]", "GS_TYPE_INTEGER", NULL, 45,
         EFFECT_IMMEDIATELY, CFG_INS, dss_verify_delay_clean_interval, dss_notify_delay_clean_interval, NULL, NULL},
 #if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
     {"SS_FI_PACKET_LOSS_ENTRIES", CM_TRUE, ATTR_NONE, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 46,
@@ -179,6 +179,15 @@ static config_item_t g_dss_params[] = {
 #endif
     {"LOG_COMPRESSED", CM_TRUE, ATTR_READONLY, "FALSE", NULL, NULL, "-", "[FALSE,TRUE]", "GS_TYPE_BOOLEAN", NULL, 56,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"LOG_ALARM_HOME", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 59, EFFECT_REBOOT,
+        CFG_INS, NULL, NULL, NULL, NULL},
+    {"VG_SPACE_USAGE_HWM", CM_TRUE, ATTR_READONLY, "80", NULL, NULL, "-", "[0, 100]", "GS_TYPE_INTEGER", NULL, 60,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"VG_SPACE_USAGE_LWM", CM_TRUE, ATTR_READONLY, "75", NULL, NULL, "-", "[0, 100]", "GS_TYPE_INTEGER", NULL, 61,
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    {"DELAY_CLEAN_SEARCH_FRAGMENT", CM_TRUE, ATTR_NONE, "128", NULL, NULL, "-", "[0,1024]", "GS_TYPE_INTEGER", NULL, 62,
+        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_delay_clean_search_fragment, dss_notify_delay_clean_search_fragment,
+        NULL, NULL},
 };
 
 static const char *g_dss_config_file = (const char *)"dss_inst.ini";
@@ -276,18 +285,7 @@ static status_t dss_load_mes_pool_size(dss_config_t *inst_cfg)
 static status_t dss_load_mes_url(dss_config_t *inst_cfg)
 {
     char *value = cm_get_config_value(&inst_cfg->config, "DSS_NODES_LIST");
-    status_t status = cm_split_mes_urls(inst_cfg->params.nodes, inst_cfg->params.ports, value);
-    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DSS_NODES_LIST"));
-    int32 node_cnt = 0;
-    for (int i = 0; i < DSS_MAX_INSTANCES; i++) {
-        if (inst_cfg->params.ports[i] != 0) {
-            inst_cfg->params.inst_map |= ((uint64)1 << i);
-            node_cnt++;
-        }
-    }
-    inst_cfg->params.inst_cnt = (uint32)node_cnt;
-    LOG_RUN_INF("Cluster Raid mode, node count = %d.", node_cnt);
-    return CM_SUCCESS;
+    return dss_extract_nodes_list(value, &inst_cfg->params.nodes_list);
 }
 
 static status_t dss_load_mes_conn_type(dss_config_t *inst_cfg)
@@ -695,6 +693,26 @@ static status_t dss_load_delay_clean_interval(dss_config_t *inst_cfg)
     return dss_load_delay_clean_interval_core(value, inst_cfg);
 }
 
+status_t dss_load_delay_clean_search_fragment_core(char *value, dss_config_t *inst_cfg)
+{
+    uint32 delay_clean_search_fragment;
+    status_t status = cm_str2uint32(value, &delay_clean_search_fragment);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DELAY_CLEAN_SEARCH_FRAGMENT"));
+
+    if (delay_clean_search_fragment > DSS_MAX_DELAY_CLEAN_SEARCH_FRAGMENT) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "DELAY_CLEAN_SEARCH_FRAGMENT"));
+    }
+    inst_cfg->params.delay_clean_search_fragment = delay_clean_search_fragment;
+    LOG_RUN_INF("DELAY_CLEAN_SEARCH_FRAGMENT = %u.", inst_cfg->params.delay_clean_search_fragment);
+    return CM_SUCCESS;
+}
+
+static status_t dss_load_delay_clean_search_fragment(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "DELAY_CLEAN_SEARCH_FRAGMENT");
+    return dss_load_delay_clean_search_fragment_core(value, inst_cfg);
+}
+
 #if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
 static status_t dss_load_fi_param_value(
     dss_config_t *inst_cfg, char *cfg_name, unsigned int cfg_type, unsigned int cfg_max)
@@ -797,6 +815,32 @@ static status_t dss_load_recycle_meta_params(dss_config_t *inst_cfg)
 }
 #endif
 
+static status_t dss_load_space_usage(dss_config_t *inst_cfg)
+{
+    char *hwm_value = cm_get_config_value(&inst_cfg->config, "VG_SPACE_USAGE_HWM");
+    char *lwm_value = cm_get_config_value(&inst_cfg->config, "VG_SPACE_USAGE_LWM");
+    int32 hwm, lwm;
+    status_t status = cm_str2int(hwm_value, &hwm);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "VG_SPACE_USAGE_HWM"));
+    status = cm_str2int(lwm_value, &lwm);
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "VG_SPACE_USAGE_LWM"));
+    if (hwm > DSS_VG_USAGE_MAX) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "VG_SPACE_USAGE_HWM is greater than maximum 100"));
+    }
+    if (lwm < DSS_VG_USAGE_MIN) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "VG_SPACE_USAGE_LWM is less than minimum 0"));
+    }
+    if (lwm > hwm) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "VG_SPACE_USAGE_LWM is greater than VG_SPACE_USAGE_HWM"));
+    }
+    inst_cfg->params.space_usage_hwm = (uint32)hwm;
+    inst_cfg->params.space_usage_lwm = (uint32)lwm;
+    return CM_SUCCESS;
+}
+
 status_t dss_load_config(dss_config_t *inst_cfg)
 {
     char file_name[DSS_FILE_NAME_BUFFER_SIZE];
@@ -818,6 +862,8 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     if (dss_is_server()) {
         status = dss_init_loggers(inst_cfg, dss_get_instance_log_def(), dss_get_instance_log_def_count(), "dssserver");
         DSS_RETURN_IFERR2(status, (void)printf("%s\nDSS init loggers failed!\n", cm_get_errormsg(cm_get_error_code())));
+        log_param_t *log_param = cm_log_param_instance();
+        log_param->log_instance_starting = CM_TRUE;
     }
     CM_RETURN_IFERR(dss_load_path(inst_cfg));
     CM_RETURN_IFERR(dss_load_instance_id(inst_cfg));
@@ -837,13 +883,14 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_xlog_vg_id(inst_cfg));
     CM_RETURN_IFERR(dss_load_enable_core_state_collect(inst_cfg));
     CM_RETURN_IFERR(dss_load_delay_clean_interval(inst_cfg));
-
+    CM_RETURN_IFERR(dss_load_delay_clean_search_fragment(inst_cfg));
 #if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
     if (dss_is_server()) {
         CM_RETURN_IFERR(dss_load_fi_params(inst_cfg));
         CM_RETURN_IFERR(dss_load_recycle_meta_params(inst_cfg));
     }
 #endif
+    CM_RETURN_IFERR(dss_load_space_usage(inst_cfg));
 
     return CM_SUCCESS;
 }
@@ -909,6 +956,7 @@ static status_t dss_set_cfg_param_core(text_t *text, char *value, dss_def_t *def
     return CM_SUCCESS;
 }
 
+static latch_t g_dss_set_cfg_latch = {0, 0, 0, 0, 0};
 status_t dss_set_cfg_param(char *name, char *value, char *scope)
 {
     CM_ASSERT(name != NULL);
@@ -933,8 +981,10 @@ status_t dss_set_cfg_param(char *name, char *value, char *scope)
     } else {
         def.scope = CONFIG_SCOPE_BOTH;
     }
-
-    return dss_set_cfg_param_core(&text, value, &def);
+    dss_latch_x(&g_dss_set_cfg_latch);
+    status_t status = dss_set_cfg_param_core(&text, value, &def);
+    dss_unlatch(&g_dss_set_cfg_latch);
+    return status;
 }
 
 status_t dss_get_cfg_param(const char *name, char **value)

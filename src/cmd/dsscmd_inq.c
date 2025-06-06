@@ -118,7 +118,7 @@ static status_t dss_modify_cluster_node_info(
     status_t status =
         dss_load_vg_ctrl_part(vg_item, (int64)DSS_CTRL_GLOBAL_CTRL_OFFSET, global_ctrl, DSS_DISK_UNIT_SIZE, &remote);
     if (status != CM_SUCCESS) {
-        dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
+        (void)dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
         LOG_DEBUG_ERR("[FENCE] Failed to load global ctrl part %s, errno:%d, errmsg:%s.", vg_item->entry_path,
             cm_get_os_error(), strerror(cm_get_os_error()));
         return status;
@@ -126,12 +126,10 @@ static status_t dss_modify_cluster_node_info(
     LOG_RUN_INF("new cluster_node_info is %llu.", global_ctrl->cluster_node_info);
     bool32 is_reg = cm_bitmap64_exist(&global_ctrl->cluster_node_info, (uint8)host_id);
     if (is_reg && inq_status == DSS_INQ_STATUS_REG) {
-        dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
-        return CM_SUCCESS;
+        return dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
     }
     if (!is_reg && inq_status == DSS_INQ_STATUS_UNREG) {
-        dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
-        return CM_SUCCESS;
+        return dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
     }
 
     if (inq_status == DSS_INQ_STATUS_REG) {
@@ -141,11 +139,12 @@ static status_t dss_modify_cluster_node_info(
     }
 
     status = dss_write_ctrl_to_disk(vg_item, (int64)(DSS_CTRL_GLOBAL_CTRL_OFFSET), global_ctrl, DSS_DISK_UNIT_SIZE);
-    dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
-    if (status == CM_SUCCESS) {
-        LOG_RUN_INF("update cluster_node_info is %llu.", global_ctrl->cluster_node_info);
+    if (status != CM_SUCCESS) {
+        (void)dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
+        return status;
     }
-    return status;
+    LOG_RUN_INF("update cluster_node_info is %llu.", global_ctrl->cluster_node_info);
+    return dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
 }
 
 // get the non-entry disk information of vg.
@@ -186,19 +185,22 @@ status_t dss_get_vg_non_entry_info(
             }
         }
     } while (CM_FALSE);
-
-    if (is_lock) {
-        dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
-    }
     if (status != CM_SUCCESS) {
+        if (is_lock) {
+            (void)dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg);
+        }
         return status;
+    }
+    if (is_lock) {
+        if (dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
+            return CM_ERROR;
+        }
     }
     if (check_redo && recover_redo) {
         DSS_THROW_ERROR(ERR_DSS_REDO_ILL, "residual redo log exists on the server.");
         LOG_RUN_ERR("Please start dssserver to recover redo log, then execute this command again.");
         return CM_ERROR;
     }
-
     return CM_SUCCESS;
 }
 
@@ -613,32 +615,135 @@ status_t dss_inq_reg_core(const char *home, int64 host_id)
 
 static status_t dss_clean_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, int64 inst_id)
 {
-    bool32 is_lock = CM_FALSE;
     dss_vg_info_item_t *vg_item;
     int64 tmp_inst_id = (inst_id == DSS_MAX_INST_ID) ? inst_cfg->params.inst_id : inst_id;
     int32 dss_mode = dss_storage_mode(inst_cfg);
+    status_t status = CM_SUCCESS;
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         vg_item = &vg_info->volume_group[i];
         if (vg_item->vg_name[0] == '\0' || vg_item->entry_path[0] == '\0') {
+            LOG_RUN_ERR("vg name or entry_path is NULL.");
             return CM_ERROR;
-        }
-        if (dss_check_lock_instid(dss_mode, vg_item, vg_item->entry_path, tmp_inst_id, &is_lock) != CM_SUCCESS) {
-            return CM_ERROR;
-        }
-        if (!is_lock) {
-            continue;
         }
         if (inst_id != DSS_MAX_INST_ID) {
-            dss_unlock_vg(dss_mode, vg_item, vg_item->entry_path, tmp_inst_id);
+            if (dss_unlock_vg(dss_mode, vg_item, vg_item->entry_path, tmp_inst_id) != CM_SUCCESS) {
+                LOG_RUN_ERR("Failed to unlock vg %s in dss mode %d.", vg_item->entry_path, dss_mode);
+                status = CM_ERROR;
+            }
             continue;
         }
         if (dss_file_lock_vg_w(inst_cfg) != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to file lock vg %s.", vg_item->entry_path);
             return CM_ERROR;
         }
-        dss_unlock_vg(dss_mode, vg_item, vg_item->entry_path, tmp_inst_id);
+        if (dss_unlock_vg(dss_mode, vg_item, vg_item->entry_path, tmp_inst_id)) {
+            LOG_RUN_ERR("Failed to unlock vg %s in dss mode %d.", vg_item->entry_path, dss_mode);
+            status = CM_ERROR;
+        }
         dss_file_unlock_vg();
     }
+    return status;
+}
+
+status_t dss_check_disk_latch_remain_inner(
+    int64 inst_id, dss_vg_info_t *vg_info, bool32 *is_remain, uint64 *latch_status)
+{
+    *is_remain = CM_FALSE;
     return CM_SUCCESS;
+}
+
+status_t dss_check_lock_remain(dss_vg_info_t *vg_info, int32 dss_mode, int64 inst_id)
+{
+    if (dss_mode == DSS_MODE_DISK) {
+        DSS_PRINT_INF("No need to check vg lock remain in inst %lld when dss_mode is %d.\n", inst_id, DSS_MODE_DISK);
+        return CM_SUCCESS;
+    }
+    status_t status;
+    bool32 is_remain = CM_TRUE;
+    uint64 latch_status = DSS_NO_LATCH_STATUS;
+    for (uint32 i = 0; i < vg_info->group_num; i++) {
+        status = dss_check_lock_remain_inner(
+            dss_mode, &vg_info->volume_group[i], vg_info->volume_group[i].entry_path, inst_id, &is_remain);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to check vg %s lock remain in inst %lld.", vg_info->volume_group[i].vg_name, inst_id);
+            DSS_PRINT_ERROR(
+                "Failed to check vg %s lock remain in inst %lld.\n", vg_info->volume_group[i].vg_name, inst_id);
+            return CM_ERROR;
+        }
+        if (!is_remain) {
+            continue;
+        }
+        latch_status = DSS_LATCH_STATUS_X;
+        DSS_PRINT_INF("Vg %s lock remain in inst %lld, latch status is %llu.\n", vg_info->volume_group[i].vg_name,
+            inst_id, latch_status);
+        return (status_t)latch_status;
+    }
+    DSS_PRINT_INF("No vg lock remain in inst %lld.\n", inst_id);
+    return CM_SUCCESS;
+}
+
+status_t dss_check_disk_latch_remain(int64 inst_id, dss_vg_info_t *vg_info)
+{
+    bool32 is_remain = CM_TRUE;
+    uint64 latch_status = DSS_NO_LATCH_STATUS;
+    status_t status = dss_check_disk_latch_remain_inner(inst_id, vg_info, &is_remain, &latch_status);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to check disk latch remain in inst %lld.\n", inst_id);
+        return CM_ERROR;
+    }
+    if (!is_remain) {
+        DSS_PRINT_INF("No disk latch remain in inst %lld.\n", inst_id);
+        return CM_SUCCESS;
+    }
+    DSS_PRINT_INF("Disk latch remain in inst %lld, latch status is %llu.\n", inst_id, latch_status);
+    return (status_t)latch_status;
+}
+
+static status_t dss_get_latch_flag(int64 type, uint64 *flags)
+{
+    switch (type) {
+        case DSS_LATCH_ALL:
+            *flags = DSS_ALL_LATCH_FLAG;
+            break;
+        case DSS_VG_LATCH:
+            *flags = DSS_VG_LATCH_FLAG;
+            break;
+        case DSS_DISK_LATCH:
+            *flags = DSS_DISK_LATCH_FLAG;
+            break;
+        default:
+            LOG_DEBUG_ERR("invalid latch type %lld.", type);
+            return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+status_t dss_query_latch_remain(const char *home, int64 inst_id, int64 type)
+{
+    status_t status = CM_SUCCESS;
+#ifndef WIN32
+    dss_config_t inst_cfg;
+    dss_vg_info_t *vg_info = NULL;
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, &inst_cfg, &vg_info));
+    int32 dss_mode = dss_storage_mode(&inst_cfg);
+    uint64 flags;
+    DSS_RETURN_IF_ERROR(dss_get_latch_flag(type, &flags));
+    if (flags & DSS_DISK_LATCH_FLAG) {
+        status = dss_check_disk_latch_remain(inst_id, vg_info);
+        if (status != CM_SUCCESS) {
+            dss_inq_free_vg_info(vg_info);
+            return status;
+        }
+    }
+    if (flags & DSS_VG_LATCH_FLAG) {
+        status = dss_check_lock_remain(vg_info, dss_mode, inst_id);
+        if (status != CM_SUCCESS) {
+            dss_inq_free_vg_info(vg_info);
+            return status;
+        }
+    }
+    dss_inq_free_vg_info(vg_info);
+#endif
+    return status;
 }
 
 status_t dss_clean_vg_lock(const char *home, int64 inst_id)

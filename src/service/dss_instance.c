@@ -27,6 +27,7 @@
 #include "cm_timer.h"
 #include "cm_error.h"
 #include "cm_iofence.h"
+#include "cm_stack.h"
 #include "dss_errno.h"
 #include "dss_defs.h"
 #include "dss_api.h"
@@ -47,10 +48,12 @@
 #include "dss_simulation_cm.h"
 #endif
 #include "dss_fault_injection.h"
+#include "dss_nodes_list.h"
+#include "dss_delete_file.h"
 
 #define DSS_MAINTAIN_ENV "DSS_MAINTAIN"
 dss_instance_t g_dss_instance;
-
+char *g_delete_buf = NULL;
 static const char *const g_dss_lock_file = "dss.lck";
 
 static void instance_set_pool_def(ga_pool_id_e pool_id, uint32 obj_count, uint32 obj_size, uint32 ex_max)
@@ -343,11 +346,11 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
     securec_check_ret(errcode);
 
     status = dss_init_zero_buf();
-    DSS_RETURN_IFERR2(status, (void)printf("Dss init zero buf fail.\n"));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("Dss init zero buf fail.\n"));
 
 #if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
     status = dss_init_fi_ctx(inst);
-    DSS_RETURN_IFERR2(status, (void)printf("Dss init fi ctx fail.\n"));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("Dss init fi ctx fail.\n"));
 #endif
 
     dss_init_cluster_proto_ver(inst);
@@ -355,13 +358,13 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
     dss_set_server_flag();
     regist_get_instance_status_proc(dss_get_instance_status);
     status = dss_set_cfg_dir(dss_args.dss_home, &inst->inst_cfg);
-    DSS_RETURN_IFERR2(status, (void)printf("Environment variant DSS_HOME not found!\n"));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("Environment variant DSS_HOME not found!\n"));
     status = cm_start_timer(g_timer());
-    DSS_RETURN_IFERR2(status, (void)printf("Aborted due to starting timer thread.\n"));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("Aborted due to starting timer thread.\n"));
     status = dss_load_config(&inst->inst_cfg);
-    DSS_RETURN_IFERR2(status, (void)printf("%s\nFailed to load parameters!\n", cm_get_errormsg(cm_get_error_code())));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("Failed to load parameters!\n"));
     status = dss_save_process_pid(&inst->inst_cfg);
-    DSS_RETURN_IFERR2(status, (void)printf("Save dssserver pid failed!\n"));
+    DSS_RETURN_IFERR2(status, DSS_PRINT_RUN_ERROR("Save dssserver pid failed!\n"));
 #ifdef DISABLE_SYN_META
     dss_set_syn_meta_enable(CM_FALSE);
 #endif
@@ -420,7 +423,7 @@ static status_t dss_lsnr_proc(bool32 is_emerg, uds_lsnr_t *lsnr, cs_pipe_t *pipe
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[DSS_CONNECT] create session failed.\n"));
     // process_handshake
     status = dss_handshake(session);
-    DSS_RETURN_IFERR3(status, LOG_RUN_ERR("[DSS_CONNECT] create session failed.\n"), dss_destroy_session(session));
+    DSS_RETURN_IFERR3(status, LOG_RUN_ERR("[DSS_CONNECT] handshake failed.\n"), dss_destroy_session(session));
     status = dss_reactors_add_session(session);
     DSS_RETURN_IFERR3(status,
         LOG_RUN_ERR("[DSS_CONNECT]Session:%u socket:%u closed.", session->id, pipe->link.uds.sock),
@@ -508,7 +511,7 @@ void dss_check_peer_by_inst(dss_instance_t *inst, uint64 inst_id)
 
     // Not cfg the inst
     uint64 inst_mask = ((uint64)0x1 << inst_id);
-    if ((inst_cfg->params.inst_map & inst_mask) == 0) {
+    if ((inst_cfg->params.nodes_list.inst_map & inst_mask) == 0) {
         return;
     }
 
@@ -556,7 +559,7 @@ static void dss_check_peer_by_cm(dss_instance_t *inst)
         }
 
         uint64_t inst_mask = ((uint64)0x1 << res_instance_id);
-        if ((inst_cfg->params.inst_map & inst_mask) == 0) {
+        if ((inst_cfg->params.nodes_list.inst_map & inst_mask) == 0) {
             LOG_RUN_INF("dss instance [%d] is not in mes nodes cfg lists.", res_instance_id);
             continue;
         }
@@ -620,7 +623,7 @@ status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
     } else {
         dss_config_t *inst_cfg = dss_get_inst_cfg();
         for (int i = 0; i < DSS_MAX_INSTANCES; i++) {
-            if (inst_cfg->params.ports[i] != 0) {
+            if (inst_cfg->params.nodes_list.ports[i] != 0) {
                 *master_id = i;
                 LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "Set min id %u as master id.", i);
                 break;
@@ -651,7 +654,7 @@ status_t dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 t
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     *master_id = DSS_INVALID_ID32;
-    if (inst->is_maintain || inst->inst_cfg.params.inst_cnt <= 1) {
+    if (inst->is_maintain || inst->inst_cfg.params.nodes_list.inst_cnt <= 1) {
         *grab_lock = CM_TRUE;
         LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5,
             "[RECOVERY]Set curr_id %u to be primary when dssserver is maintain or just one inst.",
@@ -729,7 +732,7 @@ void dss_recovery_when_primary(dss_session_t *session, dss_instance_t *inst, uin
             cm_fync_logfile();
             dss_exit(1);
         }
-        dss_set_session_running(inst);
+        dss_set_session_running(inst, session->id);
     }
 
     // when current node is standby, and will change to primary, the status is from DSS_STATUS_OPEN to
@@ -778,7 +781,7 @@ void dss_recovery_when_standby(dss_session_t *session, dss_instance_t *inst, uin
 */
 void dss_get_cm_lock_and_recover_inner(dss_session_t *session, dss_instance_t *inst)
 {
-    cm_latch_x(&g_dss_instance.switch_latch, DSS_DEFAULT_SESSIONID, LATCH_STAT(LATCH_SWITCH));
+    cm_latch_x(&g_dss_instance.switch_latch, session->id, LATCH_STAT(LATCH_SWITCH));
     uint32 old_master_id = dss_get_master_id();
     bool32 grab_lock = CM_FALSE;
     uint32 master_id = DSS_INVALID_ID32;
@@ -798,6 +801,7 @@ void dss_get_cm_lock_and_recover_inner(dss_session_t *session, dss_instance_t *i
     if (old_master_id == master_id) {
         // primary, no need check
         if (master_id == curr_id) {
+            status = dss_delay_clean_background_task(&g_dss_instance);
             cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
             return;
         }
@@ -838,6 +842,15 @@ void dss_get_cm_lock_and_recover(thread_t *thread)
     }
 }
 
+void dss_init_delete_buf()
+{
+    if (g_delete_buf == NULL) {
+        uint32 search_stack_size = dss_get_search_stack_size();
+        uint32 delete_queue_size = sizeof(dss_delete_queue_t);
+        g_delete_buf = cm_malloc(search_stack_size + delete_queue_size);
+        DSS_ASSERT_LOG(g_delete_buf != NULL, "Failed to malloc g_delete_buf");
+    }
+}
 void dss_delay_clean_proc(thread_t *thread)
 {
     cm_set_thread_name("delay_clean");
@@ -847,6 +860,12 @@ void dss_delay_clean_proc(thread_t *thread)
     LOG_RUN_INF("Session[id=%u] is available for delay clean task.", session->id);
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 sleep_times = 0;
+    dss_init_delete_buf();
+    char *serach_stack = g_delete_buf;
+    char *delete_queue = (char *)(g_delete_buf + dss_get_search_stack_size());
+    cm_stack_init((cm_stack_t *)serach_stack, g_delete_buf + sizeof(cm_stack_t),
+        CM_ALIGN8(sizeof(dss_search_node_t) * DSS_MAX_DELETE_DEPTH) + GS_PUSH_RESERVE_SIZE);
+    dss_init_delete_queue((dss_delete_queue_t *)delete_queue);
     while (!thread->closed) {
         if (sleep_times < inst_cfg->params.delay_clean_interval) {
             cm_sleep(CM_SLEEP_1000_FIXED);
@@ -856,10 +875,56 @@ void dss_delay_clean_proc(thread_t *thread)
         g_dss_instance.is_cleaning = CM_TRUE;
         // DSS_STATUS_OPEN for control with switchover
         if (dss_need_exec_local() && dss_is_readwrite() && (g_dss_instance.status == DSS_STATUS_OPEN)) {
-            dss_delay_clean_all_vg(session);
+            dss_delay_clean_all_vg(session, (cm_stack_t *)serach_stack, (dss_delete_queue_t *)delete_queue);
         }
         g_dss_instance.is_cleaning = CM_FALSE;
         sleep_times = 0;
+    }
+}
+
+status_t dss_delay_clean_background_task(dss_instance_t *inst)
+{
+    status_t status = CM_SUCCESS;
+    uint32 delay_clean_idx = dss_get_delay_clean_task_idx();
+    if (inst->threads[delay_clean_idx].id == 0) {
+        status = cm_create_thread(dss_delay_clean_proc, 0, &g_dss_instance, &(g_dss_instance.threads[delay_clean_idx]));
+        if (status == CM_SUCCESS) {
+            LOG_RUN_INF("Succeed to create dss delay clean background task.");
+        } else {
+            LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL4, "Failed to create dss delay clean background task.");
+        }
+    }
+    return status;
+}
+
+void dss_close_delay_clean_background_task(dss_instance_t *inst)
+{
+    uint32 delay_clean_idx = dss_get_delay_clean_task_idx();
+    if (inst->threads[delay_clean_idx].id != 0) {
+        cm_close_thread(&inst->threads[delay_clean_idx]);
+        LOG_RUN_INF("close dss delay clean background task.");
+    }
+}
+
+void dss_alarm_check_proc(thread_t *thread)
+{
+    cm_set_thread_name("alarm_check");
+    uint32 sleep_times = 0;
+    uint32 work_idx = dss_get_alarm_check_task_idx();
+    dss_session_ctrl_t *session_ctrl = dss_get_session_ctrl();
+    dss_session_t *session = session_ctrl->sessions[work_idx];
+    // for check other alarms
+    uint32 alarm_counts = DSS_VG_ALARM_CHECK_COUNT;
+    while (!thread->closed) {
+        // only master node need alarm
+        if (sleep_times % DSS_VG_ALARM_CHECK_COUNT == 0) {
+            g_dss_instance.is_checking = CM_TRUE;
+            dss_alarm_check_vg_usage(session);
+            g_dss_instance.is_checking = CM_FALSE;
+        }
+        cm_sleep(CM_SLEEP_500_FIXED);
+        sleep_times++;
+        sleep_times = sleep_times % alarm_counts;
     }
 }
 
@@ -901,7 +966,7 @@ static void dss_check_peer_inst_inner(dss_instance_t *inst)
 void dss_check_peer_inst(dss_instance_t *inst, uint64 inst_id)
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
-    if (inst_cfg->params.inst_cnt <= 1) {
+    if (inst_cfg->params.nodes_list.inst_cnt <= 1) {
         return;
     }
 
@@ -1014,7 +1079,7 @@ void dss_check_unreg_volume(dss_session_t *session)
     ret = dss_load_vg_ctrl_part(vg_item, (int64)(DSS_VOLUME_HEAD_SIZE - DSS_DISK_UNIT_SIZE),
         &vg_item->dss_ctrl->global_ctrl, DSS_DISK_UNIT_SIZE, &remote);
     dss_unlock_vg_mem_and_shm(session, vg_item);
-    dss_unlock_vg_storage(vg_item, vg_item->entry_path, g_inst_cfg);
+    (void)dss_unlock_vg_storage(vg_item, vg_item->entry_path, g_inst_cfg);
     if (ret != CM_SUCCESS) {
         return;
     }

@@ -50,6 +50,6 @@ static inline void dss_free_open_file_node(bilist_node_t *node, bilist_t *bilist
 {
     cm_bilist_del(node, bilist);
     dss_open_file_info_t *open_file = BILIST_NODE_OF(dss_open_file_info_t, node, link);
-    cm_free(open_file);
+    CM_FREE_PTR(open_file);
 }
 #endif

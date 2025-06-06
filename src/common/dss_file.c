@@ -270,6 +270,20 @@ void dss_lock_vg_mem_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_it
     dss_enter_shm_x(session, vg_item);
 }
 
+bool32 dss_lock_vg_mem_and_shm_timed_x(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks)
+{
+    if (!dss_lock_vg_mem_timed_x(vg_item, wait_ticks)) {
+        LOG_DEBUG_WAR("lock vg mem x timeout.");
+        return CM_FALSE;
+    }
+    if (!dss_enter_shm_time_x(session, vg_item, wait_ticks)) {
+        dss_unlock_vg_mem(vg_item);
+        LOG_DEBUG_WAR("lock vg shm x timeout.");
+        return CM_FALSE;
+    }
+    return CM_TRUE;
+}
+
 void dss_lock_vg_mem_and_shm_x2ix(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
     dss_lock_shm_meta_x2ix(session, vg_item->vg_latch);
@@ -292,6 +306,20 @@ void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_it
 {
     dss_lock_vg_mem_s(vg_item);
     dss_enter_shm_s(session, vg_item, CM_FALSE, SPIN_WAIT_FOREVER);
+}
+
+bool32 dss_lock_vg_mem_and_shm_timed_s(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks)
+{
+    if (!dss_lock_vg_mem_timed_s(vg_item, wait_ticks)) {
+        LOG_DEBUG_WAR("lock vg mem s timeout.");
+        return CM_FALSE;
+    }
+    if (!dss_enter_shm_timed_s(session, vg_item, CM_FALSE, wait_ticks)) {
+        dss_unlock_vg_mem(vg_item);
+        LOG_DEBUG_WAR("lock vg shm s timeout.");
+        return CM_FALSE;
+    }
+    return CM_TRUE;
 }
 
 void dss_lock_vg_mem_and_shm_s_force(dss_session_t *session, dss_vg_info_item_t *vg_item)
@@ -1548,6 +1576,7 @@ status_t dss_format_ft_node_core(
     ga_obj_id_t ga_obj_id = {.pool_id = GA_8K_POOL, .obj_id = 0};
     gft_list_t bk_list = gft->free_list;
     dss_ft_block_t *block = (dss_ft_block_t *)dss_get_ft_block_by_ftid(session, vg_item, gft->last);
+    CM_ASSERT(block != NULL);
     block->next = auid;
     for (uint32 i = 0; i < block_num; i++) {
         block = (dss_ft_block_t *)dss_buffer_get_meta_addr(GA_8K_POOL, obj_id);
@@ -1645,6 +1674,7 @@ status_t dss_format_bitmap_node(dss_session_t *session, dss_vg_info_item_t *vg_i
     ga_obj_id.pool_id = GA_16K_POOL;
     for (uint32 i = 0; i < block_num; i++) {
         block = (dss_fs_block_header *)dss_buffer_get_meta_addr(GA_16K_POOL, obj_id);
+        CM_ASSERT(block != NULL);
         block->common.id = auid;
         block->common.id.block = i;
         block->common.id.item = 0;
@@ -3596,11 +3626,10 @@ static status_t dss_init_trunc_ftn(dss_session_t *session, dss_vg_info_item_t *v
     return CM_SUCCESS;
 }
 
-static void dss_truncate_set_sizes(
+static void dss_truncate_set_recycle_size(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, gft_node_t *trunc_ftn, int64 length)
 {
-    uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
-    uint64 align_length = CM_CALC_ALIGN((uint64)length, au_size);
+    uint64 align_length = CM_CALC_ALIGN((uint64)length, dss_get_vg_au_size(vg_item->dss_ctrl));
     dss_redo_set_file_size_t redo_size;
     uint64 old_size = (uint64)trunc_ftn->size;
     (void)cm_atomic_set(&trunc_ftn->size, (int64)((uint64)node->size - align_length));
@@ -3609,11 +3638,16 @@ static void dss_truncate_set_sizes(
     redo_size.size = (uint64)trunc_ftn->size;
     redo_size.oldsize = old_size;
     dss_put_log(session, vg_item, DSS_RT_SET_FILE_SIZE, &redo_size, sizeof(redo_size));
+}
 
-    old_size = (uint64)node->size;
+static void dss_truncate_set_size(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, int64 length)
+{
+    uint64 old_size = (uint64)node->size;
+    uint64 align_length = CM_CALC_ALIGN((uint64)length, dss_get_vg_au_size(vg_item->dss_ctrl));
     (void)cm_atomic_set(&node->size, (int64)align_length);
     node->written_size = (uint64)length < node->written_size ? (uint64)length : node->written_size;
     node->min_inited_size = (uint64)align_length < node->min_inited_size ? (uint64)align_length : node->min_inited_size;
+    dss_redo_set_file_size_t redo_size;
     redo_size.ftid = node->id;
     redo_size.size = (uint64)node->size;
     redo_size.oldsize = old_size;
@@ -3748,6 +3782,43 @@ status_t dss_truncate_small_init_tail(dss_session_t *session, dss_vg_info_item_t
     return dss_try_write_zero_one_au("truncate small", session, vg_item, node, (int64)node->written_size);
 }
 
+static status_t dss_truncate_to_recycle(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, dss_fs_block_t *entry_block, int64 length)
+{
+    uint32 block_count = 0;
+    uint32 block_au_count = 0;
+    uint32 au_offset = 0;
+    uint64 au_size = dss_get_vg_au_size(vg_item->dss_ctrl);
+    uint64 align_length = CM_CALC_ALIGN((uint64)length, au_size);
+    // find truncate point(FSB index: &block_count, and AU index: &block_au_count) in 2-level bitmap
+    status_t status =
+        dss_get_fs_block_info_by_offset((int64)align_length, au_size, &block_count, &block_au_count, &au_offset);
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("The offset:%llu is not correct, real block count:%u.", align_length, block_count);
+        return CM_ERROR;
+    }
+
+    LOG_DEBUG_INF("Begin to truncate to recycle:%s, length:%lld, align_length:%llu, SFSB idx:%u, AU idx:%u", node->name,
+        length, align_length, block_count, block_au_count);
+
+    gft_node_t *trunc_ftn;
+    if (dss_init_trunc_ftn(session, vg_item, node, &trunc_ftn, align_length) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+
+    dss_fs_block_t *dst_entry_fsb = (dss_fs_block_t *)dss_find_block_in_shm(
+        session, vg_item, trunc_ftn->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
+    if (dst_entry_fsb == NULL) {
+        DSS_RETURN_IFERR2(
+            CM_ERROR, LOG_DEBUG_ERR("Failed to find dst entry block:%s.", dss_display_metaid(trunc_ftn->entry)));
+    }
+    dss_check_fs_block_affiliation(&dst_entry_fsb->head, trunc_ftn->id, DSS_ENTRY_FS_INDEX);
+    uint32 au_trunc_idx = au_offset == 0 ? block_au_count : block_au_count + 1;
+    dss_build_truncated_ftn(session, vg_item, entry_block, dst_entry_fsb, block_count, au_trunc_idx);
+    dss_truncate_set_recycle_size(session, vg_item, node, trunc_ftn, length);
+    return CM_SUCCESS;
+}
+
 status_t dss_truncate_inner(dss_session_t *session, uint64 fid, ftid_t ftid, int64 length, dss_vg_info_item_t *vg_item)
 {
     CM_RETURN_IFERR(dss_prepare_truncate(session, vg_item, length));
@@ -3795,41 +3866,18 @@ status_t dss_truncate_inner(dss_session_t *session, uint64 fid, ftid_t ftid, int
      * generated accordingly, associated with the file space block(s) taken from the truncated file.
      */
 
-    // find truncate point(FSB index: &block_count, and AU index: &block_au_count) in 2-level bitmap
-    uint32 block_count = 0;
-    uint32 block_au_count = 0;
-    uint32 au_offset = 0;
-    status = dss_get_fs_block_info_by_offset((int64)align_length, au_size, &block_count, &block_au_count, &au_offset);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("The offset:%llu is not correct, real block count:%u.", align_length, block_count);
-        dss_validate_fs_meta(session, vg_item, node);
-        dss_unlock_vg_mem_and_shm(session, vg_item);
-        return CM_ERROR;
+    uint64 align_origin_length = CM_CALC_ALIGN((uint64)node->size, au_size);
+    bool32 need_recycle = (align_length < align_origin_length);
+    LOG_DEBUG_INF("To truncate %s from %lld(aligned %llu) to %lld(aligned %llu), a recycle file is %s needed.",
+        node->name, node->size, align_origin_length, length, align_length, (need_recycle ? "" : "not"));
+    if (need_recycle) {
+        if (dss_truncate_to_recycle(session, vg_item, node, entry_block, length) != CM_SUCCESS) {
+            dss_validate_fs_meta(session, vg_item, node);
+            dss_unlock_vg_mem_and_shm(session, vg_item);
+            return CM_ERROR;
+        }
     }
-
-    /* Perform truncating file space blocks. */
-    gft_node_t *trunc_ftn;
-    if (dss_init_trunc_ftn(session, vg_item, node, &trunc_ftn, align_length) != CM_SUCCESS) {
-        dss_validate_fs_meta(session, vg_item, node);
-        dss_unlock_vg_mem_and_shm(session, vg_item);
-        return CM_ERROR;
-    }
-
-    LOG_DEBUG_INF("Begin to truncate file:%s, length:%lld, align_length:%llu, SFSB idx:%u, AU idx:%u", node->name,
-        length, align_length, block_count, block_au_count);
-
-    dss_fs_block_t *dst_entry_fsb = (dss_fs_block_t *)dss_find_block_in_shm(
-        session, vg_item, trunc_ftn->entry, DSS_BLOCK_TYPE_FS, CM_TRUE, NULL, CM_FALSE);
-    if (dst_entry_fsb == NULL) {
-        dss_validate_fs_meta(session, vg_item, node);
-        dss_unlock_vg_mem_and_shm(session, vg_item);
-        DSS_RETURN_IFERR2(
-            CM_ERROR, LOG_DEBUG_ERR("Failed to find dst entry block:%s.", dss_display_metaid(trunc_ftn->entry)));
-    }
-    dss_check_fs_block_affiliation(&dst_entry_fsb->head, trunc_ftn->id, DSS_ENTRY_FS_INDEX);
-    uint32 au_trunc_idx = au_offset == 0 ? block_au_count : block_au_count + 1;
-    dss_build_truncated_ftn(session, vg_item, entry_block, dst_entry_fsb, block_count, au_trunc_idx);
-    dss_truncate_set_sizes(session, vg_item, node, trunc_ftn, length);
+    dss_truncate_set_size(session, vg_item, node, length);
 
     if (dss_truncate_small_init_tail(session, vg_item, node) != CM_SUCCESS) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
@@ -3943,6 +3991,8 @@ static status_t dss_refresh_file_ft_core(dss_session_t *session, dss_vg_info_ite
     *node_out = NULL;
     gft_node_t *node = NULL;
     bool32 need_retry = CM_FALSE;
+    bool32 first_try = CM_TRUE;
+
     do {
         if (session != NULL && session->is_closed) {
             LOG_DEBUG_ERR("Session:%u is closed, fail to refresh:%s.", session->id, dss_display_metaid(ftid));
@@ -3960,6 +4010,14 @@ static status_t dss_refresh_file_ft_core(dss_session_t *session, dss_vg_info_ite
 
         if (dss_is_fs_meta_valid(node)) {
             break;
+        }
+        if (first_try) {
+            first_try = CM_FALSE;
+            // If revalidation is needed, yield the s-latch, and try to fetch x-latch.
+            dss_unlock_vg_mem_and_shm(session, vg_item);
+            dss_lock_vg_mem_and_shm_x(session, vg_item);
+            // And then re-load the ft_node to check whether it has already been revalidated by some other thread.
+            continue;
         }
         need_retry = dss_try_revalidate_file(session, vg_item, node);
         if (need_retry) {
@@ -3979,7 +4037,10 @@ static status_t dss_refresh_file_ft_core(dss_session_t *session, dss_vg_info_ite
             dss_lock_vg_mem_and_shm_x(session, vg_item);
         }
     } while (CM_TRUE);
-
+    if (!first_try) {
+        // After re-validation, degrade the x-latch to s-latch, because x-latch is no longer needed in following steps.
+        dss_lock_vg_mem_and_shm_degrade(session, vg_item);
+    }
     LOG_DEBUG_INF("Apply refresh file:%s, curr size:%llu, ftid:%s by session id:%u.", node->name, node->size,
         dss_display_metaid(ftid), session->id);
     LOG_DEBUG_INF("Entry id: %s", dss_display_metaid(node->entry));
@@ -4012,7 +4073,6 @@ static status_t dss_refresh_file_core(
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to find fs data block by offset:%lld.", offset));
 
     if (DSS_IS_FILE_INNER_INITED(node->flags) && fs_pos.is_valid && fs_pos.is_exist_aux) {
-        dss_lock_vg_mem_and_shm_degrade(session, vg_item);
         status = dss_try_find_data_au_batch(session, vg_item, node, fs_pos.second_fs_block, fs_pos.block_au_count);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to find fs data batch block by offset:%lld.", offset));
     }
@@ -4027,7 +4087,7 @@ status_t dss_refresh_file(dss_session_t *session, uint64 fid, ftid_t ftid, char 
             DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name));
     }
 
-    dss_lock_vg_mem_and_shm_x(session, vg_item);
+    dss_lock_vg_mem_and_shm_s(session, vg_item);
     status_t ret = dss_refresh_file_core(session, vg_item, fid, ftid, offset);
     dss_unlock_vg_mem_and_shm(session, vg_item);
     return ret;
@@ -4291,98 +4351,45 @@ void dss_clean_all_sessions_latch()
         LOG_RUN_INF("[CLEAN_LATCH]session id %u, pid %llu, start_time %lld, process name:%s, objectid %u.", session->id,
             cli_pid, start_time, session->cli_info.process_name, session->objectid);
         // clean the session lock and latch
-        dss_clean_session_latch(session, CM_TRUE);
-    }
-}
-
-static status_t dss_clean_delay_file_node(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node)
-{
-    if (node->size > 0) {
-        // first remove node from old dir but not real delete, just mv to recycle
-        dss_free_ft_node(session, vg_item, parent_node, node, CM_FALSE);
-        dss_mv_to_recycle_dir(session, vg_item, node);
-    } else {
-        status_t status = dss_recycle_empty_file(session, vg_item, parent_node, node);
-        if (status != CM_SUCCESS) {
-            dss_rollback_mem_update(session, vg_item);
-            LOG_RUN_WAR("[DELAY_CLEAN]Failed to recycle empty file(fid:%llu).", node->fid);
-            return status;
+        if (!cm_spin_try_lock(&session->lock)) {
+            continue;
         }
+        while (!cm_spin_timed_lock(&session->shm_lock, DSS_SERVER_SESS_TIMEOUT)) {
+            // unlock if the client goes offline
+            cm_spin_unlock(&session->shm_lock);
+            LOG_RUN_INF("Succeed to unlock session %u shm lock", session->id);
+            cm_sleep(CM_SLEEP_500_FIXED);
+        }
+        LOG_DEBUG_INF("Succeed to lock session %u shm lock", session->id);
+        dss_clean_session_latch(session, CM_TRUE);
+        dss_server_session_unlock(session);
     }
-    return CM_SUCCESS;
 }
 
-static status_t dss_clean_delay_node(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node)
+status_t dss_check_open_file_local_and_remote(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t ftid, bool32 *is_open)
 {
-    LOG_DEBUG_INF("[DELAY_CLEAN]Delay File begin to clean name %s ftid:%s.", node->name, dss_display_metaid(node->id));
-    if (node->type == GFT_PATH) {
-        // clean delay path only when they have no children node
-        LOG_DEBUG_INF("[DELAY_CLEAN]Delay File %s ftid:%s is path, children node count %u .", node->name,
-            dss_display_metaid(node->id), node->items.count);
-        dss_free_ft_node(session, vg_item, parent_node, node, CM_TRUE);
-    } else {
-        status_t status = dss_clean_delay_file_node(session, vg_item, parent_node, node);
-        DSS_RETURN_IF_ERROR(status);
-    }
-    if (dss_process_redo_log(session, vg_item) != CM_SUCCESS) {
-        LOG_RUN_ERR("[DSS] ABORT INFO: redo log process failed, errcode:%d, OS errno:%d, OS errmsg:%s.",
-            cm_get_error_code(), errno, strerror(errno));
-        cm_fync_logfile();
-        dss_exit(1);
-    }
-    LOG_DEBUG_INF("[DELAY_CLEAN]Delay File clean success.");
-    return CM_SUCCESS;
-}
-
-// node is must delay file
-static status_t dss_check_delay_node(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node)
-{
-    LOG_DEBUG_INF("[DELAY_CLEAN]Delay File begin to check name %s ftid:%s.", node->name, dss_display_metaid(node->id));
-    LOG_DEBUG_INF("Parent name:%s ftid:%s", parent_node->name, dss_display_metaid(parent_node->id));
-    bool32 is_open = CM_FALSE;
+    LOG_DEBUG_INF("[DELAY_CLEAN]Delay File begin to check ftid:%s.", dss_display_metaid(ftid));
     // check delay file open local
-    status_t status = dss_check_open_file(session, vg_item, DSS_ID_TO_U64(node->id), &is_open);
-    DSS_RETURN_IFERR2(status,
-        LOG_RUN_WAR("[DELAY_CLEAN]Failed to check local, name %s ftid:%s.", node->name, dss_display_metaid(node->id)));
-    if (is_open) {
-        LOG_DEBUG_INF("[DELAY_CLEAN]File %s ftid:%s is delay node, but have opened local, check next time.", node->name,
-            dss_display_metaid(node->id));
+    status_t status = dss_check_open_file(session, vg_item, DSS_ID_TO_U64(ftid), is_open);
+    DSS_RETURN_IFERR2(status, LOG_RUN_WAR("[DELAY_CLEAN]Failed to check local, ftid:%s.", dss_display_metaid(ftid)));
+    if (*is_open) {
+        LOG_DEBUG_INF("[DELAY_CLEAN]ftid:%s is delay delete node, but has been opened local, check next time.",
+            dss_display_metaid(ftid));
         return CM_SUCCESS;
     }
-
-    dss_block_ctrl_t *block_ctrl = dss_get_block_ctrl_by_node(node);
-    if (block_ctrl != NULL) {
-        uint64 bg_task_ref_cnt = (uint64)cm_atomic_get((atomic_t *)&block_ctrl->bg_task_ref_cnt);
-        if (bg_task_ref_cnt > 0) {
-            LOG_DEBUG_INF(
-                "[DELAY_CLEAN]File %s ftid:%llu is delay node, but have ref by bg task local, check next time.",
-                node->name, DSS_ID_TO_U64(node->id));
-            return CM_SUCCESS;
-        }
-    }
-
     if (broadcast_check_file_open_proc != NULL) {
         // broadcast to check file open
-        status = broadcast_check_file_open_proc(vg_item, DSS_ID_TO_U64(node->id), &is_open);
-        DSS_RETURN_IFERR2(status, LOG_RUN_WAR("[DELAY_CLEAN]Failed check broadcast, name %s ftid:%llu.", node->name,
-                                      DSS_ID_TO_U64(node->id)));
-        if (is_open) {
-            LOG_DEBUG_INF(
-                "[DELAY_CLEAN]File %s ftid:%s is delay node, but have opened other instance, check next time.",
-                node->name, dss_display_metaid(node->id));
+        status = broadcast_check_file_open_proc(vg_item, DSS_ID_TO_U64(ftid), is_open);
+        DSS_RETURN_IFERR2(
+            status, LOG_RUN_WAR("[DELAY_CLEAN]Failed check broadcast, ftid:%s.", dss_display_metaid(ftid)));
+        if (*is_open) {
+            LOG_DEBUG_INF("[DELAY_CLEAN]ftid:%s is delay node, but have opened other instance, check next time.",
+                dss_display_metaid(ftid));
             return CM_SUCCESS;
         }
     }
-
-    status = dss_clean_delay_node(session, vg_item, parent_node, node);
-    DSS_RETURN_IFERR2(status,
-        LOG_RUN_WAR("[DELAY_CLEAN]Failed to clean delay node,name %s ftid:%llu.", node->name, DSS_ID_TO_U64(node->id)));
     return CM_SUCCESS;
 }
-
 gft_node_t *dss_get_next_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node)
 {
     if (dss_cmp_blockid(node->next, CM_INVALID_ID64)) {
@@ -4395,81 +4402,6 @@ bool32 dss_is_last_tree_node(gft_node_t *node)
 {
     return (node->type != GFT_PATH || node->items.count == 0);
 }
-
-// parent_node must be GFT_PATH
-static status_t dss_clean_node_tree(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node)
-{
-    status_t status = CM_ERROR;
-    if (dss_is_last_tree_node(parent_node) || ((parent_node->flags & DSS_FT_NODE_FLAG_SYSTEM) != 0)) {
-        return CM_SUCCESS;
-    }
-    if (get_instance_status_proc() != DSS_STATUS_OPEN) {
-        LOG_DEBUG_INF("[DELAY_CLEAN]Instance status is not open, exit the clean, wait next time.");
-        return CM_SUCCESS;
-    }
-    gft_node_t *next_node = NULL;
-    gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, parent_node->items.first, CM_TRUE, CM_FALSE);
-    if (node == NULL) {
-        LOG_RUN_WAR("[DELAY_CLEAN]Failed to get children node id:%s, parent_node name %s.",
-            dss_display_metaid(parent_node->items.first), parent_node->name);
-        return CM_ERROR;
-    }
-    do {
-        dss_check_ft_node_parent(node, parent_node->id);
-        if (dss_is_last_tree_node(node)) {
-            if ((node->flags & DSS_FT_NODE_FLAG_DEL) != 0) {
-                next_node = dss_get_next_node(session, vg_item, node);
-                status = dss_check_delay_node(session, vg_item, parent_node, node);
-                DSS_RETURN_IF_ERROR(status);
-                node = next_node;
-                continue;
-            }
-            node = dss_get_next_node(session, vg_item, node);
-            continue;
-        }
-        status = dss_clean_node_tree(session, vg_item, node);
-        DSS_RETURN_IFERR2(status, LOG_RUN_WAR("[DELAY_CLEAN]Failed to clean node tree, node name %s ftid:%llu.",
-                                      node->name, DSS_ID_TO_U64(node->id)));
-        // maybe its children node have been cleaned
-        if (((node->flags & DSS_FT_NODE_FLAG_DEL) != 0) && dss_is_last_tree_node(node)) {
-            next_node = dss_get_next_node(session, vg_item, node);
-            status = dss_check_delay_node(session, vg_item, parent_node, node);
-            DSS_RETURN_IF_ERROR(status);
-            node = next_node;
-            continue;
-        }
-        node = dss_get_next_node(session, vg_item, node);
-    } while (node != NULL && (get_instance_status_proc() == DSS_STATUS_OPEN));
-    return CM_SUCCESS;
-}
-
-static void dss_clean_vg_root_tree_core(dss_session_t *session, dss_vg_info_item_t *vg_item)
-{
-    gft_node_t *root_node = dss_find_ft_node(session, vg_item, NULL, vg_item->vg_name, CM_TRUE);
-    if (root_node == NULL) {
-        LOG_RUN_WAR("[DELAY_CLEAN]Failed to get the root node %s.", vg_item->vg_name);
-        return;
-    }
-    status_t status = dss_clean_node_tree(session, vg_item, root_node);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_WAR("[DELAY_CLEAN]Failed to clean the root tree %s.", vg_item->vg_name);
-    }
-}
-
-static void dss_clean_vg_root_tree(dss_session_t *session, dss_vg_info_item_t *vg_item)
-{
-    dss_lock_vg_mem_and_shm_x(session, vg_item);
-    dss_clean_vg_root_tree_core(session, vg_item);
-    dss_unlock_vg_mem_and_shm(session, vg_item);
-}
-
-void dss_delay_clean_all_vg(dss_session_t *session)
-{
-    for (uint32_t i = 0; i < g_vgs_info->group_num; i++) {
-        dss_clean_vg_root_tree(session, &g_vgs_info->volume_group[i]);
-    }
-}
-
 status_t dss_block_data_oper(char *op_desc, bool32 is_write, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
     uint64 offset, char *data_buf, int32 size)
 {
@@ -4542,4 +4474,88 @@ status_t dss_try_write_zero_one_au(
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to write zero to block:%s.", dss_display_metaid(fs_pos.data_auid)));
 
     return CM_SUCCESS;
+}
+
+status_t dss_calculate_vg_usage(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 *usage)
+{
+    dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
+    uint64 free_size = 0;
+    uint64 total_size = 0;
+    for (uint32 j = 0; j < DSS_MAX_VOLUMES; j++) {
+        if (dss_ctrl->volume.defs[j].flag != VOLUME_OCCUPY) {
+            continue;
+        }
+        total_size += dss_ctrl->core.volume_attrs[j].size;
+        free_size += dss_ctrl->core.volume_attrs[j].free;
+    }
+    // free_size need to add recycle size
+    dss_au_root_t *dss_au_root = DSS_GET_AU_ROOT(dss_ctrl);
+    ftid_t free_root = *(ftid_t *)(&dss_au_root->free_root);
+    gft_node_t *recycle_dir = dss_get_ft_node_by_ftid(session, vg_item, free_root, CM_TRUE, CM_FALSE);
+
+    if (recycle_dir == NULL) {
+        LOG_RUN_WAR("[ALARM]Failed to find recycle_dir when calculate vg usage in vg:%s", vg_item->vg_name);
+        return CM_ERROR;
+    }
+
+    if (!dss_cmp_auid(recycle_dir->items.first, DSS_INVALID_ID64)) {
+        gft_node_t *recycle_item =
+            dss_get_ft_node_by_ftid(session, vg_item, recycle_dir->items.first, CM_TRUE, CM_FALSE);
+        while (recycle_item != NULL) {
+            free_size += (uint64)recycle_item->size;
+            // check inst status, avoid affecting switchover
+            if (get_instance_status_proc() != DSS_STATUS_OPEN) {
+                return CM_ERROR;
+            }
+            if (dss_cmp_auid(recycle_item->next, DSS_INVALID_ID64)) {
+                break;
+            }
+            recycle_item = dss_get_ft_node_by_ftid(session, vg_item, recycle_item->next, CM_TRUE, CM_FALSE);
+        }
+    }
+
+    if (total_size == 0) {
+        LOG_RUN_WAR("[ALARM]Vg_size equals 0, all volumes are free in vg:%s when calculate vg usage", vg_item->vg_name);
+        return CM_ERROR;
+    }
+    *usage = (uint32)((total_size - free_size) * DSS_VG_USAGE_MAX / total_size);
+    return CM_SUCCESS;
+}
+
+void dss_alarm_check_vg_usage(dss_session_t *session)
+{
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    dss_warn_name_t warn_name = WARN_DSS_SPACEUSAGE;
+    status_t status;
+    if (dss_need_exec_local() && dss_is_readwrite() && (get_instance_status_proc() == DSS_STATUS_OPEN)) {
+        for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+            // check inst status, avoid affecting switchover
+            if (get_instance_status_proc() != DSS_STATUS_OPEN) {
+                break;
+            }
+            dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[i];
+            uint32 usage = 0;
+            dss_lock_vg_mem_and_shm_s(session, vg_item);
+            status = dss_calculate_vg_usage(session, vg_item, &usage);
+            if (status == CM_ERROR) {
+                dss_unlock_vg_mem_and_shm(session, vg_item);
+                break;
+            }
+            if (vg_item->space_alarm != DSS_VG_SPACE_ALARM_HWM) {
+                if (usage >= inst_cfg->params.space_usage_hwm) {
+                    vg_item->space_alarm = DSS_VG_SPACE_ALARM_HWM;
+                    LOG_ALARM_EX(warn_name, g_dss_warn_id, g_dss_warn_desc, "vg:%s usage:(%u%%) hwm:(%u%%) lwm:(%u%%)",
+                        vg_item->vg_name, usage, inst_cfg->params.space_usage_hwm, inst_cfg->params.space_usage_lwm);
+                }
+            } else {
+                if (usage < inst_cfg->params.space_usage_lwm) {
+                    vg_item->space_alarm = DSS_VG_SPACE_ALARM_LWM;
+                    LOG_ALARM_RECOVER_EX(warn_name, g_dss_warn_id, g_dss_warn_desc,
+                        "vg:%s usage:(%u%%) hwm:(%u%%) lwm:(%u%%)", vg_item->vg_name, usage,
+                        inst_cfg->params.space_usage_hwm, inst_cfg->params.space_usage_lwm);
+                }
+            }
+            dss_unlock_vg_mem_and_shm(session, vg_item);
+        }
+    }
 }

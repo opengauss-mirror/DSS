@@ -196,6 +196,7 @@ typedef struct st_dss_conn_opt {
 #define DSS_HOME "DSS_HOME"
 #define SYS_HOME "HOME"
 #define DSS_DEFAULT_UDS_PATH "UDS:/tmp/.dss_unix_d_socket"
+#define SESSION_LOCK_TIMEOUT 500 // tickets
 extern int32 g_dss_uds_conn_timeout;
 
 status_t dss_load_ctrl_sync(dss_conn_t *conn, const char *vg_name, uint32 index);
@@ -210,7 +211,7 @@ void dss_disconnect(dss_conn_t *conn);
 status_t dss_connect_ex(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn);
 void dss_disconnect_ex(dss_conn_t *conn);
 status_t dss_lock_vg_s(dss_vg_info_item_t *vg_item, dss_session_t *session);
-
+status_t dss_cli_session_lock(dss_conn_t *conn, dss_session_t *session);
 status_t dss_make_dir_impl(dss_conn_t *conn, const char *parent, const char *dir_name);
 status_t dss_remove_dir_impl(dss_conn_t *conn, const char *dir, bool32 recursive);
 dss_dir_t *dss_open_dir_impl(dss_conn_t *conn, const char *dir_path, bool32 refresh_recursive);

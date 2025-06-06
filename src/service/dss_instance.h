@@ -77,6 +77,7 @@ typedef struct st_dss_instance {
     dss_config_t inst_cfg;
     dss_instance_status_e status;
     uds_lsnr_t lsnr;
+    latch_t uds_lsnr_latch;
     reactors_t reactors;
     thread_t *threads;
     int64 active_sessions;
@@ -89,6 +90,8 @@ typedef struct st_dss_instance {
     bool8 is_cleaning;
     bool8 no_grab_lock;
     bool8 is_releasing_lock;
+    bool8 is_checking;
+    bool8 reserve[3];
     bool32 is_join_cluster;
     dss_session_t *handle_session;
     dss_bg_task_info_t syn_meta_task[DSS_META_SYN_BG_TASK_NUM_MAX];
@@ -103,6 +106,7 @@ status_t dss_lock_instance(void);
 status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args);
 
 extern dss_instance_t g_dss_instance;
+extern char* g_delete_buf;
 #define ZFS_INST (&g_dss_instance)
 #define ZFS_CFG (&g_dss_instance.inst_cfg)
 
@@ -121,11 +125,14 @@ void dss_recovery_when_primary(dss_session_t *session, dss_instance_t *inst, uin
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id);
 void dss_get_cm_lock_and_recover(thread_t *thread);
 void dss_delay_clean_proc(thread_t *thread);
+status_t dss_delay_clean_background_task(dss_instance_t *inst);
+void dss_close_delay_clean_background_task(dss_instance_t *inst);
 void dss_hashmap_dynamic_extend_and_redistribute_proc(thread_t *thread);
 bool32 dss_check_join_cluster();
 void dss_check_unreg_volume(dss_session_t *session);
 void dss_meta_syn_proc(thread_t *thread);
 void dss_recycle_meta_proc(thread_t *thread);
+void dss_alarm_check_proc(thread_t *thread);
 
 #ifdef __cplusplus
 }

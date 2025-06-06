@@ -57,6 +57,7 @@ typedef enum en_dss_msg_buffer_number {
     DSS_MSG_BUFFER_NO_CEIL
 } dss_msg_buffer_number_e;
 
+#define DSS_MES_PRIO_CNT 2
 #define DSS_MES_THREAD_NUM 2
 #define DSS_MES_TRY_TIMES 100
 #define DSS_BROADCAST_WAIT_INFINITE (0xFFFFFFFF)

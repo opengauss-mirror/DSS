@@ -34,6 +34,7 @@
 #include "dss_syn_meta.h"
 #include "dss_thv.h"
 #include "dss_fault_injection.h"
+#include "dss_param_verify.h"
 
 #ifndef WIN32
 static __thread char *g_thv_read_buf = NULL;
@@ -381,7 +382,7 @@ static status_t dss_broadcast_msg_with_try(dss_message_head_t *dss_head, dss_rec
         // only send the last-send-failed and new added
         cm_reset_error();
         valid_inst_mask = ((cur_work_inst_map & snd_err_inst_map) | new_added_inst_map);
-        valid_inst = (param->inst_map) & (~((uint64)0x1 << (uint64)(param->inst_id))) & valid_inst_mask;
+        valid_inst = (param->nodes_list.inst_map) & (~((uint64)0x1 << (uint64)(param->inst_id))) & valid_inst_mask;
         valid_inst = (~recv_msg->version_not_match_inst & valid_inst);
         if (valid_inst == 0) {
             if (recv_msg->version_not_match_inst != 0) {
@@ -601,7 +602,6 @@ static status_t dss_register_proc(void)
     return CM_SUCCESS;
 }
 
-#define DSS_MES_PRIO_CNT 2
 static status_t dss_set_mes_message_pool(unsigned long long recv_msg_buf_size, mes_profile_t *profile)
 {
     LOG_DEBUG_INF("mes message pool size:%llu", recv_msg_buf_size);
@@ -689,23 +689,23 @@ static status_t dss_set_mes_profile(mes_profile_t *profile)
     profile->mes_elapsed_switch = inst_cfg->params.elapsed_switch;
     profile->mes_with_ip = inst_cfg->params.mes_with_ip;
     profile->ip_white_list_on = inst_cfg->params.ip_white_list_on;
-    profile->inst_cnt = inst_cfg->params.inst_cnt;
+    profile->inst_cnt = inst_cfg->params.nodes_list.inst_cnt;
     uint32 inst_cnt = 0;
     for (uint32 i = 0; i < DSS_MAX_INSTANCES; i++) {
         uint64_t inst_mask = ((uint64)0x1 << i);
-        if ((inst_cfg->params.inst_map & inst_mask) == 0) {
+        if ((inst_cfg->params.nodes_list.inst_map & inst_mask) == 0) {
             continue;
         }
-        errcode = strncpy_s(profile->inst_net_addr[inst_cnt].ip, CM_MAX_IP_LEN, inst_cfg->params.nodes[i],
-            strlen(inst_cfg->params.nodes[i]));
+        errcode = strncpy_s(profile->inst_net_addr[inst_cnt].ip, CM_MAX_IP_LEN, inst_cfg->params.nodes_list.nodes[i],
+            strlen(inst_cfg->params.nodes_list.nodes[i]));
         if (errcode != EOK) {
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_SYSTEM_CALL, (errcode)));
         }
-        profile->inst_net_addr[inst_cnt].port = inst_cfg->params.ports[i];
+        profile->inst_net_addr[inst_cnt].port = inst_cfg->params.nodes_list.ports[i];
         profile->inst_net_addr[inst_cnt].need_connect = CM_TRUE;
         profile->inst_net_addr[inst_cnt].inst_id = i;
         inst_cnt++;
-        if (inst_cnt == inst_cfg->params.inst_cnt) {
+        if (inst_cnt == inst_cfg->params.nodes_list.inst_cnt) {
             break;
         }
     }
@@ -752,7 +752,7 @@ status_t dss_startup_mes(void)
         return CM_SUCCESS;
     }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
-    if (inst_cfg->params.inst_cnt <= 1) {
+    if (inst_cfg->params.nodes_list.inst_cnt <= 1) {
         return CM_SUCCESS;
     }
 
@@ -781,7 +781,7 @@ void dss_stop_mes(void)
         return;
     }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
-    if (g_inst_cfg != NULL && inst_cfg->params.inst_cnt <= 1) {
+    if (g_inst_cfg != NULL && inst_cfg->params.nodes_list.inst_cnt <= 1) {
         return;
     }
     mes_uninit();
@@ -948,12 +948,12 @@ void dss_check_mes_conn(uint64 cur_inst_map)
             continue;
         }
         uint64_t inst_mask = ((uint64)0x1 << id);
-        if ((inst_cfg->params.inst_map & inst_mask) == 0) {
+        if ((inst_cfg->params.nodes_list.inst_map & inst_mask) == 0) {
             continue;
         }
         dss_check_inst_conn(id, (old_inst_map & inst_mask), (cur_inst_map & inst_mask));
         inst_cnt++;
-        if (inst_cnt == inst_cfg->params.inst_cnt) {
+        if (inst_cnt == inst_cfg->params.nodes_list.inst_cnt) {
             break;
         }
     }

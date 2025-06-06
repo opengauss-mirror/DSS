@@ -46,6 +46,13 @@ extern "C" {
 #define DSS_FILE_PATH_MAX_LENGTH (SIZE_K(1) + 1)
 #define DSS_FKEY_FILENAME "server.key.rand"
 #define DSS_MAX_AUDIT_PATH_LENGTH (SIZE_K(2) + 512)
+
+#define DSS_VG_ALARM_CHECK_COUNT 10
+#define DSS_VG_USAGE_MIN 0
+#define DSS_VG_USAGE_MAX 100
+
+typedef enum { DSS_VG_SPACE_ALARM_INIT, DSS_VG_SPACE_ALARM_HWM, DSS_VG_SPACE_ALARM_LWM} dss_alarm_type_e;
+
 /* invalid id */
 #define DSS_INVALID_INT8 ((int8)(-1))
 #define DSS_INVALID_ID8 (uint8)0xFF
@@ -156,6 +163,8 @@ static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 #define DSS_MAX_DLOCK_RETRY_COUNT 500000
 #define DSS_MIN_DELAY_CLEAN_INTERVAL 5
 #define DSS_MAX_DELAY_CLEAN_INTERVAL 1000000
+#define DSS_MIN_DELAY_CLEAN_SEARCH_FRAGMENT 0
+#define DSS_MAX_DELAY_CLEAN_SEARCH_FRAGMENT 1024
 #define DSS_MIN_SHM_KEY 1
 #define DSS_MAX_SHM_KEY 64
 #define DSS_MAX_SHM_KEY_BITS 8
