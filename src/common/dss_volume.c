@@ -207,15 +207,30 @@ static inline void dss_open_fail(const char *name)
 
 static status_t dss_open_filehandle_raw(const char *name, int flags, volume_handle_t *fd, volume_handle_t *unaligned_fd)
 {
+    int unaligned_flags = DSS_NOD_OPEN_FLAG;
+
     // O_RDWR | O_SYNC | O_DIRECT
     *fd = open(name, flags, 0);
+
+#ifdef OPENGAUSS
+    /* two conditon return CM_ERROR for standby cluster:
+     * condition 1: fd = -1 in dss primary cluster or in single cluster
+     * condition 2: fd = -1 in dss standby cluster and os errnr != EROFS(30)
+     */
+    if (*fd == -1 && DSS_STANDBY_CLUSTER && cm_get_os_error() == EROFS) {
+        unaligned_flags = O_RDONLY | O_SYNC;
+        *fd = open(name, unaligned_flags | O_DIRECT, 0);
+        LOG_RUN_INF("dss_open_filehandle_raw open xlog fd %s in read-only file system", name);
+    }
+#endif
+
     if (*fd == -1) {
         dss_open_fail(name);
         return CM_ERROR;
     }
 
-    // O_RDWR | O_SYNC
-    *unaligned_fd = open(name, DSS_NOD_OPEN_FLAG, 0);
+    // (O_RDWR | O_SYNC) or (O_RDONLY | O_SYNC)
+    *unaligned_fd = open(name, unaligned_flags, 0);
     if (*unaligned_fd == -1) {
         dss_open_fail(name);
         return CM_ERROR;

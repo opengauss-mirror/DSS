@@ -1040,6 +1040,12 @@ status_t dss_lock_share_disk_vg(const char *entry_path, dss_config_t *inst_cfg)
 status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {
     LOG_DEBUG_INF("Lock vg storage, lock vg:%s.", entry_path);
+#ifdef OPENGAUSS
+    /* in standby cluster, we do not need try to lock xlog vg, xlog vg is a read only disk */
+    if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
+        return CM_SUCCESS;
+    }
+#endif
     int32 dss_mode = dss_storage_mode(inst_cfg);
     if (dss_mode == DSS_MODE_DISK) {
         DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(
@@ -1069,10 +1075,6 @@ status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry
         DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_VGLOCK_LOCK_SCSI_DISK,
             DSS_EXIT_LOG(CM_FALSE, "lock vg storage lock scsi disk fail"));
 
-        /* in standby cluster, we do not need try to lock(scsi3) xlog vg, xlog vg is a read only disk */
-        if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
-            return CM_SUCCESS;
-        }
         if (dss_lock_disk_vg(entry_path, inst_cfg) != CM_SUCCESS) {
             DSS_THROW_ERROR(ERR_DSS_VG_LOCK, entry_path);
             LOG_DEBUG_ERR("Failed to lock vg, entry path %s.", entry_path);
@@ -1200,6 +1202,12 @@ status_t dss_unlock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *ent
         fclose(vglock_fp);
         LOG_DEBUG_INF("ulock vg:%s, lock file:%s.", entry_path, lock_file);
     } else {
+#ifdef OPENGAUSS
+        /* in standby cluster, we do not need try to lock or unlock xlog vg, xlog vg is a read only disk */
+        if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
+            return CM_SUCCESS;
+        }
+#endif
         if (dss_unlock_vg(dss_mode, vg_item, entry_path, inst_cfg->params.inst_id) != CM_SUCCESS) {
             LOG_RUN_ERR("Failed to unlock vg %s.", vg_item->vg_name);
             return CM_ERROR;
