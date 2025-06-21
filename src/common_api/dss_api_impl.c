@@ -387,6 +387,45 @@ status_t dss_apply_refresh_volume(dss_conn_t *conn, dss_file_context_t *context,
     return dss_msg_interact_with_stat(conn, DSS_CMD_REFRESH_VOLUME, (void *)&send_info, NULL);
 }
 
+#ifdef OPENGAUSS
+status_t dss_reopen_vg_handel_impl(dss_conn_t *conn, const char *name)
+{
+    dss_refresh_volume_info_t send_info;
+   
+    DSS_RETURN_IF_ERROR(dss_check_device_path(name));
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(name + 1);
+    if (vg_item == NULL) {
+        LOG_RUN_ERR("Failed to find vg, vg name %s.", name);
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, name);
+        return CM_ERROR;
+    }
+
+    send_info.vg_name = vg_item->vg_name;
+    send_info.vg_id = vg_item->id;
+    send_info.volume_id = CM_INVALID_ID32;
+    LOG_RUN_INF("Start to reopen volumn handle, vg_name:\"%s\", vg_id:%d.", vg_item->vg_name, vg_item->id);
+    status_t status = dss_msg_interact_with_stat(conn, DSS_CMD_REFRESH_VOLUME, (void *)&send_info, NULL);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("Fail to dss refresh volume, vg_name:\"%s\", vg_id:%d,",
+            vg_item->vg_name, vg_item->id);
+        return status;
+    }
+    LOG_RUN_INF("Success to refresh volume handle, vg_name:\"%s\", vg_id:%d,", vg_item->vg_name, vg_item->id);
+
+    DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
+    dss_cli_vg_handles_t *cli_vg_handles = (dss_cli_vg_handles_t *)(conn->cli_vg_handles);
+    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+        if (strcmp(g_vgs_info->volume_group[i].vg_name, vg_item->vg_name) == 0) {
+            dss_destroy_vol_handle(&g_vgs_info->volume_group[i], &cli_vg_handles->vg_vols[i], DSS_MAX_VOLUMES);
+        }
+    }
+    DSS_UNLOCK_VG_META_S(vg_item, conn->session);
+    LOG_RUN_INF("Success to destroy client volume handle.");
+
+    return CM_SUCCESS;
+}
+#endif
+
 status_t dss_refresh_volume_handle(dss_conn_t *conn, dss_file_context_t *context, auid_t auid)
 {
     dss_vg_info_item_t *vg_item = context->vg_item;

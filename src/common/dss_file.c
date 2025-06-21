@@ -4093,9 +4093,10 @@ void dss_init_root_fs_block(dss_ctrl_t *dss_ctrl)
     dss_set_auid(&block_root->free.last, CM_INVALID_ID64);
 }
 
-status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32 vgid, uint32 volumeid)
+status_t dss_refresh_volume(
+    dss_session_t *session, const char *name_str, uint32 vgid, uint32 volumeid, bool32 is_force)
 {
-    if (!DSS_STANDBY_CLUSTER && dss_is_readwrite()) {
+    if ((!DSS_STANDBY_CLUSTER && !is_force) && dss_is_readwrite()) {
         DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
@@ -4106,7 +4107,17 @@ status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32
     }
     status_t status;
     dss_enter_shm_x(session, vg_item);
+#ifdef OPENGAUSS
+    if (is_force) {
+        status = dss_init_volume_by_force(vg_item, is_force);
+        LOG_RUN_INF("Success to dss_init_volume %s by_force.", vg_item->vg_name);
+    } else {
+        status = dss_check_volume(vg_item, volumeid);
+    }
+#else
     status = dss_check_volume(vg_item, volumeid);
+#endif
+
     dss_leave_shm(session, vg_item);
     return status;
 }

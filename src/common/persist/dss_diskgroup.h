@@ -145,6 +145,8 @@ status_t dss_check_lock_remain_inner(
     int32 dss_mode, dss_vg_info_item_t *vg_item, const char *entry_path, int64 inst_id, bool32 *is_remain);
 bool32 dss_lock_vg_mem_timed_x(dss_vg_info_item_t *vg_item, uint32 wait_ticks);
 bool32 dss_lock_vg_mem_timed_s(dss_vg_info_item_t *vg_item, uint32 wait_ticks);
+status_t dss_init_volume_by_force(dss_vg_info_item_t *vg_item, uint32 is_force);
+
 static inline dss_vg_info_item_t *dss_get_first_vg_item()
 {
     return &g_vgs_info->volume_group[0];

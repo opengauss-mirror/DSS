@@ -581,9 +581,17 @@ static status_t dss_process_refresh_volume(dss_session_t *session)
 {
     uint32 volumeid;
     uint32 vgid;
+    bool32 is_force = CM_FALSE;
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&volumeid));
-    if (volumeid >= DSS_MAX_VOLUMES) {
+    
+#ifdef OPENGAUSS
+    if (volumeid == CM_INVALID_ID32) {
+        is_force = true;
+    }
+#endif
+
+    if (volumeid >= DSS_MAX_VOLUMES && !is_force) {
         LOG_DEBUG_ERR("Volume id:%u overflow.", volumeid);
         return CM_ERROR;
     }
@@ -593,7 +601,7 @@ static status_t dss_process_refresh_volume(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(
         session->audit_info.resource, DSS_AUDIT_MODIFY, "vg_name:%s, volume_id:%u", name_str, volumeid));
 
-    return dss_refresh_volume(session, name_str, vgid, volumeid);
+    return dss_refresh_volume(session, name_str, vgid, volumeid, is_force);
 }
 
 static status_t dss_process_rename(dss_session_t *session)
