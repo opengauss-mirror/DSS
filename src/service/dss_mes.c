@@ -982,12 +982,19 @@ status_t dss_bcast_ask_file_open(dss_session_t *session, dss_vg_info_item_t *vg_
     return CM_SUCCESS;
 }
 
-status_t dss_bcast_meta_data(dss_session_t *session,  dss_req_meta_data_t *req, bool32 *cmd_ack)
+status_t dss_bcast_meta_data(dss_session_t *session,  char *data, uint32 size, bool32 *cmd_ack)
 {
-    req->bcast_head.type = BCAST_REQ_META_SYN;
+    dss_req_meta_data_t req;
+    req.bcast_head.type = BCAST_REQ_META_SYN;
+    req.data_size = size;
+    errno_t err = memcpy_s(&req.data, sizeof(dss_meta_syn_t), data, size);
+    if (err != EOK) {
+        DSS_THROW_ERROR(ERR_SYSTEM_CALL, err);
+        return CM_ERROR;
+    }
     dss_bcast_ack_bool_t recv_msg = {.default_ack = DSS_TRUE, .cmd_ack = DSS_TRUE};
-    DSS_RETURN_IF_ERROR(dss_sync_bcast(
-        session, (dss_bcast_req_head_t *)&req, OFFSET_OF(dss_req_meta_data_t, data) + req->data_size, &recv_msg));
+    DSS_RETURN_IF_ERROR(
+        dss_sync_bcast(session, (dss_bcast_req_head_t *)&req, OFFSET_OF(dss_req_meta_data_t, data) + size, &recv_msg));
     if (cmd_ack != NULL) {
         *cmd_ack = recv_msg.cmd_ack;
     }
@@ -1028,9 +1035,10 @@ status_t dss_broadcast_check_file_open(
     return dss_bcast_ask_file_open(session, vg_item, ftid, cmd_ack);
 }
 
-status_t dss_syn_data2other_nodes(dss_session_t *session, dss_req_meta_data_t *req, bool32 *cmd_ack)
+status_t dss_syn_data2other_nodes(
+    dss_session_t *session, dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack)
 {
-    return dss_bcast_meta_data(session, req, cmd_ack);
+    return dss_bcast_meta_data(session, meta_syn, meta_syn_size, cmd_ack);
 }
 
 static void dss_check_inst_conn(uint32_t id, uint64 old_inst_stat, uint64 cur_inst_stat)
