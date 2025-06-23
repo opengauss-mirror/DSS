@@ -23,16 +23,9 @@
  */
 #include "dss_syn_meta.h"
 #include "dss_file.h"
-#include "dss_malloc.h"
 
 #ifdef __cplusplus
 extern "C" {
-#endif
-
-#ifndef WIN32
-static __thread char *g_thv_syn_meta_buf = NULL;
-#else
-__declspec(thread) char *g_thv_syn_meta_buf = NULL;
 #endif
 
 static bool32 enable_syn_meta = CM_TRUE;
@@ -101,40 +94,31 @@ void dss_del_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl,
 void dss_syn_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl)
 {
     if (dss_need_exec_local() && dss_is_readwrite()) {
-        if (g_thv_syn_meta_buf == NULL) {
-            // g_thv_syn_meta_buf is destroyed only when the process exists
-            g_thv_syn_meta_buf = (char *)cm_malloc(sizeof(dss_req_meta_data_t));
-            if (g_thv_syn_meta_buf == NULL) {
-                DSS_THROW_ERROR(ERR_ALLOC_MEMORY, sizeof(dss_req_meta_data_t), "g_thv_syn_meta_buf");
-                return;
-            }
-        }
-        dss_req_meta_data_t *req = (dss_req_meta_data_t *)g_thv_syn_meta_buf;
+        dss_meta_syn_t meta_syn;
         // too many place to change the value of block_ctrl->data
         dss_lock_vg_mem_and_shm_s(session, vg_item);
         char *meta_addr = DSS_GET_META_FROM_BLOCK_CTRL(char, block_ctrl);
         dss_common_block_t *block = (dss_common_block_t *)meta_addr;
-        req->data.ftid = block_ctrl->ftid;
-        req->data.fid = block_ctrl->fid;
-        req->data.file_ver = block_ctrl->file_ver;
-        req->data.syn_meta_version = block->version;
-        req->data.meta_block_id = DSS_ID_TO_U64(block->id);
-        req->data.vg_id = vg_item->id;
-        req->data.meta_type = block_ctrl->type;
-        req->data.meta_len = dss_buffer_cache_get_block_size(block_ctrl->type);
-        errno_t errcode = memcpy_s(req->data.meta, req->data.meta_len, (char *)block, req->data.meta_len);
+        meta_syn.ftid = block_ctrl->ftid;
+        meta_syn.fid = block_ctrl->fid;
+        meta_syn.file_ver = block_ctrl->file_ver;
+        meta_syn.syn_meta_version = block->version;
+        meta_syn.meta_block_id = DSS_ID_TO_U64(block->id);
+        meta_syn.vg_id = vg_item->id;
+        meta_syn.meta_type = block_ctrl->type;
+        meta_syn.meta_len = dss_buffer_cache_get_block_size(block_ctrl->type);
+        errno_t errcode = memcpy_s(meta_syn.meta, meta_syn.meta_len, (char *)block, meta_syn.meta_len);
         if (SECUREC_UNLIKELY(errcode != EOK)) {
             dss_unlock_vg_mem_and_shm(session, vg_item);
             DSS_THROW_ERROR(ERR_SYSTEM_CALL, errcode);
             return;
         }
-        req->data_size = OFFSET_OF(dss_meta_syn_t, meta) + req->data.meta_len;
         dss_unlock_vg_mem_and_shm(session, vg_item);
 
-        (void)meta_syn2other_nodes_proc(session, req, NULL);
-        LOG_DEBUG_INF("syn meta file:%llu file_ver:%llu, vg:%u, block:%llu type:%u, with version:%llu.", req->data.fid,
-            req->data.file_ver, req->data.vg_id, req->data.meta_block_id, req->data.meta_type,
-            req->data.syn_meta_version);
+        (void)meta_syn2other_nodes_proc(
+            session, vg_item, (char *)&meta_syn, (OFFSET_OF(dss_meta_syn_t, meta) + meta_syn.meta_len), NULL);
+        LOG_DEBUG_INF("syn meta file:%llu file_ver:%llu, vg:%u, block:%llu type:%u, with version:%llu.", meta_syn.fid,
+            meta_syn.file_ver, meta_syn.vg_id, meta_syn.meta_block_id, meta_syn.meta_type, meta_syn.syn_meta_version);
     }
 }
 
