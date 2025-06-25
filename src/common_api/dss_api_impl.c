@@ -1947,11 +1947,6 @@ void dss_destroy_vol_handle_sync(dss_conn_t *conn)
     conn->cli_vg_handles = NULL;
 }
 
-void dss_heartbeat_entry(thread_t *thread)
-{
-    return;
-}
-
 static status_t dss_init_err_proc(
     dss_env_t *dss_env, bool32 detach, bool32 destroy, const char *errmsg, status_t errcode)
 {
@@ -2052,11 +2047,6 @@ status_t dss_init(uint32 max_open_files, char *home)
         return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "Failed to get shared vg info", status);
     }
 
-    status = cm_create_thread(dss_heartbeat_entry, SIZE_K(512), NULL, &dss_env->thread_heartbeat);
-    if (status != CM_SUCCESS) {
-        return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "DSS failed to create heartbeat thread", status);
-    }
-
 #ifdef ENABLE_DSSTEST
     dss_env->inittor_pid = getpid();
 #endif
@@ -2092,7 +2082,6 @@ void dss_destroy(void)
         return;
     }
 
-    cm_close_thread_nowait(&dss_env->thread_heartbeat);
     dss_file_run_ctx_t *file_run_ctx = &dss_env->file_run_ctx;
     for (uint32 i = 0; i < file_run_ctx->files.group_num; i++) {
         DSS_FREE_POINT(file_run_ctx->files.files_group[i]);
