@@ -264,7 +264,6 @@ typedef struct st_dss_env {
     uint32 instance_id;
     latch_t conn_latch;
     uint32 conn_count;
-    thread_t thread_heartbeat;
     dss_config_t inst_cfg;
 #ifdef ENABLE_DSSTEST
     pid_t inittor_pid;
