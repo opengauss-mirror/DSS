@@ -4474,6 +4474,7 @@ status_t dss_block_data_oper(char *op_desc, bool32 is_write, dss_vg_info_item_t 
         DSS_RETURN_IFERR2(
             status, LOG_DEBUG_ERR("open volume %s failed.", vg_item->dss_ctrl->volume.defs[block_id.volume].name));
         vg_item->volume_handle[block_id.volume] = volume;
+        vg_item->volume_handle[block_id.volume].name_p = vg_item->volume_handle[block_id.volume].name;
     }
 
     int64 vol_offset = dss_get_au_offset(vg_item, block_id) + (uint32)offset;

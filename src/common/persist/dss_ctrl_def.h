@@ -97,7 +97,7 @@ typedef enum en_vg_info_type {
 #ifdef WIN32
 typedef HANDLE volume_handle_t;
 #else
-typedef int32 volume_handle_t;
+typedef int64 volume_handle_t;
 #endif
 
 #define DSS_VOLUME_DEF_RESVS 112
@@ -139,7 +139,8 @@ typedef struct st_dss_volume_attr {
 } dss_volume_attr_t;  // CAUTION:If add/remove field ,please keep 32B total !!! Or modify rp_redo_add_or_remove_volume
 
 typedef enum dss_vg_device_Type {
-    DSS_VOLUME_TYPE_RAW = 0  // default is raw device
+    DSS_VOLUME_TYPE_RAW = 0,  // default is raw device
+    DSS_VOLUME_TYPE_VTABLE = 1  // raw by vtable
 } dss_vg_device_Type_e;
 
 typedef struct st_dss_volume {
