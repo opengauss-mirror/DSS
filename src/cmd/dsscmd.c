@@ -56,6 +56,7 @@
 #include "dsscmd_conn_opt.h"
 #include "dsscmd_interactive.h"
 #include "dss_cli_conn.h"
+#include "dss_vtable.h"
 #ifndef WIN32
 #include "config.h"
 #endif
@@ -445,6 +446,7 @@ static dss_args_t cmd_cv_args[] = {
     {'s', "au_size", CM_FALSE, CM_TRUE, cmd_check_au_size, NULL, NULL, 0, NULL, NULL, 0},
     {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
         NULL, NULL, 0},
+    {'V', "VTABLE", CM_FALSE, CM_FALSE, NULL, NULL, NULL, 0, NULL, NULL, 0},
 };
 static dss_args_set_t cmd_cv_args_set = {
     cmd_cv_args,
@@ -475,6 +477,16 @@ static status_t cv_proc(void)
     dss_config_t cv_cfg;
     vg_name = cmd_cv_args[DSS_ARG_IDX_0].input_args;
     volume_path = cmd_cv_args[DSS_ARG_IDX_1].input_args;
+
+    bool32 isvtable = cmd_cv_args[DSS_ARG_IDX_4].inputed ? CM_TRUE : CM_FALSE;
+    if (isvtable) {
+        status = dss_init_vtable();
+        if (status != CM_SUCCESS) {
+            DSS_PRINT_ERROR("DSS init vtable failed!\n");
+            return status;
+        }
+    }
+
     // Documentation Constraints:au_size=0 equals default_au_size
     int64 au_size = 0;
     if (cmd_cv_args[DSS_ARG_IDX_2].input_args) {
@@ -4500,6 +4512,9 @@ void clean_cmd()
 {
     dss_conn_opt_exit();
     dss_free_vg_info();
+    if (g_vtable_func.isInitialize) {
+        VtableExit();
+    }
     ga_reset_app_pools();
 }
 

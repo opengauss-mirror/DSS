@@ -1303,7 +1303,7 @@ status_t dss_write_ctrl_to_disk(dss_vg_info_item_t *vg_item, int64 offset, void 
     }
 
     vg_item->volume_handle[0] = volume;
-
+    vg_item->volume_handle[0].name_p = vg_item->volume_handle[0].name;
     return CM_SUCCESS;
 }
 

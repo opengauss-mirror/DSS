@@ -25,6 +25,7 @@
 #include "dss_malloc.h"
 #include "dss_latch.h"
 #include "dss_redo_recovery.h"
+#include "dss_vtable.h"
 #include "dsscmd_inq.h"
 
 #ifdef __cplusplus
@@ -361,27 +362,48 @@ bool32 is_register(iof_reg_in_t *reg, int64 host_id, int64 *iofence_key)
     return DSS_FALSE;
 }
 
-status_t dss_check_volume_register(char *entry_path, int64 host_id, bool32 *is_reg, int64 *iofence_key, bool32 isUnreg)
+status_t dss_check_volume_register(
+    char *entry_path, int64 host_id, dss_config_t *inst_cfg, bool32 *is_reg, int64 *iofence_key, bool32 isUnreg)
 {
-    *is_reg = DSS_TRUE;
-    iof_reg_in_t reg_info;
-    errno_t errcode = memset_s(&reg_info, sizeof(reg_info), 0, sizeof(reg_info));
-    securec_check_ret(errcode);
+    if (inst_cfg->params.disk_type == DISK_VTABLE) {
+        DSS_RETURN_IF_ERROR(dss_init_vtable());
+        status_t status = CM_SUCCESS;
+        uint16_t is_fence = 0;
+        for (int i = 0; i < inst_cfg->params.nodes_list.inst_cnt; i++) {
+            status = VtableFenceQuery(inst_cfg->params.nodes_list.nodes[i], vtable_name_to_ptid(entry_path), &is_fence);
+            if (status != CM_SUCCESS) {
+                LOG_DEBUG_ERR("[FENCE] Inquiry reg info for entry path dev failed, dev %s.", entry_path);
+                return CM_ERROR;
+            }
+            if (is_fence == 0) {
+                iofence_key[i]++;
+            }
+            if (i == host_id) {
+                *is_reg = !is_fence;
+            }
+        }
+        return CM_SUCCESS;
+    } else {
+        *is_reg = DSS_TRUE;
+        iof_reg_in_t reg_info;
+        errno_t errcode = memset_s(&reg_info, sizeof(reg_info), 0, sizeof(reg_info));
+        securec_check_ret(errcode);
 
-    reg_info.dev = entry_path;
-    status_t status = cm_iof_inql(&reg_info);
-    if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("[FENCE] Inquiry reg info for entry path dev failed, dev %s.", reg_info.dev);
-        return CM_ERROR;
-    }
-    // compatible with linux multipath
-    if (!is_register(&reg_info, host_id, iofence_key) || (!isUnreg && reg_info.resk == 0)) {
-        *is_reg = DSS_FALSE;
-    }
+        reg_info.dev = entry_path;
+        status_t status = cm_iof_inql(&reg_info);
+        if (status != CM_SUCCESS) {
+            LOG_DEBUG_ERR("[FENCE] Inquiry reg info for entry path dev failed, dev %s.", reg_info.dev);
+            return CM_ERROR;
+        }
+        // compatible with linux multipath
+        if (!is_register(&reg_info, host_id, iofence_key) || (!isUnreg && reg_info.resk == 0)) {
+            *is_reg = DSS_FALSE;
+        }
 
-    LOG_RUN_INF(
-        "Succeed to check volume register, vol_path is %s, host_id %lld, result is %d.", entry_path, host_id, *is_reg);
-    return CM_SUCCESS;
+        LOG_RUN_INF(
+            "Succeed to check volume register, vol_path is %s, host_id %lld, result is %d.", entry_path, host_id, *is_reg);
+        return CM_SUCCESS;
+    }
 }
 
 static status_t dss_reghl_inner(dss_vg_info_item_t *item, int64 host_id, dss_config_t *inst_cfg)
@@ -432,8 +454,7 @@ status_t dss_reghl_core(const char *home)
     status_t status;
     dss_config_t *inst_cfg = dss_get_g_inst_cfg();
     dss_vg_info_t *vg_info = NULL;
-    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, inst_cfg, &vg_info));
-
+    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, inst_cfg, &vg_info)); 
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         status = dss_iof_register_single(inst_cfg->params.inst_id, vg_info->volume_group[i].entry_path, inst_cfg);
         if (status != CM_SUCCESS) {
@@ -496,10 +517,9 @@ status_t dss_unreghl_core(const char *home, bool32 is_lock)
     dss_vg_info_t *vg_info = NULL;
     int64 iofence_key[DSS_MAX_INSTANCES] = {0};
     DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, inst_cfg, &vg_info));
-
     for (uint32 i = 0; i < vg_info->group_num; i++) {
-        status = dss_check_volume_register(
-            vg_info->volume_group[i].entry_path, inst_cfg->params.inst_id, &is_reg, iofence_key, DSS_TRUE);
+        status = dss_check_volume_register(vg_info->volume_group[i].entry_path, inst_cfg->params.inst_id,
+                                           inst_cfg, &is_reg, iofence_key, DSS_TRUE);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to check volume register when unreghl, errcode is %d.\n", status);
@@ -548,7 +568,7 @@ static status_t dss_inq_reg_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg
                 continue;
             }
             CM_RETURN_IFERR(dss_check_volume_register(
-                item->dss_ctrl->volume.defs[j].name, host_id, &is_reg, iofence_key, DSS_FALSE));
+                item->dss_ctrl->volume.defs[j].name, host_id, inst_cfg, &is_reg, iofence_key, DSS_FALSE));
             if (!is_reg) {
                 DSS_PRINT_INF("The node %lld is registered partially, inq_result = 1.\n", host_id);
                 LOG_RUN_INF("The node %lld is registered partially, inq_result = 1.", host_id);
@@ -577,10 +597,9 @@ status_t dss_inq_reg_core(const char *home, int64 host_id)
     dss_vg_info_t *vg_info = NULL;
     int64 iofence_key[DSS_MAX_INSTANCES] = {0};
     DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, inst_cfg, &vg_info));
-
     for (uint32 i = 0; i < vg_info->group_num; i++) {
-        status =
-            dss_check_volume_register(vg_info->volume_group[i].entry_path, host_id, &is_reg, iofence_key, DSS_FALSE);
+        status = dss_check_volume_register(vg_info->volume_group[i].entry_path, inst_cfg->params.inst_id,
+                                           inst_cfg, &is_reg, iofence_key, DSS_FALSE);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to check vg entry info when inq reg, errcode is %d.\n", status);
@@ -789,6 +808,7 @@ static status_t dss_kickh_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, 
             return status;
         }
     }
+
     status = dss_iof_kick_all(vg_info, inst_cfg, inst_cfg->params.inst_id, host_id);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR(

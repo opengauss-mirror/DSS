@@ -573,10 +573,14 @@ static status_t dss_process_handshake(dss_session_t *session)
     text_t data;
     cm_str2text(server_home, &data);
     data.len++;  // for keeping the '\0'
+    bool32 isvtable = g_dss_instance.inst_cfg.params.disk_type == DISK_VTABLE ? DSS_TRUE : DSS_FALSE;
     DSS_RETURN_IF_ERROR(dss_put_text(&session->send_pack, &data));
     DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, session->objectid));
     if (session->proto_version >= DSS_VERSION_2) {
         DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, server_pid));
+    }
+    if (session->proto_version >= DSS_VERSION_4) {
+        DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, isvtable));
     }
     return CM_SUCCESS;
 }

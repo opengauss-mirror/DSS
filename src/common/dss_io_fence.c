@@ -27,6 +27,7 @@
 #include <fcntl.h>
 #include "dss_log.h"
 #include "dss_io_fence.h"
+#include "dss_vtable.h"
 
 void dss_destroy_ptlist(ptlist_t *ptlist)
 {
@@ -223,70 +224,107 @@ status_t dss_iof_kick_all(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, int64 
 {
 #ifdef WIN32
 #else
-    status_t status;
-    ptlist_t reg_list;
-
     if (rk_kick == inst_cfg->params.inst_id) {
         LOG_RUN_INF(
             "[FENCE][KICK] Can't kick current node, rk_kick %lld, inst id %lld.", rk_kick, inst_cfg->params.inst_id);
         return CM_ERROR;
     }
 
-    bool32 result = (bool32)(rk == inst_cfg->params.inst_id);
-    DSS_RETURN_IF_FALSE2(
-        result, LOG_RUN_INF("[FENCE][KICK] Must use inst id of current node as rk, rk %lld, inst id %lld.", rk,
-                    inst_cfg->params.inst_id));
+    if (inst_cfg->params.disk_type == DISK_VTABLE) {
+        DSS_RETURN_IF_ERROR(dss_init_vtable());
+        for (uint32 i = 0; i < vg_info->group_num; i++) {
+            for (uint32 j = 0; j < DSS_MAX_VOLUMES; j++) {
+                if (vg_info->volume_group[i].dss_ctrl->volume.defs[j].flag == VOLUME_FREE) {
+                    continue;
+                }
+                DSS_RETURN_IF_ERROR(VtableFence(inst_cfg->params.nodes_list.nodes[rk_kick],
+                    vtable_name_to_ptid(vg_info->volume_group[i].dss_ctrl->volume.defs[j].name),
+                    VT_INSERT_BL, VT_PARTIAL_OPERATE));
+            }
+        }
+    } else {
+        status_t status;
+        ptlist_t reg_list;
 
-    cm_ptlist_init(&reg_list);
-    status = dss_iof_inql_regs(vg_info, &reg_list);
-    DSS_RETURN_IFERR3(status, dss_destroy_ptlist(&reg_list), LOG_RUN_INF("[FENCE][KICK] Inquiry regs info failed."));
+        bool32 result = (bool32)(rk == inst_cfg->params.inst_id);
+        DSS_RETURN_IF_FALSE2(
+            result, LOG_RUN_INF("[FENCE][KICK] Must use inst id of current node as rk, rk %lld, inst id %lld.", rk,
+                        inst_cfg->params.inst_id));
 
-    status = dss_iof_kick_all_volumes(inst_cfg, vg_info, rk, rk_kick, &reg_list);
-    DSS_RETURN_IFERR2(status, dss_destroy_ptlist(&reg_list));
+        cm_ptlist_init(&reg_list);
+        status = dss_iof_inql_regs(vg_info, &reg_list);
+        DSS_RETURN_IFERR3(status, dss_destroy_ptlist(&reg_list), LOG_RUN_INF("[FENCE][KICK] Inquiry regs info failed."));
 
-    dss_destroy_ptlist(&reg_list);
+        status = dss_iof_kick_all_volumes(inst_cfg, vg_info, rk, rk_kick, &reg_list);
+        DSS_RETURN_IFERR2(status, dss_destroy_ptlist(&reg_list));
+
+        dss_destroy_ptlist(&reg_list);
+    }
 #endif
     LOG_RUN_INF("IOfence kick all succ.");
-
     return CM_SUCCESS;
 }
 
 status_t dss_iof_register_single(int64 rk, char *dev, dss_config_t *inst_cfg)
 {
     status_t ret = CM_SUCCESS;
-    iof_reg_out_t reg_info;
-    char log_home[CM_MAX_LOG_HOME_LEN] = {0};
-    reg_info.rk = rk;
-    reg_info.dev = dev;
-    reg_info.type = RESERV_TYPE_REGISTER_WRITE;
-    reg_info.linux_multibus = dss_get_linux_multibus(inst_cfg);
-    if (reg_info.linux_multibus) {
-        reg_info.mpathpersist_dss_path = dss_get_mpathpersist_dss_path(inst_cfg);
-        ret = dss_init_log_home_ex(inst_cfg, log_home, "LOG_HOME", "log");
+    if (inst_cfg->params.disk_type == DISK_VTABLE) {
+        DSS_RETURN_IF_ERROR(dss_init_vtable());
+        ret = VtableFence(inst_cfg->params.nodes_list.nodes[rk],
+            vtable_name_to_ptid(dev), VT_DELETE_BL, VT_PARTIAL_OPERATE);
         if (ret != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to register vtable, rk: %lld, dev: %s, ret: %d.", rk, dev, ret);
             return CM_ERROR;
         }
-        reg_info.log_path = log_home;
+        LOG_RUN_INF("Register vtable success, rk: %lld, dev: %s.", rk, dev);
+        return CM_SUCCESS;
     } else {
-        reg_info.mpathpersist_dss_path = NULL;
-        reg_info.log_path = NULL;
-    }
-
-    ret = cm_iof_register(&reg_info);
-    if (ret != CM_SUCCESS) {
-        if (ret != CM_IOF_ERR_DUP_OP) {
-            LOG_RUN_ERR("Failed to register, rk: %lld, dev: %s, ret: %d.", rk, dev, ret);
-            return CM_ERROR;
+        iof_reg_out_t reg_info;
+        char log_home[CM_MAX_LOG_HOME_LEN] = {0};
+        reg_info.rk = rk;
+        reg_info.dev = dev;
+        reg_info.type = RESERV_TYPE_REGISTER_WRITE;
+        reg_info.linux_multibus = dss_get_linux_multibus(inst_cfg);
+        if (reg_info.linux_multibus) {
+            reg_info.mpathpersist_dss_path = dss_get_mpathpersist_dss_path(inst_cfg);
+            ret = dss_init_log_home_ex(inst_cfg, log_home, "LOG_HOME", "log");
+            if (ret != CM_SUCCESS) {
+                return CM_ERROR;
+            }
+            reg_info.log_path = log_home;
+        } else {
+            reg_info.mpathpersist_dss_path = NULL;
+            reg_info.log_path = NULL;
         }
-        LOG_RUN_INF("Register conflict, rk: %lld, dev: %s", rk, dev);
+
+        ret = cm_iof_register(&reg_info);
+        if (ret != CM_SUCCESS) {
+            if (ret != CM_IOF_ERR_DUP_OP) {
+                LOG_RUN_ERR("Failed to register, rk: %lld, dev: %s, ret: %d.", rk, dev, ret);
+                return CM_ERROR;
+            }
+            LOG_RUN_INF("Register conflict, rk: %lld, dev: %s", rk, dev);
+        }
+        LOG_RUN_INF("Register success, rk: %lld, dev: %s.", rk, dev);
+        return CM_SUCCESS;
     }
-    LOG_RUN_INF("Register success, rk: %lld, dev: %s.", rk, dev);
-    return CM_SUCCESS;
 }
 
 status_t dss_iof_unregister_single(int64 rk, char *dev, dss_config_t *inst_cfg)
 {
     status_t ret = CM_SUCCESS;
+    if (inst_cfg->params.disk_type == DISK_VTABLE) {
+        DSS_RETURN_IF_ERROR(dss_init_vtable());
+        ret = VtableFence(inst_cfg->params.nodes_list.nodes[rk],
+            vtable_name_to_ptid(dev), VT_INSERT_BL, VT_PARTIAL_OPERATE);
+        if (ret != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to unregister vtable, rk: %lld, dev: %s, ret: %d.", rk, dev, ret);
+            return CM_ERROR;
+        }
+        LOG_RUN_INF("Unregister vtable success, rk: %lld, dev: %s.", rk, dev);
+        return CM_SUCCESS;
+    }
+
     iof_reg_out_t reg_info;
     char log_home[CM_MAX_LOG_HOME_LEN] = {0};
     reg_info.rk = rk;

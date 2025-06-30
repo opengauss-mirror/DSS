@@ -48,6 +48,7 @@ status_t dss_iof_kick_all_volumes(
     dss_config_t *inst_cfg, dss_vg_info_t *dss_vg_info, int64 rk, int64 rk_kick, ptlist_t *reg_list);
 status_t dss_iof_sync_all_vginfo(dss_session_t *session, dss_vg_info_t *dss_vg_info);
 status_t dss_iof_kick_all(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, int64 rk, int64 rk_kick);
+status_t dss_iof_kick_all_vtable(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, int64 rk, int64 rk_kick);
 status_t dss_iof_register_core(int64 rk, dss_vg_info_t *dss_vg_info, dss_config_t *inst_cfg);
 status_t dss_iof_unregister_core(int64 rk, dss_vg_info_t *dss_vg_info, dss_config_t *inst_cfg);
 

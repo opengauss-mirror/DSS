@@ -202,6 +202,8 @@ static config_item_t g_dss_params[] = {
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     {"MPATHPERSIST_DSS_PATH", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 64,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
+    { "DISK_TYPE", CM_TRUE, CM_FALSE, "NORMAL", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 47, 
+        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 static const char *g_dss_config_file = (const char *)"dss_inst.ini";
@@ -588,6 +590,22 @@ static status_t dss_load_xlog_vg_id(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
+static status_t dss_load_disk_type(dss_config_t *inst_cfg)
+{
+    char *value = cm_get_config_value(&inst_cfg->config, "DISK_TYPE");
+    
+    if (strcmp(value, "NORMAL") == 0) {
+        inst_cfg->params.disk_type = DISK_NORMAL;
+        LOG_RUN_INF("The disk_type is normal.");
+    } else if (strcmp(value, "VTABLE") == 0) {
+        inst_cfg->params.disk_type = DISK_VTABLE;
+        LOG_RUN_INF("The disk_type is vtable.");
+    } else {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid DISK_TYPE"));
+    }
+    return CM_SUCCESS;
+}
+
 status_t dss_set_cfg_dir(const char *home, dss_config_t *inst_cfg)
 {
     char home_realpath[DSS_MAX_PATH_BUFFER_SIZE];
@@ -938,6 +956,7 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     CM_RETURN_IFERR(dss_load_space_usage(inst_cfg));
     CM_RETURN_IFERR(dss_load_linux_multibus(inst_cfg));
     CM_RETURN_IFERR(dss_load_mpathpersist_dss_path(inst_cfg));
+    CM_RETURN_IFERR(dss_load_disk_type(inst_cfg));
     return CM_SUCCESS;
 }
 
