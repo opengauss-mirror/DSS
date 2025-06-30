@@ -421,6 +421,7 @@ status_t dss_open_volume(const char *name, const char *code, int flags, dss_volu
 
 status_t dss_open_simple_volume(const char *name, int flags, dss_simple_volume_t *volume)
 {
+    volume->vg_type = parse_vg_open_type();
     return (*(file_mgr_funcs[volume->vg_type].open_simple_volume))(name, flags, volume);
 }
 
