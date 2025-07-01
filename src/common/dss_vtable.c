@@ -31,10 +31,10 @@
 vtable_func_t g_vtable_func = {0};
 
 #define VTABLE_LOAD_SYMBOL_FUNC(func) \
-    cm_load_symbol((void**)&g_vtable_func.func, #func, g_vtable_func.vtableHandle)
+    cm_load_symbol(g_vtable_func.vtableHandle, #func, (void**)&g_vtable_func.func)
 
 #define VTABLE_LOAD_SYMBOL_FUNC_ADAPTER(func) \
-    cm_load_symbol((void**)&g_vtable_func.func, #func, g_vtable_func.vtableAdapterHandle)
+    cm_load_symbol(g_vtable_func.vtableAdapterHandle, #func, (void**)&g_vtable_func.func)
 
 #define IP_FIELD_LENGTH 16
 #define DEFAULT_PAGE_SIZE (8 * 1024)
