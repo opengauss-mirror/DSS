@@ -1127,11 +1127,11 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
         ret = mes_send_request_x(dss_head.dst_inst, dss_head.flags, &dss_head.ruid, 2, &dss_head, DSS_MES_MSG_HEAD_SIZE,
             session->recv_pack.buf, session->recv_pack.head->size);
         char *err_msg = "The dss server fails to send messages to the remote node";
-        DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("%s, src node(%u), dst node(%u).", err_msg, currtid, remoteid));
+        DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("%s, src node(%u), dst node(%u).", err_msg, currtid, remoteid));
         // 3. receive msg from remote
         ret = dss_get_mes_response(dss_head.ruid, &msg, timeout);
         DSS_RETURN_IFERR2(
-            ret, LOG_RUN_ERR("dss server receive msg from remote failed, src node:%u, dst node:%u, cmd:%u.", currtid,
+            ret, LOG_DEBUG_ERR("dss server receive msg from remote failed, src node:%u, dst node:%u, cmd:%u.", currtid,
                      remoteid, session->recv_pack.head->cmd));
         // 4. attach remote execution result
         ack_head = (dss_message_head_t *)msg.buffer;
@@ -1141,8 +1141,9 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
             new_proto_ver = MIN(new_proto_ver, session->client_version);
             session->proto_version = new_proto_ver;
             if (session->proto_version != dss_get_version(&session->recv_pack)) {
-                LOG_RUN_INF("[CHECK_PROTO]The client protocol version need be changed, old protocol version is %u, new "
-                            "protocol version is %u",
+                LOG_DEBUG_INF(
+                    "[CHECK_PROTO]The client protocol version need be changed, old protocol version is %u, new "
+                    "protocol version is %u",
                     dss_get_version(&session->recv_pack), session->proto_version);
                 DSS_THROW_ERROR(
                     ERR_DSS_VERSION_NOT_MATCH, dss_get_version(&session->recv_pack), session->proto_version);

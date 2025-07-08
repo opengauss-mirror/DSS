@@ -3070,7 +3070,7 @@ status_t dss_extend_batch_inner(dss_session_t *session, dss_vg_info_item_t *vg_i
         cm_fync_logfile();
         dss_exit(1);
     }
-    LOG_DEBUG_INF("Finish to batch extend ftid:%s to size:%llu from offset:%llu with au_size:%llu.",
+    LOG_DEBUG_INF("Finish to batch extend ftid:%s to size:%llu, from offset:%llu, end offset:%llu.",
         dss_display_metaid(node->id), node->size, (uint64)align_beg, align_end);
 
     *finish = CM_TRUE;

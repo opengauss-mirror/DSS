@@ -256,33 +256,28 @@ static status_t dss_mark_delete_flag(
     return status;
 }
 
-static status_t dss_rm_dir_file_inner(dss_session_t *session, dss_vg_info_item_t **vg_item, gft_node_t **node,
-    const char *dir_name, gft_item_type_t type, bool32 recursive)
+static status_t dss_rm_dir_file_inner(
+    dss_session_t *session, dss_vg_info_item_t **vg_item, const char *dir_name, gft_item_type_t type, bool32 recursive)
 {
     gft_node_t *parent_node = NULL;
-    status_t status = dss_check_vg_ft_dir(session, vg_item, dir_name, type, node, &parent_node);
+    gft_node_t *node = NULL;
+    status_t status = dss_check_vg_ft_dir(session, vg_item, dir_name, type, &node, &parent_node);
     DSS_RETURN_IF_ERROR(status);
-    if (((*node)->flags & DSS_FT_NODE_FLAG_SYSTEM) != 0) {
-        DSS_THROW_ERROR(ERR_DSS_FILE_REMOVE_SYSTEM, dir_name);
-        LOG_DEBUG_ERR("Failed to rm dir %s, can not rm system dir.", dir_name);
-        return CM_ERROR;
-    }
 
-    return dss_mark_delete_flag(session, *vg_item, *node, dir_name, recursive);
+    return dss_mark_delete_flag(session, *vg_item, node, dir_name, recursive);
 }
 
 static status_t dss_rm_dir_file(dss_session_t *session, const char *dir_name, gft_item_type_t type, bool32 recursive)
 {
     CM_ASSERT(dir_name != NULL);
 
-    gft_node_t *node = NULL;
     char name[DSS_MAX_NAME_LEN];
     dss_vg_info_item_t *vg_item = NULL;
     CM_RETURN_IFERR(dss_find_vg_by_dir(dir_name, name, &vg_item));
 
     dss_lock_vg_mem_and_shm_x(session, vg_item);
     dss_init_vg_cache_node_info(vg_item);
-    status_t status = dss_rm_dir_file_inner(session, &vg_item, &node, dir_name, type, recursive);
+    status_t status = dss_rm_dir_file_inner(session, &vg_item, dir_name, type, recursive);
     if (status != CM_SUCCESS) {
         dss_rollback_mem_update(session, vg_item);
         dss_unlock_vg_mem_and_shm(session, vg_item);
@@ -307,9 +302,8 @@ static status_t dss_rm_dir_file_in_rename(
     dss_session_t *session, dss_vg_info_item_t **vg_item, const char *dir_name, gft_item_type_t type, bool32 recursive)
 {
     CM_ASSERT(dir_name != NULL);
-    gft_node_t *node = NULL;
 
-    status_t status = dss_rm_dir_file_inner(session, vg_item, &node, dir_name, type, recursive);
+    status_t status = dss_rm_dir_file_inner(session, vg_item, dir_name, type, recursive);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to remove dir or file, name : %s.", dir_name);
         return status;
