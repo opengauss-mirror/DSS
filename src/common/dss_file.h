@@ -73,7 +73,8 @@ status_t dss_extend(dss_session_t *session, dss_node_data_t *node_data);
 status_t dss_do_fallocate(dss_session_t *session, dss_node_data_t *node_data);
 status_t dss_truncate(dss_session_t *session, uint64 fid, ftid_t ftid, int64 length, char *vg_name);
 status_t dss_refresh_file(dss_session_t *session, uint64 fid, ftid_t ftid, char *vg_name, int64 offset);
-status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32 vgid, uint32 volumeid);
+status_t dss_refresh_volume(
+    dss_session_t *session, const char *name_str, uint32 vgid, uint32 volumeid, bool32 is_force);
 status_t dss_refresh_ft_block(dss_session_t *session, char *vg_name, uint32 vgid, dss_block_id_t blockid);
 status_t dss_create_link(dss_session_t *session, const char *parent, const char *name);
 status_t dss_read_link(dss_session_t *session, char *link_path, char *out_filepath, uint32 *out_len);

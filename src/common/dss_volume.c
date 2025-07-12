@@ -221,7 +221,8 @@ static status_t dss_open_filehandle_raw(const char *name, int flags, volume_hand
     if (*fd == -1 && DSS_STANDBY_CLUSTER && cm_get_os_error() == EROFS) {
         unaligned_flags = O_RDONLY | O_SYNC;
         *fd = open(name, unaligned_flags | O_DIRECT, 0);
-        LOG_RUN_INF("dss_open_filehandle_raw open xlog fd %s in read-only file system", name);
+        LOG_DEBUG_INF("dss_open_filehandle_raw open %s fd %lld in read-only file system with flag: %d",
+            name, *fd, unaligned_flags);
     }
 #endif
 

@@ -217,6 +217,8 @@ DSS_DECLARE void dss_register_exit_callback(dss_exit_callback_t dss_exit_proc);
 // upgrade
 DSS_DECLARE int dss_enable_upgrades(void);
 
+DSS_DECLARE int dss_reopen_vg_handle(const char *name);
+
 #ifdef __cplusplus
 }
 #endif

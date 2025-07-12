@@ -1974,9 +1974,9 @@ status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item)
     return CM_SUCCESS;
 }
 
-static status_t dss_init_volume_core(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume, uint32 i)
+static status_t dss_init_volume_core(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume, uint32 i, uint32 is_force)
 {
-    if (volume->defs[i].flag == vg_item->dss_ctrl->volume.defs[i].flag) {
+    if (!is_force && (volume->defs[i].flag == vg_item->dss_ctrl->volume.defs[i].flag)) {
         return CM_SUCCESS;
     }
 
@@ -2004,7 +2004,7 @@ status_t dss_init_volume(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume)
     status_t status;
 
     for (uint32 i = 0; i < DSS_MAX_VOLUMES; i++) {
-        status = dss_init_volume_core(vg_item, volume, i);
+        status = dss_init_volume_core(vg_item, volume, i, false);
         if (status != CM_SUCCESS) {
             return status;
         }
@@ -2074,6 +2074,37 @@ status_t dss_check_volume(dss_vg_info_item_t *vg_item, uint32 volumeid)
     }
 
     return dss_check_free_volume(vg_item, volumeid);
+}
+
+status_t dss_init_volume_by_force(dss_vg_info_item_t *vg_item, uint32 is_force)
+{
+    status_t status = CM_SUCCESS;
+    dss_volume_ctrl_t *volume;
+
+    volume = (dss_volume_ctrl_t *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_VOLUME_CTRL_SIZE);
+    bool32 result = (bool32)(volume != NULL);
+    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Can not allocate memory in stack."));
+
+    status = dss_load_volume_ctrl(vg_item, volume);
+    if (status != CM_SUCCESS) {
+        DSS_FREE_POINT(volume);
+        LOG_DEBUG_ERR("Failed load vg ctrl.");
+        return status;
+    }
+
+    for (uint32 i = 0; i < DSS_MAX_VOLUMES; i++) {
+        status = dss_init_volume_core(vg_item, volume, i, true);
+        if (status != CM_SUCCESS) {
+            return status;
+        }
+    }
+
+    if (status == CM_SUCCESS) {
+        vg_item->dss_ctrl->volume.checksum = volume->checksum;
+        vg_item->dss_ctrl->volume.version = volume->version;
+    }
+    DSS_FREE_POINT(volume);
+    return status;
 }
 
 // first check volume is valid.
