@@ -55,8 +55,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_VOLUME_REPLACE] = "Failed to replace volume %s, reason %s.",
     [ERR_DSS_FILE_SEEK] = "Failed to seek file, vgid:%u, fid:%llu, offset:%lld, file size:%llu",
     [ERR_DSS_FILE_REMOVE_OPENING] = "DSS file is open",
-    [ERR_DSS_FILE_REMOVE_SYSTEM] = "DSS remove file %s is system file",
-    [ERR_DSS_FILE_MODIFY_SYSTEM] = "DSS modify file %s is system file",
+    [ERR_DSS_FILE_REMOVE_SYSTEM] = "DSS file %s is system file",
     [ERR_DSS_FILE_RENAME] = "Rename failed, reason %s",
     [ERR_DSS_FILE_RENAME_DIFF_VG] = "Failed to rename from vg %s to another vg %s, function not supported",
     [ERR_DSS_FILE_RENAME_EXIST] = "Rename failed, reason %s",
@@ -94,7 +93,6 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_SESSION_INVALID_ID] = "Invalid session %d",
     [ERR_DSS_SESSION_CREATE] = "Create new DSS session failed, no free sessions, %d sessions used.",
     [ERR_DSS_SESSION_EXTEND] = "Extend DSS session failed, reason : %s.",
-    [ERR_DSS_SESSION_KILLED] = "DSS session %u is killed.",
     [ERR_DSS_INVALID_PARAM] = "Invalid DSS parameter: %s",
     [ERR_DSS_NO_SPACE] = "DSS no space in the vg",
     [ERR_DSS_ENV_NOT_INITIALIZED] = "The DSS env has not been initialized.",
@@ -149,20 +147,20 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
 };
 
 dss_log_def_t g_dss_cmd_log[] = {
-    {CM_LOG_DEBUG, "debug/dsscmd.dlog"},
-    {CM_LOG_OPER, "oper/dsscmd.olog"},
-    {CM_LOG_RUN, "run/dsscmd.rlog"},
-    {CM_LOG_ALARM, "dsscmd_alarm.log"},
+    {LOG_DEBUG, "debug/dsscmd.dlog"},
+    {LOG_OPER, "oper/dsscmd.olog"},
+    {LOG_RUN, "run/dsscmd.rlog"},
+    {LOG_ALARM, "dsscmd_alarm.log"},
 };
 
 dss_log_def_t g_dss_instance_log[] = {
-    {CM_LOG_DEBUG, "debug/dssinstance.dlog"},
-    {CM_LOG_OPER, "oper/dssinstance.olog"},
-    {CM_LOG_RUN, "run/dssinstance.rlog"},
-    {CM_LOG_ALARM, "dssinstance_alarm.log"},
-    {CM_LOG_AUDIT, "audit/dssinstance.aud"},
-    {CM_LOG_BLACKBOX, "blackbox/dssinstance.blog"},
-    {CM_LOG_DYNAMIC, "dyn/dssinstance.dynlog"},
+    {LOG_DEBUG, "debug/dssinstance.dlog"},
+    {LOG_OPER, "oper/dssinstance.olog"},
+    {LOG_RUN, "run/dssinstance.rlog"},
+    {LOG_ALARM, "dssinstance_alarm.log"},
+    {LOG_AUDIT, "audit/dssinstance.aud"},
+    {LOG_BLACKBOX, "blackbox/dssinstance.blog"},
+    {LOG_DYNAMIC, "dyn/dssinstance.dynlog"},
 };
 
 uint32 g_dss_warn_id[] = {
@@ -243,7 +241,7 @@ static status_t dss_init_log_file(log_param_t *log_param, dss_config_t *inst_cfg
     return CM_SUCCESS;
 }
 
-status_t dss_init_log_home_ex(dss_config_t *inst_cfg, char *log_parm_value, char *log_param_name, char *log_dir)
+static status_t dss_init_log_home_ex(dss_config_t *inst_cfg, char *log_parm_value, char *log_param_name, char *log_dir)
 {
     errno_t errcode = 0;
     bool32 verify_flag = CM_FALSE;
@@ -388,7 +386,7 @@ status_t dss_init_loggers(dss_config_t *inst_cfg, dss_log_def_t *log_def, uint32
 
     int32 ret;
     for (size_t i = 0; i < log_def_count; i++) {
-        if (log_def[i].log_id == CM_LOG_ALARM) {
+        if (log_def[i].log_id == LOG_ALARM) {
             ret = snprintf_s(file_name, buffer_len, (buffer_len - 1), "%s/%s", alarm_dir, log_def[i].log_filename);
         } else {
             ret = snprintf_s(
@@ -499,26 +497,11 @@ void sql_record_audit_log(void *sess, status_t status, uint8 cmd_type)
     }
     dss_session_t *session = (dss_session_t *)sess;
     uint32 audit_level = cm_log_param_instance()->audit_level;
-    bool need_record =
-        session->audit_info.is_forced ||
-        ((audit_level && DSS_AUDIT_MODIFY) != 0 && cmd_type >= DSS_CMD_MODIFY_BEGIN && cmd_type < DSS_CMD_MODIFY_END) ||
-        ((audit_level && DSS_AUDIT_QUERY) != 0 && cmd_type >= DSS_CMD_QUERY_BEGIN && cmd_type < DSS_CMD_QUERY_END);
-    if (need_record) {
-        sql_audit_log(session, status, cmd_type);
+    if ((audit_level & DSS_AUDIT_MODIFY) == 0 && cmd_type >= DSS_CMD_MODIFY_BEGIN && cmd_type < DSS_CMD_MODIFY_END) {
+        return;
     }
-}
-
-void dss_set_error_ex(const char *file, uint32 line, cm_errno_t code, const char *format, ...)
-{
-    va_list args;
-
-    va_start(args, format);
-    char tmp[CM_MAX_LOG_CONTENT_LENGTH];
-    errno_t err = vsnprintf_s(tmp, CM_MAX_LOG_CONTENT_LENGTH, CM_MAX_LOG_CONTENT_LENGTH - 1, format, args);
-    if (SECUREC_UNLIKELY(err == -1)) {
-        LOG_RUN_ERR("Secure C lib has thrown an error %d while setting error, %s:%u", err, file, line);
+    if ((audit_level & DSS_AUDIT_QUERY) == 0 && cmd_type >= DSS_CMD_QUERY_BEGIN && cmd_type < DSS_CMD_QUERY_END) {
+        return;
     }
-    cm_set_error(file, line, code, g_dss_error_desc[code], tmp);
-
-    va_end(args);
+    sql_audit_log(session, status, cmd_type);
 }

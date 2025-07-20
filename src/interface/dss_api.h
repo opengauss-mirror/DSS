@@ -135,8 +135,6 @@ typedef enum en_dss_conn_opt_key {
 
 typedef struct st_dss_dirent *dss_dir_item_t;
 typedef struct st_dss_stat *dss_stat_info_t;
-typedef struct st_dss_stat_item *dss_stats_item_info_t;
-
 typedef void (*dss_log_output)(dss_log_id_t log_type, dss_log_level_t log_level, const char *code_file_name,
     unsigned int code_line_num, const char *module_name, const char *format, ...);
 typedef void (*dss_exit_callback_t)(int exit_code);
@@ -153,7 +151,6 @@ DSS_DECLARE int dss_fopen(const char *file, int flag, int *handle);
 DSS_DECLARE int dss_fclose(int handle);
 DSS_DECLARE long long dss_fseek(int handle, long long offset, int origin);
 DSS_DECLARE int dss_fwrite(int handle, const void *buf, int size);
-DSS_DECLARE int dss_append(int handle, const void *buf, int size);
 DSS_DECLARE int dss_fread(int handle, void *buf, int size, int *read_size);
 DSS_DECLARE int dss_fcopy(const char *src_path, const char *dest_path);
 DSS_DECLARE int dss_frename(const char *src, const char *dst);
@@ -204,8 +201,6 @@ DSS_DECLARE int dss_stat(const char *path, dss_stat_info_t item);
 DSS_DECLARE int dss_lstat(const char *path, dss_stat_info_t item);
 DSS_DECLARE int dss_fstat(int handle, dss_stat_info_t item);
 
-DSS_DECLARE int dss_inst_stats(dss_stats_item_info_t item, int stats_size);
-
 // config
 DSS_DECLARE int dss_setcfg(const char *name, const char *value, const char *scope);
 DSS_DECLARE int dss_getcfg(const char *name, char *value, int value_size);
@@ -215,9 +210,7 @@ DSS_DECLARE void dss_show_version(char *version);
 DSS_DECLARE void dss_show_version(char *version);
 DSS_DECLARE void dss_register_exit_callback(dss_exit_callback_t dss_exit_proc);
 // upgrade
-DSS_DECLARE int dss_enable_upgrades(void);
-
-DSS_DECLARE int dss_reopen_vg_handle(const char *name);
+int dss_enable_upgrades(void);
 
 #ifdef __cplusplus
 }

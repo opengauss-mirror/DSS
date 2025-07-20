@@ -127,11 +127,8 @@ static status_t dss_clean_delay_file_node(
 {
     if (node->size > 0) {
         // first remove node from old dir but not real delete, just mv to recycle
-        dss_au_root_t *dss_au_root = DSS_GET_AU_ROOT(vg_item->dss_ctrl);
-        ftid_t recycle_ftid = *(ftid_t *)(&dss_au_root->free_root);
-        gft_node_t *recycle_node = dss_get_ft_node_by_ftid(session, vg_item, recycle_ftid, CM_TRUE, CM_FALSE);
         dss_free_ft_node(session, vg_item, parent_node, node, CM_FALSE);
-        dss_mv_to_specific_dir(session, vg_item, node, recycle_node);
+        dss_mv_to_recycle_dir(session, vg_item, node);
     } else {
         status_t status = dss_recycle_empty_file(session, vg_item, parent_node, node);
         if (status != CM_SUCCESS) {

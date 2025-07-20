@@ -40,7 +40,6 @@
 #include "dss_instance.h"
 #include "dss_reactor.h"
 #include "dss_service.h"
-#include "dss_vtable.h"
 #include "dss_zero.h"
 #include "cm_utils.h"
 #include "dss_thv.h"
@@ -125,196 +124,80 @@ static status_t dss_init_thread(dss_instance_t *inst)
     return CM_SUCCESS;
 }
 
-static void dss_free_shm_hashmap_memory(uint32 num)
+status_t dss_check_vg_ctrl_valid(dss_vg_info_item_t *vg_item)
 {
-    for (uint32 i = 0; i < num && i < DSS_MAX_VOLUME_GROUP_NUM; i++) {
-        shm_hashmap_destroy(g_vgs_info->volume_group[i].buffer_cache, i);
+    dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
+    if (!DSS_VG_IS_VALID(dss_ctrl)) {
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_VG_CHECK_NOT_INIT));
     }
+    return CM_SUCCESS;
 }
 
-status_t dss_init_vg_info_by_server_with_range(dss_vg_info_t *vgs_info, uint32 vg_beg, uint32 vg_end)
+status_t dss_recover_from_offset(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-    status_t status;
-    for (uint32 i = vg_beg; i < vg_end; i++) {
-        dss_share_vg_item_t *share_vg_item = dss_get_vg_item_by_id(CM_TRUE, i);
-        if (share_vg_item == NULL) {
-            LOG_RUN_ERR("Failed to get vg_item %u from shm!", i);
-            DSS_THROW_ERROR(ERR_DSS_GA_INIT, "failed to get vg_item %u from shm!", i);
-            return CM_ERROR;
-        }
-
-        // set these info for api and local
-        share_vg_item->id = vgs_info->volume_group[i].id;
-        share_vg_item->all_vg_item_cnt = vg_end;
-        (void)memcpy_s(share_vg_item->vg_name, DSS_MAX_NAME_LEN, vgs_info->volume_group[i].vg_name, DSS_MAX_NAME_LEN);
-        (void)memcpy_s(share_vg_item->entry_path, DSS_MAX_VOLUME_PATH_LEN, vgs_info->volume_group[i].entry_path,
-            DSS_MAX_VOLUME_PATH_LEN);
-        int32 ret = shm_hashmap_init(&share_vg_item->buffer_cache, i, dss_buffer_cache_key_compare);
-        if (ret != CM_SUCCESS) {
-            if (i != 0) {
-                dss_free_shm_hashmap_memory(i - 1);
-            }
-            LOG_RUN_ERR("DSS instance failed to initialize buffer cache, %d!", ret);
-            DSS_THROW_ERROR(ERR_DSS_GA_INIT, "failed to init hashmap of vg %s", vgs_info->volume_group[i].vg_name);
-            return CM_ERROR;
-        }
-
-        // set this info for local
-        vgs_info->volume_group[i].share_vg_item = share_vg_item;
-        vgs_info->volume_group[i].objectid = share_vg_item->objectid;
-        vgs_info->volume_group[i].buffer_cache = &share_vg_item->buffer_cache;
-        // at here, has not load dss_ctrl from disk
-        vgs_info->volume_group[i].dss_ctrl = &share_vg_item->dss_ctrl;
-        vgs_info->volume_group[i].vg_latch = &share_vg_item->vg_latch;
-        vgs_info->volume_group[i].stack.size = DSS_MAX_STACK_BUF_SIZE;
-        vgs_info->volume_group[i].stack.buff = (char *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_MAX_STACK_BUF_SIZE);
-        if (vgs_info->volume_group[i].stack.buff == NULL) {
-            dss_free_shm_hashmap_memory(i);
-            LOG_DEBUG_ERR("malloc stack failed, align size:%u, size:%u.", DSS_ALIGN_SIZE, DSS_MAX_STACK_BUF_SIZE);
-            DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_MAX_STACK_BUF_SIZE, "volume group stack buff");
-            return CM_ERROR;
-        }
-
-        cm_bilist_init(&vgs_info->volume_group[i].open_file_list);
-        cm_bilist_init(&vgs_info->volume_group[i].syn_meta_desc.bilist);
-
-        status = dss_alloc_vg_item_redo_log_buf(&vgs_info->volume_group[i]);
+    bool8 need_recovery = CM_FALSE;
+    /* 1、load offset batch 2、check batch valid 3、if batch valid, used 4、if batch invalid,just end */
+    LOG_RUN_INF("[RECOVERY]Try to load log buf to recover");
+    if (dss_load_log_buffer_from_offset(vg_item, &need_recovery) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+    if (need_recovery) {
+        char *log_buf = vg_item->log_file_ctrl.log_buf;
+        status_t status = dss_recover_from_offset_inner(session, vg_item, log_buf);
         if (status != CM_SUCCESS) {
-            dss_free_shm_hashmap_memory(i);
-            DSS_FREE_POINT(vgs_info->volume_group[i].stack.buff);
             return CM_ERROR;
         }
-
-        vgs_info->volume_group[i].space_alarm = DSS_VG_SPACE_ALARM_INIT;
-        LOG_RUN_INF("success init vg item id [%u] vg_name [%s] entry_path[%s] by server", i,
-            vgs_info->volume_group[i].vg_name, vgs_info->volume_group[i].entry_path);
     }
-
     return CM_SUCCESS;
 }
 
-status_t dss_init_server_vg_info()
+status_t dss_recover_from_slot(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    status_t status = dss_load_vg_conf_info(inst_cfg);
-    DSS_RETURN_IF_ERROR(status);
-
-    dss_vg_info_t *vgs_info = dss_get_vg_info_ptr();
-    status = dss_init_vg_info_by_server_with_range(vgs_info, 0, vgs_info->group_num);
-    DSS_RETURN_IF_ERROR(status);
-
-    LOG_RUN_INF("DSS success to init vgs in memory.");
-    return status;
-}
-
-status_t dss_refresh_server_vg_conf_inner(dss_vg_info_t *vgs_info, dss_config_t *inst_cfg)
-{
-    char vg_config_path[DSS_FILE_PATH_MAX_LENGTH];
-    status_t status;
-    struct stat cur_stat;
-
-    int32 errcode = sprintf_s(vg_config_path, DSS_FILE_PATH_MAX_LENGTH, "%s/cfg/%s", inst_cfg->home, DSS_VG_CONF_NAME);
-    bool32 result = (bool32)(errcode != -1);
-    DSS_RETURN_IF_FALSE2(result, CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode));
-
-    if (stat(vg_config_path, &cur_stat) < 0) {
-        LOG_RUN_ERR("stat for file:%s fail.", vg_config_path);
+    bool8 need_recovery = CM_FALSE;
+    if (dss_load_log_buffer_from_slot(vg_item, &need_recovery) != CM_SUCCESS) {
         return CM_ERROR;
     }
-
-    if (vgs_info->inited_vg_num == 0) {
-        // assume refresh by the startup
-        vgs_info->inited_vg_num = vgs_info->group_num;
-        vgs_info->dest_vg_num = vgs_info->group_num;
-        vgs_info->cfg_stat = cur_stat;
-        LOG_RUN_INF("refresh vg ready new item(s), group_num [%u], des_vg_num [%u] inited_vg_num[%u]",
-            vgs_info->group_num, vgs_info->dest_vg_num, vgs_info->inited_vg_num);
-        return CM_SUCCESS;
-    }
-
-    // the same file with same size, assme the same conten, only support add cfg, then size must change
-    if ((vgs_info->cfg_stat.st_dev == cur_stat.st_dev) && (vgs_info->cfg_stat.st_ino == cur_stat.st_ino) &&
-        (vgs_info->cfg_stat.st_size == cur_stat.st_size)) {
-        // no updt vgs_info.cfg_stat for check exception
-        return CM_SUCCESS;
-    }
-
-    // the init file has been changed, may exist new vg
-    uint32 len = DSS_MAX_CONFIG_FILE_SIZE;
-    status = dss_read_vg_config_file(vg_config_path, inst_cfg->config.file_buf, &len, DSS_TRUE);
-    if (status != CM_SUCCESS) {
+    if (need_recovery) {
+        char *log_buf = vg_item->log_file_ctrl.log_buf;
+        status_t status = dss_recover_from_slot_inner(session, vg_item, log_buf);
+        if (status != CM_SUCCESS) {
+            return CM_ERROR;
+        }
         return status;
     }
-
-    status = dss_parse_vg_config(vgs_info, inst_cfg->config.file_buf, len, CM_TRUE);
-    if (status != CM_SUCCESS) {
-        return status;
-    }
-    LOG_RUN_INF(
-        "refresh vg parse new item(s), group_num [%u], dest_vg_num [%u]", vgs_info->group_num, vgs_info->dest_vg_num);
-    // not find more new
-    if (vgs_info->dest_vg_num <= vgs_info->group_num) {
-        vgs_info->cfg_stat = cur_stat;
-
-        return CM_SUCCESS;
-    }
-
-    if (vgs_info->dest_vg_num > vgs_info->inited_vg_num) {
-        // init the local resource for the new vg
-        status = dss_init_vg_info_by_server_with_range(vgs_info, vgs_info->group_num, vgs_info->dest_vg_num);
-        DSS_RETURN_IF_ERROR(status);
-        vgs_info->inited_vg_num = vgs_info->dest_vg_num;
-        LOG_RUN_INF("refresh vg inited new item(s), inited_vg_num [%u], dest_vg_num [%u]", vgs_info->inited_vg_num,
-            vgs_info->dest_vg_num);
-    }
-    vgs_info->cfg_stat = cur_stat;
-
-    // at here, all the vg in [group_nu, dest_vg_num] not loaded from disk, SHOULD NOT been seen by the api
-    // only after loaded from disk and do finish to to recovery, will call dss_refresh_vg_info_updt_vg_num to
-    // make these are seen by api
-    return CM_SUCCESS;
-}
-
-status_t dss_refresh_server_vg_info()
-{
-    dss_vg_info_t *vgs_info = dss_get_vg_info_ptr();
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    return dss_refresh_server_vg_conf_inner(vgs_info, inst_cfg);
-}
-
-static status_t dss_load_vg_info_and_recover(bool8 need_recovery)
-{
-    dss_vg_info_t *vgs_info = dss_get_vg_info_ptr();
-    return dss_load_vg_info_and_recover_with_range(0, vgs_info->group_num, need_recovery);
-}
-
-status_t dss_refresh_load_vg_info_and_recover(dss_session_t *session, dss_instance_t *inst)
-{
-    if (inst->status != DSS_STATUS_OPEN) {
-        return CM_ERROR;
-    }
-
-    status_t status;
-    status = dss_refresh_server_vg_info();
-    DSS_RETURN_IF_ERROR(status);
-
-    dss_vg_info_t *vgs_info = dss_get_vg_info_ptr();
-    if (vgs_info->group_num == vgs_info->dest_vg_num) {
-        return CM_SUCCESS;
-    }
-
-    // try to recover new add vg
-    status = dss_load_vg_info_and_recover_with_range(vgs_info->group_num, vgs_info->dest_vg_num, CM_FALSE);
-    DSS_RETURN_IF_ERROR(status);
-
-    dss_refresh_vg_info_update_vg_num(vgs_info);
     return CM_SUCCESS;
 }
 
 status_t dss_recover_from_instance(dss_session_t *session, dss_instance_t *inst)
 {
-    dss_vg_info_t *vgs_info = dss_get_vg_info_ptr();
-    return dss_recover_redo_log_with_range(session, 0, vgs_info->group_num);
+    status_t status;
+    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+        dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[i];
+        if (dss_check_vg_ctrl_valid(vg_item) != CM_SUCCESS) {
+            LOG_RUN_ERR("[RECOVERY]Failed to check valid of vg %s.", vg_item->vg_name);
+            return CM_ERROR;
+        }
+        uint32 software_version = dss_get_software_version(&vg_item->dss_ctrl->vg_info);
+        if (software_version < DSS_SOFTWARE_VERSION_2) {
+            status = dss_recover_from_slot(session, vg_item);
+            if (status != CM_SUCCESS) {
+                LOG_RUN_ERR("[RECOVERY]Failed to recover from vg %s.", vg_item->vg_name);
+                return CM_ERROR;
+            }
+        } else {
+            status = dss_load_redo_ctrl(vg_item);
+            if (status != CM_SUCCESS) {
+                LOG_RUN_ERR("[RECOVERY]Failed to load redo ctrl of vg %s.", vg_item->vg_name);
+                return CM_ERROR;
+            }
+            status = dss_recover_from_offset(session, vg_item);
+            if (status != CM_SUCCESS) {
+                LOG_RUN_ERR("[RECOVERY]Failed to recover from vg %s.", vg_item->vg_name);
+                return CM_ERROR;
+            }
+        }
+    }
+    return status;
 }
 
 bool32 dss_config_cm()
@@ -337,7 +220,7 @@ static status_t dss_init_inst_handle_session(dss_instance_t *inst)
 
 static status_t instance_init_core(dss_instance_t *inst)
 {
-    status_t status = dss_init_server_vg_info();
+    status_t status = dss_get_vg_info();
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to get vg info."));
     status = dss_init_session_pool(dss_get_max_total_session_cnt());
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to initialize sessions."));
@@ -485,10 +368,6 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
 #ifdef DISABLE_SYN_META
     dss_set_syn_meta_enable(CM_FALSE);
 #endif
-    if (inst->inst_cfg.params.disk_type == DISK_VTABLE) {
-        status = dss_init_vtable();
-        DSS_RETURN_IFERR2(status, (void)printf("DSS init vtable failed!\n"));
-    }
     dss_init_maintain(inst, dss_args);
     LOG_RUN_INF("DSS instance begin to initialize.");
 #ifndef OPENGAUSS
@@ -637,12 +516,11 @@ void dss_uninit_cm(dss_instance_t *inst)
 
 void dss_free_log_ctrl()
 {
-    dss_vg_info_t *vgs_info = dss_get_vg_info_ptr();
-    if (vgs_info == NULL) {
+    if (g_vgs_info == NULL) {
         return;
     }
-    for (uint32 i = 0; i < vgs_info->group_num; i++) {
-        dss_vg_info_item_t *vg_item = &vgs_info->volume_group[i];
+    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+        dss_vg_info_item_t *vg_item = &g_vgs_info->volume_group[i];
         if (vg_item != NULL && vg_item->log_file_ctrl.log_buf != NULL) {
             DSS_FREE_POINT(vg_item->log_file_ctrl.log_buf);
         }
@@ -763,7 +641,7 @@ void dss_init_cm_res(dss_instance_t *inst)
 #ifdef ENABLE_DSSTEST
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 {
-    if (cm_res->is_valid && g_simulation_cm.simulation) {
+    if (g_simulation_cm.simulation) {
         int ret = cm_res_get_lock_owner(&cm_res->mgr, DSS_CM_LOCK, master_id);
         if (ret != CM_SUCCESS) {
             return ret;
@@ -784,10 +662,6 @@ status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 #else
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 {
-    if (!cm_res->is_init) {
-        LOG_RUN_WAR("[RECOVERY]cm is not init.");
-        return CM_ERROR;
-    }
     int ret = cm_res_get_lock_owner(&cm_res->mgr, DSS_CM_LOCK, master_id);
     if (ret == CM_RES_TIMEOUT) {
         LOG_RUN_ERR("Try to get lock owner failed, cm error : %d.", ret);
@@ -806,11 +680,7 @@ status_t dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 t
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     *master_id = DSS_INVALID_ID32;
-#ifdef ENABLE_DSSTEST
-    if (inst->is_maintain) {
-#else
-    if (inst->is_maintain || !inst->cm_res.is_valid) {
-#endif
+    if (inst->is_maintain || inst->inst_cfg.params.nodes_list.inst_cnt <= 1) {
         *grab_lock = CM_TRUE;
         LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5,
             "[RECOVERY]Set curr_id %u to be primary when dssserver is maintain or just one inst.",
@@ -818,9 +688,12 @@ status_t dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 t
         *master_id = (uint32)inst_cfg->params.inst_id;
         return CM_SUCCESS;
     }
-
+    dss_cm_res *cm_res = &inst->cm_res;
+    if (!cm_res->is_init) {
+        return CM_SUCCESS;
+    }
     status_t ret = CM_SUCCESS;
-    ret = dss_get_cm_res_lock_owner(&inst->cm_res, master_id);
+    ret = dss_get_cm_res_lock_owner(cm_res, master_id);
     DSS_RETURN_IFERR2(ret, LOG_RUN_WAR("Failed to get cm lock owner, if DSS is normal open ignore the log."));
     if (*master_id == DSS_INVALID_ID32) {
         if (!try_lock) {
@@ -832,7 +705,7 @@ status_t dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 t
             dss_set_master_id(DSS_INVALID_ID32);
             return CM_ERROR;
         }
-        ret = cm_res_lock(&inst->cm_res.mgr, DSS_CM_LOCK);
+        ret = cm_res_lock(&cm_res->mgr, DSS_CM_LOCK);
         *grab_lock = ((int)ret == CM_RES_SUCCESS);
         if (*grab_lock) {
             *master_id = (uint32)inst->inst_cfg.params.inst_id;
@@ -907,7 +780,7 @@ void dss_recovery_when_standby(dss_session_t *session, dss_instance_t *inst, uin
         dss_set_server_status_flag(DSS_STATUS_READONLY);
         LOG_RUN_INF("[RECOVERY]inst %u set status flag %u when not get cm lock.", curr_id, DSS_STATUS_READONLY);
     }
-    if (!dss_check_join_cluster(session)) {
+    if (!dss_check_join_cluster()) {
         dss_set_master_id(old_master_id);
         dss_set_server_status_flag(old_status);
         LOG_RUN_INF("[RECOVERY]inst %u reset status flag %d and master_id %u when join failed.", curr_id, old_status,
@@ -934,10 +807,6 @@ void dss_recovery_when_standby(dss_session_t *session, dss_instance_t *inst, uin
 */
 void dss_get_cm_lock_and_recover_inner(dss_session_t *session, dss_instance_t *inst)
 {
-    if (!inst->cm_res.is_init && !inst->is_maintain) {
-        LOG_RUN_INF("[RECOVERY]cm_res is not init!.");
-        return;
-    }
     cm_latch_x(&g_dss_instance.switch_latch, session->id, LATCH_STAT(LATCH_SWITCH));
     uint32 old_master_id = dss_get_master_id();
     bool32 grab_lock = CM_FALSE;
@@ -1101,6 +970,14 @@ void dss_hashmap_dynamic_extend_and_redistribute_proc(thread_t *thread)
 }
 static void dss_check_peer_inst_inner(dss_instance_t *inst)
 {
+    /**
+     * During installation initialization, db_init depends on the DSS server. However, the CMS is not started.
+     * Therefore, cm_init cannot be invoked during the DSS server startup.
+     * Here, cm_init is invoked before the CM interface is invoked at first time.
+     */
+    if (SECUREC_UNLIKELY(!inst->cm_res.is_init)) {
+        dss_init_cm_res(inst);
+    }
     if (inst->cm_res.is_valid) {
 #ifdef ENABLE_DSSTEST
         dss_check_peer_by_simulation_cm(inst);
@@ -1114,14 +991,6 @@ static void dss_check_peer_inst_inner(dss_instance_t *inst)
 
 void dss_check_peer_inst(dss_instance_t *inst, uint64 inst_id)
 {
-    /**
-     * During installation initialization, db_init depends on the DSS server. However, the CMS is not started.
-     * Therefore, cm_init cannot be invoked during the DSS server startup.
-     * Here, cm_init is invoked before the CM interface is invoked at first time.
-     */
-    if (SECUREC_UNLIKELY(!inst->cm_res.is_init)) {
-        dss_init_cm_res(inst);
-    }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     if (inst_cfg->params.nodes_list.inst_cnt <= 1) {
         return;
@@ -1152,7 +1021,7 @@ void dss_set_inst_work_status(uint64 cur_inst_map)
     (void)cm_atomic_set((atomic_t *)&g_dss_instance.inst_work_status_map, (int64)cur_inst_map);
 }
 
-bool32 dss_check_join_cluster(dss_session_t *session)
+bool32 dss_check_join_cluster()
 {
     if (g_dss_instance.is_join_cluster) {
         return CM_TRUE;
@@ -1164,7 +1033,7 @@ bool32 dss_check_join_cluster(dss_session_t *session)
     } else {
         // try register to new master to join
         bool32 join_succ = CM_FALSE;
-        status_t status = dss_join_cluster(session, &join_succ);
+        status_t status = dss_join_cluster(&join_succ);
         if (status != CM_SUCCESS) {
             LOG_RUN_ERR("Join cluster fail, wait next try.");
             cm_reset_error();

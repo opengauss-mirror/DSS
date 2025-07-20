@@ -41,7 +41,6 @@ extern "C" {
 
 #define DSS_EV_WAIT_NUM 256
 #define DSS_EV_WAIT_TIMEOUT 16
-#define DSS_DISCONNECTOR_NUM 1
 
 typedef struct st_dss_session dss_session_t;
 struct st_reactor;
@@ -67,16 +66,11 @@ typedef struct st_reactor {
     int epollfd;
     atomic32_t session_count;
     reactor_status_t status;
+    uint32 workthread_count;
     cm_event_t idle_evnt;
     thread_lock_t lock;
-    uint32 workthread_count;
     cm_thread_pool_t workthread_pool;
     dss_workthread_t workthread_ctx[DSS_MAX_WORKTHREADS_CFG];
-    // disconnector_pool is used only to process disconnecting msgs from clients when workthread_pool is exhausted.
-    // Currently there is only ONE thread in disconnector_pool.
-    // If extention is needed, just enlarge DSS_DISCONNECTOR_NUM.
-    cm_thread_pool_t disconnector_pool;
-    dss_workthread_t disconnector_ctx[DSS_DISCONNECTOR_NUM];
 } reactor_t;
 
 typedef struct st_reactors {

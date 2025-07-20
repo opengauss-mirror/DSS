@@ -116,7 +116,7 @@ void dss_syn_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block
         dss_unlock_vg_mem_and_shm(session, vg_item);
 
         (void)meta_syn2other_nodes_proc(
-            session, vg_item, (char *)&meta_syn, (OFFSET_OF(dss_meta_syn_t, meta) + meta_syn.meta_len), NULL);
+            vg_item, (char *)&meta_syn, (OFFSET_OF(dss_meta_syn_t, meta) + meta_syn.meta_len), NULL);
         LOG_DEBUG_INF("syn meta file:%llu file_ver:%llu, vg:%u, block:%llu type:%u, with version:%llu.", meta_syn.fid,
             meta_syn.file_ver, meta_syn.vg_id, meta_syn.meta_block_id, meta_syn.meta_type, meta_syn.syn_meta_version);
     }
@@ -199,7 +199,7 @@ bool32 dss_syn_buffer_cache(dss_session_t *session, dss_vg_info_item_t *vg_item)
     return cm_bilist_empty(&vg_item->syn_meta_desc.bilist);
 }
 
-status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, bool32 *ack)
+status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, uint32 size, bool32 *ack)
 {
     if (!enable_syn_meta || meta_syn2other_nodes_proc == NULL) {
         return CM_SUCCESS;
@@ -278,7 +278,7 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, b
 }
 
 status_t dss_invalidate_meta_remote(
-    dss_session_t *session, dss_invalidate_meta_msg_t *invalidate_meta_msg, bool32 *invalid_ack)
+    dss_session_t *session, dss_invalidate_meta_msg_t *invalidate_meta_msg, uint32 size, bool32 *invalid_ack)
 {
     *invalid_ack = CM_FALSE;
 

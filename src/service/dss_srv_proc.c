@@ -54,50 +54,26 @@ static status_t dss_check_two_path_in_same_vg(const char *path1, const char *pat
     return CM_SUCCESS;
 }
 
-static bool32 dss_get_dst_directory(char *dir, const char *dst)
-{
-    text_t dst_dir;
-    text_t dst_name;
-    cm_str2text((char *)dst, &dst_name);
-    if (!cm_fetch_rtext(&dst_name, '/', '\0', &dst_dir)) {
-        DSS_THROW_ERROR_EX(
-            ERR_DSS_FILE_RENAME, "Not a complete absolute path name(%s %s)", T2S(&dst_dir), T2S(&dst_name));
-        LOG_DEBUG_ERR("Not a complete absolute path name(%s %s)", T2S(&dst_dir), dst);
-        return CM_FALSE;
-    }
-
-    if (cm_text2str(&dst_dir, dir, DSS_MAX_NAME_LEN) != CM_SUCCESS) {
-        return CM_FALSE;
-    }
-
-    return CM_TRUE;
-}
-
 static status_t dss_rename_file_check(
-    dss_session_t *session, dss_rename_info_t *rename_info, dss_vg_info_item_t **vg_item)
+    dss_session_t *session, const char *src, const char *dst, dss_vg_info_item_t **vg_item, gft_node_t **out_node)
 {
     status_t status = dss_check_file(*vg_item);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check file,errcode:%d.", cm_get_error_code()));
 
-    dss_check_dir_output_t output_info = {&(rename_info->src_node), NULL, NULL, CM_TRUE};
+    dss_check_dir_output_t output_info = {out_node, NULL, NULL, CM_TRUE};
     dss_vg_info_item_t *file_vg_item = *vg_item;
     output_info.item = &file_vg_item;
-    status = dss_check_dir(session, rename_info->src_path, GFT_FILE, &output_info, O_WRONLY, CM_TRUE);
-    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check src dir,errcode:%d.", cm_get_error_code()));
+    status = dss_check_dir(session, src, GFT_FILE, &output_info, CM_TRUE);
+    DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check dir,errcode:%d.", cm_get_error_code()));
 
-    dss_check_dir_output_t output_info_tmp = {&(rename_info->dst_node), NULL, NULL, CM_TRUE};
-    if (dss_check_dir(session, rename_info->dst_path, GFT_FILE, &output_info_tmp, O_WRONLY, CM_TRUE) != CM_SUCCESS) {
+    gft_node_t *out_node_tmp = NULL;
+    dss_check_dir_output_t output_info_tmp = {&out_node_tmp, NULL, NULL, CM_TRUE};
+    if (dss_check_dir(session, dst, GFT_FILE, &output_info_tmp, CM_TRUE) != CM_SUCCESS) {
         int32 errcode = cm_get_error_code();
         if (errcode != ERR_DSS_FILE_NOT_EXIST) {
             return CM_ERROR;
         }
         cm_reset_error();
-
-        char dst_dir[DSS_FILE_PATH_MAX_LENGTH];
-        DSS_RETURN_VALUE_IF_HOOK(!dss_get_dst_directory(dst_dir, rename_info->dst_path), CM_ERROR,
-            LOG_DEBUG_ERR("Failed to obtain the directory of the path(%s).", rename_info->dst_path));
-        status = dss_check_dir(session, dst_dir, GFT_PATH, &output_info_tmp, O_WRONLY, CM_TRUE);
-        DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check dst dir,errcode:%d.", cm_get_error_code()));
     } else {
         DSS_THROW_ERROR(ERR_DSS_FILE_RENAME_EXIST, "cannot rename a existed file.");
         return CM_ERROR;
@@ -111,33 +87,24 @@ static status_t dss_rename_file_check(
     return CM_SUCCESS;
 }
 
-status_t dss_rename_file_put_redo_log(
-    dss_session_t *session, dss_rename_info_t *rename_info, dss_vg_info_item_t *vg_item, dss_config_t *inst_cfg)
+status_t dss_rename_file_put_redo_log(dss_session_t *session, gft_node_t *out_node, const char *dst_name,
+    dss_vg_info_item_t *vg_item, dss_config_t *inst_cfg)
 {
     dss_redo_rename_t redo;
-    redo.node = *(rename_info->src_node);
-    errno_t err = snprintf_s(redo.name, DSS_MAX_NAME_LEN, strlen(rename_info->dst_name), "%s", rename_info->dst_name);
+    redo.node = *out_node;
+    errno_t err = snprintf_s(redo.name, DSS_MAX_NAME_LEN, strlen(dst_name), "%s", dst_name);
     bool32 result = (bool32)(err != -1);
     DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_SYSTEM_CALL, err));
 
-    err = snprintf_s(
-        redo.old_name, DSS_MAX_NAME_LEN, strlen(rename_info->src_node->name), "%s", rename_info->src_node->name);
+    err = snprintf_s(redo.old_name, DSS_MAX_NAME_LEN, strlen(out_node->name), "%s", out_node->name);
     result = (bool32)(err != -1);
     DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_SYSTEM_CALL, err));
 
-    err = snprintf_s(
-        rename_info->src_node->name, DSS_MAX_NAME_LEN, strlen(rename_info->dst_name), "%s", rename_info->dst_name);
+    err = snprintf_s(out_node->name, DSS_MAX_NAME_LEN, strlen(dst_name), "%s", dst_name);
     result = (bool32)(err != -1);
     DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_SYSTEM_CALL, err));
 
     dss_put_log(session, vg_item, DSS_RT_RENAME_FILE, &redo, sizeof(redo));
-
-    if (rename_info->is_cross_dir) {
-        gft_node_t *parent_node =
-            dss_get_ft_node_by_ftid(session, vg_item, rename_info->src_node->parent, CM_TRUE, CM_FALSE);
-        dss_remove_ft_node(session, vg_item, parent_node, rename_info->src_node);
-        dss_mv_to_specific_dir(session, vg_item, rename_info->src_node, rename_info->dst_node);
-    }
 
     if (dss_process_redo_log(session, vg_item) != CM_SUCCESS) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
@@ -150,17 +117,18 @@ status_t dss_rename_file_put_redo_log(
 }
 
 status_t dss_rename_file_check_path_and_name(
-    const char *src_path, const char *dst_path, char *vg_name, char *dst_name, bool32 *is_cross_dir)
+    dss_session_t *session, const char *src_path, const char *dst_path, char *vg_name, char *dst_name)
 {
     CM_RETURN_IFERR(dss_check_two_path_in_same_vg(src_path, dst_path, vg_name));
     text_t dst_name_text;
-    CM_RETURN_IFERR(dss_check_rename_path(src_path, dst_path, &dst_name_text, is_cross_dir));
+    CM_RETURN_IFERR(dss_check_rename_path(session, src_path, dst_path, &dst_name_text));
     CM_RETURN_IFERR(cm_text2str(&dst_name_text, dst_name, DSS_MAX_NAME_LEN));
     status_t status = dss_check_name(dst_name);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("The name %s is invalid.", dst_path));
 
     return CM_SUCCESS;
 }
+
 status_t dss_check_vg_ft_dir(dss_session_t *session, dss_vg_info_item_t **vg_item, const char *path,
     gft_item_type_t type, gft_node_t **node, gft_node_t **parent_node)
 {
@@ -168,7 +136,7 @@ status_t dss_check_vg_ft_dir(dss_session_t *session, dss_vg_info_item_t **vg_ite
 
     dss_vg_info_item_t *tmp_vg_item = *vg_item;
     dss_check_dir_output_t output_info = {node, &tmp_vg_item, parent_node, CM_TRUE};
-    status_t status = dss_check_dir(session, path, type, &output_info, O_WRONLY, CM_TRUE);
+    status_t status = dss_check_dir(session, path, type, &output_info, CM_TRUE);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to check dir, errcode: %d.", status);
         return status;
@@ -256,28 +224,33 @@ static status_t dss_mark_delete_flag(
     return status;
 }
 
-static status_t dss_rm_dir_file_inner(
-    dss_session_t *session, dss_vg_info_item_t **vg_item, const char *dir_name, gft_item_type_t type, bool32 recursive)
+static status_t dss_rm_dir_file_inner(dss_session_t *session, dss_vg_info_item_t **vg_item, gft_node_t **node,
+    const char *dir_name, gft_item_type_t type, bool32 recursive)
 {
     gft_node_t *parent_node = NULL;
-    gft_node_t *node = NULL;
-    status_t status = dss_check_vg_ft_dir(session, vg_item, dir_name, type, &node, &parent_node);
+    status_t status = dss_check_vg_ft_dir(session, vg_item, dir_name, type, node, &parent_node);
     DSS_RETURN_IF_ERROR(status);
+    if (((*node)->flags & DSS_FT_NODE_FLAG_SYSTEM) != 0) {
+        DSS_THROW_ERROR(ERR_DSS_FILE_REMOVE_SYSTEM, dir_name);
+        LOG_DEBUG_ERR("Failed to rm dir %s, can not rm system dir.", dir_name);
+        return CM_ERROR;
+    }
 
-    return dss_mark_delete_flag(session, *vg_item, node, dir_name, recursive);
+    return dss_mark_delete_flag(session, *vg_item, *node, dir_name, recursive);
 }
 
 static status_t dss_rm_dir_file(dss_session_t *session, const char *dir_name, gft_item_type_t type, bool32 recursive)
 {
     CM_ASSERT(dir_name != NULL);
 
+    gft_node_t *node = NULL;
     char name[DSS_MAX_NAME_LEN];
     dss_vg_info_item_t *vg_item = NULL;
     CM_RETURN_IFERR(dss_find_vg_by_dir(dir_name, name, &vg_item));
 
     dss_lock_vg_mem_and_shm_x(session, vg_item);
     dss_init_vg_cache_node_info(vg_item);
-    status_t status = dss_rm_dir_file_inner(session, &vg_item, dir_name, type, recursive);
+    status_t status = dss_rm_dir_file_inner(session, &vg_item, &node, dir_name, type, recursive);
     if (status != CM_SUCCESS) {
         dss_rollback_mem_update(session, vg_item);
         dss_unlock_vg_mem_and_shm(session, vg_item);
@@ -302,8 +275,9 @@ static status_t dss_rm_dir_file_in_rename(
     dss_session_t *session, dss_vg_info_item_t **vg_item, const char *dir_name, gft_item_type_t type, bool32 recursive)
 {
     CM_ASSERT(dir_name != NULL);
+    gft_node_t *node = NULL;
 
-    status_t status = dss_rm_dir_file_inner(session, vg_item, dir_name, type, recursive);
+    status_t status = dss_rm_dir_file_inner(session, vg_item, &node, dir_name, type, recursive);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to remove dir or file, name : %s.", dir_name);
         return status;
@@ -312,30 +286,23 @@ static status_t dss_rm_dir_file_in_rename(
     return CM_SUCCESS;
 }
 
-static status_t dss_rename_file_inner(
-    dss_session_t *session, dss_vg_info_item_t **vg_item, dss_config_t *inst_cfg, dss_rename_info_t *rename_info)
+static status_t dss_rename_file_inner(dss_session_t *session, dss_vg_info_item_t **vg_item, dss_config_t *inst_cfg,
+    const char *src, const char *dst, const char *dst_name)
 {
-    status_t ret = dss_rename_file_check(session, rename_info, vg_item);
+    gft_node_t *out_node = NULL;
+    status_t ret = dss_rename_file_check(session, src, dst, vg_item, &out_node);
     if (ret != CM_SUCCESS) {
         return ret;
     }
 
-    return dss_rename_file_put_redo_log(session, rename_info, *vg_item, inst_cfg);
+    return dss_rename_file_put_redo_log(session, out_node, dst_name, *vg_item, inst_cfg);
 }
 
 status_t dss_rename_file(dss_session_t *session, const char *src, const char *dst)
 {
     char vg_name[DSS_MAX_NAME_LEN];
     char dst_name[DSS_MAX_NAME_LEN];
-    bool32 is_cross_dir = CM_FALSE;
-    CM_RETURN_IFERR(dss_rename_file_check_path_and_name(src, dst, vg_name, dst_name, &is_cross_dir));
-    if (is_cross_dir && DSS_GET_PROTOCOL_VER < DSS_VERSION_3) {
-        DSS_THROW_ERROR(
-            ERR_DSS_FILE_RENAME, "To rename across directory, version of dssserver must be no less than 3.");
-        LOG_DEBUG_ERR("Maybe version of dssserver in the cluster are less than 3, rename across directory "
-                      "are not support");
-        return CM_ERROR;
-    }
+    CM_RETURN_IFERR(dss_rename_file_check_path_and_name(session, src, dst, vg_name, dst_name));
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item == NULL) {
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
@@ -347,13 +314,7 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
     }
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     dss_lock_vg_mem_and_shm_x(session, vg_item);
-
-    dss_rename_info_t rename_info;
-    rename_info.src_path = src;
-    rename_info.dst_path = dst;
-    rename_info.dst_name = dst_name;
-    rename_info.is_cross_dir = is_cross_dir;
-    status_t ret = dss_rename_file_inner(session, &vg_item, inst_cfg, &rename_info);
+    status_t ret = dss_rename_file_inner(session, &vg_item, inst_cfg, src, dst, dst_name);
     if (ret == CM_SUCCESS) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
         return ret;
@@ -377,7 +338,7 @@ status_t dss_rename_file(dss_session_t *session, const char *src, const char *ds
     }
     dss_init_vg_cache_node_info(vg_item);
 
-    ret = dss_rename_file_inner(session, &vg_item, inst_cfg, &rename_info);
+    ret = dss_rename_file_inner(session, &vg_item, inst_cfg, src, dst, dst_name);
     if (ret != CM_SUCCESS) {
         dss_rollback_mem_update(session, vg_item);
     }

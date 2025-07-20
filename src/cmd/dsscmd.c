@@ -37,7 +37,6 @@
 #include "cm_utils.h"
 #include "cm_signal.h"
 #include "cm_sec_file.h"
-#include "cm_log.h"
 
 #include "dss_errno.h"
 #include "dss_defs.h"
@@ -56,12 +55,9 @@
 #include "dsscmd_conn_opt.h"
 #include "dsscmd_interactive.h"
 #include "dss_cli_conn.h"
-#include "dss_vtable.h"
 #ifndef WIN32
 #include "config.h"
 #endif
-#include "dss_fault_injection.h"
-#include "dsscmd_fuse.h"
 
 #ifdef WIN32
 #define DEF_DSS_VERSION "Windows does not support this feature because it is built using vs."
@@ -446,7 +442,6 @@ static dss_args_t cmd_cv_args[] = {
     {'s', "au_size", CM_FALSE, CM_TRUE, cmd_check_au_size, NULL, NULL, 0, NULL, NULL, 0},
     {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
         NULL, NULL, 0},
-    {'V', "VTABLE", CM_FALSE, CM_FALSE, NULL, NULL, NULL, 0, NULL, NULL, 0},
 };
 static dss_args_set_t cmd_cv_args_set = {
     cmd_cv_args,
@@ -477,16 +472,6 @@ static status_t cv_proc(void)
     dss_config_t cv_cfg;
     vg_name = cmd_cv_args[DSS_ARG_IDX_0].input_args;
     volume_path = cmd_cv_args[DSS_ARG_IDX_1].input_args;
-
-    bool32 isvtable = cmd_cv_args[DSS_ARG_IDX_4].inputed ? CM_TRUE : CM_FALSE;
-    if (isvtable) {
-        status = dss_init_vtable();
-        if (status != CM_SUCCESS) {
-            DSS_PRINT_ERROR("DSS init vtable failed!\n");
-            return status;
-        }
-    }
-
     // Documentation Constraints:au_size=0 equals default_au_size
     int64 au_size = 0;
     if (cmd_cv_args[DSS_ARG_IDX_2].input_args) {
@@ -921,41 +906,6 @@ static status_t adv_proc(void)
     return status;
 }
 
-static dss_args_t cmd_mount_args[] = {
-    {'d', "dir", CM_TRUE, CM_TRUE, dss_check_path, NULL, NULL, 0, NULL, NULL, 0},
-    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
-        0},
-};
-static dss_args_set_t cmd_mount_args_set = {
-    cmd_mount_args,
-    sizeof(cmd_mount_args) / sizeof(dss_args_t),
-    NULL,
-};
-
-static void mount_help(const char *prog_name, int print_flag)
-{
-    (void)printf("\nUsage:%s mount -d mountpoint [-U UDS:socket_domain]\n", prog_name);
-    (void)printf("\nuse \"fusermount -u -z mountpoint\" to unmount\n");
-}
-
-static status_t mount_proc(void)
-{
-    const char *mount_dir = cmd_mount_args[DSS_ARG_IDX_0].input_args;
-#ifndef WIN32
-    const char *uds_path = cmd_mount_args[DSS_ARG_IDX_1].input_args;
-    dss_conn_t *conn = dss_get_connection_opt(uds_path);
-    DSS_RETURN_IFERR2((conn == NULL) ? CM_ERROR : CM_SUCCESS, DSS_PRINT_ERROR("Failed to get uds connection.\n"));
-
-    // get server locator
-    char server_locator[DSS_MAX_PATH_BUFFER_SIZE] = {0};
-    status_t status = get_default_server_locator(server_locator);
-    DSS_RETURN_IF_ERROR(status);
-    const char *cur_uds = (uds_path == NULL) ? server_locator : uds_path;
-    DSS_RETURN_IF_ERROR(dss_set_svr_path(cur_uds));
-#endif
-    return my_fuse_main(mount_dir);
-}
-
 static dss_args_t cmd_mkdir_args[] = {
     {'p', "path", CM_TRUE, CM_TRUE, dss_cmd_check_device_path, cmd_check_convert_path, cmd_clean_check_convert, 0, NULL,
         NULL, 0},
@@ -1111,28 +1061,23 @@ static status_t ts_proc(void)
     }
 
     dss_stat_item_t time_stat[DSS_EVT_COUNT];
-    char max_date_str[CM_MAX_TIME_STRLEN + 1] = {0};
-    status = dss_get_time_stat_on_server(conn, time_stat, DSS_EVT_COUNT, 0);
+    status = dss_get_time_stat_on_server(conn, time_stat, DSS_EVT_COUNT);
     if (status != CM_SUCCESS) {
         DSS_PRINT_ERROR("Failed to get time stat.\n");
         return CM_ERROR;
     }
-    (void)printf("|      event             |   count   | total_wait_time | avg_wait_time | max_single_time | max_date  "
-                 "              \n");
-    (void)printf("+------------------------+-----------+-----------------+---------------+-----------------|-----------"
-                 "--------------\n");
+    (void)printf("|      event     |   count   | total_wait_time | avg_wait_time | max_single_time \n");
+    (void)printf("+------------------------+-----------+-----------------+---------------+-----------------\n");
     for (int i = 0; i < DSS_EVT_COUNT; i++) {
         if (time_stat[i].wait_count == 0) {
-            (void)printf("|%-24s|%-11d|%-17d|%-15d|%-17d|%-25s\n", dss_get_stat_event(i), 0, 0, 0, 0, " ");
+            (void)printf("|%-24s|%-11d|%-17d|%-15d|%-17d\n", dss_get_stat_event(i), 0, 0, 0, 0);
             continue;
         }
-        (void)cm_date2str(time_stat[i].max_date, "yyyy-mm-dd hh24:mi:ss", max_date_str, CM_MAX_TIME_STRLEN);
-        (void)printf("|%-24s|%-11lld|%-17lld|%-15lld|%-17lld|%-25s\n", dss_get_stat_event(i), time_stat[i].wait_count,
+        (void)printf("|%-24s|%-11lld|%-17lld|%-15lld|%-17lld\n", dss_get_stat_event(i), time_stat[i].wait_count,
             time_stat[i].total_wait_time, time_stat[i].total_wait_time / time_stat[i].wait_count,
-            time_stat[i].max_single_time, max_date_str);
+            time_stat[i].max_single_time);
     }
-    (void)printf("+------------------------+-----------+-----------------+---------------+-----------------|-----------"
-                 "--------------\n");
+    (void)printf("+------------------------+-----------+-----------------+---------------+-----------------\n");
     return CM_SUCCESS;
 }
 
@@ -1259,7 +1204,7 @@ static status_t dss_ls_print_file(dss_conn_t *conn, const char *path, const char
 {
     gft_node_t *node = NULL;
     dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE};
-    DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_FILE, &output_info, O_RDONLY, CM_FALSE));
+    DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_FILE, &output_info, CM_FALSE));
     if (node == NULL) {
         LOG_DEBUG_INF("Failed to find path %s with the file type", path);
         return CM_ERROR;
@@ -1274,7 +1219,7 @@ static status_t dss_ls_try_print_link(
     if (dss_is_valid_link_path(path)) {
         gft_node_t *node = NULL;
         dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE};
-        DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, O_RDONLY, CM_FALSE));
+        DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE));
         if (node != NULL) {  // ls print the link
             dss_ls_show_base(show_min_inited_size);
             return dss_ls_print_node_info(node, measure, show_min_inited_size);
@@ -1690,8 +1635,8 @@ static status_t query_latch_remain_proc(void)
     DSS_PRINT_INF("Begin to query latch remain.\n");
     int64 inst_id;
     status_t status = cm_str2bigint(cmd_query_latch_remain_args[DSS_ARG_IDX_0].input_args, &inst_id);
-    DSS_RETURN_IFERR2(status,
-        DSS_PRINT_ERROR("inst_id:%s is not a valid int64.\n", cmd_query_latch_remain_args[DSS_ARG_IDX_0].input_args));
+    DSS_RETURN_IFERR2(
+        status, DSS_PRINT_ERROR("inst_id:%s is not a valid int64.\n", cmd_query_latch_remain_args[DSS_ARG_IDX_0].input_args));
     char *home = cmd_query_latch_remain_args[DSS_ARG_IDX_2].input_args;
     int64 type = DSS_LATCH_ALL;
     if (cmd_query_latch_remain_args[DSS_ARG_IDX_1].inputed) {
@@ -2328,7 +2273,7 @@ static status_t showdisk_proc(void)
         DSS_PRINT_ERROR("Failed to load config info!\n");
         return status;
     }
-    status = dss_load_vg_conf_info(inst_cfg);
+    status = dss_load_vg_conf_info(&g_vgs_info, inst_cfg);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to load vg info from config, errcode is %d.\n", status);
         return status;
@@ -3668,8 +3613,8 @@ static status_t getcfg_proc(void)
     if (conn == NULL) {
         return CM_ERROR;
     }
-    char value[CM_PARAM_BUFFER_SIZE] = {0};
-    status_t status = dss_getcfg_impl(conn, name, value, CM_PARAM_BUFFER_SIZE);
+    char value[DSS_PARAM_BUFFER_SIZE] = {0};
+    status_t status = dss_getcfg_impl(conn, name, value, DSS_PARAM_BUFFER_SIZE);
     if (status != CM_SUCCESS) {
         if (strlen(value) != 0 && cm_str_equal_ins(name, "SSL_PWD_CIPHERTEXT")) {
             LOG_DEBUG_ERR("Failed to get cfg, name is %s, value is ***.\n", name);
@@ -4361,98 +4306,6 @@ static status_t query_hotpatch_proc(void)
     return status;
 }
 
-static void kill_session_help(const char *prog_name, int print_flag)
-{
-    (void)printf("\nUsage: %s kill_session <-s session_id> [-U UDS:socket_domain]\n", prog_name);
-    (void)printf(
-        "[client command] kill DSS session, which would disable the in-use session to respond to further requests.\n");
-    (void)printf("-s/--session_id <session_id>, <required>, the session_id of the session to kill.\n");
-    (void)printf("-f/--force, [optional], force to execute without confirmation.\n");
-    if (print_flag == DSS_HELP_SIMPLE) {
-        return;
-    }
-    help_param_uds();
-}
-
-static dss_args_t cmd_kill_session_args[] = {
-    {'s', "session_id", CM_TRUE, CM_TRUE, cmd_check_uint32, NULL, NULL, 0, NULL, NULL, 0},
-    {'f', "force", CM_FALSE, CM_FALSE, NULL, NULL, NULL, 0, NULL, NULL, 0},
-    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
-        0},
-};
-
-static dss_args_set_t cmd_kill_session_args_set = {
-    cmd_kill_session_args,
-    sizeof(cmd_kill_session_args) / sizeof(dss_args_t),
-    NULL,
-};
-
-#define DSS_KILL_SESSION_CONFIRM_RETRY_TIMES 3
-
-static void dss_kill_session_confirm()
-{
-#ifdef WIN32
-    return;
-#else
-    char user_confirm[DSS_MAX_CMD_LEN] = {'\0'};
-    for (int i = DSS_KILL_SESSION_CONFIRM_RETRY_TIMES; i > 0; --i) {
-        (void)printf("Warning: command \"kill_session\" is of highly dangerous "
-                     "which might cause fatal damage on the clients if wrongly inputed.\n"
-                     "Confirm and continue? Type in y/yes or n/no, and you have %d chances left:",
-            i);
-        (void)fflush(stdout);
-        if (NULL == fgets(user_confirm, sizeof(user_confirm), stdin)) {
-            (void)printf("\n");
-            break;
-        }
-
-        if (cm_strcmpni(user_confirm, "y\n", sizeof("y\n")) == 0 ||
-            cm_strcmpni(user_confirm, "yes\n", sizeof("yes\n")) == 0) {
-            LOG_RUN_INF("User input %s, operation confirmed.", user_confirm);
-            (void)printf("USER CONFIRMED.\n");
-            return;
-        } else if (cm_strcmpni(user_confirm, "n\n", sizeof("n\n")) == 0 ||
-                   cm_strcmpni(user_confirm, "no\n", sizeof("no\n")) == 0) {
-            break;
-        } else {
-            (void)printf("\n");
-        }
-    }
-    DSS_PRINT_RUN_ERROR("User CANCELED.\n");
-    (void)fflush(stdout);
-    _exit(1);
-#endif
-}
-
-#define DSS_CMD_KILL_SESSION_ARGS_SID 0
-#define DSS_CMD_KILL_SESSION_ARGS_FORCE 1
-#define DSS_CMD_KILL_SESSION_ARGS_UDS 2
-
-static status_t kill_session_proc(void)
-{
-    if (!cmd_kill_session_args[DSS_CMD_KILL_SESSION_ARGS_FORCE].inputed) {
-        dss_kill_session_confirm();
-    }
-
-    dss_conn_t *conn = dss_get_connection_opt(cmd_kill_session_args[DSS_CMD_KILL_SESSION_ARGS_UDS].input_args);
-    DSS_RETURN_IFERR2((conn == NULL ? CM_ERROR : CM_SUCCESS), DSS_PRINT_ERROR("Failed to get uds connection.\n"));
-
-    uint32 sid = 0;
-    status_t ret = cm_str2uint32(cmd_kill_session_args[DSS_CMD_KILL_SESSION_ARGS_SID].input_args, &sid);
-    if (ret != CM_SUCCESS) {
-        DSS_PRINT_ERROR("The value of sid is invalid.\n");
-        return ret;
-    }
-    LOG_RUN_INF("Try to kill DSS session %u.", sid);
-    ret = dss_kill_session_impl(conn, sid);
-    if (ret == CM_SUCCESS) {
-        DSS_PRINT_INF("Success to kill DSS session %u.\n", sid);
-    } else {
-        DSS_PRINT_RUN_ERROR("Failed to kill DSS session %u.\n", sid);
-    }
-    return ret;
-}
-
 // clang-format off
 dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set, true},
                                       {"lsvg", lsvg_help, lsvg_proc, &cmd_lsvg_args_set, false},
@@ -4502,19 +4355,12 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set,
                                       {"query_hotpatch", query_hotpatch_help, query_hotpatch_proc,
                                           &cmd_query_hotpatch_args_set, false},
                                       {"query_latch_remain", query_latch_remain_help, query_latch_remain_proc,
-                                          &cmd_query_latch_remain_args_set, false},
-                                      {"kill_session", kill_session_help, kill_session_proc,
-                                          &cmd_kill_session_args_set, true},
-                                      {"mount", mount_help, mount_proc,
-                                          &cmd_mount_args_set, true},};
+                                          &cmd_query_latch_remain_args_set, false}};
 
 void clean_cmd()
 {
     dss_conn_opt_exit();
     dss_free_vg_info();
-    if (g_vtable_func.isInitialize) {
-        VtableExit();
-    }
     ga_reset_app_pools();
 }
 
@@ -4717,30 +4563,10 @@ static status_t dss_check_user_permit()
     return CM_SUCCESS;
 }
 
-#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
-static void *gs_dsscmd_fi_run_ctx = NULL;
-static status_t dss_init_fi_ctx()
-{
-    int32 fi_ctx_size = ddes_fi_get_context_size();
-    if (fi_ctx_size <= 0) {
-        LOG_RUN_ERR("Failed to get fi context size.");
-        return CM_ERROR;
-    }
-    gs_dsscmd_fi_run_ctx = malloc((uint32)fi_ctx_size);
-    if (gs_dsscmd_fi_run_ctx == NULL) {
-        LOG_RUN_ERR("Failed to alloc fi context");
-        return CM_ERROR;
-    }
-    ddes_fi_set_and_init_context(gs_dsscmd_fi_run_ctx);
-    return CM_SUCCESS;
-}
-#endif
-
 int main(int argc, char **argv)
 {
     DSS_RETURN_IF_ERROR(dss_check_user_permit());
     uint32 idx = 0;
-    status_t ret = CM_SUCCESS;
     bool8 go_ahead = CM_TRUE;
     bool8 is_interactive = cmd_check_run_interactive(argc, argv);
     if (!is_interactive) {
@@ -4749,22 +4575,11 @@ int main(int argc, char **argv)
             exit(help_ret);
         }
     }
-
-#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
-    ret = dss_init_fi_ctx();
-    if (ret != CM_SUCCESS) {
-        DSS_PRINT_ERROR("dsscmd init fi ctx fail\n");
-        return ret;
-    }
-#endif
     dss_config_t *inst_cfg = dss_get_g_inst_cfg();
-    ret = dss_set_cfg_dir(NULL, inst_cfg);
+    status_t ret = dss_set_cfg_dir(NULL, inst_cfg);
     DSS_RETURN_IFERR2(ret, DSS_PRINT_ERROR("Environment variant DSS_HOME not found!\n"));
     ret = dss_load_local_server_config(inst_cfg);
     DSS_RETURN_IFERR2(ret, DSS_PRINT_ERROR("Failed to load local server config, status(%d).\n", ret));
-#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
-    CM_RETURN_IFERR(dss_load_fi_params(inst_cfg));
-#endif
     ret = cm_start_timer(g_timer());
     DSS_RETURN_IFERR2(ret, DSS_PRINT_ERROR("Aborted due to starting timer thread.\n"));
     ret = dss_init_loggers(inst_cfg, dss_get_cmd_log_def(), dss_get_cmd_log_def_count(), "dsscmd");

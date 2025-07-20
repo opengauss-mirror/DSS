@@ -34,7 +34,7 @@ extern "C" {
 
 #define DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, format, ...) \
     do {                                                     \
-        if (log_id == CM_LOG_BLACKBOX) {                        \
+        if (log_id == LOG_BLACKBOX) {                        \
             LOG_BLACKBOX_INF(format, ##__VA_ARGS__);         \
         } else {                                             \
             LOG_DYNAMIC_INF(format, ##__VA_ARGS__);          \

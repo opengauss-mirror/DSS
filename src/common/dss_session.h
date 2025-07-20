@@ -28,11 +28,9 @@
 #include "cm_defs.h"
 #include "cm_thread_pool.h"
 #include "cm_date.h"
-#include "cm_atomic.h"
 #include "cs_packet.h"
 #include "cs_pipe.h"
 #include "dss_defs.h"
-#include "dss_errno.h"
 #include "dss_au.h"
 #include "dss_log.h"
 #include "dss_protocol.h"
@@ -70,6 +68,8 @@ typedef enum st_dss_background_task_type {
 typedef struct st_dss_bg_task_info {
     uint32 task_num_max;
     uint32 my_task_id;
+    uint32 vg_id_beg;
+    uint32 vg_id_end;
     void *task_args;
 } dss_bg_task_info_t;
 
@@ -117,7 +117,7 @@ typedef enum en_dss_session_status {
 typedef struct st_dss_session {
     spinlock_t lock;  // for control current rw of the same session in server
     uint32 id;
-    volatile bool32 is_closed;
+    bool32 is_closed;
     bool32 is_used;
     bool32 connected;
     bool32 reactor_added;
@@ -142,11 +142,8 @@ typedef struct st_dss_session {
     bool8 is_direct;
     bool8 put_log;
     bool8 is_holding_hotpatch_latch;
-    bool8 is_killed;
     spinlock_t shm_lock;  // for control current rw of the same session in shm
 } dss_session_t;
-
-status_t dss_session_check_killed(dss_session_t *session);
 
 static inline char *dss_init_sendinfo_buf(char *input)
 {
@@ -166,8 +163,6 @@ typedef struct st_dss_session_ctrl {
     uint32 used_count;
     uint32 total;
     uint32 alloc_sessions;
-    dss_stat_item_t stat_g[DSS_EVT_COUNT];
-    dss_stat_item_t stat_last_cmd[DSS_EVT_COUNT];
     dss_session_t **sessions;
 } dss_session_ctrl_t;
 

@@ -86,9 +86,10 @@ static status_t dss_process_remote(dss_session_t *session)
     uint32 currid = DSS_INVALID_ID32;
     status_t ret = CM_ERROR;
     DSS_RETURN_IF_ERROR(dss_get_exec_nodeid(session, &currid, &remoteid));
+
+    LOG_DEBUG_INF("Start processing remote requests(%d), remote node(%u),current node(%u).",
+        session->recv_pack.head->cmd, remoteid, currid);
     status_t remote_result = CM_ERROR;
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
     while (CM_TRUE) {
         if (get_instance_status_proc() == DSS_STATUS_RECOVERY) {
             DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
@@ -111,14 +112,12 @@ static status_t dss_process_remote(dss_session_t *session)
                 LOG_RUN_INF("Req break if currid is equal to remoteid, just try again.");
                 return CM_ERROR;
             }
-            CM_RETURN_IFERR(dss_session_check_killed(session));
             continue;
         }
         break;
     }
     LOG_DEBUG_INF("The remote request(%d) is processed successfully, remote node(%u),current node(%u), result(%u).",
         session->recv_pack.head->cmd, remoteid, currid, remote_result);
-    dss_session_end_stat(session, &begin_tv, DSS_CMD_SYB2ACTIVE);
     return remote_result;
 }
 
@@ -242,15 +241,15 @@ static void dss_return_success(dss_session_t *session)
     }
 }
 
-static status_t dss_set_audit_resource(dss_session_t *session, uint32 audit_type, const char *format, ...)
+static status_t dss_set_audit_resource(char *resource, uint32 audit_type, const char *format, ...)
 {
-    if (!session->audit_info.is_forced && (cm_log_param_instance()->audit_level & audit_type) == 0) {
+    if ((cm_log_param_instance()->audit_level & audit_type) == 0) {
         return CM_SUCCESS;
     }
     va_list args;
     va_start(args, format);
-    int32 ret = vsnprintf_s(session->audit_info.resource, (size_t)DSS_MAX_AUDIT_PATH_LENGTH,
-        (size_t)(DSS_MAX_AUDIT_PATH_LENGTH - 1), format, args);
+    int32 ret =
+        vsnprintf_s(resource, (size_t)DSS_MAX_AUDIT_PATH_LENGTH, (size_t)(DSS_MAX_AUDIT_PATH_LENGTH - 1), format, args);
     DSS_SECUREC_SS_RETURN_IF_ERROR(ret, CM_ERROR);
     va_end(args);
     return CM_SUCCESS;
@@ -264,7 +263,7 @@ static status_t dss_process_mkdir(dss_session_t *session)
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &parent));
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &dir));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s/%s", parent, dir));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s/%s", parent, dir));
     DSS_LOG_DEBUG_OP("Begin to mkdir:%s, in path:%s", dir, parent);
     status_t status = dss_make_dir(session, (const char *)parent, (const char *)dir);
     if (status == CM_SUCCESS) {
@@ -282,7 +281,7 @@ static status_t dss_process_rmdir(dss_session_t *session)
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &dir));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &recursive));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s", dir));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", dir));
     DSS_LOG_DEBUG_OP("Begin to rmdir:%s.", dir);
     status_t status = dss_remove_dir(session, (const char *)dir, (bool32)recursive);
     if (status == CM_SUCCESS) {
@@ -303,7 +302,7 @@ static status_t dss_process_create_file(dss_session_t *session)
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &file_ptr));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &flag));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s", file_ptr));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", file_ptr));
 
     cm_str2text(file_ptr, &text);
     bool32 result = cm_fetch_rtext(&text, '/', '\0', &sub);
@@ -337,7 +336,7 @@ static status_t dss_process_delete_file(dss_session_t *session)
     dss_init_get(&session->recv_pack);
     status_t status = dss_get_str(&session->recv_pack, &name);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("delete file get file name failed."));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s", name));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", name));
     DSS_LOG_DEBUG_OP("Begin to rm file:%s", name);
     status = dss_remove_file(session, (const char *)name);
     if (status == CM_SUCCESS) {
@@ -355,7 +354,7 @@ static status_t dss_process_exist(dss_session_t *session)
     char *name = NULL;
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &name));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_QUERY, "%s", name));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", name));
     DSS_RETURN_IF_ERROR(dss_exist_item(session, (const char *)name, &result, &type));
 
     DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, (uint32)result));
@@ -370,7 +369,7 @@ static status_t dss_process_open_file(dss_session_t *session)
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &name));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &flag));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s", name));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", name));
     dss_find_node_t find_info;
     status_t status = dss_open_file(session, (const char *)name, flag, &find_info);
     if (status == CM_SUCCESS) {
@@ -390,8 +389,8 @@ static status_t dss_process_close_file(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &vg_name));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&vgid));
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&ftid));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
-        session, DSS_AUDIT_MODIFY, "vg_name:%s, fid:%llu, ftid:%llu", vg_name, fid, *(uint64 *)&ftid));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
+        "vg_name:%s, fid:%llu, ftid:%llu", vg_name, fid, *(uint64 *)&ftid));
 
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     bool32 result = (bool32)(vg_item != NULL);
@@ -411,7 +410,7 @@ static status_t dss_process_open_dir(dss_session_t *session)
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &name));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &refresh_recursive));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s", name));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", name));
     dss_find_node_t find_info;
     DSS_LOG_DEBUG_OP("Begin to open dir:%s, is_refresh:%d", name, refresh_recursive);
     status_t status = dss_open_dir(session, (const char *)name, (bool32)refresh_recursive, &find_info);
@@ -434,8 +433,8 @@ static status_t dss_process_close_dir(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&ftid));
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &vg_name));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&vgid));
-    DSS_RETURN_IF_ERROR(
-        dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "vg_name:%s, ftid:%llu", vg_name, *(uint64 *)&ftid));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+        session->audit_info.resource, DSS_AUDIT_MODIFY, "vg_name:%s, ftid:%llu", vg_name, *(uint64 *)&ftid));
     DSS_LOG_DEBUG_OP("Begin to close dir, ftid:%llu, vg:%s.", ftid, vg_name);
     dss_close_dir(session, vg_name, ftid);
     return CM_SUCCESS;
@@ -452,7 +451,7 @@ static status_t dss_process_extending_file(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, &node_data.size));
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &node_data.vg_name));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&node_data.vgid));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY,
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
         "extend vg_name:%s, fid:%llu, ftid:%llu, offset:%lld, size:%lld", node_data.vg_name, node_data.fid,
         *(uint64 *)&node_data.ftid, node_data.offset, node_data.size));
 
@@ -470,7 +469,7 @@ static status_t dss_process_fallocate_file(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, &node_data.size));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&node_data.vgid));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&node_data.mode));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY,
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
         "fallocate vg_id:%u, fid:%llu, ftid:%llu, offset:%lld, size:%lld, mode:%d", node_data.vgid, node_data.fid,
         *(uint64 *)&node_data.ftid, node_data.offset, node_data.size, node_data.mode));
 
@@ -494,7 +493,7 @@ static status_t dss_process_truncate_file(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&length));
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &vg_name));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&vgid));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY,
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
         "vg_name:%s, fid:%llu, ftid:%llu, length:%lld", vg_name, fid, *(uint64 *)&ftid, length));
     LOG_DEBUG_INF("Truncate file ft id:%llu, length:%lld", *(uint64 *)&ftid, length);
     return dss_truncate(session, fid, ftid, length, vg_name);
@@ -507,8 +506,8 @@ static status_t dss_process_add_volume(dss_session_t *session)
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &vg_name));
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &volume_name));
-    DSS_RETURN_IF_ERROR(
-        dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "vg_name:%s, volume_name:%s", vg_name, volume_name));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+        session->audit_info.resource, DSS_AUDIT_MODIFY, "vg_name:%s, volume_name:%s", vg_name, volume_name));
 
     return dss_add_volume(session, vg_name, volume_name);
 }
@@ -520,8 +519,8 @@ static status_t dss_process_remove_volume(dss_session_t *session)
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &vg_name));
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &volume_name));
-    DSS_RETURN_IF_ERROR(
-        dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "vg_name:%s, volume_name:%s", vg_name, volume_name));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+        session->audit_info.resource, DSS_AUDIT_MODIFY, "vg_name:%s, volume_name:%s", vg_name, volume_name));
 
     return dss_remove_volume(session, vg_name, volume_name);
 }
@@ -540,7 +539,7 @@ static status_t dss_process_refresh_file(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &name_str));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&vgid));
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&offset));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY,
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
         "vg_name:%s, offset:%lld, fid:%llu, ftid:%llu", name_str, offset, fid, *(uint64 *)&ftid));
 
     return dss_refresh_file(session, fid, ftid, name_str, offset);
@@ -564,20 +563,16 @@ static status_t dss_process_handshake(dss_session_t *session)
         session->id, session->cli_info.cli_pid, session->cli_info.process_name, session->cli_info.start_time,
         session->objectid);
     char *server_home = dss_get_cfg_dir(ZFS_CFG);
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_QUERY, "%s", server_home));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", server_home));
     LOG_RUN_INF("[DSS_CONNECT]Server home is %s, when get home.", server_home);
     uint32 server_pid = getpid();
     text_t data;
     cm_str2text(server_home, &data);
     data.len++;  // for keeping the '\0'
-    bool32 isvtable = g_dss_instance.inst_cfg.params.disk_type == DISK_VTABLE ? DSS_TRUE : DSS_FALSE;
     DSS_RETURN_IF_ERROR(dss_put_text(&session->send_pack, &data));
     DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, session->objectid));
     if (session->proto_version >= DSS_VERSION_2) {
         DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, server_pid));
-    }
-    if (session->proto_version >= DSS_VERSION_4) {
-        DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, isvtable));
     }
     return CM_SUCCESS;
 }
@@ -586,27 +581,19 @@ static status_t dss_process_refresh_volume(dss_session_t *session)
 {
     uint32 volumeid;
     uint32 vgid;
-    bool32 is_force = CM_FALSE;
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&volumeid));
-    
-#ifdef OPENGAUSS
-    if (volumeid == CM_INVALID_ID32) {
-        is_force = true;
-    }
-#endif
-
-    if (volumeid >= DSS_MAX_VOLUMES && !is_force) {
+    if (volumeid >= DSS_MAX_VOLUMES) {
         LOG_DEBUG_ERR("Volume id:%u overflow.", volumeid);
         return CM_ERROR;
     }
     char *name_str = NULL;
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &name_str));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&vgid));
-    DSS_RETURN_IF_ERROR(
-        dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "vg_name:%s, volume_id:%u", name_str, volumeid));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+        session->audit_info.resource, DSS_AUDIT_MODIFY, "vg_name:%s, volume_id:%u", name_str, volumeid));
 
-    return dss_refresh_volume(session, name_str, vgid, volumeid, is_force);
+    return dss_refresh_volume(session, name_str, vgid, volumeid);
 }
 
 static status_t dss_process_rename(dss_session_t *session)
@@ -616,7 +603,7 @@ static status_t dss_process_rename(dss_session_t *session)
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &src));
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &dst));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s, %s", src, dst));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s, %s", src, dst));
     return dss_rename_file(session, src, dst);
 }
 
@@ -628,7 +615,7 @@ static status_t dss_process_loadctrl(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &vg_name));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&index));
     DSS_RETURN_IF_ERROR(
-        dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "vg_name:%s, index:%u", vg_name, index));
+        dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "vg_name:%s, index:%u", vg_name, index));
 
     return dss_load_ctrl(session, vg_name, index);
 }
@@ -643,8 +630,8 @@ static status_t dss_process_refresh_file_table(dss_session_t *session)
     char *name_str = NULL;
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &name_str));
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&vgid));
-    DSS_RETURN_IF_ERROR(
-        dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "vg_name:%s, blockid:%llu", name_str, *(uint64 *)&blockid));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+        session->audit_info.resource, DSS_AUDIT_MODIFY, "vg_name:%s, blockid:%llu", name_str, *(uint64 *)&blockid));
 
     return dss_refresh_ft_block(session, name_str, vgid, blockid);
 }
@@ -659,7 +646,7 @@ static status_t dss_process_symlink(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &dst_path));
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &new_path));
     DSS_RETURN_IF_ERROR(
-        dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s, %s", dst_path, new_path));
+        dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s, %s", dst_path, new_path));
 
     cm_str2text(new_path, &text);
     bool32 result = cm_fetch_rtext(&text, '/', '\0', &sub);
@@ -691,7 +678,7 @@ static status_t dss_process_readlink(dss_session_t *session)
 
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &link_path));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_QUERY, "%s", link_path));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", link_path));
     DSS_RETURN_IF_ERROR(dss_read_link(session, link_path, name, &res_len));
     DSS_LOG_DEBUG_OP("Link is %s, when read link.", name);
     text_t data;
@@ -705,7 +692,7 @@ static status_t dss_process_unlink(dss_session_t *session)
     char *link = NULL;
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &link));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s", link));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", link));
 
     return dss_remove_link(session, (const char *)link);
 }
@@ -724,7 +711,7 @@ status_t dss_process_update_file_written_size(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&vg_id));
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&offset));
     DSS_RETURN_IF_ERROR(dss_get_int64(&session->recv_pack, (int64 *)&size));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY,
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
         "vg_id:%u, fid:%llu, ftid:%llu, offset:%lld, size:%lld", vg_id, fid, *(uint64 *)&ftid, offset, size));
     return dss_update_file_written_size(session, vg_id, offset, size, ftid, fid);
 }
@@ -736,7 +723,7 @@ static status_t dss_process_get_ftid_by_path(dss_session_t *session)
     dss_vg_info_item_t *vg_item = NULL;
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &path));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_QUERY, "%s", path));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", path));
     DSS_RETURN_IF_ERROR(dss_get_ftid_by_path(session, path, &ftid, &vg_item));
 
     dss_find_node_t find_node;
@@ -801,19 +788,14 @@ static status_t dss_process_get_inst_status(dss_session_t *session)
     MEMS_RETURN_IFERR(errcode);
 
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(
-        session, DSS_AUDIT_MODIFY, "status:%s", dss_status->instance_status));
+        session->audit_info.resource, DSS_AUDIT_MODIFY, "status:%s", dss_status->instance_status));
     DSS_LOG_DEBUG_OP("Server status is %s.", dss_status->instance_status);
     return CM_SUCCESS;
 }
 static status_t dss_process_get_time_stat(dss_session_t *session)
 {
-    dss_stat_item_t stat_tmp[DSS_EVT_COUNT] = {0};
     uint64 size = sizeof(dss_stat_item_t) * DSS_EVT_COUNT;
-    dss_stat_item_t *stat_last = NULL;
     dss_stat_item_t *time_stat = NULL;
-    int isWsr;
-    dss_init_get(&session->recv_pack);
-    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &isWsr));
     DSS_RETURN_IF_ERROR(dss_reserv_text_buf(&session->send_pack, (uint32)size, (char **)&time_stat));
 
     errno_t errcode = memset_s(time_stat, (size_t)size, 0, (size_t)size);
@@ -823,57 +805,20 @@ static status_t dss_process_get_time_stat(dss_session_t *session)
     cm_spin_lock(&session_ctrl->lock, NULL);
     for (uint32 i = 0; i < session_ctrl->alloc_sessions; i++) {
         tmp_session = session_ctrl->sessions[i];
-        if (tmp_session->is_used) {
+        if (tmp_session->is_used && !tmp_session->is_closed) {
             for (uint32 j = 0; j < DSS_EVT_COUNT; j++) {
                 int64 count = (int64)tmp_session->dss_session_stat[j].wait_count;
                 int64 total_time = (int64)tmp_session->dss_session_stat[j].total_wait_time;
-                stat_tmp[j].wait_count += count;
-                stat_tmp[j].total_wait_time += total_time;
+                int64 max_sgl_time = (int64)tmp_session->dss_session_stat[j].max_single_time;
 
-                if (isWsr == 0) {
-                    int64 max_sgl_time = (int64)tmp_session->dss_session_stat[j].max_single_time;
-                    if (max_sgl_time > stat_tmp[j].max_single_time) {
-                        stat_tmp[j].max_single_time = max_sgl_time;
-                        stat_tmp[j].max_date = tmp_session->dss_session_stat[j].max_date;
-                    }
-                    (void)cm_atomic_cas(&tmp_session->dss_session_stat[j].max_single_time, max_sgl_time, 0);
-                    tmp_session->dss_session_stat[j].max_date = 0;
-                }
+                time_stat[j].wait_count += count;
+                time_stat[j].total_wait_time += total_time;
+                time_stat[j].max_single_time = (atomic_t)MAX((int64)time_stat[j].max_single_time, max_sgl_time);
+
+                (void)cm_atomic_add(&tmp_session->dss_session_stat[j].wait_count, -count);
+                (void)cm_atomic_add(&tmp_session->dss_session_stat[j].total_wait_time, -total_time);
+                (void)cm_atomic_cas(&tmp_session->dss_session_stat[j].max_single_time, max_sgl_time, 0);
             }
-        }
-    }
-
-    for (uint32 j = 0; j < DSS_EVT_COUNT; j++) {
-        int64 count = (int64)session_ctrl->stat_g[j].wait_count;
-        int64 total_time = (int64)session_ctrl->stat_g[j].total_wait_time;
-        stat_tmp[j].wait_count += count;
-        stat_tmp[j].total_wait_time += total_time;
-        if (isWsr == 0) {
-            int64 max_sgl_time = (int64)session_ctrl->stat_g[j].max_single_time;
-            if (max_sgl_time > stat_tmp[j].max_single_time) {
-                stat_tmp[j].max_single_time = max_sgl_time;
-                stat_tmp[j].max_date = session_ctrl->stat_g[j].max_date;
-            }
-            (void)cm_atomic_cas(&session_ctrl->stat_g[j].max_single_time, max_sgl_time, 0);
-            session_ctrl->stat_g[j].max_date = 0;
-        }
-    }
-    if (isWsr == 1) {
-        for (uint32 j = 0; j < DSS_EVT_COUNT; j++) {
-            time_stat[j] = stat_tmp[j];
-        }
-    } else {
-        stat_last = session_ctrl->stat_last_cmd;
-        for (uint32 j = 0; j < DSS_EVT_COUNT; j++) {
-            time_stat[j].wait_count = stat_tmp[j].wait_count - stat_last[j].wait_count;
-            time_stat[j].total_wait_time = stat_tmp[j].total_wait_time - stat_last[j].total_wait_time;
-            time_stat[j].max_single_time = stat_tmp[j].max_single_time;
-            time_stat[j].max_date= stat_tmp[j].max_date;
-
-            stat_last[j].wait_count = stat_tmp[j].wait_count;
-            stat_last[j].total_wait_time = stat_tmp[j].total_wait_time;
-            stat_last[j].max_single_time = stat_tmp[j].max_single_time;
-            stat_last[j].max_date = stat_tmp[j].max_date;
         }
     }
     cm_spin_unlock(&session_ctrl->lock);
@@ -890,31 +835,31 @@ static status_t dss_process_hotpatch_inner(dss_session_t *session)
     switch ((dss_hp_operation_cmd_e)operation) {
         case DSS_HP_OP_LOAD:
             DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &patch_path));
-            DSS_RETURN_IF_ERROR(
-                dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s %s", DSS_HP_OPERATION_LOAD, patch_path));
+            DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+                session->audit_info.resource, DSS_AUDIT_MODIFY, "%s %s", DSS_HP_OPERATION_LOAD, patch_path));
             DSS_RETURN_IF_ERROR(dss_hp_load(patch_path));
             break;
         case DSS_HP_OP_ACTIVE:
             DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &patch_path));
-            DSS_RETURN_IF_ERROR(
-                dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s %s", DSS_HP_OPERATION_ACTIVE, patch_path));
+            DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+                session->audit_info.resource, DSS_AUDIT_MODIFY, "%s %s", DSS_HP_OPERATION_ACTIVE, patch_path));
             DSS_RETURN_IF_ERROR(dss_hp_active(patch_path));
             break;
         case DSS_HP_OP_DEACTIVE:
             DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &patch_path));
-            DSS_RETURN_IF_ERROR(
-                dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s %s", DSS_HP_OPERATION_DEACTIVE, patch_path));
+            DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+                session->audit_info.resource, DSS_AUDIT_MODIFY, "%s %s", DSS_HP_OPERATION_DEACTIVE, patch_path));
             DSS_RETURN_IF_ERROR(dss_hp_deactive(patch_path));
             break;
         case DSS_HP_OP_UNLOAD:
             DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &patch_path));
-            DSS_RETURN_IF_ERROR(
-                dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s %s", DSS_HP_OPERATION_UNLOAD, patch_path));
+            DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+                session->audit_info.resource, DSS_AUDIT_MODIFY, "%s %s", DSS_HP_OPERATION_UNLOAD, patch_path));
             DSS_RETURN_IF_ERROR(dss_hp_unload(patch_path));
             break;
         case DSS_HP_OP_REFRESH:
             DSS_RETURN_IF_ERROR(
-                dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s", DSS_HP_OPERATION_REFRESH));
+                dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", DSS_HP_OPERATION_REFRESH));
             DSS_RETURN_IF_ERROR(dss_hp_refresh_patch_info());
             break;
         case DSS_HP_OP_INVALID:
@@ -922,38 +867,17 @@ static status_t dss_process_hotpatch_inner(dss_session_t *session)
             DSS_THROW_ERROR(ERR_INVALID_PARAM, "hotpatch operation");
             LOG_RUN_ERR("[HotPatch] Unsupported hotpatch operation: %u", operation);
             DSS_RETURN_IF_ERROR(
-                dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "invalid op:%d", operation));
+                dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "invalid op:%d", operation));
             return CM_ERROR;
     }
-    return CM_SUCCESS;
-}
-
-static status_t dss_process_kill_session(dss_session_t *session)
-{
-    uint32 sid_to_kill;
-    dss_init_get(&session->recv_pack);
-    DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&sid_to_kill));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "kill session %u", sid_to_kill));
-    if (sid_to_kill == session->id) {
-        DSS_THROW_ERROR(ERR_DSS_SESSION_KILLED, (int32)sid_to_kill);
-        LOG_RUN_ERR("[DSS Kill Session] Session cannot kill itself.");
-        return CM_ERROR;
-    }
-    dss_session_t *session_to_kill = dss_get_session(sid_to_kill);
-    if (session_to_kill == NULL || sid_to_kill < dss_get_udssession_startid() || !session_to_kill->is_used ||
-        !session_to_kill->connected) {
-        LOG_RUN_ERR("[DSS Kill Session] Trying to break a invalid session by sid[%u].", sid_to_kill);
-        DSS_THROW_ERROR(ERR_DSS_SESSION_KILLED, (int32)sid_to_kill);
-        return CM_ERROR;
-    }
-    session_to_kill->is_killed = CM_TRUE;
     return CM_SUCCESS;
 }
 
 static status_t dss_process_hotpatch(dss_session_t *session)
 {
     if (dss_hp_check_is_inited() != CM_SUCCESS) {
-        DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "hotpatch not supported"));
+        DSS_RETURN_IF_ERROR(
+            dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "hotpatch not supported"));
         return CM_ERROR;
     }
     dss_hp_latch_x(session->id);
@@ -1024,13 +948,14 @@ static status_t dss_process_query_hotpatch(dss_session_t *session)
 {
     if (dss_hp_check_is_inited() != CM_SUCCESS) {
         DSS_RETURN_IF_ERROR(
-            dss_set_audit_resource(session, DSS_AUDIT_QUERY, "hotpatch not supported"));
+            dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "hotpatch not supported"));
         return CM_ERROR;
     }
     dss_init_get(&session->recv_pack);
     int start_patch_number;
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, &start_patch_number));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_QUERY, "start_patch_number: %u", start_patch_number));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+        session->audit_info.resource, DSS_AUDIT_QUERY, "start_patch_number: %u", start_patch_number));
     if (start_patch_number == 1) {
         dss_hp_latch_s(session->id);  // Latch only at the first interaction.
         session->is_holding_hotpatch_latch = CM_TRUE;
@@ -1063,7 +988,7 @@ void dss_wait_session_pause(dss_instance_t *inst)
 void dss_wait_background_pause(dss_instance_t *inst)
 {
     LOG_DEBUG_INF("Begin to set background paused.");
-    while (inst->is_cleaning || inst->is_checking || inst->is_handle_main_wait) {
+    while (inst->is_cleaning || inst->is_checking) {
         cm_sleep(1);
     }
     LOG_DEBUG_INF("Succeed to pause background task.");
@@ -1094,9 +1019,7 @@ static status_t dss_process_setcfg(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &name));
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &value));
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &scope));
-    // audit log is forced only for "setcfg -n _AUDIT_LEVEL"
-    session->audit_info.is_forced = cm_strcmpi(name, "_AUDIT_LEVEL") == 0;
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%s=%s, scope=%s", name, value, scope));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%s", name));
 
     return dss_set_cfg_param(name, value, scope);
 }
@@ -1107,7 +1030,7 @@ static status_t dss_process_getcfg(dss_session_t *session)
     char *value = NULL;
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_str(&session->recv_pack, &name));
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_QUERY, "%s", name));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_QUERY, "%s", name));
 
     DSS_RETURN_IF_ERROR(dss_get_cfg_param(name, &value));
     if (strlen(value) != 0 && cm_str_equal_ins(name, "SSL_PWD_CIPHERTEXT")) {
@@ -1127,7 +1050,7 @@ static status_t dss_process_getcfg(dss_session_t *session)
 static status_t dss_process_stop_server(dss_session_t *session)
 {
     dss_init_get(&session->recv_pack);
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%u", session->id));
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "%u", session->id));
     g_dss_instance.abort_status = CM_TRUE;
 
     return CM_SUCCESS;
@@ -1233,7 +1156,8 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
     dss_config_t *cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)(cfg->params.inst_id);
     uint32 master_id;
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "set %u as master", curr_id));
+    DSS_RETURN_IF_ERROR(
+        dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "set %u as master", curr_id));
     while (CM_TRUE) {
         master_id = dss_get_master_id();
         if (master_id == curr_id) {
@@ -1248,7 +1172,7 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
             return CM_ERROR;
         }
         if (!cm_latch_timed_x(
-                &g_dss_instance.switch_latch, session->id, DSS_PROCESS_REMOTE_INTERVAL, LATCH_STAT(LATCH_SWITCH))) {
+            &g_dss_instance.switch_latch, session->id, DSS_PROCESS_REMOTE_INTERVAL, LATCH_STAT(LATCH_SWITCH))) {
             LOG_RUN_INF("[SWITCH] Spin switch lock timed out, just continue.");
             continue;
         }
@@ -1330,9 +1254,9 @@ static status_t dss_process_disable_grab_lock(dss_session_t *session)
     uint32 curr_id = (uint32)(cfg->params.inst_id);
     uint32 master_id;
     status_t ret;
-    DSS_RETURN_IF_ERROR(
-        dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "%u if it is master to disable grab lock", curr_id));
-    if (g_dss_instance.is_maintain) {
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(
+        session->audit_info.resource, DSS_AUDIT_MODIFY, "%u if it is master to disable grab lock", curr_id));
+    if (g_dss_instance.is_maintain || g_dss_instance.inst_cfg.params.nodes_list.inst_cnt <= 1) {
         LOG_RUN_ERR("[RELEASE LOCK]No need to disable grab lock when dssserver is maintain or just one inst.");
         return CM_ERROR;
     }
@@ -1373,7 +1297,7 @@ static status_t dss_process_enable_grab_lock(dss_session_t *session)
     dss_config_t *cfg = dss_get_inst_cfg();
     uint32 curr_id = (uint32)(cfg->params.inst_id);
     DSS_RETURN_IF_ERROR(
-        dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "set %u enable grab lock", curr_id));
+        dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "set %u enable grab lock", curr_id));
     g_dss_instance.no_grab_lock = CM_FALSE;
     LOG_RUN_INF("Curr_id %u enable grab lock successfully.", curr_id);
     return CM_SUCCESS;
@@ -1381,9 +1305,12 @@ static status_t dss_process_enable_grab_lock(dss_session_t *session)
 
 static status_t dss_process_enable_upgrades(dss_session_t *session)
 {
+    dss_config_t *cfg = dss_get_inst_cfg();
+    uint32 curr_id = (uint32)(cfg->params.inst_id);
     dss_get_version_output_t get_version_output = {.all_same = DSS_TRUE, .min_version = DSS_PROTO_VERSION};
-    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session, DSS_AUDIT_MODIFY, "enable upgrades"));
-    int ret = dss_bcast_get_protocol_version(session, &get_version_output);
+    DSS_RETURN_IF_ERROR(dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY,
+        "enable upgrades", curr_id));
+    int ret = dss_bcast_get_protocol_version(&get_version_output);
     if (ret != CM_SUCCESS) {
         // If any node return ERR_DSS_UNSUPPORTED_CMD, we assume old node exists.
         if (ret == ERR_DSS_UNSUPPORTED_CMD || ret == ERR_MES_WAIT_OVERTIME) {
@@ -1445,7 +1372,6 @@ static dss_cmd_hdl_t g_dss_cmd_handle[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_HOTPATCH)] = {DSS_CMD_HOTPATCH, dss_process_hotpatch, NULL, CM_FALSE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_ENABLE_UPGRADES)] = {DSS_CMD_ENABLE_UPGRADES, dss_process_enable_upgrades, NULL,
         CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_KILL_SESSION)] = {DSS_CMD_KILL_SESSION, dss_process_kill_session, NULL, CM_FALSE},
     // query
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_HANDSHAKE)] = {DSS_CMD_HANDSHAKE, dss_process_handshake, NULL, CM_FALSE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST)] = {DSS_CMD_EXIST, dss_process_exist, NULL, CM_FALSE},
@@ -1511,7 +1437,6 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
             if (g_dss_instance.status != DSS_STATUS_OPEN && g_dss_instance.status != DSS_STATUS_PREPARE) {
                 LOG_RUN_INF("Req forbided by recovery for cmd:%u", (uint32)session->recv_pack.head->cmd);
                 dss_dec_active_sessions(session);
-                CM_RETURN_IFERR(dss_session_check_killed(session));
                 cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
                 continue;
             }
@@ -1523,7 +1448,6 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
         if (status != CM_SUCCESS &&
             (cm_get_error_code() == ERR_DSS_RECOVER_CAUSE_BREAK || cm_get_error_code() == ERR_DSS_MASTER_CHANGE)) {
             LOG_RUN_INF("Req breaked by error %d for cmd:%u", cm_get_error_code(), session->recv_pack.head->cmd);
-            CM_RETURN_IFERR(dss_session_check_killed(session));
             cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
             continue;
         }
@@ -1538,15 +1462,13 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
     return status;
 }
 
-status_t dss_process_cmd_wait_be_open(dss_session_t *session)
+void dss_process_cmd_wait_be_open(dss_session_t *session)
 {
     while (g_dss_instance.status != DSS_STATUS_OPEN) {
-        CM_RETURN_IFERR(dss_session_check_killed(session));
         DSS_GET_CM_LOCK_LONG_SLEEP;
         LOG_RUN_INF("The status %d of instance %lld is not open, just wait.\n", (int32)g_dss_instance.status,
             dss_get_inst_cfg()->params.inst_id);
     }
-    return CM_SUCCESS;
 }
 
 status_t dss_process_command(dss_session_t *session)
@@ -1568,34 +1490,23 @@ status_t dss_process_command(dss_session_t *session)
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to read message sent by %s.", session->cli_info.process_name);
         session->is_closed = CM_TRUE;
-        return status;
+        return CM_ERROR;
     }
-
-    status = dss_session_check_killed(session);
-    if (status != CM_SUCCESS) {
-        dss_return_error(session);
-        return status;
-    }
-
     status = dss_check_proto_version(session);
     if (status != CM_SUCCESS) {
         dss_return_error(session);
-        return status;
+        return CM_ERROR;
     }
 
     if (!dss_can_cmd_type_no_open(session->recv_pack.head->cmd)) {
-        status = dss_process_cmd_wait_be_open(session);
-        if (status != CM_SUCCESS) {
-            dss_return_error(session);
-            return status;
-        }
+        dss_process_cmd_wait_be_open(session);
     }
 
     status = dss_exec_cmd(session, CM_TRUE);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to execute command:%d.", session->recv_pack.head->cmd);
         dss_return_error(session);
-        return status;
+        return CM_ERROR;
     } else {
         dss_return_success(session);
     }

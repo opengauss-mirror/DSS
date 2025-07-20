@@ -28,7 +28,6 @@
 #include "mes_interface.h"
 #include "dss_file_def.h"
 #include "dss_session.h"
-#include "dss_bcast_def.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -179,14 +178,8 @@ typedef struct st_dss_req_check_open_file {
 typedef struct st_dss_req_meta_data {
     dss_bcast_req_head_t bcast_head;
     uint32 data_size;
-    dss_meta_syn_t data;
+    char data[DSS_MAX_META_BLOCK_SIZE];
 } dss_req_meta_data_t;
-
-typedef struct st_dss_req_invalid_meta {
-    dss_bcast_req_head_t bcast_head;
-    uint32 data_size;  // just for compatibility,fixed value:sizeof(dss_invalidate_meta_msg_t)
-    dss_invalidate_meta_msg_t data;
-} dss_req_invalid_meta_t;
 
 typedef struct st_dss_ack_common {
     dss_bcast_ack_head_t bcast_head;
@@ -254,8 +247,6 @@ typedef struct st_get_ft_block_req {
     dss_message_head_t dss_head;
     char path[DSS_FILE_PATH_MAX_LENGTH];
     gft_item_type_t type;
-    // add flag after DSS_VERSION_2
-    int32 flag;
 } dss_get_ft_block_req_t;
 
 typedef struct st_get_ft_block_ack {
@@ -278,13 +269,15 @@ typedef struct st_dss_bcast_context {
 uint32 dss_get_broadcast_proto_ver(uint64 succ_inst);
 
 status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result);
+status_t dss_notify_expect_bool_ack(dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, uint64 ftid, bool32 *cmd_ack);
+status_t dss_notify_data_expect_bool_ack(
+    dss_vg_info_item_t *vg_item, dss_bcast_req_cmd_t cmd, char *data, uint32 size, bool32 *cmd_ack);
+
 status_t dss_invalidate_other_nodes(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, dss_invalidate_meta_msg_t *meta_info, bool32 *cmd_ack);
-status_t dss_broadcast_check_file_open(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
-status_t dss_syn_data2other_nodes(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack);
-status_t dss_bcast_get_protocol_version(dss_session_t *session, dss_get_version_output_t *get_version_output);
+    dss_vg_info_item_t *vg_item, char *meta_info, uint32 meta_info_size, bool32 *cmd_ack);
+status_t dss_broadcast_check_file_open(dss_vg_info_item_t *vg_item, uint64 ftid, bool32 *cmd_ack);
+status_t dss_syn_data2other_nodes(dss_vg_info_item_t *vg_item, char *meta_syn, uint32 meta_syn_size, bool32 *cmd_ack);
+status_t dss_bcast_get_protocol_version(dss_get_version_output_t *get_version_output);
 
 void dss_check_mes_conn(uint64 cur_inst_map);
 void dss_mes_regist_other_proc();
@@ -301,10 +294,10 @@ void dss_proc_get_ft_block_req(dss_session_t *session, mes_msg_t *msg);
 status_t dss_read_volume_remote(const char *vg_name, dss_volume_t *volume, int64 offset, void *buf, int32 size);
 status_t dss_send2standby(big_packets_ctrl_t *ack, const char *buf);
 int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, uint32 version);
-status_t dss_join_cluster(dss_session_t *session, bool32 *join_succ);
-status_t dss_refresh_ft_by_primary(dss_session_t *session, dss_block_id_t blockid, uint32 vgid, char *vg_name);
+status_t dss_join_cluster(bool32 *join_succ);
+status_t dss_refresh_ft_by_primary(dss_block_id_t blockid, uint32 vgid, char *vg_name);
 status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_path, gft_item_type_t type,
-    dss_check_dir_output_t *output_info, int32 flag, bool32 is_throw_err);
+    dss_check_dir_output_t *output_info, bool32 is_throw_err);
 
 #ifdef __cplusplus
 }

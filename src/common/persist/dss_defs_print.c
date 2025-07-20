@@ -106,7 +106,7 @@ void printf_dss_au_root(dss_au_root_t *au_root)
     (void)printf("    }\n");
 }
 
-void dss_printf_core_ctrl_base(dss_core_ctrl_t *core_ctrl, uint32 redo_data_size)
+void dss_printf_core_ctrl_base(dss_core_ctrl_t *core_ctrl)
 {
     (void)printf("core_ctrl = {\n");
     (void)printf("  checksum = %u\n", core_ctrl->checksum);
@@ -125,16 +125,15 @@ void dss_printf_core_ctrl_base(dss_core_ctrl_t *core_ctrl, uint32 redo_data_size
     printf_dss_au_root(au_root);
     (void)printf("  }\n");
 
-    if (redo_data_size >= sizeof(dss_core_ctrl_t)) {
-        dss_volume_attr_t *volume_attrs = core_ctrl->volume_attrs;
-        for (uint32 i = 0; i < DSS_MAX_VOLUMES; ++i) {
-            if (i == 0 || volume_attrs->id != 0) {
-                (void)printf("  volume_attrs[%u] = {\n", i);
-                printf_dss_volume_attr(volume_attrs);
-                (void)printf("  }\n");
-            }
-            volume_attrs++;
+    dss_volume_attr_t *volume_attrs = core_ctrl->volume_attrs;
+    for (uint32 i = 0; i < DSS_MAX_VOLUMES; ++i) {
+        if (i == 0 || volume_attrs->id != 0) {
+            (void)printf("  volume_attrs[%u] = {\n", i);
+            printf_dss_volume_attr(volume_attrs);
+            (void)printf("  }\n");
         }
+        volume_attrs++;
+        continue;
     }
 
     (void)printf("}\n");

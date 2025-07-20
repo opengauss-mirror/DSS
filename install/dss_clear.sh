@@ -258,12 +258,8 @@ function unregister()
     fi
 
     log "[UNREG] Start unreg."
-    dsscmd unreghl -t 0 -D ${DSS_HOME} >> /dev/null 2>&1
-    if [ $? -eq 0 ]; then
-        log "[UNREG] Unreg success." 
-    else
-        log "[UNREG] Unreg fail."
-    fi
+        dsscmd unreghl -t 0 -D ${DSS_HOME} >> /dev/null 2>&1  
+    log "[UNREG] Unreg success."
 }
 
 function cleanshmkey()

@@ -151,9 +151,9 @@ static config_item_t g_dss_params[] = {
         CFG_INS, NULL, NULL, NULL, NULL},
     {"MES_WAIT_TIMEOUT", CM_TRUE, ATTR_NONE, "10000", NULL, NULL, "-", "[500,30000]", "GS_TYPE_INTEGER", NULL, 43,
         EFFECT_IMMEDIATELY, CFG_INS, dss_verify_mes_wait_timeout, dss_notify_mes_wait_timeout, NULL, NULL},
-    {"_ENABLE_CORE_STATE_COLLECT", CM_TRUE, ATTR_NONE, "TRUE", NULL, NULL, "-", "[FALSE,TRUE]", "GS_TYPE_BOOLEAN", NULL,
-        44, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_enable_core_state_collect, dss_notify_enable_core_state_collect,
-        NULL, NULL},
+    {"_ENABLE_CORE_STATE_COLLECT", CM_TRUE, ATTR_NONE, "TRUE", NULL, NULL, "-", "[FALSE,TRUE]", "GS_TYPE_BOOLEAN",
+        NULL, 44, EFFECT_IMMEDIATELY, CFG_INS, dss_verify_enable_core_state_collect,
+        dss_notify_enable_core_state_collect, NULL, NULL},
     {"DELAY_CLEAN_INTERVAL", CM_TRUE, ATTR_NONE, "5", NULL, NULL, "-", "[5,1000000]", "GS_TYPE_INTEGER", NULL, 45,
         EFFECT_IMMEDIATELY, CFG_INS, dss_verify_delay_clean_interval, dss_notify_delay_clean_interval, NULL, NULL},
 #if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
@@ -198,12 +198,6 @@ static config_item_t g_dss_params[] = {
     {"DELAY_CLEAN_SEARCH_FRAGMENT", CM_TRUE, ATTR_NONE, "128", NULL, NULL, "-", "[0,1024]", "GS_TYPE_INTEGER", NULL, 62,
         EFFECT_IMMEDIATELY, CFG_INS, dss_verify_delay_clean_search_fragment, dss_notify_delay_clean_search_fragment,
         NULL, NULL},
-    {"LINUX_MULTIBUS", CM_TRUE, ATTR_READONLY, "FALSE", NULL, NULL, "-", "[FALSE,TRUE]", "GS_TYPE_BOOLEAN", NULL, 63,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    {"MPATHPERSIST_DSS_PATH", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 64,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "DISK_TYPE", CM_TRUE, CM_FALSE, "NORMAL", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 47, 
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 static const char *g_dss_config_file = (const char *)"dss_inst.ini";
@@ -590,22 +584,6 @@ static status_t dss_load_xlog_vg_id(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
-static status_t dss_load_disk_type(dss_config_t *inst_cfg)
-{
-    char *value = cm_get_config_value(&inst_cfg->config, "DISK_TYPE");
-    
-    if (strcmp(value, "NORMAL") == 0) {
-        inst_cfg->params.disk_type = DISK_NORMAL;
-        LOG_RUN_INF("The disk_type is normal.");
-    } else if (strcmp(value, "VTABLE") == 0) {
-        inst_cfg->params.disk_type = DISK_VTABLE;
-        LOG_RUN_INF("The disk_type is vtable.");
-    } else {
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid DISK_TYPE"));
-    }
-    return CM_SUCCESS;
-}
-
 status_t dss_set_cfg_dir(const char *home, dss_config_t *inst_cfg)
 {
     char home_realpath[DSS_MAX_PATH_BUFFER_SIZE];
@@ -812,7 +790,7 @@ static status_t dss_load_fi_all_params_entry(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
-status_t dss_load_fi_params(dss_config_t *inst_cfg)
+static status_t dss_load_fi_params(dss_config_t *inst_cfg)
 {
     status_t status = dss_load_fi_all_params_value(inst_cfg);
     DSS_RETURN_IF_ERROR(status);
@@ -874,36 +852,6 @@ static status_t dss_load_space_usage(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
-static status_t dss_load_linux_multibus(dss_config_t *inst_cfg)
-{
-    char *value = cm_get_config_value(&inst_cfg->config, "LINUX_MULTIBUS");
-    if (cm_str_equal_ins(value, "TRUE")) {
-        inst_cfg->params.linux_multibus = CM_TRUE;
-    } else if (cm_str_equal_ins(value, "FALSE")) {
-        inst_cfg->params.linux_multibus = CM_FALSE;
-    } else {
-        DSS_PRINT_RUN_ERROR("failed to load params, invalid param LINUX_MULTIBUS.\n");
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "LINUX_MULTIBUS"));
-    }
-    LOG_DEBUG_INF("LINUX_MULTIBUS status: %u. (0: off, 1: on)", inst_cfg->params.linux_multibus);
-    return CM_SUCCESS;
-}
-
-static status_t dss_load_mpathpersist_dss_path(dss_config_t *inst_cfg)
-{
-    int32 ret;
-    char *value = cm_get_config_value(&inst_cfg->config, "MPATHPERSIST_DSS_PATH");
-    ret = snprintf_s(inst_cfg->params.mpathpersist_dss_path, sizeof(inst_cfg->params.mpathpersist_dss_path),
-        sizeof(inst_cfg->params.mpathpersist_dss_path) - 1, "%s", value);
-    if (ret == -1 || (inst_cfg->params.linux_multibus && ret == 0)) {
-        DSS_PRINT_RUN_ERROR("failed to load params, invalid MPATHPERSIST_DSS_PATH.\n");
-        DSS_RETURN_IFERR2(
-            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid MPATHPERSIST_DSS_PATH"));
-    }
-    LOG_DEBUG_INF("MPATHPERSIST_DSS_PATH : %s.", inst_cfg->params.mpathpersist_dss_path);
-    return CM_SUCCESS;
-}
-
 status_t dss_load_config(dss_config_t *inst_cfg)
 {
     char file_name[DSS_FILE_NAME_BUFFER_SIZE];
@@ -954,9 +902,7 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     }
 #endif
     CM_RETURN_IFERR(dss_load_space_usage(inst_cfg));
-    CM_RETURN_IFERR(dss_load_linux_multibus(inst_cfg));
-    CM_RETURN_IFERR(dss_load_mpathpersist_dss_path(inst_cfg));
-    CM_RETURN_IFERR(dss_load_disk_type(inst_cfg));
+
     return CM_SUCCESS;
 }
 

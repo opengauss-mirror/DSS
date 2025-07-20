@@ -162,7 +162,7 @@ status_t dss_catch_input_text(char *plain, uint32 plain_size)
                          "A. at least one lowercase letter\n"
                          "B. at least one uppercase letter\n"
                          "C. at least one digit\n"
-                         "D. at least one special character: `~!@#$%%^&*()-_=+\\|[{}];:\'\",<.>/? and space\n",
+                         "D. at least one special character: `~!@#$%%^&*()-_=+\\|[{}]:\'\",<.>/? and space\n",
                 CM_PASSWD_MIN_LEN);
             break;
         }

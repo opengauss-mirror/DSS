@@ -32,18 +32,15 @@
 #include "cm_utils.h"
 #include "dss_io_fence.h"
 #include "dss_open_file.h"
+#include "dss_diskgroup.h"
+
 #ifndef WIN32
 #include <sys/file.h>
 #endif
-#include <sys/stat.h>
-#include "dss_diskgroup.h"
 #include "dss_meta_buf.h"
 #include "dss_fs_aux.h"
 #include "dss_syn_meta.h"
 #include "dss_thv.h"
-#include "dss_fault_injection.h"
-
-#include "cm_memory.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -110,7 +107,6 @@ void dss_set_master_id(uint32 id)
 void dss_set_server_flag(void)
 {
     g_is_dss_server = DSS_TRUE;
-    CM_MFENCE;
 }
 
 int32 dss_get_server_status_flag(void)
@@ -173,6 +169,7 @@ status_t dss_read_vg_config_file(const char *file_name, char *buf, uint32 *buf_l
     return status;
 }
 
+status_t dss_parse_vg_config(dss_vg_info_t *config, char *buf, uint32 buf_len);
 status_t dss_load_vg_conf_inner(dss_vg_info_t *vgs_info, const dss_config_t *inst_cfg)
 {
     char vg_config_path[DSS_FILE_PATH_MAX_LENGTH];
@@ -189,60 +186,34 @@ status_t dss_load_vg_conf_inner(dss_vg_info_t *vgs_info, const dss_config_t *ins
         return status;
     }
 
-    status = dss_parse_vg_config(vgs_info, file_buf, len, CM_FALSE);
+    status = dss_parse_vg_config(vgs_info, file_buf, len);
     return status;
 }
 
-void dss_refresh_vg_info_update_vg_num(dss_vg_info_t *vgs_info)
+status_t dss_load_vg_conf_info(dss_vg_info_t **vgs, const dss_config_t *inst_cfg)
 {
-    LOG_RUN_INF(
-        "refresh vg with new item(s), old vg num [%u], cur_vg_num [%u]", vgs_info->group_num, vgs_info->dest_vg_num);
-    // update local vg info
-    uint32 old_vg_num = vgs_info->group_num;
-    vgs_info->group_num = vgs_info->dest_vg_num;
-
-    // update this for api to syn
-    for (uint32 i = 0; i < old_vg_num; i++) {
-        vgs_info->volume_group[i].share_vg_item->all_vg_item_cnt = vgs_info->group_num;
-        LOG_RUN_INF("refresh vg update vg[%d] all_vg_item_cnt [%u]", i,
-            vgs_info->volume_group[i].share_vg_item->all_vg_item_cnt);
-    }
-}
-
-status_t dss_init_vg_info()
-{
-    dss_vg_info_t *vgs_info = dss_get_vg_info_ptr();
+    dss_vg_info_t *vgs_info = dss_malloc_vg_info();
     bool32 result = (bool32)(vgs_info != NULL);
     DSS_RETURN_IF_FALSE2(result, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, sizeof(dss_vg_info_t), "dss_load_vg_conf_info"));
 
     errno_t errcode = memset_s(vgs_info, sizeof(dss_vg_info_t), 0, sizeof(dss_vg_info_t));
     result = (bool32)(errcode == EOK);
-    DSS_RETURN_IF_FALSE3(result, dss_free_vg_info(), CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode));
+    DSS_RETURN_IF_FALSE3(result, DSS_FREE_POINT(vgs_info), CM_THROW_ERROR(ERR_SYSTEM_CALL, errcode));
 
-    for (uint32 i = 0; i < DSS_MAX_VOLUME_GROUP_NUM; i++) {
+    status_t status = dss_load_vg_conf_inner(vgs_info, inst_cfg);
+    if (status != CM_SUCCESS) {
+        dss_free_vg_info();
+        return CM_ERROR;
+    }
+
+    for (uint32 i = 0; i < vgs_info->group_num; i++) {
         for (size_t j = 0; j < DSS_MAX_VOLUMES; j++) {
             vgs_info->volume_group[i].id = i;
             vgs_info->volume_group[i].volume_handle[j].handle = DSS_INVALID_HANDLE;
             vgs_info->volume_group[i].volume_handle[j].unaligned_handle = DSS_INVALID_HANDLE;
         }
     }
-
-    return CM_SUCCESS;
-}
-
-status_t dss_load_vg_conf_info(const dss_config_t *inst_cfg)
-{
-    status_t status = dss_init_vg_info();
-    if (status != CM_SUCCESS) {
-        return CM_ERROR;
-    }
-    dss_vg_info_t *vgs_info = dss_get_vg_info_ptr();
-    status = dss_load_vg_conf_inner(vgs_info, inst_cfg);
-    if (status != CM_SUCCESS) {
-        dss_free_vg_info();
-        return CM_ERROR;
-    }
-
+    *vgs = vgs_info;
     return CM_SUCCESS;
 }
 
@@ -250,24 +221,6 @@ void dss_free_vg_info()
 {
     LOG_RUN_INF("free g_vgs_info.");
     DSS_FREE_POINT(g_vgs_info)
-}
-
-dss_vg_info_t *dss_get_vg_info_ptr()
-{
-    if (g_vgs_info == NULL) {
-        dss_vg_info_t *new_vg_info = cm_malloc(sizeof(dss_vg_info_t));
-        if (new_vg_info == NULL) {
-            LOG_DEBUG_ERR("Failed to malloc space for g_vgs_info");
-            return NULL;
-        }
-        errno_t ret = memset_s(new_vg_info, sizeof(dss_vg_info_t), 0, sizeof(dss_vg_info_t));
-        if (ret != CM_SUCCESS) {
-            LOG_DEBUG_ERR("Failed to memset for g_vgs_info");
-            return NULL;
-        }
-        g_vgs_info = new_vg_info;
-    }
-    return g_vgs_info;
 }
 
 dss_vg_info_item_t *dss_find_vg_item(const char *vg_name)
@@ -431,18 +384,23 @@ status_t dss_load_vg_info_and_recover_core(uint32 i, bool8 need_recovery)
     return CM_SUCCESS;
 }
 
-// load dss ctrl from disk and recover when start, if load from remote ,just check
-status_t dss_load_vg_info_and_recover_with_range(uint32 vg_beg, uint32 vg_end, bool8 need_recovery)
+status_t dss_load_vg_info_and_recover(bool8 need_recovery)
 {
-    for (uint32_t i = vg_beg; i < vg_end; i++) {
+    for (uint32_t i = 0; i < g_vgs_info->group_num; i++) {
         status_t status = dss_load_vg_info_and_recover_core(i, need_recovery);
         if (status != CM_SUCCESS) {
             LOG_RUN_ERR("DSS instance failed to load vg:%s!", g_vgs_info->volume_group[i].vg_name);
             return status;
         }
-        LOG_RUN_INF("load vg and recover item(s), vg [%u], vg_name [%s]", i, g_vgs_info->volume_group[i].vg_name);
     }
     return CM_SUCCESS;
+}
+
+static void dss_free_shm_hashmap_memory(uint32 num)
+{
+    for (uint32 i = 0; i <= num; i++) {
+        shm_hashmap_destroy(g_vgs_info->volume_group[i].buffer_cache, i);
+    }
 }
 
 status_t dss_alloc_vg_item_redo_log_buf(dss_vg_info_item_t *vg_item)
@@ -461,7 +419,7 @@ status_t dss_alloc_vg_item_redo_log_buf(dss_vg_info_item_t *vg_item)
     return CM_SUCCESS;
 }
 
-dss_share_vg_item_t *dss_get_vg_item_by_id(bool32 is_server, uint32 id)
+static dss_share_vg_item_t *dss_get_vg_item_by_id(bool32 is_server, uint32 id)
 {
     dss_share_vg_item_t *vg_item = NULL;
     if (is_server) {
@@ -482,6 +440,56 @@ dss_share_vg_item_t *dss_get_vg_item_by_id(bool32 is_server, uint32 id)
         }
     }
     return NULL;
+}
+status_t dss_get_vg_info()
+{
+    bool32 is_server = dss_is_server();
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    status_t status = dss_load_vg_conf_info(&g_vgs_info, inst_cfg);
+    DSS_RETURN_IF_ERROR(status);
+    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
+        dss_share_vg_item_t *vg_item = dss_get_vg_item_by_id(is_server, i);
+        if (vg_item == NULL) {
+            LOG_RUN_ERR("Failed to get vg_item %u from shm!", i);
+            DSS_THROW_ERROR(ERR_DSS_GA_INIT, "failed to get vg_item %u from shm!", i);
+            return CM_ERROR;
+        }
+        g_vgs_info->volume_group[i].objectid = vg_item->objectid;
+        g_vgs_info->volume_group[i].buffer_cache = &vg_item->buffer_cache;
+        g_vgs_info->volume_group[i].dss_ctrl = &vg_item->dss_ctrl;
+        g_vgs_info->volume_group[i].vg_latch = &vg_item->vg_latch;
+        vg_item->id = g_vgs_info->volume_group[i].id;
+        if (!is_server) {
+            continue;
+        }
+        g_vgs_info->volume_group[i].stack.buff = (char *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_MAX_STACK_BUF_SIZE);
+        bool32 result = (bool32)(g_vgs_info->volume_group[i].stack.buff != NULL);
+        DSS_RETURN_IF_FALSE3(result,
+            LOG_DEBUG_ERR("malloc stack failed, align size:%u, size:%u.", DSS_ALIGN_SIZE, DSS_MAX_STACK_BUF_SIZE),
+            DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_MAX_STACK_BUF_SIZE, "volume group stack buff"));
+        g_vgs_info->volume_group[i].stack.size = DSS_MAX_STACK_BUF_SIZE;
+        int32 ret = shm_hashmap_init(&vg_item->buffer_cache, i, dss_buffer_cache_key_compare);
+        if (ret != CM_SUCCESS) {
+            if (i != 0) {
+                dss_free_shm_hashmap_memory(i - 1);
+            }
+            DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
+            LOG_RUN_ERR("DSS instance failed to initialize buffer cache, %d!", ret);
+            DSS_THROW_ERROR(ERR_DSS_GA_INIT, "failed to init hashmap of vg %s", g_vgs_info->volume_group[i].vg_name);
+            return CM_ERROR;
+        }
+        cm_bilist_init(&g_vgs_info->volume_group[i].open_file_list);
+        cm_bilist_init(&g_vgs_info->volume_group[i].syn_meta_desc.bilist);
+        status = dss_alloc_vg_item_redo_log_buf(&g_vgs_info->volume_group[i]);
+        if (status != CM_SUCCESS) {
+            dss_free_shm_hashmap_memory(i);
+            DSS_FREE_POINT(g_vgs_info->volume_group[i].stack.buff);
+            return CM_ERROR;
+        }
+        g_vgs_info->volume_group[i].space_alarm = DSS_VG_SPACE_ALARM_INIT;
+    }
+    LOG_RUN_INF("DSS succeed to init vgs in memory.");
+    return status;
 }
 
 status_t dss_check_entry_path(char *entry_path1, char *entry_path2, bool32 *result)
@@ -521,7 +529,7 @@ status_t dss_check_dup_vg(dss_vg_info_t *config, uint32 vg_no, bool32 *result)
     return CM_SUCCESS;
 }
 
-status_t dss_parse_vg_config(dss_vg_info_t *config, char *buf, uint32 buf_len, bool32 is_refresh)
+status_t dss_parse_vg_config(dss_vg_info_t *config, char *buf, uint32 buf_len)
 {
     uint32 line_no;
     text_t text, line, comment, name, value;
@@ -561,7 +569,7 @@ status_t dss_parse_vg_config(dss_vg_info_t *config, char *buf, uint32 buf_len, b
         cm_trim_text(&comment);
 
         if (vg_no >= DSS_MAX_VOLUME_GROUP_NUM) {
-            DSS_THROW_ERROR_EX(ERR_DSS_CONFIG_LOAD, "volume group num exceed max vg num %u.", DSS_MAX_VOLUME_GROUP_NUM);
+            DSS_THROW_ERROR(ERR_DSS_CONFIG_LOAD, "volume group num exceed max vg num %u.", DSS_MAX_VOLUME_GROUP_NUM);
             return CM_ERROR;
         }
         if (name.len == 0 || value.len == 0) {
@@ -569,27 +577,8 @@ status_t dss_parse_vg_config(dss_vg_info_t *config, char *buf, uint32 buf_len, b
             return CM_ERROR;
         }
 
-        if (is_refresh && (vg_no < config->dest_vg_num)) {
-            if (cm_compare_text_str(&name, config->volume_group[vg_no].vg_name) != 0) {
-                DSS_THROW_ERROR_EX(ERR_DSS_CONFIG_LOAD, "volume group name [%s] not the same as before [%s].", name.str,
-                    config->volume_group[vg_no].vg_name);
-                return CM_ERROR;
-            }
-            if (cm_compare_text_str(&value, config->volume_group[vg_no].entry_path) != 0) {
-                DSS_THROW_ERROR_EX(ERR_DSS_CONFIG_LOAD, "volume entry_path name [%s] not the same as before [%s].",
-                    value.str, config->volume_group[vg_no].entry_path);
-                return CM_ERROR;
-            }
-        }
-
-        // when not change the exist cfg, record only find vg after last find
-        if (vg_no >= config->dest_vg_num) {
-            CM_RETURN_IFERR(cm_text2str(&name, config->volume_group[vg_no].vg_name, DSS_MAX_NAME_LEN));
-            CM_RETURN_IFERR(cm_text2str(&value, config->volume_group[vg_no].entry_path, DSS_MAX_VOLUME_PATH_LEN));
-            LOG_RUN_INF("parsed vg id[%d] vg_name[%s] entry_path[%s].", vg_no, config->volume_group[vg_no].vg_name,
-                config->volume_group[vg_no].entry_path);
-        }
-
+        CM_RETURN_IFERR(cm_text2str(&name, config->volume_group[vg_no].vg_name, DSS_MAX_NAME_LEN));
+        CM_RETURN_IFERR(cm_text2str(&value, config->volume_group[vg_no].entry_path, DSS_MAX_VOLUME_PATH_LEN));
         vg_no++;
         CM_RETURN_IFERR(dss_check_dup_vg(config, vg_no, &check_ret));
         if (check_ret) {
@@ -600,14 +589,7 @@ status_t dss_parse_vg_config(dss_vg_info_t *config, char *buf, uint32 buf_len, b
         comment.str = text.str;
         comment.len = 0;
     }
-    if (!is_refresh) {
-        config->group_num = vg_no;
-    }
-
-    if (vg_no > config->dest_vg_num) {
-        config->dest_vg_num = vg_no;
-    }
-
+    config->group_num = vg_no;
     return CM_SUCCESS;
 }
 
@@ -1040,16 +1022,8 @@ status_t dss_lock_share_disk_vg(const char *entry_path, dss_config_t *inst_cfg)
 status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {
     LOG_DEBUG_INF("Lock vg storage, lock vg:%s.", entry_path);
-#ifdef OPENGAUSS
-    /* in standby cluster, we do not need try to lock xlog vg, xlog vg is a read only disk */
-    if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
-        return CM_SUCCESS;
-    }
-#endif
     int32 dss_mode = dss_storage_mode(inst_cfg);
     if (dss_mode == DSS_MODE_DISK) {
-        DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(
-            DSS_FI_SCOPE_CLI, DSS_FI_VGLOCK_LOCK_DISK, DSS_EXIT_LOG(CM_FALSE, "lock vg storage lock disk fail"));
         char lock_file[DSS_MAX_FILE_LEN];
         if (dss_pre_lockfile_name(entry_path, lock_file, inst_cfg) != CM_SUCCESS) {
             return CM_ERROR;
@@ -1063,18 +1037,16 @@ status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry
         flock(vglock_fp->_fileno, LOCK_EX);  // use flock to exclusive
         LOG_DEBUG_INF("DISK MODE, lock vg:%s, lock file:%s.", entry_path, lock_file);
     } else if (dss_mode == DSS_MODE_SHARE_DISK) {
-        DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_VGLOCK_LOCK_SHARE_DISK,
-            DSS_EXIT_LOG(CM_FALSE, "lock vg storage lock shared disk fail"));
-
         if (dss_lock_share_disk_vg(entry_path, inst_cfg) != CM_SUCCESS) {
             DSS_THROW_ERROR(ERR_DSS_VG_LOCK, entry_path);
             LOG_DEBUG_ERR("Failed to lock share disk vg, entry path %s.", entry_path);
             return CM_ERROR;
         }
     } else {
-        DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(DSS_FI_SCOPE_CLI, DSS_FI_VGLOCK_LOCK_SCSI_DISK,
-            DSS_EXIT_LOG(CM_FALSE, "lock vg storage lock scsi disk fail"));
-
+        /* in standby cluster, we do not need try to lock(scsi3) xlog vg, xlog vg is a read only disk */
+        if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
+            return CM_SUCCESS;
+        }
         if (dss_lock_disk_vg(entry_path, inst_cfg) != CM_SUCCESS) {
             DSS_THROW_ERROR(ERR_DSS_VG_LOCK, entry_path);
             LOG_DEBUG_ERR("Failed to lock vg, entry path %s.", entry_path);
@@ -1086,8 +1058,6 @@ status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry
 
 status_t dss_lock_vg_storage_r(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {
-    DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(
-        DSS_FI_SCOPE_CLI, DSS_FI_VGLOCK_FILE_LOCK_R, DSS_EXIT_LOG(CM_FALSE, "lock vg storage r fail"));
     if (dss_file_lock_vg_r(inst_cfg) != CM_SUCCESS) {
         LOG_RUN_ERR("Failed to file read lock vg.");
         return CM_ERROR;
@@ -1103,8 +1073,6 @@ status_t dss_lock_vg_storage_r(dss_vg_info_item_t *vg_item, const char *entry_pa
 
 status_t dss_lock_vg_storage_w(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {
-    DSS_FAULT_INJECTION_ACTION_TRIGGER_CUSTOM(
-        DSS_FI_SCOPE_CLI, DSS_FI_VGLOCK_FILE_LOCK_W, DSS_EXIT_LOG(CM_FALSE, "lock vg storage w fail"));
     if (dss_file_lock_vg_w(inst_cfg) != CM_SUCCESS) {
         return CM_ERROR;
     }
@@ -1202,12 +1170,6 @@ status_t dss_unlock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *ent
         fclose(vglock_fp);
         LOG_DEBUG_INF("ulock vg:%s, lock file:%s.", entry_path, lock_file);
     } else {
-#ifdef OPENGAUSS
-        /* in standby cluster, we do not need try to lock or unlock xlog vg, xlog vg is a read only disk */
-        if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
-            return CM_SUCCESS;
-        }
-#endif
         if (dss_unlock_vg(dss_mode, vg_item, entry_path, inst_cfg->params.inst_id) != CM_SUCCESS) {
             LOG_RUN_ERR("Failed to unlock vg %s.", vg_item->vg_name);
             return CM_ERROR;
@@ -1303,7 +1265,7 @@ status_t dss_write_ctrl_to_disk(dss_vg_info_item_t *vg_item, int64 offset, void 
     }
 
     vg_item->volume_handle[0] = volume;
-    vg_item->volume_handle[0].name_p = vg_item->volume_handle[0].name;
+
     return CM_SUCCESS;
 }
 
@@ -1974,9 +1936,9 @@ status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item)
     return CM_SUCCESS;
 }
 
-static status_t dss_init_volume_core(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume, uint32 i, uint32 is_force)
+static status_t dss_init_volume_core(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume, uint32 i)
 {
-    if (!is_force && (volume->defs[i].flag == vg_item->dss_ctrl->volume.defs[i].flag)) {
+    if (volume->defs[i].flag == vg_item->dss_ctrl->volume.defs[i].flag) {
         return CM_SUCCESS;
     }
 
@@ -2004,7 +1966,7 @@ status_t dss_init_volume(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume)
     status_t status;
 
     for (uint32 i = 0; i < DSS_MAX_VOLUMES; i++) {
-        status = dss_init_volume_core(vg_item, volume, i, false);
+        status = dss_init_volume_core(vg_item, volume, i);
         if (status != CM_SUCCESS) {
             return status;
         }
@@ -2074,37 +2036,6 @@ status_t dss_check_volume(dss_vg_info_item_t *vg_item, uint32 volumeid)
     }
 
     return dss_check_free_volume(vg_item, volumeid);
-}
-
-status_t dss_init_volume_by_force(dss_vg_info_item_t *vg_item, uint32 is_force)
-{
-    status_t status = CM_SUCCESS;
-    dss_volume_ctrl_t *volume;
-
-    volume = (dss_volume_ctrl_t *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_VOLUME_CTRL_SIZE);
-    bool32 result = (bool32)(volume != NULL);
-    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Can not allocate memory in stack."));
-
-    status = dss_load_volume_ctrl(vg_item, volume);
-    if (status != CM_SUCCESS) {
-        DSS_FREE_POINT(volume);
-        LOG_DEBUG_ERR("Failed load vg ctrl.");
-        return status;
-    }
-
-    for (uint32 i = 0; i < DSS_MAX_VOLUMES; i++) {
-        status = dss_init_volume_core(vg_item, volume, i, true);
-        if (status != CM_SUCCESS) {
-            return status;
-        }
-    }
-
-    if (status == CM_SUCCESS) {
-        vg_item->dss_ctrl->volume.checksum = volume->checksum;
-        vg_item->dss_ctrl->volume.version = volume->version;
-    }
-    DSS_FREE_POINT(volume);
-    return status;
 }
 
 // first check volume is valid.
@@ -2242,7 +2173,7 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volume_id, int64 o
 bool32 dss_meta_syn(dss_session_t *session, dss_bg_task_info_t *bg_task_info)
 {
     bool32 finish = CM_TRUE;
-    for (uint32_t i = bg_task_info->my_task_id; i < g_vgs_info->group_num; i += bg_task_info->task_num_max) {
+    for (uint32_t i = bg_task_info->vg_id_beg; i < bg_task_info->vg_id_end; i++) {
         bool32 cur_finish = dss_syn_buffer_cache(session, &g_vgs_info->volume_group[i]);
         if (!cur_finish && !finish) {
             finish = CM_FALSE;

@@ -97,7 +97,7 @@ typedef enum en_vg_info_type {
 #ifdef WIN32
 typedef HANDLE volume_handle_t;
 #else
-typedef int64 volume_handle_t;
+typedef int32 volume_handle_t;
 #endif
 
 #define DSS_VOLUME_DEF_RESVS 112
@@ -139,8 +139,7 @@ typedef struct st_dss_volume_attr {
 } dss_volume_attr_t;  // CAUTION:If add/remove field ,please keep 32B total !!! Or modify rp_redo_add_or_remove_volume
 
 typedef enum dss_vg_device_Type {
-    DSS_VOLUME_TYPE_RAW = 0,  // default is raw device
-    DSS_VOLUME_TYPE_VTABLE = 1  // raw by vtable
+    DSS_VOLUME_TYPE_RAW = 0  // default is raw device
 } dss_vg_device_Type_e;
 
 typedef struct st_dss_volume {
@@ -220,7 +219,7 @@ typedef struct st_dss_core_ctrl {
     uint32 au_size;  // allocation unit size,4M,8M,16M,32M,64M
     uint32 volume_count;
     char fs_block_root[DSS_FS_BLOCK_ROOT_SIZE];  // dss_fs_block_root_t
-    char au_root[DSS_AU_ROOT_SIZE];              // dss_au_root_t, recycle space entry
+    char au_root[DSS_AU_ROOT_SIZE];              // 512-24-64,dss_au_root_t, recycle space entry
     char fs_aux_root[DSS_FS_AUX_ROOT_SIZE];      // dss_fs_aux_root_t
     char resv[DSS_CTRL_RESV_SIZE];
     dss_volume_attr_t volume_attrs[DSS_MAX_VOLUMES];
@@ -274,14 +273,14 @@ typedef struct st_dss_ctrl {
     char root[DSS_ROOT_FT_DISK_SIZE];  // dss_root_ft_block_t, 8KB
     union {
         dss_redo_ctrl_t redo_ctrl;
-        char redo_ctrl_data[DSS_DISK_UNIT_SIZE];  // 512
+        char redo_ctrl_data[DSS_DISK_UNIT_SIZE]; // 512
     };
-    char reserve1[DSS_CTRL_RESERVE_SIZE1];      // 663K
-    char disk_latch[DSS_INIT_DISK_LATCH_SIZE];  // INIT DISK LATCH 32KB
+    char reserve1[DSS_CTRL_RESERVE_SIZE1];     // 663K
+    char disk_latch[DSS_INIT_DISK_LATCH_SIZE]; // INIT DISK LATCH 32KB
     union {
         struct {
-            char disk_lock[DSS_LOCK_SHARE_DISK_SIZE];  // share disk lock, 32KB + 512, align with 8K
-            char reserve4[DSS_CTRL_RESERVE_SIZE4];     // 512
+            char disk_lock[DSS_LOCK_SHARE_DISK_SIZE]; // share disk lock, 32KB + 512, align with 8K
+            char reserve4[DSS_CTRL_RESERVE_SIZE4];    // 512
         };
         struct {
             char reserve3[DSS_CTRL_RESERVE_SIZE3];  // 32KB
@@ -345,18 +344,6 @@ typedef struct st_dss_log_file_ctrl {
     uint64 lsn;
 } dss_log_file_ctrl_t;
 
-typedef struct st_dss_share_vg_item_t {
-    dss_shared_latch_t vg_latch;
-    shm_hashmap_t buffer_cache;
-    uint32 objectid;
-    uint32 id;
-    uint32 all_vg_item_cnt;                    // only vg_item 0 will be setted, for api add vg item info dyn
-    char vg_name[DSS_MAX_NAME_LEN];            // added for syn to api
-    char entry_path[DSS_MAX_VOLUME_PATH_LEN];  // the manger volume path, dded for syn to api
-    char reserv[280];                          // align 512
-    dss_ctrl_t dss_ctrl;
-} dss_share_vg_item_t;
-
 typedef struct st_dss_vg_info_item_t {
     uint32 id;
     char vg_name[DSS_MAX_NAME_LEN];
@@ -380,15 +367,11 @@ typedef struct st_dss_vg_info_item_t {
     dss_block_ctrl_task_desc_t recycle_meta_desc;  // for recycle meta
     uint32 objectid;
     uint32 space_alarm;
-    dss_share_vg_item_t *share_vg_item;
 } dss_vg_info_item_t;
 
 typedef struct st_dss_vg_info_t {
     dss_vg_info_item_t volume_group[DSS_MAX_VOLUME_GROUP_NUM];
     uint32_t group_num;
-    uint32 dest_vg_num;    // may more than group_num because added by dyn
-    uint32 inited_vg_num;  // may more than group_num becasue added by dyn
-    struct stat cfg_stat;
 } dss_vg_info_t;
 
 typedef struct st_dss_vol_handles_t {
@@ -404,6 +387,15 @@ typedef struct st_dss_vg_conf_t {
     char vg_name[DSS_MAX_NAME_LEN];
     char entry_path[DSS_MAX_VOLUME_PATH_LEN];  // the manager volume path
 } dss_vg_conf_t;
+
+typedef struct st_dss_share_vg_item_t {
+    dss_shared_latch_t vg_latch;
+    shm_hashmap_t buffer_cache;
+    uint32 objectid;
+    uint32 id;
+    char reserve[412];  // align 512
+    dss_ctrl_t dss_ctrl;
+} dss_share_vg_item_t;
 
 #pragma pack()
 #endif  // __DSS_CTRL_DEF_H__

@@ -61,7 +61,6 @@ typedef struct st_dss_audit_assist {
 
 typedef struct st_dss_audit_info {
     char *action;
-    bool8 is_forced;
     char resource[DSS_MAX_AUDIT_PATH_LENGTH];
 } dss_audit_info_t;
 
@@ -132,15 +131,6 @@ static inline void dss_print_detail_error()
         cm_set_error((char *)__FILE_NAME__, (uint32)__LINE__, (cm_errno_t)error_no, format, ##__VA_ARGS__); \
     } while (0)
 
-
-#define DSS_THROW_ERROR_EX2(error_no, format, ...)                                                                  \
-    do {                                                                                                            \
-        if (g_dss_error_desc[error_no] != NULL)                                                                     \
-            dss_set_error_ex((char *)__FILE_NAME__, (uint32)__LINE__, (cm_errno_t)error_no, format, ##__VA_ARGS__); \
-        else                                                                                                        \
-            cm_set_error_ex((char *)__FILE_NAME__, (uint32)__LINE__, (cm_errno_t)error_no, format, ##__VA_ARGS__);  \
-    } while (0)
-
 /*
  * warning id is composed of source + module + object + code
  * source -- DN(10)/CM(11)/OM(12)/DM(20)/DSS(30)
@@ -175,10 +165,9 @@ dss_log_def_t *dss_get_instance_log_def();
 dss_log_def_t *dss_get_cmd_log_def();
 uint32 dss_get_instance_log_def_count();
 uint32 dss_get_cmd_log_def_count();
-void dss_set_error_ex(const char *file, uint32 line, cm_errno_t code, const char *format, ...);
 
 char *dss_get_print_tab(uint8 level);
-status_t dss_init_log_home_ex(dss_config_t *inst_cfg, char *log_parm_value, char *log_param_name, char *log_dir);
+
 #ifdef __cplusplus
 }
 #endif
