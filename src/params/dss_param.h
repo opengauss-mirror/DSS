@@ -60,11 +60,6 @@ typedef enum en_dss_mode {
 /* use for dorado cluster */
 typedef enum cluster_run_mode_t { CLUSTER_PRIMARY = 0, CLUSTER_STANDBY = 1 } cluster_run_mode_t;
 
-typedef enum en_disk_type {
-    DISK_NORMAL = 0,
-    DISK_VTABLE = 1
-} disk_type_e;
-
 #if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
 #define DSS_RECYLE_META_RANGE_MAX 10000U
 #endif
@@ -108,9 +103,6 @@ typedef struct st_dss_params {
     uint32 space_usage_hwm;
     uint32 space_usage_lwm;
     uint32 delay_clean_search_fragment;
-    bool32 linux_multibus;
-    char mpathpersist_dss_path[DSS_FILE_PATH_MAX_LENGTH];
-    disk_type_e disk_type;
 } dss_params_t;
 
 typedef struct st_dss_config {
@@ -131,16 +123,6 @@ status_t dss_set_cfg_dir(const char *home, dss_config_t *inst_cfg);
 static inline int32 dss_storage_mode(dss_config_t *inst_cfg)
 {
     return inst_cfg->params.dss_mode;
-}
-
-static inline bool32 dss_get_linux_multibus(dss_config_t *inst_cfg)
-{
-    return inst_cfg->params.linux_multibus;
-}
-
-static inline char *dss_get_mpathpersist_dss_path(dss_config_t *inst_cfg)
-{
-    return inst_cfg->params.mpathpersist_dss_path;
 }
 
 static inline char *dss_get_cfg_dir(dss_config_t *inst_cfg)
@@ -209,10 +191,6 @@ static inline bool32 dss_is_cfg_inst_solo()
 {
     return (g_inst_cfg->params.nodes_list.inst_cnt <= 1);
 }
-
-#if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
-status_t dss_load_fi_params(dss_config_t *inst_cfg);
-#endif
 
 #ifdef __cplusplus
 }

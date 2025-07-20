@@ -76,7 +76,6 @@ typedef enum {
     DSS_CMD_ENABLE_GRAB_LOCK,
     DSS_CMD_HOTPATCH,
     DSS_CMD_ENABLE_UPGRADES,
-    DSS_CMD_KILL_SESSION,
     DSS_CMD_MODIFY_END = 127,
     DSS_CMD_QUERY_BEGIN = DSS_CMD_MODIFY_END,
     DSS_CMD_HANDSHAKE = DSS_CMD_QUERY_BEGIN,
@@ -99,8 +98,7 @@ char *dss_get_cmd_desc(dss_cmd_type_e cmd_type);
 static inline bool32 dss_can_cmd_type_no_open(dss_cmd_type_e type)
 {
     return ((type == DSS_CMD_GET_INST_STATUS) || (type == DSS_CMD_HANDSHAKE) || (type == DSS_CMD_STOP_SERVER) ||
-            (type == DSS_CMD_ENABLE_GRAB_LOCK) || (type == DSS_CMD_SETCFG) || (type == DSS_CMD_GETCFG) ||
-            (type == DSS_CMD_KILL_SESSION));
+            (type == DSS_CMD_ENABLE_GRAB_LOCK) || (type == DSS_CMD_SETCFG) || (type == DSS_CMD_GETCFG));
 }
 
 typedef struct st_dss_packet_head {
@@ -118,11 +116,9 @@ typedef enum en_dss_packet_version {
     DSS_VERSION_0 = 0, /* version 0 */
     DSS_VERSION_1 = 1, /* version 1 */
     DSS_VERSION_2 = 2, /* version 2 */
-    DSS_VERSION_3 = 3, /* version 3 : add redo DSS_RT_REMOVE_FILE_TABLE_NODE */
-    DSS_VERSION_4 = 4, /* version 4 : add isvtable for client need init vtable */
 } dss_packet_version_e;
 
-#define DSS_PROTO_VERSION DSS_VERSION_4
+#define DSS_PROTO_VERSION DSS_VERSION_2
 #define DSS_INVALID_VERSION (int32)0x7FFFFFFF
 
 #define DSS_PACKET_SIZE(pack) ((pack)->head->size)

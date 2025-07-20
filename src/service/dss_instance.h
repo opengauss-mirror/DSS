@@ -75,7 +75,7 @@ typedef struct st_dss_instance {
     int32 lock_fd;
     latch_t switch_latch;
     dss_config_t inst_cfg;
-    volatile dss_instance_status_e status;
+    dss_instance_status_e status;
     uds_lsnr_t lsnr;
     latch_t uds_lsnr_latch;
     reactors_t reactors;
@@ -87,13 +87,12 @@ typedef struct st_dss_instance {
     spinlock_t inst_work_lock;
     int32 cluster_proto_vers[DSS_MAX_INSTANCES];
     bool8 is_maintain;
-    volatile bool8 is_cleaning;
-    volatile bool8 no_grab_lock;
-    volatile bool8 is_releasing_lock;
-    volatile bool8 is_checking;
-    volatile bool8 is_handle_main_wait;
-    bool8 reserve[2];
-    volatile bool32 is_join_cluster;
+    bool8 is_cleaning;
+    bool8 no_grab_lock;
+    bool8 is_releasing_lock;
+    bool8 is_checking;
+    bool8 reserve[3];
+    bool32 is_join_cluster;
     dss_session_t *handle_session;
     dss_bg_task_info_t syn_meta_task[DSS_META_SYN_BG_TASK_NUM_MAX];
 
@@ -130,16 +129,11 @@ void dss_delay_clean_proc(thread_t *thread);
 status_t dss_delay_clean_background_task(dss_instance_t *inst);
 void dss_close_delay_clean_background_task(dss_instance_t *inst);
 void dss_hashmap_dynamic_extend_and_redistribute_proc(thread_t *thread);
-bool32 dss_check_join_cluster(dss_session_t *session);
+bool32 dss_check_join_cluster();
 void dss_check_unreg_volume(dss_session_t *session);
 void dss_meta_syn_proc(thread_t *thread);
 void dss_recycle_meta_proc(thread_t *thread);
 void dss_alarm_check_proc(thread_t *thread);
-
-status_t dss_init_vg_info_by_server_with_range(dss_vg_info_t *vgs_info, uint32 vg_beg, uint32 vg_end);
-status_t dss_init_server_vg_info();
-status_t dss_refresh_server_vg_info();
-status_t dss_refresh_load_vg_info_and_recover(dss_session_t *session, dss_instance_t *inst);
 
 #ifdef __cplusplus
 }

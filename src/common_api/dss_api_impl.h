@@ -38,14 +38,8 @@
 extern "C" {
 #endif
 
-typedef struct st_dss_conn dss_conn_t;
+typedef struct st_dss_conn dss_conn_t; 
 typedef struct st_dss_conn_opt dss_conn_opt_t;
-
-typedef enum en_cli_rw_mode {
-    DSS_CLIENT_READ = 0,
-    DSS_CLIENT_WRITE = 1,
-    DSS_CLIENT_APPEND = 2,
-} cli_rw_mode_e;
 
 typedef struct st_dss_rw_param {
     dss_conn_t *conn;
@@ -54,7 +48,7 @@ typedef struct st_dss_rw_param {
     dss_file_context_t *context;
     int64 offset;
     bool32 atom_oper;
-    cli_rw_mode_e rw_mode;
+    bool32 is_read;
 } dss_rw_param_t;
 
 typedef struct st_dss_load_ctrl_info {
@@ -170,7 +164,6 @@ typedef struct st_dss_get_server_info {
     char *home;
     uint32 objectid;
     uint32 server_pid;
-    bool32 isvtable;
 } dss_get_server_info_t;
 
 typedef struct st_dss_fallocate_info {
@@ -198,17 +191,20 @@ typedef struct st_dss_query_hotpatch_recv_info {
     dss_hp_info_view_t *hp_info_view;  // Location of output buffer must be specified before decoding.
 } dss_query_hotpatch_recv_info_t;
 
+
 #define DSSAPI_BLOCK_SIZE 512
 #define DSS_HOME "DSS_HOME"
 #define SYS_HOME "HOME"
 #define DSS_DEFAULT_UDS_PATH "UDS:/tmp/.dss_unix_d_socket"
-#define SESSION_LOCK_TIMEOUT 500  // tickets
+#define SESSION_LOCK_TIMEOUT 500 // tickets
 
 status_t dss_load_ctrl_sync(dss_conn_t *conn, const char *vg_name, uint32 index);
 status_t dss_add_or_remove_volume(dss_conn_t *conn, const char *vg_name, const char *volume_name, uint8 cmd);
 status_t dss_kick_host_sync(dss_conn_t *conn, int64 kick_hostid);
 status_t dss_alloc_conn(dss_conn_t **conn);
 void dss_free_conn(dss_conn_t *conn);
+status_t dss_connect(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn);
+void dss_disconnect(dss_conn_t *conn);
 
 // NOTE:just for dsscmd because not support many threads in one process.
 status_t dss_connect_ex(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn);
@@ -228,7 +224,6 @@ status_t dss_exist_impl(dss_conn_t *conn, const char *path, bool32 *result, gft_
 status_t dss_islink_impl(dss_conn_t *conn, const char *name, bool32 *result);
 int64 dss_seek_file_impl(dss_conn_t *conn, int handle, int64 offset, int origin);
 status_t dss_write_file_impl(dss_conn_t *conn, int handle, const void *buf, int size);
-status_t dss_append_file_impl(dss_conn_t *conn, int handle, const void *buf, int size);
 status_t dss_read_file_impl(dss_conn_t *conn, int handle, void *buf, int size, int *read_size);
 status_t dss_copy_file_impl(dss_conn_t *conn, const char *src, const char *dest);
 status_t dss_rename_file_impl(dss_conn_t *conn, const char *src, const char *dst);
@@ -254,8 +249,8 @@ status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, 
 status_t dss_get_addr_impl(dss_conn_t *conn, int32 handle, long long offset, char *pool_name, char *image_name,
     char *obj_addr, unsigned int *obj_id, unsigned long int *obj_offset);
 gft_node_t *dss_get_node_by_path_impl(dss_conn_t *conn, const char *path);
-status_t dss_get_fd_by_offset(dss_conn_t *conn, int handle, long long offset, int32 size,
-    cli_rw_mode_e rw_mode, int *fd, int64 *vol_offset, int32 *real_count);
+status_t dss_get_fd_by_offset(dss_conn_t *conn, int handle, long long offset, int32 size, bool32 is_read, int *fd,
+    int64 *vol_offset, int32 *real_count);
 status_t get_au_size_impl(dss_conn_t *conn, int handle, long long *au_size);
 status_t dss_compare_size_equal_impl(const char *vg_name, long long *au_size);
 status_t dss_setcfg_impl(dss_conn_t *conn, const char *name, const char *value, const char *scope);
@@ -268,7 +263,6 @@ status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ac
 status_t dss_fallocate_impl(dss_conn_t *conn, int handle, int mode, long long int offset, long long int length);
 status_t dss_hotpatch_impl(dss_conn_t *conn, const char *hp_cmd_str, const char *patch_path);
 status_t dss_query_hotpatch_impl(dss_conn_t *conn, dss_hp_info_view_t *hp_info_view);
-status_t dss_kill_session_impl(dss_conn_t *conn, uint32 sid);
 
 void dss_set_conn_wait_event(dss_conn_t *conn, dss_wait_event_e event);
 void dss_unset_conn_wait_event(dss_conn_t *conn);
@@ -276,12 +270,11 @@ status_t dss_msg_interact_with_stat(dss_conn_t *conn, uint8 cmd, void *send_info
 
 status_t dss_close_file_on_server(dss_conn_t *conn, dss_vg_info_item_t *vg_item, uint64 fid, ftid_t ftid);
 status_t dss_get_inst_status_on_server(dss_conn_t *conn, dss_server_status_t *dss_status);
-status_t dss_get_time_stat_on_server(dss_conn_t *conn, dss_stats_item_info_t time_stat, uint64 size, int isWsr);
+status_t dss_get_time_stat_on_server(dss_conn_t *conn, dss_stat_item_t *time_stat, uint64 size);
 status_t dss_set_main_inst_on_server(dss_conn_t *conn);
 status_t dss_disable_grab_lock_on_server(dss_conn_t *conn);
 status_t dss_enable_grab_lock_on_server(dss_conn_t *conn);
 status_t dss_enable_upgrades_on_server(dss_conn_t *conn);
-status_t dss_reopen_vg_handel_impl(dss_conn_t *conn, const char *name);
 
 #define DSS_SET_PTR_VALUE_IF_NOT_NULL(ptr, value) \
     do {                                          \

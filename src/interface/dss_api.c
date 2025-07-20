@@ -186,10 +186,8 @@ int dss_stat(const char *path, dss_stat_info_t item)
         }
     }
     int ret = dss_set_stat_info(item, node);
+    dss_session_end_stat(conn->session, &begin_tv, DSS_STAT);
     dss_leave_api(conn, CM_FALSE);
-    if (ret == CM_SUCCESS) {
-        dss_session_end_stat(conn->session, &begin_tv, DSS_STAT);
-    }
     return ret;
 }
 
@@ -222,23 +220,6 @@ int dss_fstat(int handle, dss_stat_info_t item)
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fstat get conn error"));
     ret = dss_fstat_impl(conn, HANDLE_VALUE(handle), item);
     dss_leave_api(conn, CM_FALSE);
-    return (int)ret;
-}
-
-int dss_inst_stats(dss_stats_item_info_t item, int stats_size)
-{
-    dss_conn_t *conn = NULL;
-    if (item == NULL) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "dss_stats_item_info_t");
-        return DSS_ERROR;
-    }
-    status_t ret = dss_enter_api(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("dss_inst_stats get conn error"));
-    ret = dss_get_time_stat_on_server(conn, item, DSS_EVT_COUNT, 1);
-    if (ret != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to get time stat.");
-        return DSS_ERROR;
-    }
     return (int)ret;
 }
 
@@ -283,12 +264,12 @@ int dss_fopen(const char *file, int flag, int *handle)
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fopen get conn error"));
 
     ret = dss_open_file_impl(conn, file, flag, handle);
-    dss_leave_api(conn, CM_TRUE);
     // if open fails, -1 is returned. DB determines based on -1
     if (ret == CM_SUCCESS) {
         *handle += DSS_HANDLE_BASE;
-        dss_session_end_stat(conn->session, &begin_tv, DSS_FOPEN);
     }
+    dss_session_end_stat(conn->session, &begin_tv, DSS_FOPEN);
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
@@ -317,16 +298,11 @@ int dss_is_maintain(unsigned int *is_maintain)
 
 int dss_set_main_inst(void)
 {
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
     dss_conn_t *conn = NULL;
     status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when set main inst"));
     ret = dss_set_main_inst_on_server(conn);
     dss_leave_api(conn, CM_FALSE);
-    if (ret == CM_SUCCESS) {
-        dss_session_end_stat(conn->session, &begin_tv, DSS_SET_MAIN_INST);
-    }
     return (int)ret;
 }
 
@@ -431,22 +407,6 @@ int dss_fwrite(int handle, const void *buf, int size)
     return (int)ret;
 }
 
-int dss_append(int handle, const void *buf, int size)
-{
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
-    dss_conn_t *conn = NULL;
-    status_t ret = dss_enter_api(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fwrite get conn error"));
-
-    ret = dss_append_file_impl(conn, HANDLE_VALUE(handle), buf, size);
-    if (ret == CM_SUCCESS) {
-        dss_session_end_stat(conn->session, &begin_tv, DSS_FWRITE);
-    }
-    dss_leave_api(conn, CM_TRUE);
-    return (int)ret;
-}
-
 int dss_fread(int handle, void *buf, int size, int *read_size)
 {
     timeval_t begin_tv;
@@ -482,10 +442,10 @@ int dss_pwrite(int handle, const void *buf, int size, long long offset)
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("pwrite get conn error."));
 
     ret = dss_pwrite_file_impl(conn, HANDLE_VALUE(handle), buf, size, offset);
-    dss_leave_api(conn, CM_TRUE);
     if (ret == CM_SUCCESS) {
         dss_session_end_stat(conn->session, &begin_tv, DSS_PWRITE);
     }
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
@@ -513,10 +473,10 @@ int dss_pread(int handle, void *buf, int size, long long offset, int *read_size)
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("pread get conn error."));
 
     ret = dss_pread_file_impl(conn, HANDLE_VALUE(handle), buf, size, offset, read_size);
-    dss_leave_api(conn, CM_TRUE);
     if (ret == CM_SUCCESS) {
         dss_session_end_stat(conn->session, &begin_tv, DSS_PREAD);
     }
+    dss_leave_api(conn, CM_TRUE);
     return (int)ret;
 }
 
@@ -555,16 +515,11 @@ int dss_frename(const char *src, const char *dst)
 
 int dss_ftruncate(int handle, long long length)
 {
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
     dss_conn_t *conn = NULL;
     status_t ret = dss_enter_api(&conn);
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("ftruncate get conn error."));
     ret = dss_truncate_impl(conn, HANDLE_VALUE(handle), length);
     dss_leave_api(conn, CM_TRUE);
-    if (ret == CM_SUCCESS) {
-        dss_session_end_stat(conn->session, &begin_tv, DSS_FTRUNCATE);
-    }
     return (int)ret;
 }
 
@@ -705,23 +660,23 @@ static int32 init_single_logger_core(log_param_t *log_param, log_type_t log_id, 
 {
     int32 ret;
     switch (log_id) {
-        case CM_LOG_RUN:
+        case LOG_RUN:
             ret = snprintf_s(
                 file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/run/%s", log_param->log_home, "dss.rlog");
             break;
-        case CM_LOG_DEBUG:
+        case LOG_DEBUG:
             ret = snprintf_s(
                 file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/debug/%s", log_param->log_home, "dss.dlog");
             break;
-        case CM_LOG_ALARM:
+        case LOG_ALARM:
             ret = snprintf_s(
                 file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/alarm/%s", log_param->log_home, "dss.alog");
             break;
-        case CM_LOG_AUDIT:
+        case LOG_AUDIT:
             ret = snprintf_s(
                 file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/audit/%s", log_param->log_home, "dss.aud");
             break;
-        case CM_LOG_BLACKBOX:
+        case LOG_BLACKBOX:
             ret = snprintf_s(
                 file_name, file_name_len, CM_MAX_FILE_NAME_LEN, "%s/DSS/blackbox/%s", log_param->log_home, "dss.blog");
             break;
@@ -794,11 +749,11 @@ int dss_init_logger(
         return ERR_DSS_INIT_LOGGER_FAILED;
     }
 
-    CM_RETURN_IFERR(init_single_logger(log_param, CM_LOG_RUN));
-    CM_RETURN_IFERR(init_single_logger(log_param, CM_LOG_DEBUG));
-    CM_RETURN_IFERR(init_single_logger(log_param, CM_LOG_ALARM));
-    CM_RETURN_IFERR(init_single_logger(log_param, CM_LOG_AUDIT));
-    CM_RETURN_IFERR(init_single_logger(log_param, CM_LOG_BLACKBOX));
+    CM_RETURN_IFERR(init_single_logger(log_param, LOG_RUN));
+    CM_RETURN_IFERR(init_single_logger(log_param, LOG_DEBUG));
+    CM_RETURN_IFERR(init_single_logger(log_param, LOG_ALARM));
+    CM_RETURN_IFERR(init_single_logger(log_param, LOG_AUDIT));
+    CM_RETURN_IFERR(init_single_logger(log_param, LOG_BLACKBOX));
     if (cm_start_timer(g_timer()) != CM_SUCCESS) {
         return ERR_DSS_INIT_LOGGER_FAILED;
     }
@@ -995,29 +950,6 @@ int dss_enable_upgrades(void)
     DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when enable upgrades"));
     ret = dss_enable_upgrades_on_server(conn);
     dss_leave_api(conn, CM_FALSE);
-    return (int)ret;
-}
-
-int dss_kill_session(unsigned int sid)
-{
-    dss_conn_t *conn = NULL;
-    status_t ret = dss_enter_api(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when killing dss session"));
-    ret = dss_kill_session_impl(conn, sid);
-    dss_leave_api(conn, CM_FALSE);
-    return (int)ret;
-}
-
-int dss_reopen_vg_handle(const char *name)
-{
-    status_t ret = CM_SUCCESS;
-#ifdef OPENGAUSS
-    dss_conn_t *conn = NULL;
-    ret = dss_enter_api(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("refresh vg handle"));
-    ret = dss_reopen_vg_handel_impl(conn, name);
-    dss_leave_api(conn, CM_FALSE);
-#endif
     return (int)ret;
 }
 

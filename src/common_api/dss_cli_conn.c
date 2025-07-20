@@ -89,7 +89,6 @@ void dss_clt_env_init(void)
         }
         cm_unlatch(&g_dss_conn_info.conn_latch, NULL);
     }
-    DSS_RETURN_DRIECT_IFERR(cm_start_timer(g_timer()));
 }
 
 status_t dss_try_conn(dss_conn_opt_t *options, dss_conn_t *conn)
@@ -228,92 +227,6 @@ void dss_leave_api(dss_conn_t *conn, bool32 get_api_volume_error)
     if (get_api_volume_error) {
         dss_get_api_volume_error();
     }
-}
-
-void dss_init_conn(dss_conn_t *conn)
-{
-    conn->flag = CM_FALSE;
-    conn->cli_vg_handles = NULL;
-    conn->session = NULL;
-}
-
-status_t dss_alloc_conn(dss_conn_t **conn)
-{
-    dss_conn_t *_conn = (dss_conn_t *)cm_malloc_align(DSSAPI_BLOCK_SIZE, sizeof(dss_conn_t));
-    if (_conn != NULL) {
-        dss_init_conn(_conn);
-        *conn = _conn;
-        return CM_SUCCESS;
-    }
-
-    return CM_ERROR;
-}
-
-void dss_free_conn(dss_conn_t *conn)
-{
-    DSS_FREE_POINT(conn);
-    return;
-}
-
-static status_t dss_check_url_format(const char *url, text_t *uds)
-{
-    uint32 len = (uint32)strlen(url);
-    if (len <= uds->len) {
-        return CM_ERROR;
-    }
-
-    return (cm_strcmpni(url, uds->str, uds->len) != 0) ? CM_ERROR : CM_SUCCESS;
-}
-
-status_t dss_connect(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn)
-{
-    if (server_locator == NULL) {
-        DSS_THROW_ERROR(ERR_DSS_UDS_INVALID_URL, "NULL", 0);
-        return CM_ERROR;
-    }
-
-    if ((conn->flag == CM_TRUE) && (conn->pipe.link.uds.closed == CM_FALSE)) {
-        return CM_SUCCESS;
-    }
-
-    conn->flag = CM_FALSE;
-    text_t uds = {"UDS:", 4};
-    if (dss_check_url_format(server_locator, &uds) != CM_SUCCESS) {
-        DSS_THROW_ERROR(ERR_DSS_UDS_INVALID_URL, server_locator, strlen(server_locator));
-        return ERR_DSS_UDS_INVALID_URL;
-    }
-    conn->cli_vg_handles = NULL;
-    conn->pipe.options = 0;
-    int32 timeout = options != NULL ? options->timeout : g_dss_uds_conn_timeout;
-    conn->pipe.connect_timeout = timeout < 0 ? DSS_UDS_CONNECT_TIMEOUT : timeout;
-    conn->pipe.socket_timeout = DSS_UDS_SOCKET_TIMEOUT;
-    conn->pipe.link.uds.sock = CS_INVALID_SOCKET;
-    conn->pipe.link.uds.closed = CM_TRUE;
-    conn->pipe.type = CS_TYPE_DOMAIN_SCOKET;
-    conn->session = NULL;
-    status_t ret = cs_connect_ex(
-        server_locator, &conn->pipe, NULL, (const char *)(server_locator + uds.len), (const char *)CM_NULL_TEXT.str);
-    if (ret != CM_SUCCESS) {
-        LOG_DEBUG_ERR("connect server failed, uds path:%s", server_locator);
-        return ret;
-    }
-    dss_init_packet(&conn->pack, conn->pipe.options);
-
-    conn->flag = CM_TRUE;
-
-    return CM_SUCCESS;
-}
-
-void dss_disconnect(dss_conn_t *conn)
-{
-    dss_set_thv_run_ctx_item(DSS_THV_RUN_CTX_ITEM_SESSION, NULL);
-    if (conn->flag == CM_TRUE) {
-        cs_disconnect(&conn->pipe);
-        dss_free_packet_buffer(&conn->pack);
-        conn->flag = CM_FALSE;
-    }
-
-    return;
 }
 
 #ifdef __cplusplus

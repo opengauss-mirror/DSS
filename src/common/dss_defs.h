@@ -334,21 +334,6 @@ extern "C" {
         }                            \
     } while (0)
 
-#define DSS_RETURN_VALUE_IF_HOOK(cond, value, hook) \
-    do {                                            \
-        if (cond) {                                 \
-            hook;                                   \
-            return value;                           \
-        }                                           \
-    } while (0)
-
-#define DSS_RETURN_IF(cond, value)                  \
-    do {                                            \
-        if (cond) {                                 \
-            return value;                           \
-        }                                           \
-    } while (0)
-
 #ifdef WIN32
 #define DSS_LOG_WITH_OS_MSG(user_fmt_str, ...)                                                                    \
     do {                                                                                                          \

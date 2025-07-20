@@ -56,7 +56,7 @@ typedef enum en_dss_redo_type {
     DSS_RT_FORMAT_AU_FILE_TABLE,
     DSS_RT_ALLOC_FILE_TABLE_NODE,
     DSS_RT_FREE_FILE_TABLE_NODE,
-    DSS_RT_MOVE_FILE_TABLE_NODE,
+    DSS_RT_RECYCLE_FILE_TABLE_NODE,
     DSS_RT_SET_FILE_SIZE,
     DSS_RT_RENAME_FILE,
     // fs_block
@@ -77,7 +77,6 @@ typedef enum en_dss_redo_type {
     DSS_RT_SET_FS_BLOCK_BATCH,
     DSS_RT_SET_FS_AUX_BLOCK_BATCH,
     DSS_RT_TRUNCATE_FS_BLOCK_BATCH,
-    DSS_RT_REMOVE_FILE_TABLE_NODE,
 } dss_redo_type_t;
 
 // redo struct allocate file table node
@@ -104,27 +103,15 @@ typedef struct st_dss_redo_free_ft_node_t {
     gft_node_t node[DSS_REDO_FREE_FT_NODE_NUM];
 } dss_redo_free_ft_node_t;
 
-typedef enum st_dss_redo_move_ft_node_index {
-    DSS_REDO_MOVE_FT_NODE_SELF_INDEX = 0,
-    DSS_REDO_MOVE_FT_NODE_LAST_INDEX = 1,
-    DSS_REDO_MOVE_FT_NODE_SPECIFIC_INDEX = 2,
-    DSS_REDO_MOVE_FT_NODE_NUM = 3
-} dss_redo_move_ft_node_index_e;
-typedef struct st_dss_redo_move_ft_node_t {
-    gft_node_t node[DSS_REDO_MOVE_FT_NODE_NUM];
-} dss_redo_move_ft_node_t;
-
-typedef enum st_dss_redo_remove_ft_node_index {
-    DSS_REDO_REMOVE_FT_NODE_PARENT_INDEX = 0,
-    DSS_REDO_REMOVE_FT_NODE_PREV_INDEX = 1,
-    DSS_REDO_REMOVE_FT_NODE_NEXT_INDEX = 2,
-    DSS_REDO_REMOVE_FT_NODE_SELF_INDEX = 3,
-    DSS_REDO_REMOVE_FT_NODE_NUM = 4
-} dss_redo_remove_ft_node_index_e;
-typedef struct st_dss_redo_remove_ft_node_t {
-    gft_root_t ft_root;
-    gft_node_t node[DSS_REDO_REMOVE_FT_NODE_NUM];
-} dss_redo_remove_ft_node_t;
+typedef enum st_dss_redo_recycle_ft_node_index {
+    DSS_REDO_RECYCLE_FT_NODE_SELF_INDEX = 0,
+    DSS_REDO_RECYCLE_FT_NODE_LAST_INDEX = 1,
+    DSS_REDO_RECYCLE_FT_NODE_RECYCLE_INDEX = 2,
+    DSS_REDO_RECYCLE_FT_NODE_NUM = 3
+} dss_redo_recycle_ft_node_index_e;
+typedef struct st_dss_redo_recycle_ft_node_t {
+    gft_node_t node[DSS_REDO_RECYCLE_FT_NODE_NUM];
+} dss_redo_recycle_ft_node_t;
 
 typedef struct st_dss_redo_format_ft_t {
     auid_t auid;

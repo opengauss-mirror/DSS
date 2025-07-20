@@ -266,17 +266,12 @@ void dss_lock_vg_mem_s_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_
 
 void dss_lock_vg_mem_and_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
     dss_lock_vg_mem_x(vg_item);
     dss_enter_shm_x(session, vg_item);
-    dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
 }
 
 bool32 dss_lock_vg_mem_and_shm_timed_x(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks)
 {
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
     if (!dss_lock_vg_mem_timed_x(vg_item, wait_ticks)) {
         LOG_DEBUG_WAR("lock vg mem x timeout.");
         return CM_FALSE;
@@ -286,7 +281,6 @@ bool32 dss_lock_vg_mem_and_shm_timed_x(dss_session_t *session, dss_vg_info_item_
         LOG_DEBUG_WAR("lock vg shm x timeout.");
         return CM_FALSE;
     }
-    dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
     return CM_TRUE;
 }
 
@@ -298,35 +292,24 @@ void dss_lock_vg_mem_and_shm_x2ix(dss_session_t *session, dss_vg_info_item_t *vg
 
 void dss_lock_vg_mem_and_shm_ix2x(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
     dss_lock_vg_mem_ix2x(vg_item);
     dss_lock_shm_meta_ix2x(session, vg_item->vg_latch);
-    dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
 }
 
 void dss_lock_vg_mem_and_shm_degrade(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
     dss_lock_vg_mem_degrade(vg_item);
     dss_lock_shm_meta_degrade(session, vg_item->vg_latch);
-    dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
 }
 
 void dss_lock_vg_mem_and_shm_s(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
     dss_lock_vg_mem_s(vg_item);
     dss_enter_shm_s(session, vg_item, CM_FALSE, SPIN_WAIT_FOREVER);
-    dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
 }
 
 bool32 dss_lock_vg_mem_and_shm_timed_s(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks)
 {
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
     if (!dss_lock_vg_mem_timed_s(vg_item, wait_ticks)) {
         LOG_DEBUG_WAR("lock vg mem s timeout.");
         return CM_FALSE;
@@ -336,17 +319,13 @@ bool32 dss_lock_vg_mem_and_shm_timed_s(dss_session_t *session, dss_vg_info_item_
         LOG_DEBUG_WAR("lock vg shm s timeout.");
         return CM_FALSE;
     }
-    dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
     return CM_TRUE;
 }
 
 void dss_lock_vg_mem_and_shm_s_force(dss_session_t *session, dss_vg_info_item_t *vg_item)
 {
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
     dss_lock_vg_mem_s_force(vg_item);
     dss_enter_shm_s(session, vg_item, CM_TRUE, SPIN_WAIT_FOREVER);
-    dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
 }
 
 void dss_unlock_vg_mem_and_shm(dss_session_t *session, dss_vg_info_item_t *vg_item)
@@ -371,48 +350,50 @@ void dss_unlock_vg_mem_and_shm_ex(dss_session_t *session, char *vg_name)
     }
 }
 
-void dss_mv_to_specific_dir(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node, gft_node_t *specific_node)
+void dss_mv_to_recycle_dir(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *node)
 {
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(node != NULL);
-    CM_ASSERT(specific_node != NULL);
     gft_node_t *last_node = NULL;
+    dss_au_root_t *dss_au_root = DSS_GET_AU_ROOT(vg_item->dss_ctrl);
+    ftid_t recycle_ftid = *(ftid_t *)(&dss_au_root->free_root);
+    gft_node_t *recycle_node = dss_get_ft_node_by_ftid(session, vg_item, recycle_ftid, CM_TRUE, CM_FALSE);
+    CM_ASSERT(recycle_node != NULL);
 
-    LOG_DEBUG_INF("[FT] Begin to mv node to specific dir, name:%s, node:%s, specific dir count:%u.", node->name,
-        dss_display_metaid(node->id), specific_node->items.count);
-    LOG_DEBUG_INF("[FT] Now specific dir first node:%s.", dss_display_metaid(specific_node->items.first));
-    LOG_DEBUG_INF("[FT] Now specific dir last node:%s.", dss_display_metaid(specific_node->items.last));
-    specific_node->items.count++;
-    node->prev = specific_node->items.last;
-    node->parent = specific_node->id;
+    LOG_DEBUG_INF("[FT][RECYCLE] Begin to mv node to recycle dir, name:%s, node:%s, recycle dir count:%u.", node->name,
+        dss_display_metaid(node->id), recycle_node->items.count);
+    LOG_DEBUG_INF("[FT][RECYCLE] Now recycle dir first node:%s.", dss_display_metaid(recycle_node->items.first));
+    LOG_DEBUG_INF("[FT][RECYCLE] Now recycle dir last node:%s.", dss_display_metaid(recycle_node->items.last));
+    recycle_node->items.count++;
+    node->prev = recycle_node->items.last;
+    node->parent = recycle_ftid;
     dss_set_blockid(&node->next, DSS_INVALID_64);
 
-    bool32 cmp = dss_cmp_blockid(specific_node->items.last, DSS_INVALID_64);
+    bool32 cmp = dss_cmp_blockid(recycle_node->items.last, DSS_INVALID_64);
     if (cmp) {
-        specific_node->items.first = node->id;
+        recycle_node->items.first = node->id;
     } else {
         last_node =
-            (gft_node_t *)dss_get_ft_node_by_ftid(session, vg_item, specific_node->items.last, CM_TRUE, CM_FALSE);
+            (gft_node_t *)dss_get_ft_node_by_ftid(session, vg_item, recycle_node->items.last, CM_TRUE, CM_FALSE);
         CM_ASSERT(last_node != NULL);
         last_node->next = node->id;
     }
-    specific_node->items.last = node->id;
+    recycle_node->items.last = node->id;
 
-    dss_redo_move_ft_node_t redo;
-    redo.node[DSS_REDO_MOVE_FT_NODE_SELF_INDEX] = *node;
+    dss_redo_recycle_ft_node_t redo;
+    redo.node[DSS_REDO_RECYCLE_FT_NODE_SELF_INDEX] = *node;
     if (last_node != NULL) {
-        redo.node[DSS_REDO_MOVE_FT_NODE_LAST_INDEX] = *last_node;
+        redo.node[DSS_REDO_RECYCLE_FT_NODE_LAST_INDEX] = *last_node;
     } else {
-        dss_set_auid(&redo.node[DSS_REDO_MOVE_FT_NODE_LAST_INDEX].id, CM_INVALID_ID64);
+        dss_set_auid(&redo.node[DSS_REDO_RECYCLE_FT_NODE_LAST_INDEX].id, CM_INVALID_ID64);
     }
-    redo.node[DSS_REDO_MOVE_FT_NODE_SPECIFIC_INDEX] = *specific_node;
+    redo.node[DSS_REDO_RECYCLE_FT_NODE_RECYCLE_INDEX] = *recycle_node;
 
-    dss_put_log(session, vg_item, DSS_RT_MOVE_FILE_TABLE_NODE, &redo, sizeof(dss_redo_move_ft_node_t));
-    DSS_LOG_DEBUG_OP("[FT] Succeed to mv to specific dir, name:%s, node:%s, now specific dir count:%u.",
-        node->name, dss_display_metaid(node->id), specific_node->items.count);
-    LOG_DEBUG_INF("[FT] Now specific dir first node:%s.", dss_display_metaid(specific_node->items.first));
-    LOG_DEBUG_INF("[FT] Now specific dir last node:%s.", dss_display_metaid(specific_node->items.last));
+    dss_put_log(session, vg_item, DSS_RT_RECYCLE_FILE_TABLE_NODE, &redo, sizeof(dss_redo_recycle_ft_node_t));
+    DSS_LOG_DEBUG_OP("[FT][RECYCLE] Succeed to mv to recycle dir, name:%s, node:%s, now recycle dir count:%u.",
+        node->name, dss_display_metaid(node->id), recycle_node->items.count);
+    LOG_DEBUG_INF("[FT][RECYCLE] Now recycle dir first node:%s.", dss_display_metaid(recycle_node->items.first));
+    LOG_DEBUG_INF("[FT][RECYCLE] Now recycle dir last node:%s.", dss_display_metaid(recycle_node->items.last));
 }
 
 status_t dss_recycle_empty_file(
@@ -476,10 +457,10 @@ static status_t dss_read_link_file(
     return CM_SUCCESS;
 }
 
-static status_t dss_check_dir_core(dss_session_t *session, const char *dir_path, char *name, uint32_t *beg_pos,
-    dss_check_dir_param_t *output_param, int32 flag);
+static status_t dss_check_dir_core(
+    dss_session_t *session, const char *dir_path, char *name, uint32_t *beg_pos, dss_check_dir_param_t *output_param);
 static status_t dss_open_link(
-    dss_session_t *session, const char *link_path, dss_vg_info_item_t **vg_item, gft_node_t **out_node, int32 flag);
+    dss_session_t *session, const char *link_path, dss_vg_info_item_t **vg_item, gft_node_t **out_node);
 
 status_t dss_read_link(dss_session_t *session, char *link_path, char *out_filepath, uint32 *out_len)
 {
@@ -488,7 +469,7 @@ status_t dss_read_link(dss_session_t *session, char *link_path, char *out_filepa
     char name[DSS_MAX_NAME_LEN];
     CM_RETURN_IFERR(dss_find_vg_by_dir(link_path, name, &vg_item));
     dss_lock_vg_mem_and_shm_s(session, vg_item);
-    status_t status = dss_open_link(session, link_path, &vg_item, &node, O_RDONLY);
+    status_t status = dss_open_link(session, link_path, &vg_item, &node);
     if (status != CM_SUCCESS) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
         return status;
@@ -536,7 +517,7 @@ status_t dss_write_link_file(dss_session_t *session, char *link_path, char *dst_
     char name[DSS_MAX_NAME_LEN];
     CM_RETURN_IFERR(dss_find_vg_by_dir(link_path, name, &vg_item));
     dss_lock_vg_mem_and_shm_s(session, vg_item);
-    status = dss_open_link(session, link_path, &vg_item, &node, O_RDWR);
+    status = dss_open_link(session, link_path, &vg_item, &node);
     dss_unlock_vg_mem_and_shm(session, vg_item);
     CM_RETURN_IFERR(status);
     CM_RETURN_IF_FALSE(node->type == GFT_LINK);
@@ -585,7 +566,7 @@ status_t dss_write_link_file(dss_session_t *session, char *link_path, char *dst_
 }
 
 static status_t dss_check_link(
-    dss_session_t *session, const char *dir_path, uint32_t *beg_pos, dss_check_dir_param_t *output_param, int32 flag)
+    dss_session_t *session, const char *dir_path, uint32_t *beg_pos, dss_check_dir_param_t *output_param)
 {
     // last node is a link
     if (dir_path[*beg_pos] == 0 && !output_param->last_is_link) {
@@ -620,7 +601,7 @@ static status_t dss_check_link(
     }
     output_param->p_node = NULL;
     // clean the parent node info before find the next link node
-    return dss_check_dir_core(session, link_path, name, beg_pos, output_param, flag);
+    return dss_check_dir_core(session, link_path, name, beg_pos, output_param);
 }
 
 void dss_check_ft_block_flags(dss_ft_block_t *block, dss_block_flag_e flags)
@@ -648,20 +629,8 @@ void dss_check_ft_node_parent(gft_node_t *node, ftid_t parent_id)
     dss_check_ft_block_flags(block, DSS_BLOCK_FLAG_USED);
 }
 
-status_t dss_check_node(gft_node_t *node, const char *dir_path, int flag)
-{
-    if (((flag & O_WRONLY) != 0) || ((flag & O_RDWR) != 0)) {
-        if ((node->flags & DSS_FT_NODE_FLAG_SYSTEM) != 0) {
-            DSS_THROW_ERROR(ERR_DSS_FILE_MODIFY_SYSTEM, dir_path);
-            LOG_DEBUG_ERR("Failed to check node, path:%s exist system dir.", dir_path);
-            return CM_ERROR;
-        }
-    }
-    return CM_SUCCESS;
-}
-
-static status_t dss_check_dir_core(dss_session_t *session, const char *dir_path, char *name, uint32_t *beg_pos,
-    dss_check_dir_param_t *output_param, int32 flag)
+static status_t dss_check_dir_core(
+    dss_session_t *session, const char *dir_path, char *name, uint32_t *beg_pos, dss_check_dir_param_t *output_param)
 {
     uint32_t next_pos;
     status_t status;
@@ -678,9 +647,6 @@ static status_t dss_check_dir_core(dss_session_t *session, const char *dir_path,
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to get the root node %s.", name));
     }
     output_param->last_node = node;
-    if (dss_check_node(node, dir_path, flag) != CM_SUCCESS) {
-        return CM_ERROR;
-    }
     do {
         status = dss_get_name_from_path(dir_path, beg_pos, name);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to get name from path %s,%d.", dir_path, status));
@@ -691,9 +657,6 @@ static status_t dss_check_dir_core(dss_session_t *session, const char *dir_path,
             session, output_param->vg_item, output_param->last_node, name, output_param->is_skip_delay_file);
         if (output_param->last_node == NULL) {
             return ERR_DSS_FILE_NOT_EXIST;
-        }
-        if (dss_check_node(output_param->last_node, dir_path, flag) != CM_SUCCESS) {
-            return CM_ERROR;
         }
         dss_check_ft_node_parent(output_param->last_node, node->id);
         output_param->p_node = node;
@@ -710,7 +673,7 @@ static status_t dss_check_dir_core(dss_session_t *session, const char *dir_path,
                 LOG_DEBUG_ERR("link is not supported to be queried from bbox file.");
                 return CM_ERROR;
             }
-            status = dss_check_link(session, dir_path, beg_pos, output_param, flag);
+            status = dss_check_link(session, dir_path, beg_pos, output_param);
             if (status != CM_SUCCESS && output_param->last_is_link) {
                 output_param->last_node = output_param->link_node;
                 cm_reset_error();
@@ -734,7 +697,7 @@ static status_t dss_exist_item_core(
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to get name from path %s.", dir_path));
     }
     dss_check_dir_param_t output_param = {NULL, NULL, NULL, NULL, CM_TRUE, CM_FALSE, CM_FALSE, CM_FALSE};
-    DSS_RETURN_IF_ERROR(dss_check_dir_core(session, dir_path, name, &beg_pos, &output_param, O_RDONLY));
+    DSS_RETURN_IF_ERROR(dss_check_dir_core(session, dir_path, name, &beg_pos, &output_param));
     if ((output_param.last_node == NULL) || (output_param.last_node->flags & DSS_FT_NODE_FLAG_DEL)) {
         *result = CM_FALSE;
     } else {
@@ -781,7 +744,7 @@ void regist_get_node_by_path_remote_proc(dss_get_node_by_path_remote_proc_t proc
 }
 
 status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_type_t type,
-    dss_check_dir_output_t *output_info, int32 flag, bool32 is_throw_err)
+    dss_check_dir_output_t *output_info, bool32 is_throw_err)
 {
     CM_ASSERT(dir_path != NULL);
     status_t status = CM_ERROR;
@@ -792,7 +755,7 @@ status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_ty
             return CM_ERROR;
         }
         if (dss_get_node_by_path_remote_proc != NULL) {
-            status = dss_get_node_by_path_remote_proc(session, dir_path, type, output_info, flag, is_throw_err);
+            status = dss_get_node_by_path_remote_proc(session, dir_path, type, output_info, is_throw_err);
             if (status == ERR_DSS_MES_ILL) {
                 continue;
             }
@@ -814,7 +777,7 @@ status_t dss_check_dir(dss_session_t *session, const char *dir_path, gft_item_ty
         output_param.vg_item = *output_info->item;
     }
     output_param.is_find_link = (type == GFT_LINK);
-    status = dss_check_dir_core(session, dir_path, name, &beg_pos, &output_param, flag);
+    status = dss_check_dir_core(session, dir_path, name, &beg_pos, &output_param);
     if (status == ERR_DSS_FILE_NOT_EXIST && is_throw_err) {
         DSS_THROW_ERROR(ERR_DSS_FILE_NOT_EXIST, name, dir_path);
     }
@@ -895,7 +858,7 @@ status_t dss_open_dir(dss_session_t *session, const char *dir_path, bool32 is_re
     do {
         dss_vg_info_item_t *dir_vg_item = vg_item;
         dss_check_dir_output_t output_info = {&node, &dir_vg_item, NULL, CM_FALSE};
-        status = dss_check_dir(session, dir_path, GFT_PATH, &output_info, O_RDONLY, CM_TRUE);
+        status = dss_check_dir(session, dir_path, GFT_PATH, &output_info, CM_TRUE);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to check dir:%s.", dir_path);
             break;
@@ -1230,7 +1193,7 @@ gft_node_t *dss_get_gft_node_by_path(
         dss_get_dir_path(dir_path, DSS_FILE_PATH_MAX_LENGTH, path);
         *dir_vg_item = vg_item;
         dss_check_dir_output_t output_info = {&parent_node, dir_vg_item, NULL, CM_FALSE};
-        status = dss_check_dir(session, dir_path, GFT_PATH, &output_info, O_RDONLY, CM_TRUE);
+        status = dss_check_dir(session, dir_path, GFT_PATH, &output_info, CM_TRUE);
         DSS_BREAK_IF_ERROR(status);
         uint32_t pos = dss_get_last_delimiter(path, '/');
         status = dss_get_name_from_path(path, &pos, name);
@@ -1281,14 +1244,14 @@ status_t dss_check_file(dss_vg_info_item_t *vg_item)
     return CM_SUCCESS;
 }
 
-status_t dss_open_file_check_s(dss_session_t *session, const char *file, dss_vg_info_item_t **vg_item,
-    gft_item_type_t type, gft_node_t **out_node, int32_t flag)
+status_t dss_open_file_check_s(
+    dss_session_t *session, const char *file, dss_vg_info_item_t **vg_item, gft_item_type_t type, gft_node_t **out_node)
 {
     status_t status = dss_check_file(*vg_item);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check file, errcode:%d.", cm_get_error_code()));
     dss_vg_info_item_t *file_vg_item = *vg_item;
     dss_check_dir_output_t output_info = {out_node, &file_vg_item, NULL, CM_FALSE};
-    status = dss_check_dir(session, file, type, &output_info, flag, CM_TRUE);
+    status = dss_check_dir(session, file, type, &output_info, CM_TRUE);
     DSS_RETURN_IFERR2(
         status, LOG_DEBUG_ERR("Failed to check dir when open file read, errcode:%d.", cm_get_error_code()));
     if (file_vg_item->id != (*vg_item)->id) {
@@ -1308,7 +1271,7 @@ status_t dss_open_file_check(
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to check file,errcode:%d.", cm_get_error_code()));
     dss_vg_info_item_t *file_vg_item = *vg_item;
     dss_check_dir_output_t output_info = {out_node, &file_vg_item, NULL, CM_TRUE};
-    status = dss_check_dir(session, file, type, &output_info, O_WRONLY, CM_TRUE);
+    status = dss_check_dir(session, file, type, &output_info, CM_TRUE);
     if (status != CM_SUCCESS) {
         LOG_DEBUG_ERR("Failed to check dir when open file, errcode:%d.", cm_get_error_code());
         return status;
@@ -1346,8 +1309,8 @@ static status_t dss_open_file_find_block_and_insert_index(
     return CM_SUCCESS;
 }
 
-static status_t dss_open_file_core(dss_session_t *session, const char *path, uint32 type, gft_node_t **out_node,
-    dss_find_node_t *find_info, int32_t flag)
+static status_t dss_open_file_core(
+    dss_session_t *session, const char *path, uint32 type, gft_node_t **out_node, dss_find_node_t *find_info)
 {
     CM_ASSERT(path != NULL);
     dss_vg_info_item_t *vg_item = NULL;
@@ -1356,7 +1319,7 @@ static status_t dss_open_file_core(dss_session_t *session, const char *path, uin
     CM_RETURN_IFERR(dss_find_vg_by_dir(path, name, &vg_item));
     dss_lock_vg_mem_and_shm_s(session, vg_item);
 
-    status_t status = dss_open_file_check_s(session, path, &vg_item, type, out_node, flag);
+    status_t status = dss_open_file_check_s(session, path, &vg_item, type, out_node);
     DSS_RETURN_IFERR2(status, dss_unlock_vg_mem_and_shm(session, vg_item));
     if (*out_node == NULL) {
         dss_unlock_vg_mem_and_shm(session, vg_item);
@@ -1393,18 +1356,18 @@ status_t dss_open_file(dss_session_t *session, const char *file, int32_t flag, d
 {
     DSS_LOG_DEBUG_OP("Begin to open file:%s, session id:%u.", file, session->id);
     gft_node_t *out_node = NULL;
-    CM_RETURN_IFERR(dss_open_file_core(session, file, GFT_FILE, &out_node, find_info, flag));
+    CM_RETURN_IFERR(dss_open_file_core(session, file, GFT_FILE, &out_node, find_info));
     uint64 fid = out_node->fid;
     DSS_LOG_DEBUG_OP("Succeed to open file:%s, fid:%llu, ftid:%s, session:%u.", file, fid,
         dss_display_metaid(out_node->id), session->id);
     return CM_SUCCESS;
 }
 
-static status_t dss_open_link_core(dss_session_t *session, dss_vg_info_item_t **vg_item, const char *path, uint32 type,
-    gft_node_t **out_node, int32 flag)
+static status_t dss_open_link_core(
+    dss_session_t *session, dss_vg_info_item_t **vg_item, const char *path, uint32 type, gft_node_t **out_node)
 {
     CM_ASSERT(path != NULL);
-    status_t status = dss_open_file_check_s(session, path, vg_item, type, out_node, flag);
+    status_t status = dss_open_file_check_s(session, path, vg_item, type, out_node);
     if (status != CM_SUCCESS) {
         return CM_ERROR;
     }
@@ -1415,13 +1378,13 @@ static status_t dss_open_link_core(dss_session_t *session, dss_vg_info_item_t **
 }
 
 static status_t dss_open_link(
-    dss_session_t *session, const char *link_path, dss_vg_info_item_t **vg_item, gft_node_t **out_node, int32 flag)
+    dss_session_t *session, const char *link_path, dss_vg_info_item_t **vg_item, gft_node_t **out_node)
 {
     LOG_DEBUG_INF("Begin to open link:%s session id:%u", link_path, session->id);
     char name[DSS_MAX_NAME_LEN];
 
     DSS_RETURN_IF_ERROR(dss_find_vg_by_dir(link_path, name, vg_item));
-    DSS_RETURN_IF_ERROR(dss_open_link_core(session, vg_item, link_path, GFT_LINK, out_node, flag));
+    DSS_RETURN_IF_ERROR(dss_open_link_core(session, vg_item, link_path, GFT_LINK, out_node));
     DSS_LOG_DEBUG_OP("Succeed to open link:%s, fid:%llu, session id:%u, entry:%s.", link_path, (*out_node)->fid,
         session->id, dss_display_metaid((*out_node)->entry));
     return CM_SUCCESS;
@@ -2236,36 +2199,6 @@ void dss_free_ft_node(
     dss_free_ft_node_inner(session, vg_item, parent_node, node, real_del);
 }
 
-void dss_remove_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, gft_node_t *node)
-{
-    CM_ASSERT(vg_item != NULL);
-    CM_ASSERT(parent_node != NULL);
-    CM_ASSERT(node != NULL);
-    gft_block_info_t prev_info = {0};
-    gft_block_info_t next_info = {0};
-    dss_get_prev_and_next_node(session, vg_item, parent_node, node, &prev_info, &next_info);
-
-    dss_redo_remove_ft_node_t redo_node;
-    redo_node.node[DSS_REDO_REMOVE_FT_NODE_PARENT_INDEX] = *parent_node;
-    if (prev_info.ft_node != NULL) {
-        redo_node.node[DSS_REDO_REMOVE_FT_NODE_PREV_INDEX] = *prev_info.ft_node;
-        DSS_LOG_DEBUG_OP("Remove ft node, prev_node name:%s, prev_node id:%s.", prev_info.ft_node->name,
-            dss_display_metaid(prev_info.ft_node->id));
-    } else {
-        dss_set_auid(&redo_node.node[DSS_REDO_REMOVE_FT_NODE_PREV_INDEX].id, CM_INVALID_ID64);
-    }
-    if (next_info.ft_node != NULL) {
-        redo_node.node[DSS_REDO_REMOVE_FT_NODE_NEXT_INDEX] = *next_info.ft_node;
-        DSS_LOG_DEBUG_OP("Remove ft node, next_node name:%s, next_node id:%s.", next_info.ft_node->name,
-            dss_display_metaid(next_info.ft_node->id));
-    } else {
-        dss_set_auid(&redo_node.node[DSS_REDO_REMOVE_FT_NODE_NEXT_INDEX].id, CM_INVALID_ID64);
-    }
-    redo_node.node[DSS_REDO_REMOVE_FT_NODE_SELF_INDEX] = *node;
-    dss_put_log(session, vg_item, DSS_RT_REMOVE_FILE_TABLE_NODE, &redo_node, sizeof(dss_redo_remove_ft_node_t));
-    DSS_LOG_DEBUG_OP("[FT][REMOVE] Remove ft node, name:%s, %s", node->name, dss_display_metaid(node->id));
-}
-
 gft_node_t *dss_find_ft_node_core(
     dss_session_t *session, dss_vg_info_item_t *vg_item, gft_node_t *parent_node, const char *name, bool32 skip_del)
 {
@@ -3070,7 +3003,7 @@ status_t dss_extend_batch_inner(dss_session_t *session, dss_vg_info_item_t *vg_i
         cm_fync_logfile();
         dss_exit(1);
     }
-    LOG_DEBUG_INF("Finish to batch extend ftid:%s to size:%llu, from offset:%llu, end offset:%llu.",
+    LOG_DEBUG_INF("Finish to batch extend ftid:%s to size:%llu from offset:%llu with au_size:%llu.",
         dss_display_metaid(node->id), node->size, (uint64)align_beg, align_end);
 
     *finish = CM_TRUE;
@@ -3426,7 +3359,7 @@ status_t dss_do_fallocate(dss_session_t *session, dss_node_data_t *node_data)
 
     dss_vg_info_item_t *vg_item = dss_find_vg_item_by_id(node_data->vgid);
     if (vg_item == NULL) {
-        DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("Failed to find vg, vg id %u.", node_data->vgid),
+        DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("Failed to find vg, vg id:%u.", node_data->vgid),
             DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "vg id", (uint64)node_data->vgid));
     }
     node_data->vg_name = (char *)vg_item->vg_name;
@@ -3808,7 +3741,8 @@ status_t dss_invalidate_fs_meta(dss_session_t *session, dss_vg_info_item_t *vg_i
         dss_invalidate_meta_msg_t invalidate_meta_msg = {vg_item->id, DSS_BLOCK_TYPE_FT, DSS_ID_TO_U64(node->id)};
         // let others can read disk or mem by force dss_latch_s_force before notify other nodes
         dss_lock_vg_mem_and_shm_x2ix(session, vg_item);
-        status = invalidate_other_nodes_proc(session, vg_item, &invalidate_meta_msg, &invalid_ack);
+        status = invalidate_other_nodes_proc(
+            vg_item, (char *)&invalidate_meta_msg, sizeof(dss_invalidate_meta_msg_t), &invalid_ack);
         // nned lock exec to finish truncate
         dss_lock_vg_mem_and_shm_ix2x(session, vg_item);
         if (status != CM_SUCCESS || !invalid_ack) {
@@ -3996,7 +3930,7 @@ bool32 dss_try_revalidate_file(dss_session_t *session, dss_vg_info_item_t *vg_it
 
         dss_set_is_refresh_ftid(node, CM_TRUE);
         dss_unlock_vg_mem_and_shm(session, vg_item);
-        status_t status = dss_refresh_ft_by_primary_proc(session, node->id, vg_item->id, vg_item->vg_name);
+        status_t status = dss_refresh_ft_by_primary_proc(node->id, vg_item->id, vg_item->vg_name);
         dss_lock_vg_mem_and_shm_x(session, vg_item);
         dss_set_is_refresh_ftid(node, CM_FALSE);
         if (status != CM_SUCCESS) {
@@ -4159,10 +4093,9 @@ void dss_init_root_fs_block(dss_ctrl_t *dss_ctrl)
     dss_set_auid(&block_root->free.last, CM_INVALID_ID64);
 }
 
-status_t dss_refresh_volume(
-    dss_session_t *session, const char *name_str, uint32 vgid, uint32 volumeid, bool32 is_force)
+status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32 vgid, uint32 volumeid)
 {
-    if ((!DSS_STANDBY_CLUSTER && !is_force) && dss_is_readwrite()) {
+    if (!DSS_STANDBY_CLUSTER && dss_is_readwrite()) {
         DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
@@ -4173,17 +4106,7 @@ status_t dss_refresh_volume(
     }
     status_t status;
     dss_enter_shm_x(session, vg_item);
-#ifdef OPENGAUSS
-    if (is_force) {
-        status = dss_init_volume_by_force(vg_item, is_force);
-        LOG_RUN_INF("Success to dss_init_volume %s by_force.", vg_item->vg_name);
-    } else {
-        status = dss_check_volume(vg_item, volumeid);
-    }
-#else
     status = dss_check_volume(vg_item, volumeid);
-#endif
-
     dss_leave_shm(session, vg_item);
     return status;
 }
@@ -4223,28 +4146,24 @@ status_t dss_load_fs_block_by_blockid(
 
     return CM_SUCCESS;
 }
-status_t dss_check_rename_path(const char *src_path, const char *dst_path, text_t *dst_name, bool32 *is_cross_dir)
+status_t dss_check_rename_path(dss_session_t *session, const char *src_path, const char *dst_path, text_t *dst_name)
 {
     text_t src_dir;
     text_t src_name;
-    *is_cross_dir = CM_FALSE;
     cm_str2text((char *)src_path, &src_name);
     if (!cm_fetch_rtext(&src_name, '/', '\0', &src_dir)) {
         DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("not a complete absolute path name(%s %s)", T2S(&src_dir), src_path),
-            DSS_THROW_ERROR_EX2(
-                ERR_DSS_FILE_RENAME, "not a complete absolute path name(%s %s)", T2S(&src_dir), src_path));
+            DSS_THROW_ERROR(ERR_DSS_FILE_RENAME, "can not change path."));
     }
 
     text_t dst_dir;
     cm_str2text((char *)dst_path, dst_name);
     if (!cm_fetch_rtext(dst_name, '/', '\0', &dst_dir)) {
-        DSS_RETURN_IFERR3(CM_ERROR, LOG_DEBUG_ERR("not a complete absolute path name(%s %s)", T2S(&dst_dir), dst_path),
-            DSS_THROW_ERROR_EX2(
-                ERR_DSS_FILE_RENAME, "not a complete absolute path name(%s %s)", T2S(&dst_dir), dst_path));
+        DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("not a complete absolute path name(%s %s)", T2S(&dst_dir), dst_path));
     }
 
     if (cm_text_equal(&src_dir, &dst_dir) == CM_FALSE) {
-        *is_cross_dir = CM_TRUE;
+        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_FILE_RENAME, "can not change path."));
     }
     return CM_SUCCESS;
 }
@@ -4437,8 +4356,7 @@ void dss_clean_all_sessions_latch()
     }
 }
 
-status_t dss_check_open_file_local_and_remote(
-    dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t ftid, bool32 *is_open)
+status_t dss_check_open_file_local_and_remote(dss_session_t *session, dss_vg_info_item_t *vg_item, ftid_t ftid, bool32 *is_open)
 {
     LOG_DEBUG_INF("[DELAY_CLEAN]Delay File begin to check ftid:%s.", dss_display_metaid(ftid));
     // check delay file open local
@@ -4451,7 +4369,7 @@ status_t dss_check_open_file_local_and_remote(
     }
     if (broadcast_check_file_open_proc != NULL) {
         // broadcast to check file open
-        status = broadcast_check_file_open_proc(session, vg_item, DSS_ID_TO_U64(ftid), is_open);
+        status = broadcast_check_file_open_proc(vg_item, DSS_ID_TO_U64(ftid), is_open);
         DSS_RETURN_IFERR2(
             status, LOG_RUN_WAR("[DELAY_CLEAN]Failed check broadcast, ftid:%s.", dss_display_metaid(ftid)));
         if (*is_open) {
@@ -4485,7 +4403,6 @@ status_t dss_block_data_oper(char *op_desc, bool32 is_write, dss_vg_info_item_t 
         DSS_RETURN_IFERR2(
             status, LOG_DEBUG_ERR("open volume %s failed.", vg_item->dss_ctrl->volume.defs[block_id.volume].name));
         vg_item->volume_handle[block_id.volume] = volume;
-        vg_item->volume_handle[block_id.volume].name_p = vg_item->volume_handle[block_id.volume].name;
     }
 
     int64 vol_offset = dss_get_au_offset(vg_item, block_id) + (uint32)offset;

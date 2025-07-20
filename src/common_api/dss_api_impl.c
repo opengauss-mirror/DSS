@@ -37,7 +37,6 @@
 #include "dss_thv.h"
 #include "dss_stats.h"
 #include "dss_cli_conn.h"
-#include "dss_vtable.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -54,101 +53,9 @@ typedef struct str_files_rw_ctx {
     dss_env_t *env;
     int32 handle;
     int32 size;
-    cli_rw_mode_e rw_mode;
+    bool32 read;
     int64 offset;
 } files_rw_ctx_t;
-
-static status_t dss_syn_vg_item_from_server(uint32 vg_id_vg, uint32 vg_id_end)
-{
-    for (uint32 i = vg_id_vg; i < vg_id_end; i++) {
-        dss_share_vg_item_t *share_vg_item = dss_get_vg_item_by_id(CM_FALSE, i);
-        if (share_vg_item == NULL) {
-            LOG_RUN_ERR("Failed to get vg item %u from shm!", i);
-            DSS_THROW_ERROR(ERR_DSS_GA_INIT, "failed to get vg_item %u from shm!", i);
-            return CM_ERROR;
-        }
-
-        // syn the info from server by shm
-        (void)memcpy_s(g_vgs_info->volume_group[i].vg_name, DSS_MAX_NAME_LEN, share_vg_item->vg_name, DSS_MAX_NAME_LEN);
-        (void)memcpy_s(g_vgs_info->volume_group[i].entry_path, DSS_MAX_VOLUME_PATH_LEN, share_vg_item->entry_path,
-            DSS_MAX_VOLUME_PATH_LEN);
-        g_vgs_info->volume_group[i].share_vg_item = share_vg_item;
-        g_vgs_info->volume_group[i].objectid = share_vg_item->objectid;
-        g_vgs_info->volume_group[i].buffer_cache = &share_vg_item->buffer_cache;
-        g_vgs_info->volume_group[i].dss_ctrl = &share_vg_item->dss_ctrl;
-        g_vgs_info->volume_group[i].vg_latch = &share_vg_item->vg_latch;
-        g_vgs_info->volume_group[i].id = share_vg_item->id;
-
-        (void)cm_attach_shm(SHM_TYPE_HASH, g_vgs_info->volume_group[i].buffer_cache->shm_id, 0, CM_SHM_ATTACH_RW);
-
-        LOG_RUN_INF("success syn vg item id [%u] vg_name [%s] entry_path[%s] from server", i,
-            g_vgs_info->volume_group[i].vg_name, g_vgs_info->volume_group[i].entry_path);
-    }
-    return CM_SUCCESS;
-}
-
-static status_t dss_init_vg_item_from_server()
-{
-    status_t status = dss_init_vg_info();
-    if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to init vg info");
-        return CM_ERROR;
-    }
-
-    // get the first vg info by shm from server
-    dss_share_vg_item_t *share_vg_item = dss_get_vg_item_by_id(CM_FALSE, 0);
-    if (share_vg_item == NULL) {
-        LOG_RUN_ERR("Failed to get vg_item %u from shm!", 0);
-        DSS_THROW_ERROR(ERR_DSS_GA_INIT, "failed to get vg_item %u from shm!", 0);
-        return CM_ERROR;
-    }
-
-    status = dss_syn_vg_item_from_server(0, share_vg_item->all_vg_item_cnt);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to refresh vg item");
-        return CM_ERROR;
-    }
-    g_vgs_info->group_num = share_vg_item->all_vg_item_cnt;
-    return CM_SUCCESS;
-}
-
-static status_t dss_refresh_vg_item_from_server()
-{
-    status_t status =
-        dss_syn_vg_item_from_server(g_vgs_info->group_num, g_vgs_info->volume_group[0].share_vg_item->all_vg_item_cnt);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("Failed to refresh vg_item");
-        return CM_ERROR;
-    }
-
-    if (g_vgs_info->group_num != g_vgs_info->volume_group[0].share_vg_item->all_vg_item_cnt) {
-        g_vgs_info->group_num = g_vgs_info->volume_group[0].share_vg_item->all_vg_item_cnt;
-        LOG_RUN_INF("success syn vg item to server to:%d", g_vgs_info->group_num);
-    }
-
-    return CM_SUCCESS;
-}
-
-static dss_vg_info_item_t *dss_find_vg_item_with_refresh(const char *vg_name)
-{
-    dss_env_t *dss_env = dss_get_env();
-    if (!dss_env->initialized) {
-        return NULL;
-    }
-    // may server add vg items
-    if (g_vgs_info->group_num < g_vgs_info->volume_group[0].share_vg_item->all_vg_item_cnt) {
-        dss_latch_x(&dss_env->latch);
-        if (g_vgs_info->group_num < g_vgs_info->volume_group[0].share_vg_item->all_vg_item_cnt) {
-            status_t status = dss_refresh_vg_item_from_server();
-            if (status != CM_SUCCESS) {
-                dss_unlatch(&dss_env->latch);
-                return NULL;
-            }
-        }
-        dss_unlatch(&dss_env->latch);
-    }
-    return dss_find_vg_item(vg_name);
-}
 
 status_t dss_load_ctrl_sync(dss_conn_t *conn, const char *vg_name, uint32 index)
 {
@@ -344,7 +251,7 @@ static status_t dss_check_refresh_file_by_size(
     int64 offset = 0;
     bool32 need_refresh = CM_FALSE;
     uint32 tmp_total_size = (uint32)*total_size;
-    if (param->rw_mode == DSS_CLIENT_READ) {
+    if (param->is_read) {
         if (param->atom_oper) {
             offset = param->offset;
         } else {
@@ -359,7 +266,7 @@ static status_t dss_check_refresh_file_by_size(
             return CM_ERROR;
         }
         // check if read data from offset with tmp_total_size more than the node->size
-        if (param->rw_mode == DSS_CLIENT_READ && ((tmp_total_size + (uint64)offset) > (uint64)context->node->size)) {
+        if (param->is_read && ((tmp_total_size + (uint64)offset) > (uint64)context->node->size)) {
             // no data to read
             if ((uint64)offset >= (uint64)context->node->size) {
                 LOG_DEBUG_INF("Node:%s has no data to read.", dss_display_metaid(context->node->id));
@@ -375,13 +282,13 @@ static status_t dss_check_refresh_file_by_size(
 }
 
 static void dss_check_file_written_size(
-    dss_conn_t *conn, dss_file_context_t *context, uint32 start_offset, cli_rw_mode_e rw_mode, int32 *total_size)
+    dss_conn_t *conn, dss_file_context_t *context, uint32 start_offset, bool32 is_read, int32 *total_size)
 {
     uint32 tmp_total_size = (uint32)*total_size;
-    if (rw_mode == DSS_CLIENT_READ && ((tmp_total_size + start_offset) > context->node->written_size)) {
+    if (is_read && ((tmp_total_size + start_offset) > context->node->written_size)) {
         // no data to read
         if (start_offset >= context->node->written_size) {
-            LOG_DEBUG_INF("Node:%s has node data to read.", dss_display_metaid(context->node->id));
+            LOG_DEBUG_INF("Node:%s has no data to read.", dss_display_metaid(context->node->id));
             *total_size = 0;
             // no enough data to read
         } else {
@@ -400,11 +307,10 @@ static void dss_check_file_written_size(
 }
 
 static status_t dss_check_refresh_file_by_offset(
-    dss_conn_t *conn, dss_file_context_t *context, int64 offset, cli_rw_mode_e rw_mode)
+    dss_conn_t *conn, dss_file_context_t *context, int64 offset, bool32 is_read)
 {
     // posix do pwrite if ofset more than node->size, pread return count 0 witch errno is success
-    if (!dss_is_fs_meta_valid(context->node) ||
-        (rw_mode == DSS_CLIENT_READ && (uint64)offset >= context->node->written_size)) {
+    if (!dss_is_fs_meta_valid(context->node) || (is_read && (uint64)offset >= context->node->written_size)) {
         if (dss_check_apply_refresh_file(conn, context, 0) != CM_SUCCESS) {
             LOG_DEBUG_ERR("Failed to apply refresh file, fid:%llu.", context->fid);
             return CM_ERROR;
@@ -481,45 +387,6 @@ status_t dss_apply_refresh_volume(dss_conn_t *conn, dss_file_context_t *context,
     return dss_msg_interact_with_stat(conn, DSS_CMD_REFRESH_VOLUME, (void *)&send_info, NULL);
 }
 
-#ifdef OPENGAUSS
-status_t dss_reopen_vg_handel_impl(dss_conn_t *conn, const char *name)
-{
-    dss_refresh_volume_info_t send_info;
-   
-    DSS_RETURN_IF_ERROR(dss_check_device_path(name));
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(name + 1);
-    if (vg_item == NULL) {
-        LOG_RUN_ERR("Failed to find vg, vg name %s.", name);
-        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, name);
-        return CM_ERROR;
-    }
-
-    send_info.vg_name = vg_item->vg_name;
-    send_info.vg_id = vg_item->id;
-    send_info.volume_id = CM_INVALID_ID32;
-    LOG_RUN_INF("Start to reopen volumn handle, vg_name:\"%s\", vg_id:%d.", vg_item->vg_name, vg_item->id);
-    status_t status = dss_msg_interact_with_stat(conn, DSS_CMD_REFRESH_VOLUME, (void *)&send_info, NULL);
-    if (status != CM_SUCCESS) {
-        LOG_RUN_ERR("Fail to dss refresh volume, vg_name:\"%s\", vg_id:%d,",
-            vg_item->vg_name, vg_item->id);
-        return status;
-    }
-    LOG_RUN_INF("Success to refresh volume handle, vg_name:\"%s\", vg_id:%d,", vg_item->vg_name, vg_item->id);
-
-    DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
-    dss_cli_vg_handles_t *cli_vg_handles = (dss_cli_vg_handles_t *)(conn->cli_vg_handles);
-    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
-        if (strcmp(g_vgs_info->volume_group[i].vg_name, vg_item->vg_name) == 0) {
-            dss_destroy_vol_handle(&g_vgs_info->volume_group[i], &cli_vg_handles->vg_vols[i], DSS_MAX_VOLUMES);
-        }
-    }
-    DSS_UNLOCK_VG_META_S(vg_item, conn->session);
-    LOG_RUN_INF("Success to destroy client volume handle.");
-
-    return CM_SUCCESS;
-}
-#endif
-
 status_t dss_refresh_volume_handle(dss_conn_t *conn, dss_file_context_t *context, auid_t auid)
 {
     dss_vg_info_item_t *vg_item = context->vg_item;
@@ -539,7 +406,7 @@ status_t dss_refresh_volume_handle(dss_conn_t *conn, dss_file_context_t *context
 
     simple_vol->id = auid.volume;
     simple_vol->version = vg_item->dss_ctrl->volume.defs[auid.volume].version;
-    LOG_DEBUG_INF("The client refresh volume:(id:%u, handle:%lld) and open.", simple_vol->id, simple_vol->handle);
+    LOG_DEBUG_INF("The client refresh volume:(id:%u, handle:%d) and open.", simple_vol->id, simple_vol->handle);
     return CM_SUCCESS;
 }
 
@@ -561,22 +428,16 @@ status_t dss_reopen_volume_handle(dss_conn_t *conn, dss_file_context_t *context,
 
     simple_vol->id = auid.volume;
     simple_vol->version = vg_item->dss_ctrl->volume.defs[auid.volume].version;
-    LOG_DEBUG_INF("The client reopen volume:(id:%u, handle:%lld) and open.", simple_vol->id, simple_vol->handle);
+    LOG_DEBUG_INF("The client reopen volume:(id:%u, handle:%d) and open.", simple_vol->id, simple_vol->handle);
     return CM_SUCCESS;
 }
 
 status_t dss_lock_vg_s(dss_vg_info_item_t *vg_item, dss_session_t *session)
 {
     dss_latch_offset_t latch_offset;
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
     latch_offset.type = DSS_LATCH_OFFSET_SHMOFFSET;
     latch_offset.offset.shm_offset = dss_get_vg_latch_shm_offset(vg_item);
-    status_t  ret = dss_cli_lock_shm_meta_s(session, &latch_offset, vg_item->vg_latch, NULL);
-    if (ret == CM_SUCCESS) {
-        dss_session_end_stat(session, &begin_tv, DSS_LOCK_VG);
-    }
-    return ret;
+    return dss_cli_lock_shm_meta_s(session, &latch_offset, vg_item->vg_latch, NULL);
 }
 
 status_t dss_apply_refresh_file_table(dss_conn_t *conn, dss_dir_t *dir)
@@ -595,6 +456,92 @@ status_t dss_apply_refresh_file_table(dss_conn_t *conn, dss_dir_t *dir)
     return status;
 }
 
+static inline void dss_init_conn(dss_conn_t *conn)
+{
+    conn->flag = CM_FALSE;
+    conn->cli_vg_handles = NULL;
+    conn->session = NULL;
+}
+
+status_t dss_alloc_conn(dss_conn_t **conn)
+{
+    dss_conn_t *_conn = (dss_conn_t *)cm_malloc_align(DSSAPI_BLOCK_SIZE, sizeof(dss_conn_t));
+    if (_conn != NULL) {
+        dss_init_conn(_conn);
+        *conn = _conn;
+        return CM_SUCCESS;
+    }
+
+    return CM_ERROR;
+}
+
+void dss_free_conn(dss_conn_t *conn)
+{
+    DSS_FREE_POINT(conn);
+    return;
+}
+
+static status_t dss_check_url_format(const char *url, text_t *uds)
+{
+    uint32 len = (uint32)strlen(url);
+    if (len <= uds->len) {
+        return CM_ERROR;
+    }
+
+    return (cm_strcmpni(url, uds->str, uds->len) != 0) ? CM_ERROR : CM_SUCCESS;
+}
+
+status_t dss_connect(const char *server_locator, dss_conn_opt_t *options, dss_conn_t *conn)
+{
+    if (server_locator == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_UDS_INVALID_URL, "NULL", 0);
+        return CM_ERROR;
+    }
+
+    if ((conn->flag == CM_TRUE) && (conn->pipe.link.uds.closed == CM_FALSE)) {
+        return CM_SUCCESS;
+    }
+
+    conn->flag = CM_FALSE;
+    text_t uds = {"UDS:", 4};
+    if (dss_check_url_format(server_locator, &uds) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_UDS_INVALID_URL, server_locator, strlen(server_locator));
+        return ERR_DSS_UDS_INVALID_URL;
+    }
+    conn->cli_vg_handles = NULL;
+    conn->pipe.options = 0;
+    int32 timeout = options != NULL ? options->timeout : g_dss_uds_conn_timeout;
+    conn->pipe.connect_timeout = timeout < 0 ? DSS_UDS_CONNECT_TIMEOUT : timeout;
+    conn->pipe.socket_timeout = DSS_UDS_SOCKET_TIMEOUT;
+    conn->pipe.link.uds.sock = CS_INVALID_SOCKET;
+    conn->pipe.link.uds.closed = CM_TRUE;
+    conn->pipe.type = CS_TYPE_DOMAIN_SCOKET;
+    conn->session = NULL;
+    status_t ret = cs_connect_ex(
+        server_locator, &conn->pipe, NULL, (const char *)(server_locator + uds.len), (const char *)CM_NULL_TEXT.str);
+    if (ret != CM_SUCCESS) {
+        LOG_DEBUG_ERR("connect server failed, uds path:%s", server_locator);
+        return ret;
+    }
+    dss_init_packet(&conn->pack, conn->pipe.options);
+
+    conn->flag = CM_TRUE;
+
+    return CM_SUCCESS;
+}
+
+void dss_disconnect(dss_conn_t *conn)
+{
+    dss_set_thv_run_ctx_item(DSS_THV_RUN_CTX_ITEM_SESSION, NULL);
+    if (conn->flag == CM_TRUE) {
+        cs_disconnect(&conn->pipe);
+        dss_free_packet_buffer(&conn->pack);
+        conn->flag = CM_FALSE;
+    }
+
+    return;
+}
+
 status_t dss_init_vol_handle_sync(dss_conn_t *conn)
 {
     if (!conn->flag) {
@@ -610,12 +557,24 @@ status_t dss_init_vol_handle_sync(dss_conn_t *conn)
         return CM_ERROR;
     }
 
+    status_t status;
     dss_cli_vg_handles_t *cli_vg_handles = (dss_cli_vg_handles_t *)(conn->cli_vg_handles);
-    for (uint32 i = 0; i < DSS_MAX_VOLUME_GROUP_NUM; i++) {
+
+    int cli_flags = DSS_CLI_OPEN_FLAG;
+    for (uint32 i = 0; i < g_vgs_info->group_num; i++) {
         for (uint32 vid = 0; vid < DSS_MAX_VOLUMES; ++vid) {
             cli_vg_handles->vg_vols[i].volume_handle[vid].handle = DSS_INVALID_HANDLE;
             cli_vg_handles->vg_vols[i].volume_handle[vid].unaligned_handle = DSS_INVALID_HANDLE;
             cli_vg_handles->vg_vols[i].volume_handle[vid].id = vid;
+        }
+
+        status = dss_init_vol_handle(&g_vgs_info->volume_group[i], cli_flags, &cli_vg_handles->vg_vols[i]);
+        if (status != CM_SUCCESS) {
+            for (int32 j = (int32)(i - 1); j >= 0; j--) {
+                dss_destroy_vol_handle(&g_vgs_info->volume_group[j], &cli_vg_handles->vg_vols[j], DSS_MAX_VOLUMES);
+            }
+            DSS_FREE_POINT(conn->cli_vg_handles);
+            return status;
         }
     }
 
@@ -669,7 +628,7 @@ status_t dss_cli_handshake(dss_conn_t *conn, uint32 max_open_file)
         return CM_ERROR;
     }
     conn->cli_info.connect_time = cm_clock_monotonic_now();
-    dss_get_server_info_t output_info = {NULL, DSS_INVALID_SESSIONID, 0, DSS_FALSE};
+    dss_get_server_info_t output_info = {NULL, DSS_INVALID_SESSIONID, 0};
     CM_RETURN_IFERR(dss_msg_interact(conn, DSS_CMD_HANDSHAKE, (void *)&conn->cli_info, (void *)&output_info));
     if (conn->pack.head->version >= DSS_VERSION_2) {
         if (g_dss_server_pid == 0) {
@@ -678,9 +637,6 @@ status_t dss_cli_handshake(dss_conn_t *conn, uint32 max_open_file)
             DSS_THROW_ERROR(ERR_DSS_SERVER_REBOOT);
             return ERR_DSS_SERVER_REBOOT;
         }
-    }
-    if (conn->pack.head->version >= DSS_VERSION_4 && output_info.isvtable) {
-        dss_init_vtable();
     }
     return dss_set_server_info(conn, output_info.home, output_info.objectid, max_open_file);
 }
@@ -722,8 +678,8 @@ status_t dss_cli_session_lock(dss_conn_t *conn, dss_session_t *session)
             conn->cli_info.connect_time);
         LOG_RUN_ERR("Failed to check session %u, session thread id is %u, connect_time is %llu, conn thread id is %u, "
                     "connect_time is %llu",
-            session->id, session->cli_info.thread_id, session->cli_info.connect_time, conn->cli_info.thread_id,
-            conn->cli_info.connect_time);
+                    session->id, session->cli_info.thread_id, session->cli_info.connect_time, conn->cli_info.thread_id,
+                    conn->cli_info.connect_time);
         cm_spin_unlock(&session->shm_lock);
         LOG_DEBUG_INF("Succeed to unlock session %u shm lock", session->id);
         return CM_ERROR;
@@ -778,7 +734,7 @@ status_t dss_remove_dir_impl(dss_conn_t *conn, const char *dir, bool32 recursive
 
 static dss_dir_t *dss_open_dir_impl_core(dss_conn_t *conn, dss_find_node_t *find_node)
 {
-    dss_vg_info_item_t *vg_item = dss_find_vg_item_with_refresh(find_node->vg_name);
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(find_node->vg_name);
     if (vg_item == NULL) {
         LOG_RUN_ERR("Failed to find vg, %s.", find_node->vg_name);
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, find_node->vg_name);
@@ -935,13 +891,6 @@ status_t dss_query_hotpatch_impl(dss_conn_t *conn, dss_hp_info_view_t *hp_info_v
     return CM_SUCCESS;
 }
 
-status_t dss_kill_session_impl(dss_conn_t *conn, uint32 sid)
-{
-    CM_CHECK_NULL_PTR(conn);
-    CM_RETURN_IFERR(dss_msg_interact(conn, DSS_CMD_KILL_SESSION, (void *)&sid, NULL));
-    return CM_SUCCESS;
-}
-
 status_t dss_create_file_impl(dss_conn_t *conn, const char *file_path, int flag)
 {
     LOG_DEBUG_INF("dss create file entry, file path:%s, flag:%d", file_path, flag);
@@ -976,7 +925,7 @@ status_t dss_find_vg_by_file_path(const char *path, dss_vg_info_item_t **vg_item
     status_t status = dss_get_name_from_path(path, &beg_pos, vg_name);
     DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to get name from path:%s, status:%d.", path, status));
 
-    *vg_item = dss_find_vg_item_with_refresh(vg_name);
+    *vg_item = dss_find_vg_item(vg_name);
     if (*vg_item == NULL) {
         LOG_DEBUG_ERR("Failed to find VG:%s.", vg_name);
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
@@ -1018,7 +967,7 @@ gft_node_t *dss_get_node_by_path_impl(dss_conn_t *conn, const char *path)
     if (dss_get_ftid_by_path_on_server(conn, path, &ftid, (char *)vg_name) != CM_SUCCESS) {
         return NULL;
     }
-    dss_vg_info_item_t *vg_item = dss_find_vg_item_with_refresh(vg_name);
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_item == NULL) {
         LOG_DEBUG_ERR("Failed to find vg,vg name %s.", vg_name);
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
@@ -1050,9 +999,9 @@ status_t dss_init_file_context(
     return CM_SUCCESS;
 }
 
-/*
+/*  
 1 after extend success, will generate new linked list
-context[file_run_ctx->files->group_num - 1] [0]->context[file_run_ctx->files->group_num - 1]
+context[file_run_ctx->files->group_num - 1] [0]->context[file_run_ctx->files->group_num - 1] 
 [1]->...->context[file_run_ctx->files->group_num - 1] [DSS_FILE_CONTEXT_PER_GROUP - 1]
 2 insert new linked list head into the old linked list
 */
@@ -1141,7 +1090,7 @@ status_t dss_open_file_impl(dss_conn_t *conn, const char *file_path, int flag, i
     LOG_DEBUG_INF("dss begin to open file, file path:%s, flag:%d", file_path, flag);
     DSS_RETURN_IF_ERROR(dss_check_device_path(file_path));
     DSS_RETURN_IF_ERROR(dss_open_file_on_server(conn, file_path, flag, &find_node));
-    dss_vg_info_item_t *vg_item = dss_find_vg_item_with_refresh(find_node->vg_name);
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(find_node->vg_name);
     if (vg_item == NULL) {
         LOG_RUN_ERR("Failed to find vg, vg name %s.", find_node->vg_name);
         DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, find_node->vg_name);
@@ -1190,9 +1139,6 @@ status_t dss_latch_context_by_handle(
     }
 
     dss_file_context_t *file_cxt = dss_get_file_context_by_handle(file_run_ctx, handle);
-
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
     dss_latch(&file_cxt->latch, latch_mode, ((dss_session_t *)conn->session)->id);
     if (file_cxt->flag == DSS_FILE_CONTEXT_FLAG_FREE) {
         dss_unlatch(&file_cxt->latch);
@@ -1209,7 +1155,6 @@ status_t dss_latch_context_by_handle(
     }
 
     *context = file_cxt;
-    dss_session_end_stat(conn->session, &begin_tv, DSS_LATCH_CONTEXT);
     return CM_SUCCESS;
 }
 
@@ -1309,7 +1254,8 @@ int64 dss_seek_file_impl_core(dss_rw_param_t *param, int64 offset, int origin)
         status = dss_check_apply_refresh_file(conn, context, 0);
         DSS_RETURN_IFERR2(status, LOG_DEBUG_ERR("Failed to apply refresh file,fid:%llu.", context->fid));
         size = cm_atomic_get(&context->node->size);
-        if (offset > size && param->rw_mode == DSS_CLIENT_READ) {
+
+        if (offset > size && param->is_read) {
             LOG_DEBUG_ERR("Invalid parameter offset is greater than size, offset:%lld, new_offset:%lld,"
                           " file size:%llu, vgid:%u, fid:%llu, node fid:%llu, need_refresh:%d.",
                 offset, new_offset, context->node->size, context->vg_item->id, context->fid, context->node->fid,
@@ -1348,7 +1294,7 @@ void dss_init_rw_param(
     param->context = ctx;
     param->offset = offset;
     param->atom_oper = atomic;
-    param->rw_mode = DSS_CLIENT_WRITE;
+    param->is_read = DSS_FALSE;
 }
 
 static int64 dss_seek_file_prepare(
@@ -1391,7 +1337,7 @@ static status_t dss_check_ready_fs_block(files_rw_ctx_t *rw_ctx, dss_fs_pos_desc
         status_t status = dss_check_find_fs_block(rw_ctx, fs_pos);
         DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to find fs block."));
         if (fs_pos->is_valid) {
-            if (rw_ctx->rw_mode != DSS_CLIENT_READ) {
+            if (!rw_ctx->read) {
                 return CM_SUCCESS;
             }
 
@@ -1419,7 +1365,7 @@ static status_t dss_check_ready_fs_block(files_rw_ctx_t *rw_ctx, dss_fs_pos_desc
         }
 
         // try ask help from server
-        if (rw_ctx->rw_mode != DSS_CLIENT_READ) {
+        if (!rw_ctx->read) {
             status = dss_check_apply_extending_file(conn, context, rw_ctx->handle, rw_ctx->size, rw_ctx->offset);
             DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to extend file fs block."));
         } else {
@@ -1427,7 +1373,7 @@ static status_t dss_check_ready_fs_block(files_rw_ctx_t *rw_ctx, dss_fs_pos_desc
             status = dss_check_apply_refresh_file(conn, context, rw_ctx->offset);
             DSS_RETURN_IFERR2(status, LOG_RUN_ERR("Failed to refresh fs block."));
             // after check from server, if try to read, but no more data to read, go back to caller
-            if (rw_ctx->rw_mode == DSS_CLIENT_READ && (uint64)rw_ctx->offset >= node->written_size) {
+            if (rw_ctx->read && (uint64)rw_ctx->offset >= node->written_size) {
                 break;
             }
         }
@@ -1473,9 +1419,7 @@ static void dss_read_write_check_need_updt_fs_aux(
     gft_node_t *node = context->node;
 
     // try to avoid too much update for fs_aux info
-    if (DSS_IS_FILE_INNER_INITED(node->flags) &&
-        param->rw_mode != DSS_CLIENT_READ &&
-        !need_updt_fs_aux && fs_pos->fs_aux != NULL &&
+    if (DSS_IS_FILE_INNER_INITED(node->flags) && !param->is_read && !(*need_updt_fs_aux) && fs_pos->fs_aux != NULL &&
         (uint64)(rw_ctx->offset + real_size) > node->min_inited_size) {
         dss_api_check_need_updt_fs_aux(context, rw_ctx, fs_pos, real_size, need_updt_fs_aux);
     }
@@ -1497,7 +1441,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
 
     CM_RETURN_IFERR(dss_check_refresh_file_by_size(conn, context, param, &total_size));
     // after refresh, still has no data, read return with 0, may truncate by others
-    if (param->rw_mode == DSS_CLIENT_READ && total_size == 0) {
+    if (param->is_read && total_size == 0) {
         *read_size = 0;
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
         return CM_SUCCESS;
@@ -1519,12 +1463,12 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         rw_ctx.file_ctx = context;
         rw_ctx.handle = handle;
         rw_ctx.size = total_size;
-        rw_ctx.rw_mode = param->rw_mode;
+        rw_ctx.read = param->is_read;
         rw_ctx.offset = (param->atom_oper ? param->offset : context->offset);
 
         // after refresh, still has no data, read return with 0, may truncate by others
-        dss_check_file_written_size(conn, context, rw_ctx.offset, param->rw_mode, &total_size);
-        if (param->rw_mode == DSS_CLIENT_READ && total_size == 0) {
+        dss_check_file_written_size(conn, context, rw_ctx.offset, param->is_read, &total_size);
+        if (param->is_read && total_size == 0) {
             *read_size = 0;
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             return CM_SUCCESS;
@@ -1536,7 +1480,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
             return CM_ERROR;
         }
 
-        if (rw_ctx.rw_mode == DSS_CLIENT_READ && !fs_pos.is_valid) {
+        if (rw_ctx.read && !fs_pos.is_valid) {
             *read_size = 0;
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             return CM_SUCCESS;
@@ -1611,36 +1555,30 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         timeval_t begin_tv_disk;
         dss_begin_stat(&begin_tv_disk);
 
-        if (param->rw_mode == DSS_CLIENT_READ) {
+        if (param->is_read) {
             LOG_DEBUG_INF("Begin to read volume %s, offset:%lld, size:%d, fname:%s, fsize:%llu, fwritten_size:%llu.",
                 volume.name_p, vol_offset, real_size, node->name, node->size, node->written_size);
             status = dss_read_volume_with_fs_aux(
                 vg_item, node, fs_pos.fs_aux, &volume, (int64)vol_offset, rw_ctx.offset, buf, real_size);
-        } else if (param->rw_mode == DSS_CLIENT_WRITE) {
+        } else {
             LOG_DEBUG_INF("Begin to write volume %s, offset:%lld, size:%d, fname:%s, fsize:%llu, fwritten_size:%llu.",
                 volume.name_p, vol_offset, real_size, node->name, node->size, node->written_size);
 #if defined(_DEBUG) && !defined(OPENGAUSS)
             if (CM_STR_EQUAL(context->vg_item->vg_name, "dss_data") && !CM_STR_BEGIN_WITH(node->name, "ctrl")) {
-                LOG_DEBUG_INF("dss pwrite file %s, vol_offset:%lld, head:%u-%u", node->name, vol_offset,
-                    *(uint16 *)((char *)buf + sizeof(uint32)), *(uint32 *)buf);
-            }
+                    LOG_DEBUG_INF("dss pwrite file %s, vol_offset:%lld, head:%u-%u", node->name, vol_offset,
+                        *(uint16 *)((char*)buf + sizeof(uint32)), *(uint32 *)buf);
+                }
 #endif
             status = dss_write_volume(&volume, (int64)vol_offset, buf, real_size);
-        } else {
-            LOG_DEBUG_INF("Begin to write volume %s, offset:%lld, size:%d, fname:%s, fsize:%llu, fwritten_size:%llu.",
-                volume.name_p, vol_offset, real_size, node->name, node->size, node->written_size);
-            status = dss_append_volume(&volume, (int64)vol_offset, buf, real_size);
         }
         if (status != CM_SUCCESS) {
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-            LOG_DEBUG_ERR(
-                "Failed to read write file:(id:%u, handle:%lld, unaligned_handle:%lld), offset:%llu, size:%d.",
+            LOG_DEBUG_ERR("Failed to read write file:(id:%u, handle:%d, unaligned_handle:%d), offset:%llu, size:%d.",
                 volume.id, volume.handle, volume.unaligned_handle, vol_offset, real_size);
             return status;
         }
 
-        dss_session_end_stat(
-            conn->session, &begin_tv_disk, (param->rw_mode == DSS_CLIENT_READ ? DSS_PREAD_DISK : DSS_PWRITE_DISK));
+        dss_session_end_stat(conn->session, &begin_tv_disk, (param->is_read ? DSS_PREAD_DISK : DSS_PWRITE_DISK));
         dss_read_write_check_need_updt_fs_aux(param, &rw_ctx, &fs_pos, real_size, &need_updt_fs_aux);
 
         read_cnt += real_size;
@@ -1652,10 +1590,10 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         }
         buf = (void *)(((char *)buf) + real_size);
         if (param->atom_oper) {
-            if (param->rw_mode == DSS_CLIENT_READ && param->offset >= context->node->size) {
+            if (param->is_read && param->offset >= context->node->size) {
                 break;
             }
-        } else if (param->rw_mode == DSS_CLIENT_READ && context->offset >= context->node->size) {
+        } else if (param->is_read && context->offset >= context->node->size) {
             break;
         }
     } while (total_size > 0);
@@ -1665,7 +1603,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
 
     /* tracking real written size may hinder performance, hence disabled otherwise */
     int64 offset = (param->atom_oper ? param->offset : context->offset);
-    bool32 need_update = offset > context->node->written_size && param->rw_mode != DSS_CLIENT_READ;
+    bool32 need_update = offset > context->node->written_size && !param->is_read;
     if (need_update || need_updt_fs_aux) { /* updates written size outside of locking */
         LOG_DEBUG_INF("Start update_written_size for file:\"%s\", curr offset:%llu, curr written_size:%llu, size:%d.",
             node->name, base_offset, node->written_size, size);
@@ -1675,11 +1613,9 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
     return status;
 }
 
-status_t dss_read_write_file(
-    dss_conn_t *conn, int32 handle, void *buf, int32 size, int32 *read_size, cli_rw_mode_e rw_mode)
+status_t dss_read_write_file(dss_conn_t *conn, int32 handle, void *buf, int32 size, int32 *read_size, bool32 is_read)
 {
     status_t status;
-    bool mode_match;
     dss_file_context_t *context = NULL;
     dss_rw_param_t param;
 
@@ -1687,23 +1623,17 @@ status_t dss_read_write_file(
         LOG_DEBUG_ERR("File size is invalid: %d.", size);
         return CM_ERROR;
     }
-    LOG_DEBUG_INF("dss read write file entry, handle:%d, rw_mode:%u", handle, rw_mode);
+    LOG_DEBUG_INF("dss read write file entry, handle:%d, is_read:%u", handle, is_read);
 
     DSS_RETURN_IF_ERROR(dss_latch_context_by_handle(conn, handle, &context, LATCH_MODE_EXCLUSIVE));
-
-    if (rw_mode == DSS_CLIENT_READ) {
-        mode_match = context->mode & DSS_FILE_MODE_READ;
-    } else {
-        mode_match = context->mode & DSS_FILE_MODE_WRITE;
-    }
+    bool mode_match = is_read ? (context->mode & DSS_FILE_MODE_READ) : (context->mode & DSS_FILE_MODE_WRITE);
     if (!mode_match) {
         dss_unlatch(&context->latch);
-        DSS_THROW_ERROR(
-            ERR_DSS_FILE_RDWR_INSUFF_PER, rw_mode == DSS_CLIENT_READ ? "read" : "write/append", context->mode);
+        DSS_THROW_ERROR(ERR_DSS_FILE_RDWR_INSUFF_PER, is_read ? "read" : "write", context->mode);
         return CM_ERROR;
     }
     dss_init_rw_param(&param, conn, handle, context, context->offset, DSS_FALSE);
-    param.rw_mode = rw_mode;
+    param.is_read = is_read;
     status = dss_read_write_file_core(&param, buf, size, read_size);
     dss_unlatch(&context->latch);
     LOG_DEBUG_INF("dss read write file leave");
@@ -1713,12 +1643,7 @@ status_t dss_read_write_file(
 
 status_t dss_write_file_impl(dss_conn_t *conn, int handle, const void *buf, int size)
 {
-    return dss_read_write_file(conn, handle, (void *)buf, size, NULL, DSS_CLIENT_WRITE);
-}
-
-status_t dss_append_file_impl(dss_conn_t *conn, int handle, const void *buf, int size)
-{
-    return dss_read_write_file(conn, handle, (void *)buf, size, NULL, DSS_CLIENT_APPEND);
+    return dss_read_write_file(conn, handle, (void *)buf, size, NULL, DSS_FALSE);
 }
 
 status_t dss_read_file_impl(dss_conn_t *conn, int handle, void *buf, int size, int *read_size)
@@ -1727,7 +1652,7 @@ status_t dss_read_file_impl(dss_conn_t *conn, int handle, void *buf, int size, i
         return CM_ERROR;
     }
 
-    return dss_read_write_file(conn, handle, buf, size, read_size, DSS_CLIENT_READ);
+    return dss_read_write_file(conn, handle, buf, size, read_size, DSS_TRUE);
 }
 
 static status_t dss_pwrite_file_prepare(dss_conn_t *conn, dss_file_context_t *context, long long offset)
@@ -1756,7 +1681,8 @@ status_t dss_pwrite_file_impl(dss_conn_t *conn, int handle, const void *buf, int
     }
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
-    param.rw_mode = DSS_CLIENT_WRITE;
+    param.is_read = DSS_FALSE;
+    dss_set_conn_wait_event(conn, DSS_PWRITE_SYN_META);
     if (dss_pwrite_file_prepare(conn, context, offset) != CM_SUCCESS) {
         dss_unset_conn_wait_event(conn);
         dss_unlatch(&context->latch);
@@ -1802,7 +1728,7 @@ status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, 
     }
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
-    param.rw_mode = DSS_CLIENT_READ;
+    param.is_read = DSS_TRUE;
     dss_set_conn_wait_event(conn, DSS_PREAD_SYN_META);
     do {
         bool32 read_end = CM_FALSE;
@@ -1865,14 +1791,6 @@ status_t dss_fallocate_impl(dss_conn_t *conn, int handle, int mode, long long in
     return status;
 }
 
-static status_t dss_set_vtable_addr(uint64 vol_offset, char *obj_addr, unsigned long int *obj_offset, char *image_name,
-    char* entry_path)
-{
-    *obj_offset = vol_offset;
-    strcpy_s(image_name, strlen(entry_path) + 1, entry_path);
-    return VtableGetMasterNodeIPByOffset(vtable_name_to_ptid(entry_path), vol_offset, obj_addr);
-}
-
 static status_t dss_get_addr_core(dss_rw_param_t *param, char *pool_name, char *image_name, char *obj_addr,
     unsigned int *obj_id, unsigned long int *obj_offset)
 {
@@ -1894,7 +1812,7 @@ static status_t dss_get_addr_core(dss_rw_param_t *param, char *pool_name, char *
     rw_ctx.file_ctx = context;
     rw_ctx.handle = handle;
     rw_ctx.size = 0;
-    rw_ctx.rw_mode = DSS_CLIENT_READ;
+    rw_ctx.read = DSS_TRUE;
     rw_ctx.offset = param->offset;
 
     CM_RETURN_IFERR(dss_check_ready_fs_block(&rw_ctx, &fs_pos));
@@ -1907,12 +1825,6 @@ static status_t dss_get_addr_core(dss_rw_param_t *param, char *pool_name, char *
     auid_t auid = fs_pos.data_auid;
     uint64 vol_offset = (uint64)dss_get_au_offset(vg_item, auid);
     vol_offset = vol_offset + (uint64)fs_pos.au_offset;
-
-    if (g_vtable_func.isInitialize) {
-        status = dss_set_vtable_addr(vol_offset, obj_addr, obj_offset, image_name, vg_item->entry_path);
-        DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
-        return status;
-    }
 
     if (auid.volume >= DSS_MAX_VOLUMES) {
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
@@ -1948,7 +1860,7 @@ status_t dss_get_addr_impl(dss_conn_t *conn, int32 handle, long long offset, cha
     LOG_DEBUG_INF("dss get ceph address, handle:%d, offset:%lld", handle, offset);
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
-    param.rw_mode = DSS_CLIENT_READ;
+    param.is_read = DSS_TRUE;
     bool32 read_end = CM_FALSE;
     if (dss_pread_file_prepare(conn, context, offset, 0, &read_end) != CM_SUCCESS) {
         dss_unlatch(&context->latch);
@@ -2022,6 +1934,11 @@ void dss_destroy_vol_handle_sync(dss_conn_t *conn)
 
     DSS_FREE_POINT(conn->cli_vg_handles);
     conn->cli_vg_handles = NULL;
+}
+
+void dss_heartbeat_entry(thread_t *thread)
+{
+    return;
 }
 
 static status_t dss_init_err_proc(
@@ -2118,10 +2035,20 @@ status_t dss_init(uint32 max_open_files, char *home)
 #endif
     }
     CM_RETURN_IFERR(dss_init_shm(dss_env, home));
-    CM_RETURN_IFERR(dss_init_files(dss_env, max_open_files));
-    status_t status = dss_init_vg_item_from_server();
+    status_t status = dss_get_vg_info();
     if (status != CM_SUCCESS) {
         return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "Failed to get shared vg info", status);
+    }
+    CM_RETURN_IFERR(dss_init_files(dss_env, max_open_files));
+
+    for (int32_t i = 0; i < (int32_t)g_vgs_info->group_num; i++) {
+        dss_vg_info_item_t *item = &g_vgs_info->volume_group[i];
+        (void)cm_attach_shm(SHM_TYPE_HASH, item->buffer_cache->shm_id, 0, CM_SHM_ATTACH_RW);
+    }
+
+    status = cm_create_thread(dss_heartbeat_entry, SIZE_K(512), NULL, &dss_env->thread_heartbeat);
+    if (status != CM_SUCCESS) {
+        return dss_init_err_proc(dss_env, CM_TRUE, CM_TRUE, "DSS failed to create heartbeat thread", status);
     }
 
 #ifdef ENABLE_DSSTEST
@@ -2159,6 +2086,7 @@ void dss_destroy(void)
         return;
     }
 
+    cm_close_thread_nowait(&dss_env->thread_heartbeat);
     dss_file_run_ctx_t *file_run_ctx = &dss_env->file_run_ctx;
     for (uint32 i = 0; i < file_run_ctx->files.group_num; i++) {
         DSS_FREE_POINT(file_run_ctx->files.files_group[i]);
@@ -2262,7 +2190,7 @@ static void dss_get_fd_check_fs_aux(dss_rw_param_t *param, files_rw_ctx_t *rw_ct
     int32 inited_size = 0;
 
     bool32 need_check_fs_aux = CM_FALSE;
-    if (param->rw_mode == DSS_CLIENT_READ && real_count != NULL) {
+    if (param->is_read && real_count != NULL) {
         need_check_fs_aux = CM_TRUE;
     }
 
@@ -2271,7 +2199,7 @@ static void dss_get_fd_check_fs_aux(dss_rw_param_t *param, files_rw_ctx_t *rw_ct
 #endif
     // try to avoid too much update for fs aux info
     if (DSS_IS_FILE_INNER_INITED(node->flags) && need_check_fs_aux) {
-        if (param->rw_mode != DSS_CLIENT_READ) {
+        if (!param->is_read) {
             if (!(*need_updt_fs_aux) && fs_pos->fs_aux != NULL &&
                 (uint64)(rw_ctx->offset + rw_ctx->size) > node->min_inited_size) {
                 dss_api_check_need_updt_fs_aux(context, rw_ctx, fs_pos, rw_ctx->size, need_updt_fs_aux);
@@ -2309,7 +2237,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
     DSS_LOCK_VG_META_S_RETURN_ERROR(context->vg_item, conn->session);
     CM_RETURN_IFERR(dss_check_refresh_file_by_size(conn, context, param, &total_size));
     // after refresh, still has no data, read return error, may truncate by others
-    if (param->rw_mode == DSS_CLIENT_READ && total_size == 0) {
+    if (param->is_read && total_size == 0) {
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
         return CM_ERROR;
     }
@@ -2328,12 +2256,12 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
         rw_ctx.file_ctx = context;
         rw_ctx.handle = handle;
         rw_ctx.size = size;
-        rw_ctx.rw_mode = param->rw_mode;
+        rw_ctx.read = param->is_read;
         rw_ctx.offset = param->offset;
 
         // after refresh, still has no data, read return error, may truncate by others
-        dss_check_file_written_size(conn, context, rw_ctx.offset, param->rw_mode, &total_size);
-        if (param->rw_mode == DSS_CLIENT_READ && total_size == 0) {
+        dss_check_file_written_size(conn, context, rw_ctx.offset, param->is_read, &total_size);
+        if (param->is_read && total_size == 0) {
             LOG_DEBUG_ERR(
                 "Fail by size, entry blockid:%llu, nodeid:%llu.", DSS_ID_TO_U64(node->entry), DSS_ID_TO_U64(node->id));
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
@@ -2366,7 +2294,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
             return CM_ERROR;
         }
 
-        if (param->rw_mode == DSS_CLIENT_READ && !fs_pos.is_valid) {
+        if (param->is_read && !fs_pos.is_valid) {
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             return CM_ERROR;
         }
@@ -2416,7 +2344,7 @@ static status_t get_fd(dss_rw_param_t *param, int32 size, int *fd, int64 *vol_of
 
 #ifdef OPENGAUSS
     int64 offset = param->offset + size;
-    bool32 need_update = offset > context->node->written_size && param->rw_mode != DSS_CLIENT_READ;
+    bool32 need_update = offset > context->node->written_size && !param->is_read;
     if (need_update) {
         LOG_DEBUG_INF("Start update_written_size for file:\"%s\", curr offset:%llu, curr written_size:%llu.",
             node->name, offset, node->written_size);
@@ -2438,8 +2366,8 @@ static status_t dss_get_fd_prepare(dss_conn_t *conn, dss_file_context_t *context
     return CM_SUCCESS;
 }
 
-status_t dss_get_fd_by_offset(dss_conn_t *conn, int handle, long long offset,
-    int32 size, cli_rw_mode_e rw_mode, int *fd, int64 *vol_offset, int32 *real_count)
+status_t dss_get_fd_by_offset(dss_conn_t *conn, int handle, long long offset, int32 size, bool32 is_read, int *fd,
+    int64 *vol_offset, int32 *real_count)
 {
     *fd = DSS_INVALID_HANDLE;
 
@@ -2451,9 +2379,9 @@ status_t dss_get_fd_by_offset(dss_conn_t *conn, int handle, long long offset,
     LOG_DEBUG_INF("Begin get file fd in aio, filename:%s, handle:%d, offset:%lld", context->node->name, handle, offset);
 
     dss_init_rw_param(&param, conn, handle, context, offset, DSS_TRUE);
-    param.rw_mode = rw_mode;
+    param.is_read = is_read;
 
-    status = dss_get_fd_prepare(conn, context, offset, rw_mode);
+    status = dss_get_fd_prepare(conn, context, offset, is_read);
     DSS_RETURN_IFERR2(status, dss_unlatch(&context->latch));
 
     status = get_fd(&param, size, fd, vol_offset, real_count);
@@ -2477,17 +2405,13 @@ status_t get_au_size_impl(dss_conn_t *conn, int handle, long long *au_size)
 
 status_t dss_compare_size_equal_impl(const char *vg_name, long long *au_size)
 {
-    dss_vg_info_item_t *vg_item = dss_find_vg_item_with_refresh(vg_name);
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);
     if (vg_name == NULL || vg_item == NULL) {
         dss_free_vg_info();
         LOG_DEBUG_ERR("Failed to find vg info from config, vg name is null\n");
         return CM_ERROR;
     }
     *au_size = vg_item->dss_ctrl->core.au_size;
-
-    if (g_vtable_func.isInitialize) {
-        return CM_SUCCESS;
-    }
 
     open_global_rbd_handle();
     rbd_config_param *config = ceph_parse_rbd_configs(vg_item->entry_path);
@@ -2561,10 +2485,10 @@ status_t dss_get_inst_status_on_server(dss_conn_t *conn, dss_server_status_t *ds
     return CM_SUCCESS;
 }
 
-status_t dss_get_time_stat_on_server(dss_conn_t *conn, dss_stats_item_info_t time_stat, uint64 size, int isWsr)
+status_t dss_get_time_stat_on_server(dss_conn_t *conn, dss_stat_item_t *time_stat, uint64 size)
 {
     text_t stat_info = CM_NULL_TEXT;
-    DSS_RETURN_IF_ERROR(dss_msg_interact(conn, DSS_CMD_GET_TIME_STAT, (void *)&isWsr, (void *)&stat_info));
+    DSS_RETURN_IF_ERROR(dss_msg_interact(conn, DSS_CMD_GET_TIME_STAT, NULL, (void *)&stat_info));
     for (uint64 i = 0; i < DSS_EVT_COUNT; i++) {
         time_stat[i] = *(dss_stat_item_t *)(stat_info.str + i * (uint64)sizeof(dss_stat_item_t));
     }
@@ -2644,7 +2568,7 @@ status_t dss_aio_check_need_updt_fs_aux(dss_rw_param_t *param, int32 size, bool3
     rw_ctx.env = param->dss_env;
     rw_ctx.file_ctx = context;
     rw_ctx.handle = param->handle;
-    rw_ctx.rw_mode = DSS_CLIENT_READ; // should NOT apply extend for aio post
+    rw_ctx.read = CM_TRUE;  // should NOT apply extend for aio post
 
     int64 top_size = (context->node->size > (param->offset + size)) ? (offset + size) : context->node->size;
     int64 left_size = size;
@@ -2839,9 +2763,6 @@ static status_t dss_decode_handshake(dss_packet_t *ack_pack, void *ack)
     if (ack_pack->head->version >= DSS_VERSION_2) {
         CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&output_info->server_pid));
     }
-    if (ack_pack->head->version >= DSS_VERSION_4) {
-        CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&output_info->isvtable));
-    }
     return CM_SUCCESS;
 }
 
@@ -2927,12 +2848,6 @@ static status_t dss_decode_get_inst_status(dss_packet_t *ack_pack, void *ack)
             ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_GET_INST_STATUS), "get inst status length error");
         return CM_ERROR;
     }
-    return CM_SUCCESS;
-}
-
-static status_t dss_encode_get_time_stat(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
-{
-    CM_RETURN_IFERR(dss_put_int32(pack, (uint32) * ((int32 *)send_info)));
     return CM_SUCCESS;
 }
 
@@ -3191,17 +3106,6 @@ static status_t dss_decode_query_hotpatch(dss_packet_t *ack_pack, void *ack)
     return CM_SUCCESS;
 }
 
-static status_t dss_encode_kill_session(dss_conn_t *conn, dss_packet_t *pack, void *send_info)
-{
-    if (conn->proto_version < DSS_VERSION_3) {
-        DSS_THROW_ERROR(ERR_DSS_UNSUPPORTED_CMD, "kill_session", conn->proto_version, (uint32)DSS_VERSION_3);
-        return CM_ERROR;
-    }
-    uint32 sid = *((uint32 *)send_info);
-    CM_RETURN_IFERR(dss_put_int32(pack, sid));
-    return CM_SUCCESS;
-}
-
 status_t dss_enable_upgrades_on_server(dss_conn_t *conn)
 {
     return dss_msg_interact(conn, DSS_CMD_ENABLE_UPGRADES, NULL, NULL);
@@ -3245,13 +3149,12 @@ dss_packet_proc_t g_dss_packet_proc[DSS_CMD_END] = {[DSS_CMD_MKDIR] = {dss_encod
     [DSS_CMD_HANDSHAKE] = {dss_encode_handshake, dss_decode_handshake, "handshake with server"},
     [DSS_CMD_FALLOCATE_FILE] = {dss_encode_fallocate_file, NULL, "fallocate file"},
     [DSS_CMD_HOTPATCH] = {dss_encode_hotpatch, NULL, "hotpatch"},
-    [DSS_CMD_KILL_SESSION] = {dss_encode_kill_session, NULL, "kill session"},
     [DSS_CMD_EXIST] = {dss_encode_exist, dss_decode_exist, "exist"},
     [DSS_CMD_READLINK] = {dss_encode_readlink, dss_decode_readlink, "read link"},
     [DSS_CMD_GET_FTID_BY_PATH] = {dss_encode_get_ft_id_by_path, dss_decode_get_ft_id_by_path, "get ftid by path"},
     [DSS_CMD_GETCFG] = {dss_encode_getcfg, dss_decode_getcfg, "getcfg"},
     [DSS_CMD_GET_INST_STATUS] = {NULL, dss_decode_get_inst_status, "get inst status"},
-    [DSS_CMD_GET_TIME_STAT] = {dss_encode_get_time_stat, dss_decode_get_time_stat, "get time stat"},
+    [DSS_CMD_GET_TIME_STAT] = {NULL, dss_decode_get_time_stat, "get time stat"},
     [DSS_CMD_QUERY_HOTPATCH] = {dss_encode_query_hotpatch, dss_decode_query_hotpatch, "query hotpatch"}};
 
 status_t dss_decode_packet(dss_packet_proc_t *make_proc, dss_packet_t *ack_pack, void *ack)

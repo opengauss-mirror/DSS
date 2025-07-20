@@ -123,7 +123,7 @@ static status_t du_try_print_link(dss_conn_t *conn, char *path, const char *para
     if (dss_is_valid_link_path(path)) {
         gft_node_t *node = NULL;
         dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE};
-        DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, O_RDONLY, CM_FALSE));
+        DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE));
         if (node != NULL) {  // print the link du
             du_print(node->size, params, path + 1);
             return CM_SUCCESS;
@@ -152,7 +152,7 @@ status_t du_traverse_path(char *path, size_t path_size, dss_conn_t *conn, const 
     }
     if (type == GFT_FILE) {
         DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
-        status = dss_check_dir(conn->session, path, GFT_FILE, &output_info, O_RDONLY, CM_FALSE);
+        status = dss_check_dir(conn->session, path, GFT_FILE, &output_info, CM_FALSE);
         if (status == CM_SUCCESS && node != NULL) {
             du_print(node->size, params, path + 1);
             DSS_UNLOCK_VG_META_S(vg_item, conn->session);

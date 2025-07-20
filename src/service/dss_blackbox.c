@@ -423,7 +423,7 @@ void dss_write_shm_memory(uint32 log_id)
         DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "print dss_shm_file failed.");
         return;
     }
-    if (log_id == CM_LOG_BLACKBOX) {
+    if (log_id == LOG_BLACKBOX) {
         errcode = snprintf_s(file_name, CM_FILE_NAME_BUFFER_SIZE, CM_FILE_NAME_BUFFER_SIZE - 1, "%s/%s/%s_%s",
             cm_log_param_instance()->log_home, "blackbox", "dss_shm", timestamp);
     } else {
@@ -434,10 +434,6 @@ void dss_write_shm_memory(uint32 log_id)
     if (SECUREC_UNLIKELY(errcode == -1)) {
         DSS_LOG_BLACKBOX_OR_DYNAMIC_INF(log_id, "printf dss_shm_file failed.");
         return;
-    }
-    log_file_handle_t *log_file_handle = cm_log_logger_file(log_id);
-    if (log_file_handle->file_handle == CM_INVALID_FD) {
-        cm_log_create_dir(log_file_handle);
     }
     if (cm_open_file_ex(file_name, O_SYNC | O_CREAT | O_RDWR | O_TRUNC | O_BINARY, S_IRUSR | S_IWUSR, &handle) !=
         CM_SUCCESS) {
@@ -465,10 +461,10 @@ static void sig_print_excep_info(box_excp_item_t *excep_info, int32 sig_num, sig
     cm_save_proc_maps_file(excep_info);
     cm_save_proc_meminfo_file();
     LOG_BLACKBOX_INF("\n===============================threads backtrace===============================\n");
-    dss_sig_collect_all_backtrace(CM_LOG_BLACKBOX);
-    dss_print_global_variable(CM_LOG_BLACKBOX);
-    dss_print_effect_param(CM_LOG_BLACKBOX);
-    dss_write_shm_memory(CM_LOG_BLACKBOX);
+    dss_sig_collect_all_backtrace(LOG_BLACKBOX);
+    dss_print_global_variable(LOG_BLACKBOX);
+    dss_print_effect_param(LOG_BLACKBOX);
+    dss_write_shm_memory(LOG_BLACKBOX);
 }
 
 uint32 g_sign_mutex = 0;

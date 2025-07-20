@@ -185,6 +185,7 @@ set(DSS_OPENSSL_PATH            "${CMAKE_CURRENT_SOURCE_DIR}/library/openssl/inc
 set(DSS_CBB_PATH                "${CMAKE_CURRENT_SOURCE_DIR}/library/cbb/include")
 set(LIBAIO_INC_PATH             "${CMAKE_CURRENT_SOURCE_DIR}/library/libaio/include")
 set(ZLIB_INC_PATH               "${CMAKE_CURRENT_SOURCE_DIR}/library/zlib/include")
+set(LZ4_INC_PATH                "${CMAKE_CURRENT_SOURCE_DIR}/library/lz4/include")
 set(JAVA_HOME                   "$ENV{JAVA_HOME}/include")
 set(JAVA_HOME_INCLUDE           "$ENV{JAVA_HOME}/include/linux")
 
@@ -193,6 +194,7 @@ set(SECUREC_LIB_PATH            "${CMAKE_CURRENT_SOURCE_DIR}/library/huawei_secu
 set(OPENSSL_LIB_PATH            "${CMAKE_CURRENT_SOURCE_DIR}/library/openssl/lib")
 set(CBB_LIB_PATH                "${CMAKE_CURRENT_SOURCE_DIR}/library/cbb/lib")
 set(LIBZ_PATH                   "${CMAKE_CURRENT_SOURCE_DIR}/library/zlib/lib")
+set(LZ4_PATH                   "${CMAKE_CURRENT_SOURCE_DIR}/library/lz4/lib")
 
 ## output path
 set (LIBRARY_OUTPUT_PATH        ${CMAKE_CURRENT_SOURCE_DIR}/output/lib)

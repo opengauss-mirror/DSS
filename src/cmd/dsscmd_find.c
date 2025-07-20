@@ -74,7 +74,7 @@ static status_t find_try_match_link(dss_conn_t *conn, char *path, const char *na
     if (dss_is_valid_link_path(path)) {
         gft_node_t *node = NULL;
         dss_check_dir_output_t output_info = {&node, NULL, NULL, CM_FALSE};
-        DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, O_RDONLY, CM_FALSE));
+        DSS_RETURN_IF_ERROR(dss_check_dir(conn->session, path, GFT_LINK, &output_info, CM_FALSE));
         if (node != NULL) {  // check the link name
             if (is_match(node->name, name)) {
                 (void)printf("%s\n", path);
@@ -105,7 +105,7 @@ status_t find_traverse_path(dss_conn_t *conn, char *path, size_t path_size, char
     }
     if (type == GFT_FILE) {
         DSS_LOCK_VG_META_S_RETURN_ERROR(vg_item, conn->session);
-        status = dss_check_dir(conn->session, path, GFT_FILE, &output_info, O_RDONLY, CM_FALSE);
+        status = dss_check_dir(conn->session, path, GFT_FILE, &output_info, CM_FALSE);
         if (status == CM_SUCCESS && node != NULL) {
             if (is_match(node->name, name)) {
                 (void)printf("%s\n", path);
