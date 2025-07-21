@@ -2042,6 +2042,9 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     CM_ASSERT(name != NULL);
     LOG_DEBUG_INF("[FT][ALLOC] Begin to allocate ftnode for file:%s, parent name:%s, %s", name, parent_node->name,
         dss_display_metaid(parent_node->id));
+#ifdef OPENGAUSS
+    CM_ASSERT(!DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id));
+#endif
     status_t status;
     ftid_t id;
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
