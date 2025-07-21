@@ -1022,6 +1022,12 @@ status_t dss_lock_share_disk_vg(const char *entry_path, dss_config_t *inst_cfg)
 status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry_path, dss_config_t *inst_cfg)
 {
     LOG_DEBUG_INF("Lock vg storage, lock vg:%s.", entry_path);
+#ifdef OPENGAUSS
+    /* in standby cluster, we do not need try to lock xlog vg, xlog vg is a read only disk */
+    if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
+        return CM_SUCCESS;
+    }
+#endif
     int32 dss_mode = dss_storage_mode(inst_cfg);
     if (dss_mode == DSS_MODE_DISK) {
         char lock_file[DSS_MAX_FILE_LEN];
@@ -1043,10 +1049,6 @@ status_t dss_lock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *entry
             return CM_ERROR;
         }
     } else {
-        /* in standby cluster, we do not need try to lock(scsi3) xlog vg, xlog vg is a read only disk */
-        if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
-            return CM_SUCCESS;
-        }
         if (dss_lock_disk_vg(entry_path, inst_cfg) != CM_SUCCESS) {
             DSS_THROW_ERROR(ERR_DSS_VG_LOCK, entry_path);
             LOG_DEBUG_ERR("Failed to lock vg, entry path %s.", entry_path);
@@ -1170,6 +1172,12 @@ status_t dss_unlock_vg_storage_core(dss_vg_info_item_t *vg_item, const char *ent
         fclose(vglock_fp);
         LOG_DEBUG_INF("ulock vg:%s, lock file:%s.", entry_path, lock_file);
     } else {
+#ifdef OPENGAUSS
+        /* in standby cluster, we do not need try to lock or unlock xlog vg, xlog vg is a read only disk */
+        if (DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id)) {
+            return CM_SUCCESS;
+        }
+#endif
         if (dss_unlock_vg(dss_mode, vg_item, entry_path, inst_cfg->params.inst_id) != CM_SUCCESS) {
             LOG_RUN_ERR("Failed to unlock vg %s.", vg_item->vg_name);
             return CM_ERROR;
@@ -1936,9 +1944,9 @@ status_t dss_check_refresh_core(dss_vg_info_item_t *vg_item)
     return CM_SUCCESS;
 }
 
-static status_t dss_init_volume_core(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume, uint32 i)
+static status_t dss_init_volume_core(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume, uint32 i, uint32 is_force)
 {
-    if (volume->defs[i].flag == vg_item->dss_ctrl->volume.defs[i].flag) {
+    if (!is_force && (volume->defs[i].flag == vg_item->dss_ctrl->volume.defs[i].flag)) {
         return CM_SUCCESS;
     }
 
@@ -1966,7 +1974,7 @@ status_t dss_init_volume(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume)
     status_t status;
 
     for (uint32 i = 0; i < DSS_MAX_VOLUMES; i++) {
-        status = dss_init_volume_core(vg_item, volume, i);
+        status = dss_init_volume_core(vg_item, volume, i, false);
         if (status != CM_SUCCESS) {
             return status;
         }
@@ -2036,6 +2044,37 @@ status_t dss_check_volume(dss_vg_info_item_t *vg_item, uint32 volumeid)
     }
 
     return dss_check_free_volume(vg_item, volumeid);
+}
+
+status_t dss_init_volume_by_force(dss_vg_info_item_t *vg_item, uint32 is_force)
+{
+    status_t status = CM_SUCCESS;
+    dss_volume_ctrl_t *volume;
+
+    volume = (dss_volume_ctrl_t *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_VOLUME_CTRL_SIZE);
+    bool32 result = (bool32)(volume != NULL);
+    DSS_RETURN_IF_FALSE2(result, LOG_DEBUG_ERR("Can not allocate memory in stack."));
+
+    status = dss_load_volume_ctrl(vg_item, volume);
+    if (status != CM_SUCCESS) {
+        DSS_FREE_POINT(volume);
+        LOG_DEBUG_ERR("Failed load vg ctrl.");
+        return status;
+    }
+
+    for (uint32 i = 0; i < DSS_MAX_VOLUMES; i++) {
+        status = dss_init_volume_core(vg_item, volume, i, true);
+        if (status != CM_SUCCESS) {
+            return status;
+        }
+    }
+
+    if (status == CM_SUCCESS) {
+        vg_item->dss_ctrl->volume.checksum = volume->checksum;
+        vg_item->dss_ctrl->volume.version = volume->version;
+    }
+    DSS_FREE_POINT(volume);
+    return status;
 }
 
 // first check volume is valid.

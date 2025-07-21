@@ -275,6 +275,7 @@ status_t dss_set_main_inst_on_server(dss_conn_t *conn);
 status_t dss_disable_grab_lock_on_server(dss_conn_t *conn);
 status_t dss_enable_grab_lock_on_server(dss_conn_t *conn);
 status_t dss_enable_upgrades_on_server(dss_conn_t *conn);
+status_t dss_reopen_vg_handel_impl(dss_conn_t *conn, const char *name);
 
 #define DSS_SET_PTR_VALUE_IF_NOT_NULL(ptr, value) \
     do {                                          \
