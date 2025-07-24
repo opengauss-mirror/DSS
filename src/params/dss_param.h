@@ -103,6 +103,8 @@ typedef struct st_dss_params {
     uint32 space_usage_hwm;
     uint32 space_usage_lwm;
     uint32 delay_clean_search_fragment;
+    bool32 linux_multibus;
+    char mpathpersist_dss_path[DSS_FILE_PATH_MAX_LENGTH];
 } dss_params_t;
 
 typedef struct st_dss_config {
@@ -123,6 +125,16 @@ status_t dss_set_cfg_dir(const char *home, dss_config_t *inst_cfg);
 static inline int32 dss_storage_mode(dss_config_t *inst_cfg)
 {
     return inst_cfg->params.dss_mode;
+}
+
+static inline bool32 dss_get_linux_multibus(dss_config_t *inst_cfg)
+{
+    return inst_cfg->params.linux_multibus;
+}
+
+static inline char *dss_get_mpathpersist_dss_path(dss_config_t *inst_cfg)
+{
+    return inst_cfg->params.mpathpersist_dss_path;
 }
 
 static inline char *dss_get_cfg_dir(dss_config_t *inst_cfg)

@@ -55,7 +55,7 @@ typedef enum en_dss_query_latch_type {
 
 status_t dss_inq_lun(const char *home);
 status_t dss_inq_reg(const char *home);
-status_t dss_check_volume_register(char *entry_path, int64 host_id, bool32 *is_reg, int64 *iofence_key);
+status_t dss_check_volume_register(char *entry_path, int64 host_id, bool32 *is_reg, int64 *iofence_key, bool32 isUnreg);
 status_t dss_unreghl_core(const char *home, bool32 is_lock);
 status_t dss_reghl_core(const char *home);
 status_t dss_inq_reg_core(const char *home, int64 host_id);
