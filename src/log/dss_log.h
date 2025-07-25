@@ -167,7 +167,7 @@ uint32 dss_get_instance_log_def_count();
 uint32 dss_get_cmd_log_def_count();
 
 char *dss_get_print_tab(uint8 level);
-
+status_t dss_init_log_home_ex(dss_config_t *inst_cfg, char *log_parm_value, char *log_param_name, char *log_dir);
 #ifdef __cplusplus
 }
 #endif
