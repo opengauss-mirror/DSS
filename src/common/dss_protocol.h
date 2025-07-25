@@ -116,9 +116,10 @@ typedef enum en_dss_packet_version {
     DSS_VERSION_0 = 0, /* version 0 */
     DSS_VERSION_1 = 1, /* version 1 */
     DSS_VERSION_2 = 2, /* version 2 */
+    DSS_VERSION_4 = 4, /* version 4 : add isvtable for client need init vtable */
 } dss_packet_version_e;
 
-#define DSS_PROTO_VERSION DSS_VERSION_2
+#define DSS_PROTO_VERSION DSS_VERSION_4
 #define DSS_INVALID_VERSION (int32)0x7FFFFFFF
 
 #define DSS_PACKET_SIZE(pack) ((pack)->head->size)

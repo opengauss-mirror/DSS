@@ -151,6 +151,7 @@ DSS_DECLARE int dss_fopen(const char *file, int flag, int *handle);
 DSS_DECLARE int dss_fclose(int handle);
 DSS_DECLARE long long dss_fseek(int handle, long long offset, int origin);
 DSS_DECLARE int dss_fwrite(int handle, const void *buf, int size);
+DSS_DECLARE int dss_append(int handle, const void *buf, int size);
 DSS_DECLARE int dss_fread(int handle, void *buf, int size, int *read_size);
 DSS_DECLARE int dss_fcopy(const char *src_path, const char *dest_path);
 DSS_DECLARE int dss_frename(const char *src, const char *dst);
