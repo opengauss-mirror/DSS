@@ -60,6 +60,11 @@ typedef enum en_dss_mode {
 /* use for dorado cluster */
 typedef enum cluster_run_mode_t { CLUSTER_PRIMARY = 0, CLUSTER_STANDBY = 1 } cluster_run_mode_t;
 
+typedef enum en_disk_type {
+    DISK_NORMAL = 0,
+    DISK_VTABLE = 1
+} disk_type_e;
+
 #if defined(_DEBUG) || defined(DEBUG) || defined(DB_DEBUG_VERSION)
 #define DSS_RECYLE_META_RANGE_MAX 10000U
 #endif
@@ -105,6 +110,7 @@ typedef struct st_dss_params {
     uint32 delay_clean_search_fragment;
     bool32 linux_multibus;
     char mpathpersist_dss_path[DSS_FILE_PATH_MAX_LENGTH];
+    disk_type_e disk_type;
 } dss_params_t;
 
 typedef struct st_dss_config {

@@ -38,6 +38,7 @@ status_t dss_open_volume(const char *name, const char *code, int flags, dss_volu
 void dss_close_volume(dss_volume_t *volume);
 status_t dss_read_volume(dss_volume_t *volume, int64 offset, void *buf, int32 size);
 status_t dss_write_volume(dss_volume_t *volume, int64 offset, const void *buf, int32 size);
+status_t dss_append_volume(dss_volume_t *volume, int64 offset, const void *buf, int32 size);
 uint64 dss_get_volume_size(dss_volume_t *volume);
 
 status_t dss_open_simple_volume(const char *name, int flags, dss_simple_volume_t *volume);

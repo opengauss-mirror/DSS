@@ -29,6 +29,7 @@
 #endif  // !WIN32
 #include "dss_file.h"
 #include "dss_thv.h"
+#include "dss_vtable.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -116,19 +117,19 @@ void dss_close_simple_volume(dss_simple_volume_t *simple_volume)
     simple_volume->handle = DSS_INVALID_HANDLE;
 }
 
-uint64 dss_get_volume_size(dss_volume_t *volume)
+uint64_t dss_get_volume_size(dss_volume_t *volume)
 {
     DWORD low32, high32;
-    uint64 size;
+    uint64_t size;
 
     low32 = GetFileSize(volume->handle, &high32);
-    size = (uint64)high32;
+    size = (uint64_t)high32;
     size <<= 32;
     size += low32;
     return size;
 }
 
-static status_t dss_seek_volume(dss_volume_t *volume, uint64 offset)
+static status_t dss_seek_volume(dss_volume_t *volume, uint64_t offset)
 {
     LONG low32, high32;
 
@@ -220,7 +221,7 @@ static status_t dss_open_filehandle_raw(const char *name, int flags, volume_hand
     if (*fd == -1 && DSS_STANDBY_CLUSTER && cm_get_os_error() == EROFS) {
         unaligned_flags = O_RDONLY | O_SYNC;
         *fd = open(name, unaligned_flags | O_DIRECT, 0);
-        LOG_DEBUG_INF("dss_open_filehandle_raw open %s fd %d in read-only file system with flag: %d",
+        LOG_DEBUG_INF("dss_open_filehandle_raw open %s fd %lld in read-only file system with flag: %d",
             name, *fd, unaligned_flags);
     }
 #endif
@@ -263,11 +264,11 @@ void dss_close_volume_raw(dss_volume_t *volume)
 {
     int ret = close(volume->handle);
     if (ret != 0) {
-        LOG_RUN_ERR("failed to close file with handle %d, error code %d", volume->handle, errno);
+        LOG_RUN_ERR("failed to close file with handle %lld, error code %d", volume->handle, errno);
     }
     ret = close(volume->unaligned_handle);
     if (ret != 0) {
-        LOG_RUN_ERR("failed to close file with unaligned_handle %d, error code %d", volume->unaligned_handle, errno);
+        LOG_RUN_ERR("failed to close file with unaligned_handle %lld, error code %d", volume->unaligned_handle, errno);
     }
 
     if (memset_s(volume, sizeof(dss_volume_t), 0, sizeof(dss_volume_t)) != EOK) {
@@ -289,7 +290,7 @@ uint64 dss_get_volume_size_raw(dss_volume_t *volume)
 {
     int64 size = lseek64(volume->handle, 0, SEEK_END);
     if (size == -1) {
-        DSS_LOG_WITH_OS_MSG("failed to seek file with handle %d", volume->handle);
+        DSS_LOG_WITH_OS_MSG("failed to seek file with handle %lld", volume->handle);
         if (dss_is_device_os_error(cm_get_os_error())) {
             DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
             LOG_RUN_ERR("[DSS] ABORT GET VOLUME SIZE, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
@@ -333,8 +334,8 @@ static int32 dss_try_pwrite_volume_raw(
         if (*written_size == -1) {
             if (dss_is_device_os_error(cm_get_os_error())) {
                 DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
-                LOG_RUN_ERR("[DSS] ABORT ALIGNED PWRITE VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
-                    strerror(cm_get_os_error()));
+                LOG_RUN_ERR("[DSS] ABORT ALIGNED PWRITE VOLUME, because Linux OS error: errno:%d, errmsg:%s.",
+                    cm_get_os_error(), strerror(cm_get_os_error()));
                 cm_fync_logfile();
                 dss_exit(1);
             } else {
@@ -347,8 +348,8 @@ static int32 dss_try_pwrite_volume_raw(
         if (*written_size == -1) {
             if (dss_is_device_os_error(cm_get_os_error())) {
                 DSS_THROW_ERROR(ERR_DSS_VOLUME_SYSTEM_IO, volume->name_p);
-                LOG_RUN_ERR("[DSS] ABORT UNALIGNED PWRITE VOLUME, because Linux OS error: errno:%d, errmsg:%s.", cm_get_os_error(),
-                    strerror(cm_get_os_error()));
+                LOG_RUN_ERR("[DSS] ABORT UNALIGNED PWRITE VOLUME, because Linux OS error: errno:%d, errmsg:%s.",
+                    cm_get_os_error(), strerror(cm_get_os_error()));
                 cm_fync_logfile();
                 dss_exit(1);
             } else {
@@ -361,6 +362,12 @@ static int32 dss_try_pwrite_volume_raw(
     return CM_SUCCESS;
 }
 
+static int32 dss_try_append_volume_raw(
+    dss_volume_t *volume, int64 offset, char *buffer, int32 size, int32 *written_size)
+{
+    return CM_ERROR;
+}
+
 typedef struct dss_file_mgr {
     status_t (*open_volume)(const char *name, const char *code, int flags, dss_volume_t *volume);
     status_t (*open_simple_volume)(const char *name, int flags, dss_simple_volume_t *volume);
@@ -369,27 +376,52 @@ typedef struct dss_file_mgr {
     uint64 (*get_volume_size)(dss_volume_t *volume);
     status_t (*try_pread_volume)(dss_volume_t *volume, int64 offset, char *buffer, int32 size, int32 *read_size);
     int32 (*try_pwrite_volume)(dss_volume_t *volume, int64 offset, char *buffer, int32 size, int32 *written_size);
+    int32 (*try_append_volume)(dss_volume_t *volume, int64 offset, char *buffer, int32 size, int32 *written_size);
 } file_mgr;
 
 static const file_mgr file_mgr_funcs[] = {
-    {dss_open_volume_raw, dss_open_simple_volume_raw, dss_close_volume_raw, dss_close_simple_volume_raw,
-        dss_get_volume_size_raw, dss_try_pread_volume_raw, dss_try_pwrite_volume_raw}
+    {   
+        dss_open_volume_raw,
+        dss_open_simple_volume_raw,
+        dss_close_volume_raw,
+        dss_close_simple_volume_raw,
+        dss_get_volume_size_raw,
+        dss_try_pread_volume_raw,
+        dss_try_pwrite_volume_raw,
+        dss_try_append_volume_raw
+    },
+#ifdef OPENGAUSS
+    {
+        dss_open_volume_vtable,
+        dss_open_simple_volume_vtable,
+        dss_close_volume_vtable,
+        dss_close_simple_volume_vtable,
+        dss_get_volume_size_vtable,
+        dss_try_pread_volume_vtable,
+        dss_try_pwrite_volume_vtable,
+        dss_try_append_volume_vtable
+    },
+#endif
 };
 
-dss_vg_device_Type_e parse_vg_open_type(const char *name)
+dss_vg_device_Type_e parse_vg_open_type()
 {
-    return DSS_VOLUME_TYPE_RAW;
+    if (g_vtable_func.isInitialize) {
+        return DSS_VOLUME_TYPE_VTABLE;
+    } else {
+        return DSS_VOLUME_TYPE_RAW;
+    }
 }
 
 status_t dss_open_volume(const char *name, const char *code, int flags, dss_volume_t *volume)
 {
-    volume->vg_type = parse_vg_open_type(name);
+    volume->vg_type = parse_vg_open_type();
     return (*(file_mgr_funcs[volume->vg_type].open_volume))(name, code, flags, volume);
 }
 
 status_t dss_open_simple_volume(const char *name, int flags, dss_simple_volume_t *volume)
 {
-    volume->vg_type = parse_vg_open_type(name);
+    volume->vg_type = parse_vg_open_type();
     return (*(file_mgr_funcs[volume->vg_type].open_simple_volume))(name, flags, volume);
 }
 
@@ -416,6 +448,11 @@ static status_t dss_try_pread_volume(dss_volume_t *volume, int64 offset, char *b
 static int32 dss_try_pwrite_volume(dss_volume_t *volume, int64 offset, char *buffer, int32 size, int32 *written_size)
 {
     return (*(file_mgr_funcs[volume->vg_type].try_pwrite_volume))(volume, offset, buffer, size, written_size);
+}
+
+static int32 dss_try_append_volume(dss_volume_t *volume, int64 offset, char *buffer, int32 size, int32 *written_size)
+{
+    return (*(file_mgr_funcs[volume->vg_type].try_append_volume))(volume, offset, buffer, size, written_size);
 }
 
 #endif
@@ -476,6 +513,27 @@ status_t dss_write_volume(dss_volume_t *volume, int64 offset, const void *buf, i
         ret =
             dss_try_pwrite_volume(volume, offset + total_size, (char *)buf + total_size, size - total_size, &curr_size);
 #endif
+        if (ret != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to write volume %s, begin:%d, volume id:%u,size:%d, offset:%lld, errmsg:%s.",
+                volume->name_p, total_size, volume->id, size - total_size, offset, strerror(errno));
+            return CM_ERROR;
+        }
+
+        total_size += curr_size;
+    } while (total_size < size);
+
+    return CM_SUCCESS;
+}
+
+status_t dss_append_volume(dss_volume_t *volume, int64 offset, const void *buf, int32 size)
+{
+    status_t ret;
+    int32 curr_size = 0;
+    int32 total_size = 0;
+
+    do {
+        ret =
+            dss_try_append_volume(volume, offset + total_size, (char *)buf + total_size, size - total_size, &curr_size);
         if (ret != CM_SUCCESS) {
             LOG_RUN_ERR("Failed to write volume %s, begin:%d, volume id:%u,size:%d, offset:%lld, errmsg:%s.",
                 volume->name_p, total_size, volume->id, size - total_size, offset, strerror(errno));

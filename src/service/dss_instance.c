@@ -40,6 +40,7 @@
 #include "dss_instance.h"
 #include "dss_reactor.h"
 #include "dss_service.h"
+#include "dss_vtable.h"
 #include "dss_zero.h"
 #include "cm_utils.h"
 #include "dss_thv.h"
@@ -368,6 +369,10 @@ status_t dss_startup(dss_instance_t *inst, dss_srv_args_t dss_args)
 #ifdef DISABLE_SYN_META
     dss_set_syn_meta_enable(CM_FALSE);
 #endif
+    if (inst->inst_cfg.params.disk_type == DISK_VTABLE) {
+        status = dss_init_vtable();
+        DSS_RETURN_IFERR2(status, (void)printf("DSS init vtable failed!\n"));
+    }
     dss_init_maintain(inst, dss_args);
     LOG_RUN_INF("DSS instance begin to initialize.");
 #ifndef OPENGAUSS

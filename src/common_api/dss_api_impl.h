@@ -41,6 +41,12 @@ extern "C" {
 typedef struct st_dss_conn dss_conn_t; 
 typedef struct st_dss_conn_opt dss_conn_opt_t;
 
+typedef enum en_cli_rw_mode {
+    DSS_CLIENT_READ = 0,
+    DSS_CLIENT_WRITE = 1,
+    DSS_CLIENT_APPEND = 2,
+} cli_rw_mode_e;
+
 typedef struct st_dss_rw_param {
     dss_conn_t *conn;
     int32 handle;
@@ -48,7 +54,7 @@ typedef struct st_dss_rw_param {
     dss_file_context_t *context;
     int64 offset;
     bool32 atom_oper;
-    bool32 is_read;
+    cli_rw_mode_e rw_mode;
 } dss_rw_param_t;
 
 typedef struct st_dss_load_ctrl_info {
@@ -164,6 +170,7 @@ typedef struct st_dss_get_server_info {
     char *home;
     uint32 objectid;
     uint32 server_pid;
+    bool32 isvtable;
 } dss_get_server_info_t;
 
 typedef struct st_dss_fallocate_info {
@@ -224,6 +231,7 @@ status_t dss_exist_impl(dss_conn_t *conn, const char *path, bool32 *result, gft_
 status_t dss_islink_impl(dss_conn_t *conn, const char *name, bool32 *result);
 int64 dss_seek_file_impl(dss_conn_t *conn, int handle, int64 offset, int origin);
 status_t dss_write_file_impl(dss_conn_t *conn, int handle, const void *buf, int size);
+status_t dss_append_file_impl(dss_conn_t *conn, int handle, const void *buf, int size);
 status_t dss_read_file_impl(dss_conn_t *conn, int handle, void *buf, int size, int *read_size);
 status_t dss_copy_file_impl(dss_conn_t *conn, const char *src, const char *dest);
 status_t dss_rename_file_impl(dss_conn_t *conn, const char *src, const char *dst);
@@ -249,8 +257,8 @@ status_t dss_pread_file_impl(dss_conn_t *conn, int handle, void *buf, int size, 
 status_t dss_get_addr_impl(dss_conn_t *conn, int32 handle, long long offset, char *pool_name, char *image_name,
     char *obj_addr, unsigned int *obj_id, unsigned long int *obj_offset);
 gft_node_t *dss_get_node_by_path_impl(dss_conn_t *conn, const char *path);
-status_t dss_get_fd_by_offset(dss_conn_t *conn, int handle, long long offset, int32 size, bool32 is_read, int *fd,
-    int64 *vol_offset, int32 *real_count);
+status_t dss_get_fd_by_offset(dss_conn_t *conn, int handle, long long offset, int32 size,
+    cli_rw_mode_e rw_mode, int *fd, int64 *vol_offset, int32 *real_count);
 status_t get_au_size_impl(dss_conn_t *conn, int handle, long long *au_size);
 status_t dss_compare_size_equal_impl(const char *vg_name, long long *au_size);
 status_t dss_setcfg_impl(dss_conn_t *conn, const char *name, const char *value, const char *scope);
