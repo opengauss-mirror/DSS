@@ -88,7 +88,7 @@ status_t dss_fragment_scan(
         serach_node = dss_top_search_stack(stack);
         node = dss_get_ft_node_by_ftid(session, vg_item, serach_node->ftid, CM_TRUE, CM_FALSE);
         if (node == NULL) {
-            LOG_RUN_WAR("[DELAY_CLEAN]Failed to get node, ftid is %s.", dss_display_metaid(node->id));
+            LOG_RUN_WAR("[DELAY_CLEAN]Failed to get node, ftid is %s.", dss_display_metaid(serach_node->ftid));
             return CM_ERROR;
         }
         LOG_DEBUG_INF("[DELAY_CLEAN]top node %s from stack, type is %d, ftid is %s, path_isvisited is %d.", node->name,

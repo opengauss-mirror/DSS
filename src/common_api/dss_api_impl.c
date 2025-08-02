@@ -1487,7 +1487,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
     CM_RETURN_IFERR(dss_check_refresh_file_by_size(conn, context, param, &total_size));
     // after refresh, still has no data, read return with 0, may truncate by others
     if (param->rw_mode == DSS_CLIENT_READ && total_size == 0) {
-        *read_size = 0;
+        DSS_SET_PTR_VALUE_IF_NOT_NULL(read_size, 0);
         DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
         return CM_SUCCESS;
     }
@@ -1514,7 +1514,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         // after refresh, still has no data, read return with 0, may truncate by others
         dss_check_file_written_size(conn, context, rw_ctx.offset, param->rw_mode, &total_size);
         if (param->rw_mode == DSS_CLIENT_READ && total_size == 0) {
-            *read_size = 0;
+            DSS_SET_PTR_VALUE_IF_NOT_NULL(read_size, 0);
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             return CM_SUCCESS;
         }
@@ -1526,7 +1526,7 @@ status_t dss_read_write_file_core(dss_rw_param_t *param, void *buf, int32 size, 
         }
 
         if (rw_ctx.rw_mode == DSS_CLIENT_READ && !fs_pos.is_valid) {
-            *read_size = 0;
+            DSS_SET_PTR_VALUE_IF_NOT_NULL(read_size, 0);
             DSS_UNLOCK_VG_META_S(context->vg_item, conn->session);
             return CM_SUCCESS;
         }
