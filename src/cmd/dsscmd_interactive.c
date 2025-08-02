@@ -176,6 +176,9 @@ status_t dss_cmd_format_path(char *org_path, char *out_path_buf, uint32 out_buf_
     }
 
     sub_path = strtok_r(org_path, "/", &saved);
+    if (sub_path == NULL) {
+        return CM_ERROR;
+    }
     sub_path_len = strlen(sub_path);
     if (sub_path_len >= out_buf_len) {
         DSS_PRINT_ERROR("path is too long.\n");
