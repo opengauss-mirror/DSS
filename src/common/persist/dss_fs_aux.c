@@ -387,7 +387,7 @@ static bool32 dss_updt_fs_aux_base(
     bool32 has_changed = CM_FALSE;
     bool32 has_changed2 = CM_FALSE;
 
-    dss_fs_aux_range_desc_t range;
+    dss_fs_aux_range_desc_t range = {0};
     dss_calc_fs_aux_range(vg_item, offset, size, &range);
     for (uint32 byte_index = range.beg.byte_index; byte_index <= range.end.byte_index; byte_index++) {
         uint8 beg_bit_index;
@@ -606,7 +606,7 @@ bool32 dss_check_fs_aux_inited(dss_vg_info_item_t *vg_item, dss_fs_aux_t *fs_aux
         return CM_TRUE;
     }
 
-    dss_fs_aux_range_desc_t range;
+    dss_fs_aux_range_desc_t range = {0};
     dss_calc_fs_aux_range(vg_item, offset, size, &range);
 
     for (uint32 byte_index = range.beg.byte_index; byte_index <= range.end.byte_index; byte_index++) {
@@ -664,7 +664,7 @@ void dss_get_inited_size_with_fs_aux(
     int32 left_size = size;
     uchar cur_map = 0;
 
-    dss_fs_aux_range_desc_t range;
+    dss_fs_aux_range_desc_t range = {0};
     dss_calc_fs_aux_range(vg_item, offset, size, &range);
     for (uint32 byte_index = range.beg.byte_index; byte_index <= range.end.byte_index; byte_index++) {
         uint8 beg_bit_index;
@@ -817,7 +817,7 @@ status_t dss_read_volume_with_fs_aux(dss_vg_info_item_t *vg_item, gft_node_t *no
     uchar cur_map = 0;
 
     read_size = 0;
-    dss_fs_aux_range_desc_t range;
+    dss_fs_aux_range_desc_t range = {0};
 
     dss_calc_fs_aux_range(vg_item, offset, size, &range);
     for (uint32 byte_index = range.beg.byte_index; byte_index <= range.end.byte_index; byte_index++) {

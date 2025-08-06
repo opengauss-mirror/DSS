@@ -1639,6 +1639,10 @@ status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_pat
         DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft block ack msg vg_name is not exist.");
         return CM_ERROR;
     }
+    if (output_info == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid param output_info, output_info is null.");
+        return CM_ERROR;
+    }
     if (output_info->item != NULL) {
         *output_info->item = ack_vg_item;
     }
@@ -1659,6 +1663,10 @@ status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_pat
         }
     } else {
         block_id.item = 0;
+        if (output_info->item == NULL) {
+            DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid param output_info->item, output_info->item is null.");
+            return CM_ERROR;
+        }
         ret = dss_refresh_block_in_shm(
             session, *output_info->item, block_id, DSS_BLOCK_TYPE_FT, ack.block, (char **)&shm_block);
         DSS_RETURN_IF_ERROR(ret);
@@ -1716,6 +1724,10 @@ static status_t dss_proc_get_ft_block_req_core(
         dss_unlock_vg_mem_and_shm(session, *vg_item);
         *vg_item = file_vg_item;
         dss_lock_vg_mem_and_shm_s_force(session, *vg_item);
+    }
+    if (out_node == NULL) {
+        LOG_RUN_ERR("Invalid param out_node, out_node is null.");
+        return CM_ERROR;
     }
     ack->node_id = out_node->id;
     DSS_LOG_DEBUG_OP("[MES] Req out node, v:%u,au:%llu,block:%u,item:%u,type:%d,path:%s.", out_node->id.volume,
