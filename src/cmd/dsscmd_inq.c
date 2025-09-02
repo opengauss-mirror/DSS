@@ -598,7 +598,7 @@ status_t dss_inq_reg_core(const char *home, int64 host_id)
     int64 iofence_key[DSS_MAX_INSTANCES] = {0};
     DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, inst_cfg, &vg_info));
     for (uint32 i = 0; i < vg_info->group_num; i++) {
-        status = dss_check_volume_register(vg_info->volume_group[i].entry_path, inst_cfg->params.inst_id,
+        status = dss_check_volume_register(vg_info->volume_group[i].entry_path, host_id,
                                            inst_cfg, &is_reg, iofence_key, DSS_FALSE);
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
