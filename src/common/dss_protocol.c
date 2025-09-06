@@ -215,7 +215,7 @@ static status_t dss_read_packet(cs_pipe_t *pipe, dss_packet_t *pack, bool32 cs_c
         if (offset >= (int32)sizeof(dss_packet_head_t)) {
             break;
         }
-        status = VIO_WAIT(pipe, CS_WAIT_FOR_READ, CM_NETWORK_IO_TIMEOUT, &ready);
+        status = VIO_WAIT(pipe, CS_WAIT_FOR_READ, CM_NETWORK_PACKET_TIMEOUT, &ready);
         DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_TCP_TIMEOUT, cs_mes));
         if (!ready) {
             DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_TCP_TIMEOUT_REMAIN, (uint32)(sizeof(uint32) - offset)));
@@ -286,7 +286,6 @@ status_t dss_call_ex(cs_pipe_t *pipe, dss_packet_t *req, dss_packet_t *ack)
         LOG_RUN_ERR("[DSS] ABORT INFO: dss call server failed, ack command type:%d, application exit.", ack->head->cmd);
         cs_disconnect(pipe);
         cm_fync_logfile();
-        dss_exit(1);
     }
     return ret;
 }

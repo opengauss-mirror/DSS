@@ -36,7 +36,7 @@ extern "C" {
 
 #ifdef ENABLE_DSSTEST
 #define CM_CONFIG_PATH        "CM_CONFIG_PATH"
-#define CM_LOCK_OWNER_ID       "LOCK_OWNER_ID"
+#define CM_LOCK_OWNER_ID       "REFORMER_ID"
 #define CM_BITMAP_ONLINE      "BITMAP_ONLINE"
 #define DSS_LONG_TIMEOUT   300
 
