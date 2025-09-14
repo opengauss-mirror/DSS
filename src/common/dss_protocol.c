@@ -283,7 +283,7 @@ status_t dss_call_ex(cs_pipe_t *pipe, dss_packet_t *req, dss_packet_t *ack)
 {
     status_t ret = dss_call_base(pipe, req, ack);
     if (ret != CM_SUCCESS) {
-        LOG_RUN_ERR("[DSS] ABORT INFO: dss call server failed, ack command type:%d, application exit.", ack->head->cmd);
+        LOG_RUN_ERR("[DSS] WARNING: dss call server failed, ack command type:%d, will try again.", ack->head->cmd);
         cs_disconnect(pipe);
         cm_fync_logfile();
     }
