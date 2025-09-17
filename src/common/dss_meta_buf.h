@@ -65,7 +65,7 @@ typedef struct st_dss_recycle_meta {
     dss_bg_task_info_t recycle_meta_task[DSS_RECYLE_META_TASK_NUM_MAX];
 } dss_recycle_meta_t;
 
-#define DSS_LOCK_SHM_META_TIMEOUT 200
+#define DSS_LOCK_SHM_META_TIMEOUT 1000
 #define DSS_BUFFER_CACHE_HASH(block_id) cm_hash_int64((int64)DSS_BLOCK_ID_IGNORE_UNINITED((block_id)))
 void dss_enter_shm_x(dss_session_t *session, dss_vg_info_item_t *vg_item);
 bool32 dss_enter_shm_time_x(dss_session_t *session, dss_vg_info_item_t *vg_item, uint32 wait_ticks);
