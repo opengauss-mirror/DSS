@@ -3257,7 +3257,8 @@ status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ac
     dss_packet_t *send_pack = &conn->pack;
     dss_packet_t *ack_pack = &conn->pack;
     dss_packet_proc_t *make_proc;
-    do {
+#define MAX_RETRY_TIME 10
+    for (int i = 0; i < MAX_RETRY_TIME; i++) {
         dss_init_packet(&conn->pack, conn->pipe.options);
         dss_init_set(&conn->pack, conn->proto_version);
         send_pack->head->cmd = cmd;
@@ -3267,7 +3268,9 @@ status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ac
             DSS_RETURN_IF_ERROR(make_proc->encode_proc(conn, send_pack, send_info));
         }
         ack_pack = &conn->pack;
-        DSS_RETURN_IF_ERROR(dss_call_ex(&conn->pipe, send_pack, ack_pack));
+        if (dss_call_ex(&conn->pipe, send_pack, ack_pack) != CM_SUCCESS) {
+            continue;
+        }
 
         // check return state
         if (ack_pack->head->result != CM_SUCCESS) {
@@ -3278,7 +3281,7 @@ status_t dss_msg_interact(dss_conn_t *conn, uint8 cmd, void *send_info, void *ac
             return errcode;
         }
         break;
-    } while (1);
+    }
     conn->server_version = dss_get_version(ack_pack);
     conn->proto_version = MIN(DSS_PROTO_VERSION, conn->server_version);
     return dss_decode_packet(make_proc, ack_pack, ack);
