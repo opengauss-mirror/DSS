@@ -80,7 +80,7 @@ typedef struct st_dss_instance {
     latch_t uds_lsnr_latch;
     reactors_t reactors;
     thread_t *threads;
-    int64 active_sessions;
+    atomic_t active_sessions;
     bool32 abort_status;
     dss_cm_res cm_res;
     uint64 inst_work_status_map;  // one bit one inst, bit value is 1 means inst ok, 0 means inst not ok

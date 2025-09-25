@@ -38,8 +38,9 @@ typedef status_t (*dss_srv_proc_err)(dss_session_t *session);
 typedef struct st_dss_cmd_hdl {
     int32 cmd;
     dss_srv_proc proc;
-    dss_srv_proc_err proc_err;
-    bool32 exec_on_active;
+    bool32 exec_on_active;  // whether to transfer to the main node for execution
+    /* whether to access metadata, concurrency control is required for metadata access and switchover */
+    bool32 is_access_meta;
 } dss_cmd_hdl_t;
 #ifndef WIN32
 status_t dss_signal_proc(void);
@@ -47,25 +48,6 @@ status_t dss_set_signal_block();
 status_t dss_signal_proc_with_graceful_exit(void);
 #endif
 #define DSS_PROCESS_GET_MASTER_ID 50
-static inline void dss_inc_active_sessions(dss_session_t *session)
-{
-    if (session->recv_pack.head->cmd != DSS_CMD_SWITCH_LOCK &&
-        session->recv_pack.head->cmd != DSS_CMD_DISABLE_GRAB_LOCK) {
-        (void)cm_atomic_inc(&g_dss_instance.active_sessions);
-        LOG_DEBUG_INF("session:%u inc active_sessions to:%lld for cmd:%u", session->id, g_dss_instance.active_sessions,
-            (uint32)session->recv_pack.head->cmd);
-    }
-}
-
-static inline void dss_dec_active_sessions(dss_session_t *session)
-{
-    if (session->recv_pack.head->cmd != DSS_CMD_SWITCH_LOCK &&
-        session->recv_pack.head->cmd != DSS_CMD_DISABLE_GRAB_LOCK) {
-        (void)cm_atomic_dec(&g_dss_instance.active_sessions);
-        LOG_DEBUG_INF("session:%u dec active_sessions to:%lld for cmd:%u", session->id, g_dss_instance.active_sessions,
-            (uint32)session->recv_pack.head->cmd);
-    }
-}
 
 status_t dss_get_exec_nodeid(dss_session_t *session, uint32 *currid, uint32 *remoteid);
 void dss_wait_session_pause(dss_instance_t *inst);
