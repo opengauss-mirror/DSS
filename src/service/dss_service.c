@@ -1373,8 +1373,11 @@ static status_t dss_check_proto_version(dss_session_t *session)
 
 static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
 {
-    DSS_LOG_DEBUG_OP(
-        "Receive command:%d, server status is %d.", session->recv_pack.head->cmd, (int32)g_dss_instance.status);
+    // mark remote request (forwarded from standby), use force mode for lock to avoid deadlock
+    session->is_remote_req = !local_req;
+    
+    DSS_LOG_DEBUG_OP("Receive command:%d, server status is %d, is_remote_req:%d.",
+        session->recv_pack.head->cmd, (int32)g_dss_instance.status, (int32)session->is_remote_req);
     // remote req need process for proto_version
     session->proto_version = dss_get_version(&session->recv_pack);
     dss_cmd_hdl_t *handle = dss_get_cmd_handle(session->recv_pack.head->cmd);
