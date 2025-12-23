@@ -156,6 +156,7 @@ status_t dss_simulation_cm_init(unsigned int instance_id, const char *res_name, 
         snprintf_s(result, CM_MAX_INT64_STRLEN + 1, CM_MAX_INT64_STRLEN, PRINT_FMT_BIGINT, (long long)bitmap_online);
     if (ret == -1) {
         DSS_THROW_ERROR(ERR_SYSTEM_CALL, ret);
+        cm_free(result);
         return NULL;
     }
     return result;
@@ -231,6 +232,7 @@ status_t dss_simulation_cm_res_mgr_init(const char *so_lib_path, cm_res_mgr_t *c
     errno_t rc = strcpy_s(cm_simulation_path, CM_SIMULATION_PATH_LEN + 1, so_lib_path);
     if (rc != EOK) {
         CM_THROW_ERROR(ERR_SYSTEM_CALL, rc);
+        cm_free(cm_simulation_path);
         return CM_ERROR;
     }
     g_simulation_cm.simulation = CM_TRUE;

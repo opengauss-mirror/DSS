@@ -1224,7 +1224,12 @@ status_t dss_get_ftid_by_path(dss_session_t *session, const char *path, ftid_t *
     dss_vg_info_item_t *vg_item = NULL;
     char name[DSS_MAX_NAME_LEN];
     CM_RETURN_IFERR(dss_find_vg_by_dir(path, name, &vg_item));
-    dss_lock_vg_mem_and_shm_s(session, vg_item);
+    // use force mode to avoid deadlock with IX lock during truncate broadcast
+    if (session != NULL && session->is_remote_req) {
+        dss_lock_vg_mem_and_shm_s_force(session, vg_item);
+    } else {
+        dss_lock_vg_mem_and_shm_s(session, vg_item);
+    }
     status_t status = CM_ERROR;
     gft_node_t *node = dss_get_gft_node_by_path(session, vg_item, path, dir_vg_item);
     if (node != NULL) {
@@ -4240,7 +4245,12 @@ status_t dss_update_file_written_size(
     uint64 written_size = (uint64)(offset + size);
 
     gft_node_t *node = NULL;
-    dss_lock_vg_mem_and_shm_s(session, vg_item);
+    // use force mode to avoid deadlock with IX lock during truncate broadcast
+    if (session != NULL && session->is_remote_req) {
+        dss_lock_vg_mem_and_shm_s_force(session, vg_item);
+    } else {
+        dss_lock_vg_mem_and_shm_s(session, vg_item);
+    }
 
     status_t status = dss_get_gft_node_with_cache(session, vg_item, fid, ftid, &node);
     if (status != CM_SUCCESS || node == NULL) {
