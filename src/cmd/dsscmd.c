@@ -4450,7 +4450,7 @@ static void dss_cmd_oper_log(int argc, char **argv, status_t status)
     }
     DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, result, &offset));
 
-    if (offset + 1 > CM_MAX_LOG_CONTENT_LENGTH) {
+    if (offset + 1 >= CM_MAX_LOG_CONTENT_LENGTH) {
         DSS_PRINT_ERROR("Oper log len %u exceeds max %u.\n", offset, CM_MAX_LOG_CONTENT_LENGTH);
         return;
     }

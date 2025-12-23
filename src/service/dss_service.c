@@ -1478,7 +1478,8 @@ static status_t dss_exec_cmd_inner(dss_session_t *session, bool32 local_req, dss
 static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
 {
     dss_cmd_type_e cmd = (dss_cmd_type_e)session->recv_pack.head->cmd;
-    DSS_LOG_DEBUG_OP("Receive command:%d, server status is %d.", cmd, (int32)g_dss_instance.status);
+    DSS_LOG_DEBUG_OP("Receive command:%d, server status is %d, is_remote_req is %d.",
+        cmd, (int32)g_dss_instance.status, (int32)session->is_remote_req);
     // remote req need process for proto_version
     session->proto_version = dss_get_version(&session->recv_pack);
     dss_cmd_hdl_t *handle = dss_get_cmd_handle(cmd);
@@ -1526,6 +1527,15 @@ status_t dss_process_command(dss_session_t *session)
 
     cm_reset_error();
     if (cs_wait(&session->pipe, CS_WAIT_FOR_READ, DSS_WAIT_TIMEOUT, &ready) != CM_SUCCESS) {
+        int32 err_code = 0;
+        const char *err_msg = NULL;
+        cm_get_error(&err_code, &err_msg);
+        LOG_RUN_WAR("[DSS_DISCONNECT] session %u cs_wait failed, err_code=%d, err_msg=%s, "
+            "sock=%d, pid=%llu, process=%s, connect_time=%llu",
+            session->id, err_code, err_msg ? err_msg : "NULL",
+            session->pipe.link.uds.sock,
+            session->cli_info.cli_pid, session->cli_info.process_name,
+            session->cli_info.connect_time);
         session->is_closed = CM_TRUE;
         return CM_ERROR;
     }

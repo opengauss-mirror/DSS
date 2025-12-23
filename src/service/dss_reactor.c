@@ -107,6 +107,10 @@ void dss_reactor_attach_workthread(dss_session_t *session)
             break;
         }
         if (reactor->status != REACTOR_STATUS_RUNNING || reactor->iothread.closed) {
+            if (dss_reactor_set_oneshot(session) != CM_SUCCESS) {
+                LOG_RUN_ERR("[reactor] set oneshot flag of socket failed, session %u, reactor %u, os error %d",
+                    session->id, reactor->id, cm_get_os_error());
+            }
             break;
         }
         cm_thread_unlock(&reactor->lock);
@@ -170,6 +174,19 @@ static void dss_reactor_poll_events(reactor_t *reactor)
     for (loop = 0; loop < nfds; ++loop) {
         ev = &events[loop];
         sess = (dss_session_t *)ev->data.ptr;
+        
+        if ((ev->events & (EPOLLHUP | EPOLLERR)) && !(ev->events & EPOLLIN)) {
+            LOG_RUN_WAR("[reactor] session %u got error event 0x%x (HUP=%d, ERR=%d), "
+                "pid=%llu, process=%s, closing session",
+                sess->id, ev->events,
+                (ev->events & EPOLLHUP) ? 1 : 0,
+                (ev->events & EPOLLERR) ? 1 : 0,
+                sess->cli_info.cli_pid, sess->cli_info.process_name);
+            sess->is_closed = CM_TRUE;
+            dss_clean_reactor_session(sess);
+            continue;
+        }
+        
         if (reactor->status != REACTOR_STATUS_RUNNING) {
             if (dss_reactor_set_oneshot(sess) != CM_SUCCESS) {
                 LOG_RUN_ERR("[reactor] set oneshot flag of socket failed, session %u, "
@@ -177,6 +194,9 @@ static void dss_reactor_poll_events(reactor_t *reactor)
                     sess->id, reactor->id, cm_get_sock_error(), ev->events);
             }
             continue;
+        } else {
+            LOG_DEBUG_INF("[reactor] set one shot while recovery, session %u, reactor %u, event %u",
+                sess->id, reactor->id, ev->events);
         }
 
         dss_reactor_attach_workthread(sess);

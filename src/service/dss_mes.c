@@ -685,6 +685,7 @@ static void dss_process_message(uint32 work_idx, ruid_type ruid, mes_msg_t *msg)
     dss_init_packet(&session->send_pack, CM_FALSE);
     dss_init_set(&session->send_pack, dss_head->msg_proto_ver);
     session->proto_version = dss_head->msg_proto_ver;
+    session->is_remote_req = CM_TRUE;
     LOG_DEBUG_INF(
         "[MES] dss process message, cmd is %u, proto_version is %u.", dss_head->dss_cmd, dss_head->msg_proto_ver);
     dss_processor_t *processor = &g_dss_processors[dss_head->dss_cmd];
