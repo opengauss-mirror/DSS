@@ -35,6 +35,7 @@
 #include "dss_thv.h"
 #include "dss_fault_injection.h"
 #include "dss_param_verify.h"
+#include "dss_dhb.h"
 
 #ifndef WIN32
 static __thread char *g_thv_read_buf = NULL;
@@ -553,11 +554,48 @@ static status_t dss_broadcast_msg(dss_bcast_req_head_t *req, dss_bcast_community
         cm_sleep(DSS_BROADCAST_MSG_TRY_SLEEP_TIME);
         i++;
     } while (i < DSS_BROADCAST_MSG_TRY_MAX && ret != ERR_DSS_UNSUPPORTED_CMD);
-    if (ret != ERR_DSS_UNSUPPORTED_CMD) {
+    
+    /* Check if broadcast actually succeeded (all target instances responded) */
+    if (succ_req_inst != succ_ack_inst) {
+        /* Broadcast failed: not all instances responded */
+        /* Calculate which instances failed to respond */
+        uint64 failed_inst_map = succ_req_inst & (~succ_ack_inst);
+        
+        LOG_RUN_WAR("[MES] Broadcast incomplete after %u retries: "
+            "succ_req=0x%llx, succ_ack=0x%llx, failed=0x%llx. Checking heartbeat...",
+            i, succ_req_inst, succ_ack_inst, failed_inst_map);
+        
+        /* 
+         * Force refresh heartbeat and check if failed instances went offline.
+         * If a node just went offline, its heartbeat will timeout and we can
+         * treat the broadcast as successful since the node is no longer active.
+         */
+        uint64 updated_online_map = 0;
+        status_t check_ret = dss_dhb_check_failed_insts(failed_inst_map, &updated_online_map);
+        
+        if (check_ret == CM_SUCCESS) {
+            /* All failed instances went offline - broadcast is considered successful */
+            LOG_RUN_INF("[MES] Broadcast OK: failed instances (0x%llx) went offline, "
+                "online_map=0x%llx", failed_inst_map, updated_online_map);
+            cm_reset_error();
+            return CM_SUCCESS;
+        }
+        
+        /* Some failed instances are still online - this is a real broadcast failure */
+        LOG_RUN_ERR("[MES] Broadcast FAILED: instances still online, "
+            "failed=0x%llx, online_map=0x%llx", failed_inst_map, updated_online_map);
+
+        cm_reset_error();
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Broadcast failed: req=0x%llx, ack=0x%llx, failed=0x%llx", 
+            succ_req_inst, succ_ack_inst, failed_inst_map);
+        return CM_ERROR;
+    }
+    
+    if (ret != ERR_DSS_UNSUPPORTED_CMD && ret != CM_SUCCESS) {
         cm_reset_error();
         DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Failed to broadcast msg with try.");
+        LOG_RUN_ERR("[MES] Broadcast error, errcode:%d", cm_get_error_code());
     }
-    LOG_RUN_ERR("[DSS] THROW UP ERROR WHEN BROADCAST FAILED, errcode:%d", cm_get_error_code());
     return ret;
 }
 
@@ -1070,6 +1108,7 @@ static int dss_get_mes_response(ruid_type ruid, mes_msg_t *response, int timeout
     }
     return ret;
 }
+
 
 status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result)
 {

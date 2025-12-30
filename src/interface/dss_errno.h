@@ -96,14 +96,14 @@ extern "C" {
 // redo error [2320, 2350)
 #define ERR_DSS_REDO_ILL 2320
 
-// Basic Data Structure error [2350, 2400)
+// Basic Data Structure error [2350, 2360)
 #define ERR_DSS_OAMAP_INSERT 2350
 #define ERR_DSS_OAMAP_INSERT_DUP_KEY 2351
 #define ERR_DSS_OAMAP_FETCH 2352
-#define ERR_DSS_SKLIST_ERR 2360
-#define ERR_DSS_SKLIST_NOT_INIT 2361
-#define ERR_DSS_SKLIST_NOT_EXIST 2362
-#define ERR_DSS_SKLIST_EXIST 2363
+
+// switch or recovery error [2360, 2370)
+#define ERR_DSS_SWITCH 2360
+
 #define ERR_DSS_SHM_CREATE 2370
 #define ERR_DSS_SHM_CHECK 2371
 #define ERR_DSS_SHM_LOCK 2372
@@ -111,6 +111,8 @@ extern "C" {
 #define ERR_DSS_GA_INIT 2380
 #define ERR_DSS_GA_GET_ADDR 2381
 #define ERR_DSS_GA_ALLOC_OBJECT 2382
+
+// session error [2390, 2400)
 #define ERR_DSS_SESSION_INVALID_ID 2390
 #define ERR_DSS_SESSION_CREATE 2391
 #define ERR_DSS_SESSION_EXTEND 2392
@@ -140,6 +142,7 @@ extern "C" {
 #define ERR_DSS_UNSUPPORTED_CMD 2422
 #define ERR_DSS_DELETE_QUEUE_IS_FULL 2423
 #define ERR_DSS_SEARCH_STACK_IS_FULL 2424
+#define ERR_DSS_NOT_MASTER 2425
 
 // hotpatch error [2450, 2470)
 #define ERR_DSS_HP_LIB_BEGIN 2450

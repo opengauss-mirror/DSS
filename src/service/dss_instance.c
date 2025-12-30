@@ -48,6 +48,9 @@
 #ifdef ENABLE_DSSTEST
 #include "dss_simulation_cm.h"
 #endif
+
+/* Disk HeartBeat (DHB) replaces CM dependency */
+#include "dss_dhb.h"
 #include "dss_fault_injection.h"
 #include "dss_nodes_list.h"
 #include "dss_delete_file.h"
@@ -219,6 +222,35 @@ static status_t dss_init_inst_handle_session(dss_instance_t *inst)
     return CM_SUCCESS;
 }
 
+static status_t dss_init_dhb(void)
+{
+    if (g_vgs_info == NULL || g_vgs_info->group_num == 0) {
+        LOG_RUN_ERR("[DHB] No VG info available");
+        return CM_ERROR;
+    }
+
+    const char *volume_path = g_vgs_info->volume_group[0].entry_path;
+    if (volume_path == NULL || strlen(volume_path) == 0) {
+        LOG_RUN_ERR("[DHB] Volume path is empty");
+        return CM_ERROR;
+    }
+
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    uint32 inst_id = (uint32)inst_cfg->params.inst_id;
+    
+    LOG_RUN_INF("[DHB] Initializing: volume=%s, inst_id=%u, inst_cnt=%u", 
+        volume_path, inst_id, inst_cfg->params.nodes_list.inst_cnt);
+
+    status_t status = dss_dhb_cluster_init_with_path(volume_path, inst_id);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[DHB] Failed to init");
+        return CM_ERROR;
+    }
+    
+    LOG_RUN_INF("[DHB] Initialized for inst %u", inst_id);
+    return CM_SUCCESS;
+}
+
 static status_t instance_init_core(dss_instance_t *inst)
 {
     status_t status = dss_get_vg_info();
@@ -229,6 +261,8 @@ static status_t instance_init_core(dss_instance_t *inst)
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to initialize thread."));
     status = dss_startup_mes();
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to startup mes"));
+    status = dss_init_dhb();
+    DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to init DHB"));
     status = dss_create_reactors();
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to start reactors!"));
     status = dss_start_lsnr(inst);
@@ -509,14 +543,16 @@ status_t dss_init_cm(dss_instance_t *inst)
 
 void dss_uninit_cm(dss_instance_t *inst)
 {
-    if (inst->cm_res.is_valid) {
+    /* Cleanup disk heartbeat */
+    dss_dhb_cluster_uninit();
+
 #ifdef ENABLE_DSSTEST
+    /* Cleanup simulation CM in test mode */
+    if (inst->cm_res.is_valid) {
         dss_simulation_cm_res_mgr_uninit(&inst->cm_res.mgr);
-#else
-        cm_res_mgr_uninit(&inst->cm_res.mgr);
-#endif
         inst->cm_res.is_valid = CM_FALSE;
     }
+#endif
 }
 
 void dss_free_log_ctrl()
@@ -555,59 +591,8 @@ void dss_check_peer_by_inst(dss_instance_t *inst, uint64 inst_id)
     dss_check_peer_inst(inst, inst_id);
 }
 
-static void dss_check_peer_by_cm(dss_instance_t *inst)
-{
-    cm_res_mem_ctx_t res_mem_ctx;
-    if (cm_res_init_memctx(&res_mem_ctx) != CM_SUCCESS) {
-        return;
-    }
-    cm_res_stat_ptr_t res = cm_res_get_stat(&inst->cm_res.mgr, &res_mem_ctx);
-    if (res == NULL) {
-        cm_res_uninit_memctx(&res_mem_ctx);
-        return;
-    }
-    dss_config_t *inst_cfg = dss_get_inst_cfg();
-    uint64 cur_inst_map = 0;
-    uint32 instance_count = 0;
-    if (cm_res_get_instance_count(&instance_count, &inst->cm_res.mgr, res) != CM_SUCCESS) {
-        cm_res_free_stat(&inst->cm_res.mgr, res);
-        cm_res_uninit_memctx(&res_mem_ctx);
-        return;
-    }
-    for (uint32_t idx = 0; idx < instance_count; idx++) {
-        const cm_res_inst_info_ptr_t inst_res = cm_res_get_instance_info(&inst->cm_res.mgr, res, idx);
-        if (inst_res == NULL) {
-            cm_res_free_stat(&inst->cm_res.mgr, res);
-            cm_res_uninit_memctx(&res_mem_ctx);
-            return;
-        }
-
-        int res_instance_id = cm_res_get_inst_instance_id(&inst->cm_res.mgr, inst_res);
-        int is_work_member = cm_res_get_inst_is_work_member(&inst->cm_res.mgr, inst_res);
-        if (is_work_member == 0) {
-            LOG_RUN_INF("dss instance [%d] is not work member. May be kicked off by cm.", res_instance_id);
-            continue;
-        }
-
-        uint64_t inst_mask = ((uint64)0x1 << res_instance_id);
-        if ((inst_cfg->params.nodes_list.inst_map & inst_mask) == 0) {
-            LOG_RUN_INF("dss instance [%d] is not in mes nodes cfg lists.", res_instance_id);
-            continue;
-        }
-
-        int stat = cm_res_get_inst_stat(&inst->cm_res.mgr, inst_res);
-        if (stat != CM_RES_STATUS_ONLINE) {
-            LOG_RUN_INF("dss instance [%d] work stat [%d] not online.", res_instance_id, stat);
-        }
-        cur_inst_map |= ((uint64)0x1 << res_instance_id);
-    }
-
-    dss_check_mes_conn(cur_inst_map);
-    cm_res_free_stat(&inst->cm_res.mgr, res);
-    cm_res_uninit_memctx(&res_mem_ctx);
-}
-
 #ifdef ENABLE_DSSTEST
+/* Simulation CM only used in test mode */
 static void dss_check_peer_by_simulation_cm(dss_instance_t *inst)
 {
     if (g_simulation_cm.simulation) {
@@ -617,15 +602,10 @@ static void dss_check_peer_by_simulation_cm(dss_instance_t *inst)
         dss_check_mes_conn(cur_inst_map);
         return;
     }
-    dss_check_peer_by_cm(inst);
-    return;
+    /* Fallback to DHB */
+    dss_dhb_check_peer(inst);
 }
 #endif
-
-static void dss_check_peer_default()
-{
-    dss_check_mes_conn(DSS_INVALID_ID64);
-}
 
 void dss_init_cm_res(dss_instance_t *inst)
 {
@@ -643,82 +623,82 @@ void dss_init_cm_res(dss_instance_t *inst)
     return;
 }
 
-#ifdef ENABLE_DSSTEST
 status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
 {
+#ifdef ENABLE_DSSTEST
     if (g_simulation_cm.simulation) {
         int ret = cm_res_get_lock_owner(&cm_res->mgr, DSS_CM_LOCK, master_id);
         if (ret != CM_SUCCESS) {
             return ret;
         }
-    } else {
-        dss_config_t *inst_cfg = dss_get_inst_cfg();
-        for (int i = 0; i < DSS_MAX_INSTANCES; i++) {
-            if (inst_cfg->params.nodes_list.ports[i] != 0) {
-                *master_id = i;
-                LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "Set min id %u as master id.", i);
-                break;
-            }
-        }
-        LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "master_id is %u when get cm lock.", *master_id);
-    }
-    return CM_SUCCESS;
-}
-#else
-status_t dss_get_cm_res_lock_owner(dss_cm_res *cm_res, uint32 *master_id)
-{
-    int ret = cm_res_get_lock_owner(&cm_res->mgr, DSS_CM_LOCK, master_id);
-    if (ret == CM_RES_TIMEOUT) {
-        LOG_RUN_ERR("Try to get lock owner failed, cm error : %d.", ret);
-        return CM_ERROR;
-    } else if (ret == CM_RES_SUCCESS) {
         return CM_SUCCESS;
-    } else {
-        *master_id = CM_INVALID_ID32;
-        LOG_RUN_ERR("Try to get lock owner failed, cm error : %d.", ret);
     }
-    return CM_SUCCESS;
-}
 #endif
-// get cm lock owner, if no owner, try to become.master_id can not be DSS_INVALID_ID32.
+    /* Use disk heartbeat to get lock owner */
+    status_t ret = dss_dhb_get_lock_owner(master_id);
+    LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "[DHB] get_lock_owner: ret=%d, master_id=%u", 
+        ret, (master_id != NULL) ? *master_id : 0xFFFFFFFF);
+    return ret;
+}
+/* Get lock owner; if no owner and try_lock is set, try to become leader */
 status_t dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 try_lock, uint32 *master_id)
 {
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     *master_id = DSS_INVALID_ID32;
+    
     if (inst->is_maintain || inst->inst_cfg.params.nodes_list.inst_cnt <= 1) {
         *grab_lock = CM_TRUE;
         LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5,
-            "[RECOVERY]Set curr_id %u to be primary when dssserver is maintain or just one inst.",
+            "[RECOVERY] Set curr_id %u to be primary (maintain or single inst).",
             (uint32)inst_cfg->params.inst_id);
         *master_id = (uint32)inst_cfg->params.inst_id;
         return CM_SUCCESS;
     }
-    dss_cm_res *cm_res = &inst->cm_res;
-    if (!cm_res->is_init) {
+
+#ifdef ENABLE_DSSTEST
+    if (g_simulation_cm.simulation) {
+        dss_cm_res *cm_res = &inst->cm_res;
+        status_t ret = dss_get_cm_res_lock_owner(cm_res, master_id);
+        DSS_RETURN_IFERR2(ret, LOG_RUN_WAR("Failed to get cm lock owner."));
+        if (*master_id == DSS_INVALID_ID32 && try_lock) {
+            ret = cm_res_lock(&cm_res->mgr, DSS_CM_LOCK);
+            *grab_lock = ((int)ret == CM_RES_SUCCESS);
+            if (*grab_lock) {
+                *master_id = (uint32)inst->inst_cfg.params.inst_id;
+                LOG_RUN_INF("[RECOVERY] inst id %u got lock.", *master_id);
+            }
+        }
         return CM_SUCCESS;
     }
-    status_t ret = CM_SUCCESS;
-    ret = dss_get_cm_res_lock_owner(cm_res, master_id);
-    DSS_RETURN_IFERR2(ret, LOG_RUN_WAR("Failed to get cm lock owner, if DSS is normal open ignore the log."));
-    if (*master_id == DSS_INVALID_ID32) {
-        if (!try_lock) {
-            return CM_ERROR;
+#endif
+
+    /* Use disk heartbeat for leader election */
+    status_t ret = dss_get_cm_res_lock_owner(NULL, master_id);
+    if (ret != CM_SUCCESS || *master_id == DSS_INVALID_ID32) {
+        /* No leader yet, try to become leader if allowed */
+        if (try_lock) {
+            bool32 got_lock = CM_FALSE;
+            ret = dss_dhb_try_lock(&got_lock);
+            if (ret == CM_SUCCESS && got_lock) {
+                *grab_lock = CM_TRUE;
+                *master_id = (uint32)inst_cfg->params.inst_id;
+                LOG_RUN_INF("[RECOVERY][DHB] inst id %u became leader.", *master_id);
+                return CM_SUCCESS;
+            }
+            /* Try to get owner again after lock attempt */
+            (void)dss_get_cm_res_lock_owner(NULL, master_id);
         }
-        if (inst->no_grab_lock) {
-            LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "[RECOVERY]No need to grab lock when inst %u is set no grab lock.",
+        
+        if (*master_id == DSS_INVALID_ID32) {
+            LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, 
+                "[RECOVERY][DHB] No leader found yet, inst %u waiting...", 
                 (uint32)inst_cfg->params.inst_id);
-            dss_set_master_id(DSS_INVALID_ID32);
-            return CM_ERROR;
-        }
-        ret = cm_res_lock(&cm_res->mgr, DSS_CM_LOCK);
-        *grab_lock = ((int)ret == CM_RES_SUCCESS);
-        if (*grab_lock) {
-            *master_id = (uint32)inst->inst_cfg.params.inst_id;
-            LOG_RUN_INF("[RECOVERY]inst id %u succeed to get lock owner.", *master_id);
             return CM_SUCCESS;
         }
-        return CM_ERROR;
     }
+    LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, 
+        "[RECOVERY][DHB] Leader is inst %u, current inst is %u", 
+        *master_id, (uint32)inst_cfg->params.inst_id);
     return CM_SUCCESS;
 }
 
@@ -975,23 +955,20 @@ void dss_hashmap_dynamic_extend_and_redistribute_proc(thread_t *thread)
 }
 static void dss_check_peer_inst_inner(dss_instance_t *inst)
 {
-    /**
-     * During installation initialization, db_init depends on the DSS server. However, the CMS is not started.
-     * Therefore, cm_init cannot be invoked during the DSS server startup.
-     * Here, cm_init is invoked before the CM interface is invoked at first time.
-     */
-    if (SECUREC_UNLIKELY(!inst->cm_res.is_init)) {
-        dss_init_cm_res(inst);
-    }
-    if (inst->cm_res.is_valid) {
 #ifdef ENABLE_DSSTEST
-        dss_check_peer_by_simulation_cm(inst);
-#else
-        dss_check_peer_by_cm(inst);
-#endif
-        return;
+    /* Simulation CM used in test mode */
+    if (g_simulation_cm.simulation) {
+        if (SECUREC_UNLIKELY(!inst->cm_res.is_init)) {
+            dss_init_cm_res(inst);
+        }
+        if (inst->cm_res.is_valid) {
+            dss_check_peer_by_simulation_cm(inst);
+            return;
+        }
     }
-    dss_check_peer_default();
+#endif
+    /* Use disk heartbeat to check peer node status */
+    dss_dhb_check_peer(inst);
 }
 
 void dss_check_peer_inst(dss_instance_t *inst, uint64 inst_id)
