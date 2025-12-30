@@ -79,8 +79,6 @@ status_t dss_get_core_version(dss_vg_info_item_t *item, uint64 *version);
 status_t dss_load_core_ctrl(dss_vg_info_item_t *item, dss_core_ctrl_t *core);
 void dss_update_core_ctrl(
     dss_session_t *session, dss_vg_info_item_t *item, dss_core_ctrl_t *core, uint32 volume_id, bool32 is_only_root);
-status_t dss_get_au_head(dss_vg_info_item_t *item, auid_t auid, dss_au_head_t *au_head);
-status_t dss_get_au(dss_vg_info_item_t *item, auid_t auid, char *buf, int32 size);
 bool32 dss_cmp_auid(auid_t auid, uint64 id);
 void dss_set_auid(auid_t *auid, uint64 id);
 int64 dss_get_au_offset(dss_vg_info_item_t *item, auid_t auid);

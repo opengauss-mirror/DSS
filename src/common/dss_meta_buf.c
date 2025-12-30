@@ -979,10 +979,15 @@ void dss_desc_meta_ref_hot(dss_block_ctrl_t *block_ctrl)
 
 static void dss_append_recycle_meta(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl)
 {
-    CM_ASSERT(block_ctrl->recycle_meta_node.next == NULL);
-    CM_ASSERT(block_ctrl->recycle_meta_node.prev == NULL);
     uint32 sid = (session == NULL) ? DSS_DEFAULT_SESSIONID : DSS_SESSIONID_IN_LOCK(session->id);
     dss_latch_x2(&vg_item->recycle_meta_desc.latch, sid);
+#ifdef DB_DEBUG_VERSION
+    if (block_ctrl->recycle_meta_node.next != NULL || block_ctrl->recycle_meta_node.prev != NULL ||
+        (vg_item->recycle_meta_desc.bilist.count == 1 &&
+            &block_ctrl->recycle_meta_node == vg_item->recycle_meta_desc.bilist.tail)) {
+        CM_ASSERT(0);
+    }
+#endif
     cm_bilist_add_tail(&block_ctrl->recycle_meta_node, &vg_item->recycle_meta_desc.bilist);
     dss_unlatch(&vg_item->recycle_meta_desc.latch);
 }

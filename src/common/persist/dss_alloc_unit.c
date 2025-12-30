@@ -461,29 +461,6 @@ int64 dss_get_au_offset(dss_vg_info_item_t *item, auid_t auid)
     return (int64)((uint64)auid.au * (uint64)dss_get_vg_au_size(item->dss_ctrl));
 }
 
-status_t dss_get_au(dss_vg_info_item_t *item, auid_t auid, char *buf, int32 size)
-{
-    if (auid.volume >= DSS_MAX_VOLUMES) {
-        return CM_ERROR;
-    }
-
-    bool32 remote = CM_FALSE;
-    int64_t offset = dss_get_au_offset(item, auid);
-    return dss_check_read_volume(item, (uint32)auid.volume, offset, buf, size, &remote);
-}
-
-status_t dss_get_au_head(dss_vg_info_item_t *item, auid_t auid, dss_au_head_t *au_head)
-{
-    CM_ASSERT(item != NULL);
-    CM_ASSERT(au_head != NULL);
-
-    if (auid.volume >= DSS_MAX_VOLUMES) {
-        return CM_ERROR;
-    }
-
-    return dss_get_au(item, auid, (char *)au_head, sizeof(dss_au_head_t));
-}
-
 bool32 dss_cmp_auid(auid_t auid, uint64 id)
 {
     return *(uint64 *)&auid == id;

@@ -79,10 +79,6 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_OAMAP_INSERT] = "Failed to insert hash map ",
     [ERR_DSS_OAMAP_INSERT_DUP_KEY] = "Hash map duplicated key",
     [ERR_DSS_OAMAP_FETCH] = "Failed to fetch hash map",
-    [ERR_DSS_SKLIST_ERR] = "Error DSS skip list.",
-    [ERR_DSS_SKLIST_NOT_INIT] = "Error DSS skip list not init.",
-    [ERR_DSS_SKLIST_NOT_EXIST] = "Error DSS skip list not exist.",
-    [ERR_DSS_SKLIST_EXIST] = "Error DSS skip list key value exist.",
     [ERR_DSS_SHM_CREATE] = "Failed to create shared memory, key=0x%08x, size=%llu",
     [ERR_DSS_SHM_CHECK] = "Failed to check shared memory ctrl, key=0x%08x, reason=%s",
     [ERR_DSS_SHM_LOCK] = "Failed to lock vg shared memory, reason=%s",
@@ -144,6 +140,7 @@ const char *g_dss_error_desc[DSS_ERROR_COUNT] = {
     [ERR_DSS_RECOVER_CAUSE_BREAK] = "Req break by recovery.",
     [ERR_DSS_DELETE_QUEUE_IS_FULL] = "Delete queue is full.",
     [ERR_DSS_SEARCH_STACK_IS_FULL] = "Search stack is full.",
+    [ERR_DSS_NOT_MASTER] = "The operation is not allowed because the node is not master.",
 };
 
 dss_log_def_t g_dss_cmd_log[] = {

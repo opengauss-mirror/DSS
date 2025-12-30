@@ -58,7 +58,9 @@ void dss_add_syn_meta(dss_vg_info_item_t *vg_item, dss_block_ctrl_t *block_ctrl,
 
     dss_latch_x(&vg_item->syn_meta_desc.latch);
     // if has been in the link, just leave
-    if (block_ctrl->syn_meta_node.next != NULL || block_ctrl->syn_meta_node.prev != NULL) {
+    if (block_ctrl->syn_meta_node.next != NULL || block_ctrl->syn_meta_node.prev != NULL ||
+        (vg_item->syn_meta_desc.bilist.count == 1 &&
+        (&block_ctrl->syn_meta_node == vg_item->syn_meta_desc.bilist.tail))) {
         dss_unlatch(&vg_item->syn_meta_desc.latch);
         return;
     }
