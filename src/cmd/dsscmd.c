@@ -3689,6 +3689,70 @@ static status_t getstatus_proc(void)
     return status;
 }
 
+/* ============================================================================
+ * switch command - Set current instance as main (primary)
+ * ============================================================================ */
+
+static dss_args_t cmd_switch_args[] = {
+    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
+        0},
+};
+static dss_args_set_t cmd_switch_args_set = {
+    cmd_switch_args,
+    sizeof(cmd_switch_args) / sizeof(dss_args_t),
+    NULL,
+};
+
+static void switch_help(const char *prog_name, int print_flag)
+{
+    (void)printf("\nUsage:%s switch [-U UDS:socket_domain]\n", prog_name);
+    (void)printf("[client command] Set current DSS instance as main (primary) instance.\n");
+    (void)printf("This command triggers leader election and makes the connected instance\n");
+    (void)printf("attempt to become the primary node in the DSS cluster.\n");
+    if (print_flag == DSS_HELP_SIMPLE) {
+        return;
+    }
+    help_param_uds();
+}
+
+static status_t switch_proc(void)
+{
+    const char *input_args = cmd_switch_args[DSS_ARG_IDX_0].input_args;
+    dss_conn_t *conn = dss_get_connection_opt(input_args);
+    if (conn == NULL) {
+        DSS_PRINT_ERROR("Failed to connect to DSS server.\n");
+        return CM_ERROR;
+    }
+
+    DSS_PRINT_INF("Attempting to set this instance as main...\n");
+    
+    status_t status = dss_set_main_inst_on_server(conn);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Failed to set main instance. Error: %s\n", cm_get_errormsg(cm_get_error_code()));
+        return CM_ERROR;
+    }
+
+    /* Verify the switch */
+    dss_server_status_t dss_status;
+    status = dss_get_inst_status_on_server(conn, &dss_status);
+    if (status != CM_SUCCESS) {
+        DSS_PRINT_ERROR("Switch succeeded but failed to get status.\n");
+        return CM_SUCCESS;  /* Switch itself succeeded */
+    }
+
+    if (dss_status.master_id == dss_status.local_instance_id) {
+        DSS_PRINT_INF("SUCCESS: Instance %u is now the main (primary) instance.\n", dss_status.local_instance_id);
+        DSS_PRINT_INF("Server status: %s, %s\n", dss_status.instance_status, dss_status.server_status);
+    } else {
+        DSS_PRINT_INF("Switch completed. Current status:\n");
+        DSS_PRINT_INF("  Local instance: %u\n", dss_status.local_instance_id);
+        DSS_PRINT_INF("  Master instance: %u\n", dss_status.master_id);
+        DSS_PRINT_INF("  Server status: %s, %s\n", dss_status.instance_status, dss_status.server_status);
+    }
+
+    return CM_SUCCESS;
+}
+
 static dss_args_t cmd_stopdss_args[] = {
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -4350,6 +4414,7 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set,
                                       {"setcfg", setcfg_help, setcfg_proc, &cmd_setcfg_args_set, true},
                                       {"getcfg", getcfg_help, getcfg_proc, &cmd_getcfg_args_set, false},
                                       {"getstatus", getstatus_help, getstatus_proc, &cmd_getstatus_args_set, false},
+                                      {"switch", switch_help, switch_proc, &cmd_switch_args_set, true},
                                       {"stopdss", stopdss_help, stopdss_proc, &cmd_stopdss_args_set, true},
                                       {"scandisk", scandisk_help, scandisk_proc, &cmd_scandisk_args_set, true},
                                       {"clean_vglock", clean_vglock_help, clean_vglock_proc,
