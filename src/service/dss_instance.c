@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
  *
  * DSS is licensed under Mulan PSL v2.
@@ -222,7 +222,7 @@ static status_t dss_init_inst_handle_session(dss_instance_t *inst)
     return CM_SUCCESS;
 }
 
-static status_t dss_init_dhb(void)
+static status_t dss_init_dhb_wrapper(void)
 {
     if (g_vgs_info == NULL || g_vgs_info->group_num == 0) {
         LOG_RUN_ERR("[DHB] No VG info available");
@@ -238,16 +238,20 @@ static status_t dss_init_dhb(void)
     dss_config_t *inst_cfg = dss_get_inst_cfg();
     uint32 inst_id = (uint32)inst_cfg->params.inst_id;
     
+    uint32 inst_cnt = inst_cfg->params.nodes_list.inst_cnt;
     LOG_RUN_INF("[DHB] Initializing: volume=%s, inst_id=%u, inst_cnt=%u", 
-        volume_path, inst_id, inst_cfg->params.nodes_list.inst_cnt);
+        volume_path, inst_id, inst_cnt);
 
-    status_t status = dss_dhb_cluster_init_with_path(volume_path, inst_id);
+    status_t status = dss_dhb_init(volume_path, inst_id);
     if (status != CM_SUCCESS) {
         LOG_RUN_ERR("[DHB] Failed to init");
         return CM_ERROR;
     }
     
-    LOG_RUN_INF("[DHB] Initialized for inst %u", inst_id);
+    /* Set instance count for heartbeat scanning optimization */
+    dss_dhb_set_inst_count(inst_cnt);
+    
+    LOG_RUN_INF("[DHB] Initialized for inst %u with %u instances", inst_id, inst_cnt);
     return CM_SUCCESS;
 }
 
@@ -261,7 +265,7 @@ static status_t instance_init_core(dss_instance_t *inst)
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to initialize thread."));
     status = dss_startup_mes();
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to startup mes"));
-    status = dss_init_dhb();
+    status = dss_init_dhb_wrapper();
     DSS_RETURN_IFERR2(status, DSS_THROW_ERROR(ERR_DSS_GA_INIT, "DSS instance failed to init DHB"));
     status = dss_create_reactors();
     DSS_RETURN_IFERR2(status, LOG_RUN_ERR("DSS instance failed to start reactors!"));
@@ -544,7 +548,7 @@ status_t dss_init_cm(dss_instance_t *inst)
 void dss_uninit_cm(dss_instance_t *inst)
 {
     /* Cleanup disk heartbeat */
-    dss_dhb_cluster_uninit();
+    dss_dhb_uninit();
 
 #ifdef ENABLE_DSSTEST
     /* Cleanup simulation CM in test mode */
@@ -604,6 +608,8 @@ static void dss_check_peer_by_simulation_cm(dss_instance_t *inst)
     }
     /* Fallback to DHB */
     dss_dhb_check_peer(inst);
+    uint64 online_map = dss_dhb_get_online_map();
+    dss_check_mes_conn(online_map);  /* This internally sets work_status */
 }
 #endif
 
@@ -672,33 +678,61 @@ status_t dss_get_cm_lock_owner(dss_instance_t *inst, bool32 *grab_lock, bool32 t
     }
 #endif
 
-    /* Use disk heartbeat for leader election */
-    status_t ret = dss_get_cm_res_lock_owner(NULL, master_id);
-    if (ret != CM_SUCCESS || *master_id == DSS_INVALID_ID32) {
-        /* No leader yet, try to become leader if allowed */
-        if (try_lock) {
-            bool32 got_lock = CM_FALSE;
-            ret = dss_dhb_try_lock(&got_lock);
-            if (ret == CM_SUCCESS && got_lock) {
-                *grab_lock = CM_TRUE;
-                *master_id = (uint32)inst_cfg->params.inst_id;
-                LOG_RUN_INF("[RECOVERY][DHB] inst id %u became leader.", *master_id);
-                return CM_SUCCESS;
-            }
-            /* Try to get owner again after lock attempt */
-            (void)dss_get_cm_res_lock_owner(NULL, master_id);
+    /* Use disk heartbeat for leader election
+     * 
+     * Logic:
+     * 1. Query lock owner from disk (source of truth)
+     * 2. If we are owner: return success with grab_lock=true
+     * 3. If another node is owner: return success with that master_id
+     * 4. If no owner and try_lock: try to acquire lock
+     */
+    status_t ret = dss_dhb_get_lock_owner(master_id);
+    LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL4, 
+        "[RECOVERY][DHB] get_lock_owner returned: ret=%d, master_id=%u", ret, *master_id);
+    if (ret != CM_SUCCESS) {
+        LOG_RUN_WAR("[RECOVERY][DHB] Failed to get lock owner, ret=%d", ret);
+        return CM_SUCCESS;  /* Let caller retry */
+    }
+    
+    uint32 curr_id = (uint32)inst_cfg->params.inst_id;
+    
+    /* Case 1: We are the lock owner */
+    if (*master_id == curr_id) {
+        *grab_lock = CM_TRUE;
+        LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, 
+            "[RECOVERY][DHB] We are leader: inst %u", curr_id);
+        return CM_SUCCESS;
+    }
+    
+    /* Case 2: Another node is the owner */
+    if (*master_id != DSS_INVALID_ID32) {
+        LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, 
+            "[RECOVERY][DHB] Leader is inst %u, we are inst %u", 
+            *master_id, curr_id);
+        return CM_SUCCESS;
+    }
+    
+    /* Case 3: No owner, try to become leader if allowed */
+    if (try_lock) {
+        bool32 got_lock = CM_FALSE;
+        ret = dss_dhb_try_lock(&got_lock);
+        if (ret == CM_SUCCESS && got_lock) {
+            *grab_lock = CM_TRUE;
+            *master_id = curr_id;
+            LOG_RUN_INF("[RECOVERY][DHB] inst %u became leader.", curr_id);
+            return CM_SUCCESS;
         }
         
-        if (*master_id == DSS_INVALID_ID32) {
-            LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, 
-                "[RECOVERY][DHB] No leader found yet, inst %u waiting...", 
-                (uint32)inst_cfg->params.inst_id);
+        /* Check owner again after attempt */
+        (void)dss_dhb_get_lock_owner(master_id);
+        if (*master_id != DSS_INVALID_ID32) {
+            LOG_RUN_INF("[RECOVERY][DHB] Another inst %u became leader", *master_id);
             return CM_SUCCESS;
         }
     }
+    
     LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, 
-        "[RECOVERY][DHB] Leader is inst %u, current inst is %u", 
-        *master_id, (uint32)inst_cfg->params.inst_id);
+        "[RECOVERY][DHB] No leader yet, inst %u waiting...", curr_id);
     return CM_SUCCESS;
 }
 
@@ -751,6 +785,15 @@ void dss_recovery_when_primary(dss_session_t *session, dss_instance_t *inst, uin
     dss_set_master_id(curr_id);
     dss_set_server_status_flag(DSS_STATUS_READWRITE);
     LOG_RUN_INF("[RECOVERY]inst %u set status flag %u when get cm lock.", curr_id, DSS_STATUS_READWRITE);
+    
+    // CRITICAL: Update work_status so standby nodes can join cluster
+    // Without this, primary's work_status won't include standby nodes,
+    // causing dss_proc_join_cluster_req to return is_reg=false
+    dss_dhb_check_peer(inst);
+    uint64 online_map = dss_dhb_get_online_map();
+    dss_check_mes_conn(online_map);  /* This internally sets work_status */
+    LOG_RUN_INF("[RECOVERY] Primary updated work_status=0x%llx", (unsigned long long)online_map);
+    
     // when primary, no need to check result
     g_dss_instance.is_join_cluster = CM_TRUE;
     inst->status = DSS_STATUS_OPEN;
@@ -765,6 +808,17 @@ void dss_recovery_when_standby(dss_session_t *session, dss_instance_t *inst, uin
         dss_set_server_status_flag(DSS_STATUS_READONLY);
         LOG_RUN_INF("[RECOVERY]inst %u set status flag %u when not get cm lock.", curr_id, DSS_STATUS_READONLY);
     }
+    
+    /* CRITICAL: Update MES connection before trying to join cluster */
+    /* This ensures we can communicate with the master node */
+    /* NOTE: dss_check_mes_conn must be called BEFORE dss_set_inst_work_status */
+    /* because dss_check_mes_conn compares old vs new work_status to decide connections */
+    dss_dhb_check_peer(inst);
+    uint64 online_map = dss_dhb_get_online_map();
+    dss_check_mes_conn(online_map);  /* This internally sets work_status */
+    LOG_RUN_INF("[RECOVERY] Updated MES connections before join, online_map=0x%llx", 
+        (unsigned long long)online_map);
+    
     if (!dss_check_join_cluster()) {
         dss_set_master_id(old_master_id);
         dss_set_server_status_flag(old_status);
@@ -810,8 +864,13 @@ void dss_get_cm_lock_and_recover_inner(dss_session_t *session, dss_instance_t *i
     uint32 curr_id = (uint32)inst_cfg->params.inst_id;
     // master no change
     if (old_master_id == master_id) {
-        // primary, no need check
+        // primary, keep updating work_status for new standby nodes to join
         if (master_id == curr_id) {
+            // Update work_status periodically so standby nodes can join
+            dss_dhb_check_peer(inst);
+            uint64 online_map = dss_dhb_get_online_map();
+            dss_check_mes_conn(online_map);  /* This internally sets work_status */
+            
             status = dss_delay_clean_background_task(&g_dss_instance);
             cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
             return;
@@ -969,6 +1028,8 @@ static void dss_check_peer_inst_inner(dss_instance_t *inst)
 #endif
     /* Use disk heartbeat to check peer node status */
     dss_dhb_check_peer(inst);
+    uint64 online_map = dss_dhb_get_online_map();
+    dss_check_mes_conn(online_map);  /* This internally sets work_status */
 }
 
 void dss_check_peer_inst(dss_instance_t *inst, uint64 inst_id)

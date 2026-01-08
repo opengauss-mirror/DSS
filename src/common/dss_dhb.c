@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Huawei Technologies Co.,Ltd.
+ * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
  *
  * DSS is licensed under Mulan PSL v2.
  * You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -15,7 +15,16 @@
  *
  * dss_dhb.c
  *
- * Disk-based HeartBeat (DHB) mechanism implementation.
+ * Disk Heartbeat (DHB) module - Leader election via disk lock + heartbeat.
+ *
+ * Design:
+ *   1. DHB LOCK (8K @ 288K) - Leader election lock
+ *   2. Heartbeat Area (from 296K) - Per-node heartbeat blocks
+ *
+ * Logic:
+ *   - Background thread writes heartbeat + reads all heartbeats
+ *   - If master heartbeat dies (offline), try to grab DHB LOCK
+ *   - Whoever grabs the lock becomes the new master
  *
  * IDENTIFICATION
  *    src/common/dss_dhb.c
@@ -23,426 +32,504 @@
  * -------------------------------------------------------------------------
  */
 
-#include <fcntl.h>
-#include <unistd.h>
-#include <string.h>
-#include <errno.h>
-#include <time.h>
-#include <stddef.h>
-#include <stdlib.h>
-#include "securec.h"
-#include "cm_log.h"
-#include "cm_thread.h"
+#include "dss_dhb.h"
+#include "dss_log.h"
+#include "cm_disklock.h"
 #include "cm_timer.h"
 #include "cm_spinlock.h"
-#include "cm_defs.h"
-#include "dss_dhb.h"
-#include "dss_errno.h"
+#include "securec.h"
 
-#define NANOSECS_PER_SECOND_LL 1000000000LL
-
-#ifdef __cplusplus
-extern "C" {
+#ifndef WIN32
+#include <sys/time.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
 #endif
 
-/* ============================================================================
- * Weak symbols for non-server builds
- * ============================================================================ */
-
-__attribute__((weak)) void dss_set_inst_work_status(uint64 cur_inst_map) 
-{ 
-    (void)cur_inst_map;
-}
-
-__attribute__((weak)) void dss_check_mes_conn(uint64 cur_inst_map) 
-{ 
-    (void)cur_inst_map;
-}
+/* 
+ * Note: MES connection management is handled by the caller (dss_instance.c)
+ * after calling dss_dhb_check_peer() or dss_dhb_get_online_map().
+ */
 
 /* ============================================================================
- * Module state
+ * Internal Data Structures
  * ============================================================================ */
 
-dss_dhb_ctx_t g_dss_dhb_ctx = {0};
+/* Local heartbeat tracker - records when we last saw a sequence number change */
+typedef struct st_dhb_local_tracker {
+    uint64 last_sequence;       /* Last seen sequence number */
+    uint64 last_change_ns;      /* Local time when sequence last changed (MONOTONIC) */
+} dhb_local_tracker_t;
 
-static thread_t g_dhb_thread;
-static volatile bool32 g_dhb_running = CM_FALSE;
-static spinlock_t g_dhb_lock = 0;
+typedef struct st_dss_dhb_ctx {
+    /* Initialization state */
+    bool32 is_inited;
+    uint32 inst_id;
+    uint32 inst_cnt;
+    char volume_path[DSS_MAX_PATH_BUFFER_SIZE];
+    
+    /* File descriptor for heartbeat I/O */
+    int32 fd;
+    
+    /* Disk lock handle for leader election */
+    uint32 lock_id;
+    
+    /* Heartbeat data */
+    uint64 sequence;
+    uint64 online_map;
+    spinlock_t map_lock;
+    dss_dhb_heartbeat_t nodes[DSS_MAX_INSTANCES];
+    
+    /* Local tracker for each node - uses LOCAL monotonic time */
+    dhb_local_tracker_t local_tracker[DSS_MAX_INSTANCES];
+    
+    /* Current known master (from lock) */
+    uint32 current_master;
+    
+    /* Background thread */
+    thread_t thread;
+    volatile bool32 thread_running;
+} dss_dhb_ctx_t;
+
+static dss_dhb_ctx_t g_dhb_ctx;
 
 /* ============================================================================
- * Internal utilities
+ * Time Utilities
  * ============================================================================ */
 
-static inline uint64 dss_dhb_now_ns(void)
+/* Wall clock time - for writing timestamps to disk */
+static inline uint64 dhb_now_ns(void)
 {
-    struct timespec tv;
-    (void)clock_gettime(CLOCK_REALTIME, &tv);
-    return (uint64)tv.tv_sec * NANOSECS_PER_SECOND_LL + (uint64)tv.tv_nsec;
+    struct timeval tv;
+    (void)gettimeofday(&tv, NULL);
+    return (uint64)tv.tv_sec * 1000000000ULL + (uint64)tv.tv_usec * 1000ULL;
 }
 
-static uint32 dss_dhb_calc_checksum(const dss_dhb_node_t *hb)
+/* Monotonic time - for LOCAL timeout calculation (never goes back) */
+static inline uint64 dhb_monotonic_ns(void)
 {
-    const uint8 *data = (const uint8 *)hb;
-    uint32 sum = 0;
-    for (size_t i = 0; i < offsetof(dss_dhb_node_t, checksum); i++) {
-        sum += data[i];
-    }
-    return sum;
-}
-
-static bool32 dss_dhb_verify(const dss_dhb_node_t *hb)
-{
-    if (hb->magic != DSS_DHB_MAGIC) {
-        return CM_FALSE;
-    }
-    return hb->checksum == dss_dhb_calc_checksum(hb);
+    struct timespec ts;
+    (void)clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64)ts.tv_sec * 1000000000ULL + (uint64)ts.tv_nsec;
 }
 
 /* ============================================================================
- * Internal heartbeat operations
+ * Heartbeat I/O
  * ============================================================================ */
 
-static status_t dss_dhb_write(void)
+static status_t dhb_write_heartbeat(void)
 {
-    dss_dhb_ctx_t *ctx = &g_dss_dhb_ctx;
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
     
     if (ctx->fd <= 0) {
-        LOG_DEBUG_ERR("[DHB] Not initialized");
         return CM_ERROR;
     }
-
-    dss_dhb_node_t *hb = NULL;
-    if (posix_memalign((void **)&hb, DSS_DHB_BLOCK_SIZE, DSS_DHB_BLOCK_SIZE) != 0) {
-        LOG_RUN_ERR("[DHB] Failed to allocate aligned buffer");
-        return CM_ERROR;
-    }
-
-    (void)memset_s(hb, DSS_DHB_BLOCK_SIZE, 0, DSS_DHB_BLOCK_SIZE);
     
-    hb->magic = DSS_DHB_MAGIC;
-    hb->inst_id = ctx->inst_id;
-    hb->hb_time = dss_dhb_now_ns();
-    hb->sequence = ++ctx->sequence;
-    hb->status = DSS_DHB_ONLINE;
-    hb->checksum = dss_dhb_calc_checksum(hb);
-
-    off_t offset = (off_t)(ctx->hb_offset + ctx->inst_id * DSS_DHB_BLOCK_SIZE);
-
-    ssize_t written = pwrite(ctx->fd, hb, DSS_DHB_BLOCK_SIZE, offset);
-    if (written != DSS_DHB_BLOCK_SIZE) {
-        LOG_RUN_ERR("[DHB] Write failed: written=%zd, errno=%d", written, errno);
-        free(hb);
+    /* Prepare heartbeat data */
+    dss_dhb_heartbeat_t hb;
+    errno_t err = memset_s(&hb, sizeof(hb), 0, sizeof(hb));
+    if (err != EOK) {
         return CM_ERROR;
     }
-
-    ctx->last_hb_time = hb->hb_time;
-    LOG_DEBUG_INF("[DHB] Written: inst=%u, seq=%llu", ctx->inst_id, ctx->sequence);
-
-    free(hb);
+    
+    hb.magic = DSS_DHB_MAGIC;
+    hb.inst_id = ctx->inst_id;
+    hb.status = DSS_DHB_NODE_ONLINE;
+    hb.timestamp_ns = dhb_now_ns();
+    hb.sequence = ++ctx->sequence;
+    
+    /* Write to disk at heartbeat area (offset = 296K + inst_id * 512) */
+    int64 offset = DSS_DHB_AREA_OFFSET + (int64)ctx->inst_id * DSS_DHB_BLOCK_SIZE;
+    ssize_t written = pwrite(ctx->fd, &hb, DSS_DHB_BLOCK_SIZE, offset);
+    
+    if (written != DSS_DHB_BLOCK_SIZE) {
+        LOG_DEBUG_WAR("[DHB] Write heartbeat failed: written=%zd, offset=%lld, errno=%d", 
+            written, (long long)offset, errno);
+        return CM_ERROR;
+    }
+    
     return CM_SUCCESS;
 }
 
-static status_t dss_dhb_read_all(void)
+static status_t dhb_read_all_heartbeats(uint64 *new_online_map)
 {
-    dss_dhb_ctx_t *ctx = &g_dss_dhb_ctx;
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
     
-    if (ctx->fd <= 0) {
-        LOG_DEBUG_ERR("[DHB] Not initialized");
+    if (ctx->fd <= 0 || new_online_map == NULL) {
         return CM_ERROR;
     }
-
-    size_t buf_size = DSS_DHB_BLOCK_SIZE * DSS_MAX_INSTANCES;
-    void *buf = NULL;
-    if (posix_memalign(&buf, DSS_DHB_BLOCK_SIZE, buf_size) != 0) {
-        LOG_RUN_ERR("[DHB] Failed to allocate read buffer");
+    
+    /* Read all heartbeat blocks */
+    char buf[DSS_DHB_AREA_SIZE];
+    ssize_t read_size = pread(ctx->fd, buf, DSS_DHB_AREA_SIZE, DSS_DHB_AREA_OFFSET);
+    
+    if (read_size != DSS_DHB_AREA_SIZE) {
+        LOG_DEBUG_WAR("[DHB] Read heartbeats failed: read=%zd, errno=%d", read_size, errno);
         return CM_ERROR;
     }
-
-    off_t offset = (off_t)ctx->hb_offset;
-    ssize_t read_size = pread(ctx->fd, buf, buf_size, offset);
-    if (read_size != (ssize_t)buf_size) {
-        LOG_RUN_ERR("[DHB] Read failed: read=%zd, expected=%zu, errno=%d", read_size, buf_size, errno);
-        free(buf);
-        return CM_ERROR;
-    }
-
-    uint64 now = dss_dhb_now_ns();
-    uint64 timeout_ns = (uint64)ctx->timeout_sec * NANOSECS_PER_SECOND_LL;
-    uint64 new_online_map = 0;
-
-    cm_spin_lock(&g_dhb_lock, NULL);
-
-    for (uint32 i = 0; i < DSS_MAX_INSTANCES; i++) {
-        dss_dhb_node_t *node_hb = (dss_dhb_node_t *)((char *)buf + i * DSS_DHB_BLOCK_SIZE);
+    
+    /* Use LOCAL monotonic time for timeout calculation */
+    uint64 now_mono_ns = dhb_monotonic_ns();
+    uint64 timeout_ns = (uint64)DSS_DHB_HEARTBEAT_TIMEOUT_MS * 1000000ULL;
+    *new_online_map = 0;
+    
+    /* Process each node's heartbeat using SEQUENCE NUMBER change detection */
+    for (uint32 i = 0; i < ctx->inst_cnt && i < DSS_MAX_INSTANCES; i++) {
+        dss_dhb_heartbeat_t *hb = (dss_dhb_heartbeat_t *)(buf + i * DSS_DHB_BLOCK_SIZE);
+        dhb_local_tracker_t *tracker = &ctx->local_tracker[i];
         
-        if (!dss_dhb_verify(node_hb)) {
+        /* Validate magic number */
+        if (hb->magic != DSS_DHB_MAGIC || hb->inst_id != i) {
             continue;
         }
+        
+        /* Save heartbeat data */
+        ctx->nodes[i] = *hb;
+        
+        /* Skip if node status is offline */
+        if (hb->status != DSS_DHB_NODE_ONLINE) {
+            continue;
+        }
+        
+        /* 
+         * Detect sequence number CHANGE, not timestamp comparison!
+         * This works correctly even if clocks are not synchronized.
+         */
+        if (hb->sequence != tracker->last_sequence) {
+            /* Sequence changed - node is alive */
+            tracker->last_sequence = hb->sequence;
+            tracker->last_change_ns = now_mono_ns;
+            *new_online_map |= ((uint64)1 << i);
+        } else if (tracker->last_change_ns == 0) {
+            /* First time seeing this node */
+            tracker->last_sequence = hb->sequence;
+            tracker->last_change_ns = now_mono_ns;
+            *new_online_map |= ((uint64)1 << i);
+        } else {
+            /* Sequence unchanged - check if timeout exceeded */
+            uint64 elapsed_ns = now_mono_ns - tracker->last_change_ns;
+            if (elapsed_ns < timeout_ns) {
+                *new_online_map |= ((uint64)1 << i);
+            }
+            /* else: timeout exceeded, node is offline */
+        }
+    }
+    
+    /* Always mark self as online */
+    *new_online_map |= ((uint64)1 << ctx->inst_id);
+    
+    return CM_SUCCESS;
+}
 
-        ctx->nodes[i] = *node_hb;
+/* ============================================================================
+ * Lock Operations (called from background thread when master goes offline)
+ * ============================================================================ */
 
-        if (node_hb->status == DSS_DHB_ONLINE) {
-            uint64 elapsed = now - node_hb->hb_time;
-            if (elapsed < timeout_ns) {
-                new_online_map |= ((uint64)1 << i);
-            } else {
-                LOG_DEBUG_INF("[DHB] Node %u timeout: elapsed=%llu ns", i, elapsed);
+static status_t dhb_get_lock_owner_internal(uint32 *master_id)
+{
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
+    
+    if (master_id == NULL) {
+        return CM_ERROR;
+    }
+    
+    *master_id = DSS_INVALID_ID32;
+    
+    if (ctx->lock_id == CM_INVALID_LOCK_ID) {
+        return CM_ERROR;
+    }
+    
+    unsigned long long owner_id = CM_INVALID_INST_ID;
+    int ret = cm_dl_getowner(ctx->lock_id, &owner_id);
+    
+    if (ret != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+    
+    if (owner_id != CM_INVALID_INST_ID && owner_id < DSS_MAX_INSTANCES) {
+        *master_id = (uint32)owner_id;
+    }
+    
+    return CM_SUCCESS;
+}
+
+static status_t dhb_try_acquire_lock(bool32 *got_lock)
+{
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
+    
+    if (got_lock == NULL) {
+        return CM_ERROR;
+    }
+    
+    *got_lock = CM_FALSE;
+    
+    if (ctx->lock_id == CM_INVALID_LOCK_ID) {
+        return CM_ERROR;
+    }
+    
+    /* Try to acquire the lock with no wait */
+    int ret = cm_dl_lock(ctx->lock_id, 0);
+    
+    if (ret == CM_SUCCESS) {
+        *got_lock = CM_TRUE;
+        LOG_RUN_INF("[DHB] Acquired leader lock: inst_id=%u", ctx->inst_id);
+    }
+    
+    return CM_SUCCESS;
+}
+
+/* ============================================================================
+ * Background Thread
+ * 
+ * Logic:
+ *   1. Write heartbeat
+ *   2. Read all heartbeats, update online_map
+ *   3. If current master went offline, try to grab the lock
+ * ============================================================================ */
+
+static void dhb_thread_entry(thread_t *thread)
+{
+    LOG_RUN_INF("[DHB] Background thread started, inst_id=%u", g_dhb_ctx.inst_id);
+    
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
+    uint32 interval_ms = DSS_DHB_HEARTBEAT_INTERVAL_MS;
+    
+    while (ctx->thread_running) {
+        /* Step 1: Write our heartbeat */
+        (void)dhb_write_heartbeat();
+        
+        /* Step 2: Read all heartbeats and compute online_map */
+        uint64 new_online_map = 0;
+        if (dhb_read_all_heartbeats(&new_online_map) == CM_SUCCESS) {
+            /* Update online_map */
+            uint64 old_map;
+            cm_spin_lock(&ctx->map_lock, NULL);
+            old_map = ctx->online_map;
+            ctx->online_map = new_online_map;
+            cm_spin_unlock(&ctx->map_lock);
+            
+            /* Log changes */
+            if (old_map != new_online_map) {
+                uint64 went_offline = old_map & ~new_online_map;
+                uint64 went_online = ~old_map & new_online_map;
+                LOG_RUN_INF("[DHB] Online map: 0x%llx -> 0x%llx (offline: 0x%llx, online: 0x%llx)", 
+                    (unsigned long long)old_map, 
+                    (unsigned long long)new_online_map,
+                    (unsigned long long)went_offline,
+                    (unsigned long long)went_online);
+            }
+            
+            /* Step 3: Check current master status */
+            uint32 lock_owner = DSS_INVALID_ID32;
+            (void)dhb_get_lock_owner_internal(&lock_owner);
+            
+            /* Update current_master */
+            if (lock_owner != ctx->current_master) {
+                LOG_RUN_INF("[DHB] Master changed: %u -> %u", ctx->current_master, lock_owner);
+                ctx->current_master = lock_owner;
+            }
+            
+            /* Step 4: If master is offline (heartbeat died), try to grab lock */
+            if (lock_owner != DSS_INVALID_ID32 && lock_owner != ctx->inst_id) {
+                /* Check if master's heartbeat is still alive */
+                bool32 master_online = (new_online_map & ((uint64)1 << lock_owner)) != 0;
+                
+                if (!master_online) {
+                    LOG_RUN_INF("[DHB] Master %u heartbeat died, attempting to grab lock", lock_owner);
+                    
+                    bool32 got_lock = CM_FALSE;
+                    (void)dhb_try_acquire_lock(&got_lock);
+                    
+                    if (got_lock) {
+                        ctx->current_master = ctx->inst_id;
+                        LOG_RUN_INF("[DHB] Became new master after %u failed", lock_owner);
+                    }
+                }
+            } else if (lock_owner == DSS_INVALID_ID32) {
+                /* No master, try to acquire lock */
+                LOG_RUN_INF("[DHB] No master detected, attempting to grab lock");
+                
+                bool32 got_lock = CM_FALSE;
+                (void)dhb_try_acquire_lock(&got_lock);
+                
+                if (got_lock) {
+                    ctx->current_master = ctx->inst_id;
+                    LOG_RUN_INF("[DHB] Became master (no previous owner)");
+                }
+            } else if (lock_owner == ctx->inst_id) {
+                /* We are the master, renew lease */
+                int ret = cm_dl_lock(ctx->lock_id, 0);
+                if (ret != CM_SUCCESS) {
+                    LOG_RUN_WAR("[DHB] Failed to renew lock lease: ret=%d", ret);
+                }
             }
         }
-    }
-
-    new_online_map |= ((uint64)1 << ctx->inst_id);
-
-    if (ctx->online_map != new_online_map) {
-        LOG_RUN_INF("[DHB] Online map changed: 0x%llx -> 0x%llx", ctx->online_map, new_online_map);
-    }
-    ctx->online_map = new_online_map;
-
-    cm_spin_unlock(&g_dhb_lock);
-
-    free(buf);
-    return CM_SUCCESS;
-}
-
-static status_t dss_dhb_try_leader(void)
-{
-    dss_dhb_ctx_t *ctx = &g_dss_dhb_ctx;
-    
-    if (ctx->lock_id == CM_INVALID_LOCK_ID) {
-        LOG_DEBUG_WAR("[DHB] Leader lock not initialized");
-        return CM_ERROR;
-    }
-
-    int ret = cm_dl_lock(ctx->lock_id, 0);
-    if (ret == CM_SUCCESS) {
-        ctx->is_leader = CM_TRUE;
-        LOG_RUN_INF("[DHB] Became leader: inst_id=%u", ctx->inst_id);
-        return CM_SUCCESS;
-    } else if (ret == CM_DL_ERR_OCCUPIED) {
-        ctx->is_leader = CM_FALSE;
-        LOG_DEBUG_INF("[DHB] Leader lock occupied");
-        return CM_ERROR;
-    } else {
-        LOG_RUN_ERR("[DHB] Leader lock failed: ret=%d", ret);
-        return CM_ERROR;
-    }
-}
-
-static status_t dss_dhb_release_leader(void)
-{
-    dss_dhb_ctx_t *ctx = &g_dss_dhb_ctx;
-    
-    if (ctx->lock_id == CM_INVALID_LOCK_ID) {
-        return CM_SUCCESS;
-    }
-
-    int ret = cm_dl_unlock(ctx->lock_id);
-    if (ret == CM_SUCCESS) {
-        ctx->is_leader = CM_FALSE;
-        LOG_RUN_INF("[DHB] Released leader: inst_id=%u", ctx->inst_id);
-    }
-    return (ret == CM_SUCCESS) ? CM_SUCCESS : CM_ERROR;
-}
-
-/* ============================================================================
- * Background thread
- * ============================================================================ */
-
-static void dss_dhb_thread_entry(thread_t *thread)
-{
-    LOG_RUN_INF("[DHB] Thread started");
-    
-    dss_dhb_ctx_t *ctx = &g_dss_dhb_ctx;
-    uint32 interval_ms = ctx->interval_sec * 1000;
-
-    while (g_dhb_running) {
-        if (dss_dhb_write() != CM_SUCCESS) {
-            LOG_RUN_WAR("[DHB] Failed to write heartbeat");
-        }
-
-        if (dss_dhb_read_all() != CM_SUCCESS) {
-            LOG_RUN_WAR("[DHB] Failed to read heartbeats");
-        }
-
-        if (ctx->is_leader && ctx->lock_id != CM_INVALID_LOCK_ID) {
-            (void)cm_dl_lock(ctx->lock_id, 0);  /* Renew lease */
-        }
-
+        
         cm_sleep(interval_ms);
     }
-
-    LOG_RUN_INF("[DHB] Thread stopped");
+    
+    LOG_RUN_INF("[DHB] Background thread stopped");
 }
 
-static status_t dss_dhb_start_thread(void)
+static status_t dhb_start_thread(void)
 {
-    if (g_dhb_running) {
-        LOG_RUN_WAR("[DHB] Thread already running");
-        return CM_SUCCESS;
-    }
-
-    g_dhb_running = CM_TRUE;
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
+    ctx->thread_running = CM_TRUE;
     
-    if (cm_create_thread(dss_dhb_thread_entry, 0, NULL, &g_dhb_thread) != CM_SUCCESS) {
-        g_dhb_running = CM_FALSE;
-        LOG_RUN_ERR("[DHB] Failed to create thread");
+    status_t status = cm_create_thread(dhb_thread_entry, 0, NULL, &ctx->thread);
+    if (status != CM_SUCCESS) {
+        ctx->thread_running = CM_FALSE;
+        LOG_RUN_ERR("[DHB] Failed to create background thread");
         return CM_ERROR;
     }
-
-    LOG_RUN_INF("[DHB] Thread started");
+    
     return CM_SUCCESS;
 }
 
-static void dss_dhb_stop_thread(void)
+static void dhb_stop_thread(void)
 {
-    if (!g_dhb_running) {
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
+    
+    if (!ctx->thread_running) {
         return;
     }
-
-    g_dhb_running = CM_FALSE;
-    cm_close_thread(&g_dhb_thread);
-    LOG_RUN_INF("[DHB] Thread stopped");
+    
+    ctx->thread_running = CM_FALSE;
+    cm_close_thread(&ctx->thread);
 }
 
 /* ============================================================================
- * Cluster management (public)
+ * Public Interface - Initialization
  * ============================================================================ */
 
-status_t dss_dhb_cluster_init_with_path(const char *volume_path, uint32 inst_id)
+status_t dss_dhb_init(const char *volume_path, uint32 inst_id)
 {
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
+    
+    if (ctx->is_inited) {
+        LOG_RUN_INF("[DHB] Already initialized");
+        return CM_SUCCESS;
+    }
+    
     if (volume_path == NULL || strlen(volume_path) == 0) {
         LOG_RUN_ERR("[DHB] Invalid volume path");
         return CM_ERROR;
     }
-
-    if (inst_id >= DSS_MAX_INSTANCES) {
-        LOG_RUN_ERR("[DHB] Invalid instance ID: %u", inst_id);
+    
+    LOG_RUN_INF("[DHB] Initializing: volume=%s, inst_id=%u", volume_path, inst_id);
+    LOG_RUN_INF("[DHB] Layout: LOCK @ 0x%llx (8K), Heartbeat @ 0x%llx", 
+        (unsigned long long)DSS_DHB_LOCK_OFFSET, 
+        (unsigned long long)DSS_DHB_AREA_OFFSET);
+    
+    /* Clear context */
+    errno_t err = memset_s(ctx, sizeof(dss_dhb_ctx_t), 0, sizeof(dss_dhb_ctx_t));
+    if (err != EOK) {
+        LOG_RUN_ERR("[DHB] memset failed");
         return CM_ERROR;
     }
-
-    dss_dhb_ctx_t *ctx = &g_dss_dhb_ctx;
     
-    errno_t err = strcpy_s(ctx->volume_path, DSS_MAX_VOLUME_PATH_LEN, volume_path);
+    ctx->inst_id = inst_id;
+    ctx->inst_cnt = DSS_MAX_INSTANCES;
+    ctx->lock_id = CM_INVALID_LOCK_ID;
+    ctx->fd = -1;
+    ctx->map_lock = 0;
+    ctx->current_master = DSS_INVALID_ID32;
+    
+    err = strcpy_s(ctx->volume_path, sizeof(ctx->volume_path), volume_path);
     if (err != EOK) {
         LOG_RUN_ERR("[DHB] Failed to copy volume path");
         return CM_ERROR;
     }
-
-    ctx->fd = open(volume_path, O_RDWR | O_DIRECT | O_SYNC);
-    if (ctx->fd < 0) {
-        LOG_RUN_ERR("[DHB] Failed to open volume %s: errno=%d", volume_path, errno);
+    
+    /* Open volume for heartbeat I/O (O_SYNC ensures data persistence) */
+    ctx->fd = open(volume_path, O_RDWR | O_SYNC);
+    if (ctx->fd <= 0) {
+        LOG_RUN_ERR("[DHB] Failed to open volume: %s, errno=%d", volume_path, errno);
         return CM_ERROR;
     }
-
-    ctx->inst_id = inst_id;
-    ctx->hb_offset = DSS_DHB_AREA_OFFSET;
-    ctx->timeout_sec = DSS_DHB_TIMEOUT_SEC;
-    ctx->interval_sec = DSS_DHB_INTERVAL_SEC;
-    ctx->sequence = 0;
-    ctx->is_leader = CM_FALSE;
-    ctx->online_map = 0;
-    ctx->lock_id = CM_INVALID_LOCK_ID;
-
-    ctx->lock_id = cm_dl_alloc_lease(volume_path, DSS_DHB_LOCK_OFFSET, inst_id, DSS_DHB_LEASE_SEC);
+    
+    LOG_RUN_INF("[DHB] Volume opened: fd=%d", ctx->fd);
+    
+    /* Allocate disk lock at DHB_LOCK_OFFSET (288K) */
+    uint32 lease_sec = DSS_DHB_LEASE_TIMEOUT_MS / 1000;
+    if (lease_sec < 1) {
+        lease_sec = 1;
+    }
+    
+    LOG_RUN_INF("[DHB] Allocating disk lock: offset=0x%llx, inst_id=%u, lease=%u sec",
+        (unsigned long long)DSS_DHB_LOCK_OFFSET, inst_id, lease_sec);
+    
+    ctx->lock_id = cm_dl_alloc_lease(volume_path, DSS_DHB_LOCK_OFFSET, 
+        (unsigned long long)inst_id, lease_sec);
     if (ctx->lock_id == CM_INVALID_LOCK_ID) {
-        LOG_RUN_ERR("[DHB] Failed to allocate leader lock");
+        LOG_RUN_ERR("[DHB] Failed to alloc disk lock");
         close(ctx->fd);
-        ctx->fd = 0;
+        ctx->fd = -1;
         return CM_ERROR;
     }
-
-    (void)memset_s(ctx->nodes, sizeof(ctx->nodes), 0, sizeof(ctx->nodes));
-
-    status_t ret = dss_dhb_start_thread();
-    if (ret != CM_SUCCESS) {
-        LOG_RUN_ERR("[DHB] Failed to start thread");
-        (void)cm_dl_dealloc(ctx->lock_id);
+    
+    LOG_RUN_INF("[DHB] Disk lock allocated: lock_id=%u", ctx->lock_id);
+    
+    /* Write initial heartbeat */
+    (void)dhb_write_heartbeat();
+    
+    /* Read existing heartbeats */
+    uint64 initial_online_map = 0;
+    (void)dhb_read_all_heartbeats(&initial_online_map);
+    ctx->online_map = initial_online_map;
+    
+    /* Get current lock owner */
+    (void)dhb_get_lock_owner_internal(&ctx->current_master);
+    
+    LOG_RUN_INF("[DHB] Initial state: online_map=0x%llx, current_master=%u",
+        (unsigned long long)ctx->online_map, ctx->current_master);
+    
+    /* Start background thread */
+    if (dhb_start_thread() != CM_SUCCESS) {
+        cm_dl_dealloc(ctx->lock_id);
         close(ctx->fd);
-        ctx->fd = 0;
-        return ret;
+        ctx->fd = -1;
+        return CM_ERROR;
     }
-
-    (void)dss_dhb_write();
-    (void)dss_dhb_read_all();
-
+    
     ctx->is_inited = CM_TRUE;
-    
-    uint64 online_map = ctx->online_map;
-    LOG_RUN_INF("[DHB] Initialized: volume=%s, inst_id=%u, online_map=0x%llx", 
-        volume_path, inst_id, online_map);
-    
-    dss_set_inst_work_status(0);
-    dss_check_mes_conn(online_map);
+    LOG_RUN_INF("[DHB] Initialized successfully");
     
     return CM_SUCCESS;
 }
 
-void dss_dhb_cluster_uninit(void)
+void dss_dhb_uninit(void)
 {
-    dss_dhb_ctx_t *ctx = &g_dss_dhb_ctx;
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
     
     if (!ctx->is_inited) {
         return;
     }
-
-    dss_dhb_stop_thread();
-
+    
+    LOG_RUN_INF("[DHB] Uninitializing: inst_id=%u", ctx->inst_id);
+    
+    /* Stop background thread first */
+    dhb_stop_thread();
+    
+    /* Release disk lock */
     if (ctx->lock_id != CM_INVALID_LOCK_ID) {
         (void)cm_dl_unlock(ctx->lock_id);
         (void)cm_dl_dealloc(ctx->lock_id);
         ctx->lock_id = CM_INVALID_LOCK_ID;
     }
-
+    
+    /* Close file descriptor */
     if (ctx->fd > 0) {
         close(ctx->fd);
-        ctx->fd = 0;
+        ctx->fd = -1;
     }
-
+    
     ctx->is_inited = CM_FALSE;
     LOG_RUN_INF("[DHB] Uninitialized");
 }
 
 /* ============================================================================
- * Peer status (public)
- * ============================================================================ */
-
-void dss_dhb_check_peer(void *inst)
-{
-    dss_dhb_ctx_t *ctx = &g_dss_dhb_ctx;
-    
-    if (!ctx->is_inited) {
-        LOG_DEBUG_WAR("[DHB] Not initialized");
-        dss_check_mes_conn(DSS_INVALID_ID64);
-        return;
-    }
-
-    if (dss_dhb_read_all() != CM_SUCCESS) {
-        LOG_DEBUG_WAR("[DHB] Failed to read heartbeats");
-        return;
-    }
-
-    uint64 online_map = ctx->online_map;
-    LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "[DHB] Peer check: online_map=0x%llx", online_map);
-
-    dss_set_inst_work_status(online_map);
-    dss_check_mes_conn(online_map);
-}
-
-bool32 dss_dhb_is_online(uint32 inst_id)
-{
-    if (inst_id >= DSS_MAX_INSTANCES) {
-        return CM_FALSE;
-    }
-    return (g_dss_dhb_ctx.online_map & ((uint64)1 << inst_id)) != 0;
-}
-
-uint64 dss_dhb_get_online_map(void)
-{
-    return g_dss_dhb_ctx.online_map;
-}
-
-/* ============================================================================
- * Leader election (public)
+ * Public Interface - Lock Operations
  * ============================================================================ */
 
 status_t dss_dhb_get_lock_owner(uint32 *master_id)
@@ -450,154 +537,307 @@ status_t dss_dhb_get_lock_owner(uint32 *master_id)
     if (master_id == NULL) {
         return CM_ERROR;
     }
-
-    *master_id = CM_INVALID_ID32;
-
-    dss_dhb_ctx_t *ctx = &g_dss_dhb_ctx;
+    
+    *master_id = DSS_INVALID_ID32;
+    
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
     if (!ctx->is_inited) {
-        LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "[DHB] Not initialized");
+        LOG_RUN_WAR("[DHB] get_lock_owner: not initialized");
         return CM_ERROR;
     }
-
-    if (ctx->lock_id == CM_INVALID_LOCK_ID) {
-        LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "[DHB] Leader lock not available");
-        return CM_ERROR;
-    }
-
-    unsigned long long owner_inst_id = CM_INVALID_INST_ID;
-    int ret = cm_dl_getowner(ctx->lock_id, &owner_inst_id);
-    if (ret != CM_SUCCESS) {
-        LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "[DHB] cm_dl_getowner failed: ret=%d", ret);
-        return CM_ERROR;
-    }
-
-    if (owner_inst_id != CM_INVALID_INST_ID) {
-        *master_id = (uint32)owner_inst_id;
-        LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "[DHB] Lock owner: inst_id=%u", *master_id);
-    } else {
-        LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL5, "[DHB] No lock owner yet");
-    }
-
-    return CM_SUCCESS;
+    
+    return dhb_get_lock_owner_internal(master_id);
 }
 
-status_t dss_dhb_try_lock(bool32 *grab_lock)
+status_t dss_dhb_try_lock(bool32 *got_lock)
 {
-    if (grab_lock == NULL) {
+    if (got_lock == NULL) {
         return CM_ERROR;
     }
-
-    *grab_lock = CM_FALSE;
-
-    if (!g_dss_dhb_ctx.is_inited) {
-        LOG_DEBUG_WAR("[DHB] Not initialized");
+    
+    *got_lock = CM_FALSE;
+    
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
+    if (!ctx->is_inited || ctx->lock_id == CM_INVALID_LOCK_ID) {
+        LOG_RUN_ERR("[DHB] try_lock: not initialized");
         return CM_ERROR;
     }
-
-    status_t ret = dss_dhb_try_leader();
+    
+    /* Check current lock owner */
+    uint32 current_owner = DSS_INVALID_ID32;
+    (void)dhb_get_lock_owner_internal(&current_owner);
+    
+    /* If we already hold the lock, just renew lease */
+    if (current_owner == ctx->inst_id) {
+        int ret = cm_dl_lock(ctx->lock_id, 0);
+        if (ret == CM_SUCCESS) {
+            *got_lock = CM_TRUE;
+            LOG_DEBUG_INF("[DHB] Renewed lock lease: inst_id=%u", ctx->inst_id);
+            return CM_SUCCESS;
+        }
+        LOG_RUN_WAR("[DHB] Failed to renew lock: ret=%d", ret);
+    }
+    
+    /* If there's another valid owner, check if they're online */
+    if (current_owner != DSS_INVALID_ID32 && current_owner != ctx->inst_id) {
+        bool32 owner_online = dss_dhb_is_online(current_owner);
+        if (owner_online) {
+            /* Owner is online - use short timeout (non-blocking) for switch scenarios */
+            /* The old master should release lock soon if this is a planned switch */
+            LOG_DEBUG_INF("[DHB] Lock held by online inst %u, trying quick acquire", current_owner);
+            int ret = cm_dl_lock(ctx->lock_id, 100);  /* 100ms short timeout */
+            if (ret == CM_SUCCESS) {
+                *got_lock = CM_TRUE;
+                ctx->current_master = ctx->inst_id;
+                LOG_RUN_INF("[DHB] Acquired leader lock from online inst %u", current_owner);
+            }
+            return CM_SUCCESS;
+        }
+        /* Owner is offline, we can try to take the lock with longer timeout */
+        LOG_RUN_INF("[DHB] Lock owner %u is offline, attempting takeover", current_owner);
+    }
+    
+    /* Try to acquire the lock - use shorter timeout for responsiveness */
+    /* If owner is offline, lock should be available after lease expires */
+    int timeout_ms = (current_owner == DSS_INVALID_ID32) ? 100 : 1000;
+    int ret = cm_dl_lock(ctx->lock_id, timeout_ms);
+    
     if (ret == CM_SUCCESS) {
-        *grab_lock = CM_TRUE;
-        LOG_RUN_INF("[DHB] Grabbed leader lock");
+        *got_lock = CM_TRUE;
+        ctx->current_master = ctx->inst_id;
+        LOG_RUN_INF("[DHB] Acquired leader lock: inst_id=%u", ctx->inst_id);
+    } else if (ret == CM_DL_ERR_OCCUPIED) {
+        (void)dhb_get_lock_owner_internal(&current_owner);
+        LOG_DEBUG_INF("[DHB] Lock already held by inst %u", current_owner);
+    } else if (ret == CM_DL_ERR_TIMEOUT) {
+        LOG_DEBUG_INF("[DHB] Lock acquire timeout (waited %dms)", timeout_ms);
+    } else {
+        LOG_RUN_WAR("[DHB] Lock acquire failed: ret=%d", ret);
     }
-
+    
     return CM_SUCCESS;
 }
 
 status_t dss_dhb_unlock(void)
 {
-    if (!g_dss_dhb_ctx.is_inited) {
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
+    
+    if (!ctx->is_inited || ctx->lock_id == CM_INVALID_LOCK_ID) {
         return CM_SUCCESS;
     }
-    return dss_dhb_release_leader();
+    
+    /* Verify we are the current owner before unlocking */
+    uint32 current_owner = DSS_INVALID_ID32;
+    (void)dhb_get_lock_owner_internal(&current_owner);
+    
+    if (current_owner != ctx->inst_id) {
+        LOG_RUN_WAR("[DHB] Not lock owner (owner=%u, self=%u), cannot unlock", 
+            current_owner, ctx->inst_id);
+        return CM_ERROR;
+    }
+    
+    int ret = cm_dl_unlock(ctx->lock_id);
+    if (ret == CM_SUCCESS) {
+        ctx->current_master = DSS_INVALID_ID32;
+        LOG_RUN_INF("[DHB] Released leader lock: inst_id=%u", ctx->inst_id);
+        return CM_SUCCESS;
+    }
+    
+    LOG_RUN_ERR("[DHB] Failed to unlock: ret=%d", ret);
+    return CM_ERROR;
 }
+
+/*
+ * Lock block structure (must match cm_disklock.c dl_stat_t)
+ * Each instance has a 512-byte block at offset + 512 * (inst_id + 1)
+ */
+#define DHB_LOCK_BLOCK_SIZE     512
+#define DHB_LOCK_MAGIC          0xFEDCBA9801234567ULL
+#define DHB_LOCK_PROC_VER       1
+#define DHB_LOCK_STATUS_NONE    0
+#define DHB_LOCK_STATUS_PRE     1
+#define DHB_LOCK_STATUS_LOCKED  2
+
+typedef struct {
+    uint64 magic;
+    uint64 proc_ver;
+    uint64 inst_id;
+    uint64 locked;
+    uint64 lock_time;
+    uint64 unlock_time;
+    char   reserved[DHB_LOCK_BLOCK_SIZE - 48];
+} dhb_lock_block_t;
 
 status_t dss_dhb_trans_lock(uint32 target_inst_id)
 {
-    dss_dhb_ctx_t *ctx = &g_dss_dhb_ctx;
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
     
     if (!ctx->is_inited) {
-        LOG_RUN_ERR("[DHB] Not initialized, cannot transfer lock");
         return CM_ERROR;
     }
-
-    if (!ctx->is_leader) {
-        LOG_RUN_WAR("[DHB] Trans lock: not the current leader");
-        return CM_SUCCESS;
+    
+    /* Verify we are the current owner */
+    uint32 current_owner = DSS_INVALID_ID32;
+    (void)dhb_get_lock_owner_internal(&current_owner);
+    
+    if (current_owner != ctx->inst_id) {
+        LOG_RUN_ERR("[DHB] Not lock owner (owner=%u, self=%u), cannot transfer", 
+            current_owner, ctx->inst_id);
+        return CM_ERROR;
     }
-
+    
+    /* Check target is online */
     if (!dss_dhb_is_online(target_inst_id)) {
-        LOG_RUN_ERR("[DHB] Cannot transfer lock: target inst %u is not online", target_inst_id);
+        LOG_RUN_ERR("[DHB] Target inst %u is not online, cannot transfer", target_inst_id);
         return CM_ERROR;
     }
-
-    LOG_RUN_INF("[DHB] Transferring lock from inst %u to inst %u", ctx->inst_id, target_inst_id);
-
-    status_t ret = dss_dhb_release_leader();
-    if (ret != CM_SUCCESS) {
-        LOG_RUN_ERR("[DHB] Failed to release leader lock during transfer");
+    
+    LOG_RUN_INF("[DHB] Atomic lock transfer: %u -> %u", ctx->inst_id, target_inst_id);
+    
+    /*
+     * Atomic transfer strategy:
+     * 1. Write target's lock block with LOCKED status (as if target acquired it)
+     * 2. Clear our own lock block
+     * Target node only needs to renew the lock, no acquisition needed.
+     */
+    
+    /* Step 1: Write target's lock block directly */
+    dhb_lock_block_t target_block;
+    (void)memset_s(&target_block, sizeof(target_block), 0, sizeof(target_block));
+    target_block.magic = DHB_LOCK_MAGIC;
+    target_block.proc_ver = DHB_LOCK_PROC_VER;
+    target_block.inst_id = target_inst_id;
+    target_block.locked = DHB_LOCK_STATUS_LOCKED;
+    target_block.lock_time = dhb_monotonic_ns();  /* Use local monotonic time */
+    target_block.unlock_time = 0;
+    
+    off_t target_offset = (off_t)(DSS_DHB_LOCK_OFFSET + DHB_LOCK_BLOCK_SIZE * (target_inst_id + 1));
+    ssize_t written = pwrite(ctx->fd, &target_block, DHB_LOCK_BLOCK_SIZE, target_offset);
+    if (written != DHB_LOCK_BLOCK_SIZE) {
+        LOG_RUN_ERR("[DHB] Failed to write target lock block: written=%zd, errno=%d", written, errno);
         return CM_ERROR;
     }
-
-    LOG_RUN_INF("[DHB] Lock released, target inst %u can now acquire it", target_inst_id);
+    
+    LOG_RUN_INF("[DHB] Wrote lock for target %u at offset 0x%llx", 
+        target_inst_id, (unsigned long long)target_offset);
+    
+    /* Step 2: Clear our own lock block */
+    dhb_lock_block_t self_block;
+    (void)memset_s(&self_block, sizeof(self_block), 0, sizeof(self_block));
+    self_block.magic = DHB_LOCK_MAGIC;
+    self_block.proc_ver = DHB_LOCK_PROC_VER;
+    self_block.inst_id = ctx->inst_id;
+    self_block.locked = DHB_LOCK_STATUS_NONE;
+    self_block.lock_time = 0;
+    self_block.unlock_time = dhb_monotonic_ns();
+    
+    off_t self_offset = (off_t)(DSS_DHB_LOCK_OFFSET + DHB_LOCK_BLOCK_SIZE * (ctx->inst_id + 1));
+    written = pwrite(ctx->fd, &self_block, DHB_LOCK_BLOCK_SIZE, self_offset);
+    if (written != DHB_LOCK_BLOCK_SIZE) {
+        LOG_RUN_ERR("[DHB] Failed to clear self lock block: written=%zd, errno=%d", written, errno);
+        /* Target already has lock, this is not fatal */
+    }
+    
+    /* Also notify cm_disklock that we released (for internal state consistency) */
+    (void)cm_dl_unlock(ctx->lock_id);
+    
+    /* Update local state */
+    ctx->current_master = target_inst_id;
+    LOG_RUN_INF("[DHB] Lock transferred atomically to inst %u", target_inst_id);
+    
     return CM_SUCCESS;
 }
 
 /* ============================================================================
- * Broadcast failure handling (public)
+ * Public Interface - Status Query
  * ============================================================================ */
 
-status_t dss_dhb_check_failed_insts(uint64 failed_map, uint64 *updated_map)
+bool32 dss_dhb_is_online(uint32 inst_id)
 {
-    if (updated_map == NULL) {
-        return CM_ERROR;
-    }
-
-    *updated_map = 0;
-
-    if (!g_dss_dhb_ctx.is_inited) {
-        LOG_DEBUG_WAR("[DHB] Not initialized");
-        return CM_ERROR;
-    }
-
-    uint64 new_online_map = 0;
-    uint64 still_online = 0;
-    
-    for (uint32 retry = 0; retry < DSS_DHB_CHECK_MAX_RETRIES; retry++) {
-        if (dss_dhb_read_all() != CM_SUCCESS) {
-            LOG_RUN_WAR("[DHB] Failed to refresh heartbeat on retry %u", retry);
-            cm_sleep(DSS_DHB_CHECK_RETRY_INTERVAL_MS);
-            continue;
-        }
-
-        new_online_map = g_dss_dhb_ctx.online_map;
-        *updated_map = new_online_map;
-
-        still_online = failed_map & new_online_map;
-        
-        if (still_online == 0) {
-            LOG_RUN_INF("[DHB] Failed instances 0x%llx went offline after %u retries", failed_map, retry);
-            dss_set_inst_work_status(new_online_map);
-            dss_check_mes_conn(new_online_map);
-            return CM_SUCCESS;
-        }
-        
-        LOG_RUN_INF("[DHB] Check retry %u: failed=0x%llx, online=0x%llx, still_online=0x%llx",
-            retry, failed_map, new_online_map, still_online);
-        
-        if (retry < DSS_DHB_CHECK_MAX_RETRIES - 1) {
-            cm_sleep(DSS_DHB_CHECK_RETRY_INTERVAL_MS);
-        }
+    if (inst_id >= DSS_MAX_INSTANCES) {
+        return CM_FALSE;
     }
     
-    LOG_RUN_ERR("[DHB] Check failed: after %u retries, failed=0x%llx still online",
-        DSS_DHB_CHECK_MAX_RETRIES, still_online);
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
     
-    dss_set_inst_work_status(new_online_map);
-    dss_check_mes_conn(new_online_map);
+    cm_spin_lock(&ctx->map_lock, NULL);
+    bool32 is_online = (ctx->online_map & ((uint64)1 << inst_id)) != 0;
+    cm_spin_unlock(&ctx->map_lock);
     
-    return CM_ERROR;
+    return is_online;
 }
 
-#ifdef __cplusplus
+bool32 dss_dhb_is_leader(void)
+{
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
+    
+    if (!ctx->is_inited) {
+        return CM_FALSE;
+    }
+    
+    return (ctx->current_master == ctx->inst_id);
 }
-#endif
+
+uint64 dss_dhb_get_online_map(void)
+{
+    dss_dhb_ctx_t *ctx = &g_dhb_ctx;
+    
+    cm_spin_lock(&ctx->map_lock, NULL);
+    uint64 map = ctx->online_map;
+    cm_spin_unlock(&ctx->map_lock);
+    
+    return map;
+}
+
+/* ============================================================================
+ * Public Interface - Peer Management
+ * ============================================================================ */
+
+void dss_dhb_check_peer(void *inst)
+{
+    (void)inst;
+    
+    if (!g_dhb_ctx.is_inited) {
+        return;
+    }
+    
+    /* Force a fresh read of heartbeats */
+    uint64 online_map = 0;
+    (void)dhb_read_all_heartbeats(&online_map);
+    
+    cm_spin_lock(&g_dhb_ctx.map_lock, NULL);
+    g_dhb_ctx.online_map = online_map;
+    cm_spin_unlock(&g_dhb_ctx.map_lock);
+    
+    /* 
+     * Note: Caller should update MES connections using:
+     *   dss_check_mes_conn(dss_dhb_get_online_map());
+     * (dss_check_mes_conn internally updates work_status)
+     */
+}
+
+bool32 dss_dhb_check_failed_insts(uint64 failed_insts)
+{
+    if (!g_dhb_ctx.is_inited) {
+        return CM_FALSE;
+    }
+    
+    uint64 online_map = dss_dhb_get_online_map();
+    uint64 online_failures = failed_insts & online_map;
+    
+    if (online_failures != 0) {
+        LOG_DEBUG_INF("[DHB] Some failed insts are online: failed=0x%llx, online=0x%llx",
+            (unsigned long long)failed_insts,
+            (unsigned long long)online_map);
+    }
+    
+    return (online_failures != 0);
+}
+
+void dss_dhb_set_inst_count(uint32 inst_cnt)
+{
+    if (inst_cnt > 0 && inst_cnt <= DSS_MAX_INSTANCES) {
+        g_dhb_ctx.inst_cnt = inst_cnt;
+        LOG_RUN_INF("[DHB] Instance count set to %u", inst_cnt);
+    }
+}
