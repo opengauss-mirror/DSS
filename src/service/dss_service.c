@@ -1417,6 +1417,7 @@ static status_t dss_process_disable_grab_lock(dss_session_t *session)
     cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
     return ret;
 }
+
 static status_t dss_process_enable_grab_lock(dss_session_t *session)
 {
     dss_config_t *cfg = dss_get_inst_cfg();

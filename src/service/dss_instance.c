@@ -248,10 +248,8 @@ static status_t dss_init_dhb_wrapper(void)
         return CM_ERROR;
     }
     
-    /* Set instance count for heartbeat scanning optimization */
-    dss_dhb_set_inst_count(inst_cnt);
-    
-    LOG_RUN_INF("[DHB] Initialized for inst %u with %u instances", inst_id, inst_cnt);
+    /* Each node writes its own heartbeat, readers detect valid ones via magic number */
+    LOG_RUN_INF("[DHB] Initialized for inst %u", inst_id);
     return CM_SUCCESS;
 }
 
