@@ -60,22 +60,19 @@ extern "C" {
 #define DSS_DHB_LEASE_TIMEOUT_MS        5000    /* 5 seconds lock lease */
 
 /* ============================================================================
- * Disk Layout (in reserve1 area, starting at SIZE_K(281))
+ * Disk Layout - Using dss_ctrl_t structure offsets
  * ============================================================================
  * 
- * reserve1 area: 663K from offset SIZE_K(281)
+ * DHB areas are defined in dss_ctrl_t structure (dss_ctrl_def.h):
+ *   - dhb_lock[8K]      : Leader election lock (cm_disklock)
+ *   - dhb_heartbeat[32K]: Heartbeat blocks (64 nodes * 512B each)
  * 
- *   Offset           Size    Content
- *   SIZE_K(288)      8K      DHB LOCK - leader election (8K aligned)
- *   SIZE_K(296)      32K     Heartbeat blocks (64 nodes * 512B each)
- * 
- * cm_disklock requires 8K alignment, so we start lock at 288K (288*1024 = 36*8192).
+ * Use DSS_CTRL_DHB_LOCK_OFFSET and DSS_CTRL_DHB_HEARTBEAT_OFFSET from dss_ctrl_def.h
  */
-#define DSS_DHB_LOCK_OFFSET     (SIZE_K(288))   /* DHB LOCK area (8K aligned) */
-#define DSS_DHB_LOCK_SIZE       (SIZE_K(8))     /* Lock area size (8KB) */
-#define DSS_DHB_AREA_OFFSET     (SIZE_K(296))   /* Heartbeat area (after lock) */
-#define DSS_DHB_BLOCK_SIZE      512             /* Each node's heartbeat block */
-#define DSS_DHB_AREA_SIZE       (DSS_DHB_BLOCK_SIZE * DSS_MAX_INSTANCES)
+#include "dss_ctrl_def.h"
+
+/* Heartbeat block size (must match DSS_DHB_BLOCK_SIZE in dss_ctrl_def.h) */
+#define DSS_DHB_AREA_SIZE       (DSS_DHB_HEARTBEAT_SIZE)
 
 /* Magic number for heartbeat validation */
 #define DSS_DHB_MAGIC           0xDEADBEEF12345678ULL
@@ -187,13 +184,6 @@ void dss_dhb_check_peer(void *inst);
  * @return CM_TRUE if any failed instance is actually online (retry needed)
  */
 bool32 dss_dhb_check_failed_insts(uint64 failed_insts);
-
-/**
- * Set instance count for heartbeat scanning
- * 
- * @param inst_cnt Number of instances in the cluster
- */
-void dss_dhb_set_inst_count(uint32 inst_cnt);
 
 #ifdef __cplusplus
 }

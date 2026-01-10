@@ -86,6 +86,14 @@ typedef struct st_dss_dhb_ctx {
     /* Current known master (from lock) */
     uint32 current_master;
     
+    /* Lock transfer state - prevents DHB thread from grabbing lock during transfer */
+    volatile bool32 lock_transfer_in_progress;
+    uint32 lock_transfer_target;
+    uint64 lock_transfer_start_ns;
+    
+    /* Failover detection - wait for lease expiry before grabbing lock */
+    uint64 failover_detected_ns;  /* When we first detected master heartbeat died */
+    
     /* Background thread */
     thread_t thread;
     volatile bool32 thread_running;
@@ -138,8 +146,8 @@ static status_t dhb_write_heartbeat(void)
     hb.timestamp_ns = dhb_now_ns();
     hb.sequence = ++ctx->sequence;
     
-    /* Write to disk at heartbeat area (offset = 296K + inst_id * 512) */
-    int64 offset = DSS_DHB_AREA_OFFSET + (int64)ctx->inst_id * DSS_DHB_BLOCK_SIZE;
+    /* Write to disk at heartbeat area using structure offset */
+    int64 offset = DSS_CTRL_DHB_HEARTBEAT_OFFSET + (int64)ctx->inst_id * DSS_DHB_BLOCK_SIZE;
     ssize_t written = pwrite(ctx->fd, &hb, DSS_DHB_BLOCK_SIZE, offset);
     
     if (written != DSS_DHB_BLOCK_SIZE) {
@@ -159,9 +167,9 @@ static status_t dhb_read_all_heartbeats(uint64 *new_online_map)
         return CM_ERROR;
     }
     
-    /* Read all heartbeat blocks */
+    /* Read all heartbeat blocks using structure offset */
     char buf[DSS_DHB_AREA_SIZE];
-    ssize_t read_size = pread(ctx->fd, buf, DSS_DHB_AREA_SIZE, DSS_DHB_AREA_OFFSET);
+    ssize_t read_size = pread(ctx->fd, buf, DSS_DHB_AREA_SIZE, DSS_CTRL_DHB_HEARTBEAT_OFFSET);
     
     if (read_size != DSS_DHB_AREA_SIZE) {
         LOG_DEBUG_WAR("[DHB] Read heartbeats failed: read=%zd, errno=%d", read_size, errno);
@@ -174,7 +182,8 @@ static status_t dhb_read_all_heartbeats(uint64 *new_online_map)
     *new_online_map = 0;
     
     /* Process each node's heartbeat using SEQUENCE NUMBER change detection */
-    for (uint32 i = 0; i < ctx->inst_cnt && i < DSS_MAX_INSTANCES; i++) {
+    /* Always iterate all possible instances, invalid ones are skipped by magic check */
+    for (uint32 i = 0; i < DSS_MAX_INSTANCES; i++) {
         dss_dhb_heartbeat_t *hb = (dss_dhb_heartbeat_t *)(buf + i * DSS_DHB_BLOCK_SIZE);
         dhb_local_tracker_t *tracker = &ctx->local_tracker[i];
         
@@ -327,34 +336,96 @@ static void dhb_thread_entry(thread_t *thread)
             if (lock_owner != ctx->current_master) {
                 LOG_RUN_INF("[DHB] Master changed: %u -> %u", ctx->current_master, lock_owner);
                 ctx->current_master = lock_owner;
+                
+                /* Clear lock transfer flag if someone acquired the lock */
+                if (ctx->lock_transfer_in_progress && lock_owner != DSS_INVALID_ID32) {
+                    LOG_RUN_INF("[DHB] Lock transfer completed, new master=%u", lock_owner);
+                    ctx->lock_transfer_in_progress = CM_FALSE;
+                }
             }
             
-            /* Step 4: If master is offline (heartbeat died), try to grab lock */
+            /* Step 4: Try to grab lock ONLY if:
+             * - There's a known master whose heartbeat died (failover)
+             * - OR there's no master at all (initial startup)
+             * NEVER grab lock if current master is still online!
+             */
             if (lock_owner != DSS_INVALID_ID32 && lock_owner != ctx->inst_id) {
-                /* Check if master's heartbeat is still alive */
+                /* There's a master, check if their heartbeat is still alive */
                 bool32 master_online = (new_online_map & ((uint64)1 << lock_owner)) != 0;
                 
-                if (!master_online) {
-                    LOG_RUN_INF("[DHB] Master %u heartbeat died, attempting to grab lock", lock_owner);
+                if (master_online) {
+                    /* Master is alive - DO NOT attempt to grab lock */
+                    LOG_DEBUG_INF("[DHB] Master %u is online, not attempting failover", lock_owner);
+                    /* Reset failover tracking when master comes back online */
+                    ctx->failover_detected_ns = 0;
+                } else {
+                    /* 
+                     * Master heartbeat died - but DON'T grab lock immediately!
+                     * Wait for cm_disklock lease to expire to ensure original master
+                     * has truly stopped writing. This prevents data loss during failover.
+                     * 
+                     * Sequence:
+                     * 1. Detect heartbeat timeout (now)
+                     * 2. Wait additional LEASE_TIMEOUT for cm_disklock lease to expire
+                     * 3. Only then attempt to grab lock
+                     */
+                    uint64 now_ns = dhb_monotonic_ns();
+                    
+                    if (ctx->failover_detected_ns == 0) {
+                        /* First detection - start the wait timer */
+                        ctx->failover_detected_ns = now_ns;
+                        LOG_RUN_WAR("[DHB] Master %u heartbeat died, waiting for lease expiry before failover", 
+                            lock_owner);
+                    } else {
+                        /* Check if we've waited long enough (LEASE_TIMEOUT additional wait) */
+                        uint64 wait_ns = (uint64)DSS_DHB_LEASE_TIMEOUT_MS * 1000000ULL;
+                        uint64 elapsed_ns = now_ns - ctx->failover_detected_ns;
+                        
+                        if (elapsed_ns >= wait_ns) {
+                            /* Waited long enough - now safe to attempt failover */
+                            LOG_RUN_INF("[DHB] Lease expired for master %u (waited %llu ms), attempting failover",
+                                lock_owner, (unsigned long long)(elapsed_ns / 1000000ULL));
+                            
+                            bool32 got_lock = CM_FALSE;
+                            (void)dhb_try_acquire_lock(&got_lock);
+                            
+                            if (got_lock) {
+                                ctx->current_master = ctx->inst_id;
+                                ctx->failover_detected_ns = 0;  /* Reset for next time */
+                                LOG_RUN_INF("[DHB] Became new master after %u failed", lock_owner);
+                            }
+                        } else {
+                            LOG_DEBUG_INF("[DHB] Waiting for lease expiry: %llu/%llu ms",
+                                (unsigned long long)(elapsed_ns / 1000000ULL),
+                                (unsigned long long)(wait_ns / 1000000ULL));
+                        }
+                    }
+                }
+            } else if (lock_owner == DSS_INVALID_ID32) {
+                /* No master exists - check if this is due to lock transfer */
+                if (ctx->lock_transfer_in_progress) {
+                    /* Lock transfer in progress - check for timeout or completion */
+                    uint64 elapsed_ns = dhb_monotonic_ns() - ctx->lock_transfer_start_ns;
+                    uint64 timeout_ns = 10ULL * 1000000000ULL;  /* 10 seconds timeout */
+                    
+                    if (elapsed_ns > timeout_ns) {
+                        LOG_RUN_WAR("[DHB] Lock transfer timeout, clearing flag");
+                        ctx->lock_transfer_in_progress = CM_FALSE;
+                    } else {
+                        LOG_DEBUG_INF("[DHB] Lock transfer in progress, not grabbing lock");
+                    }
+                } else {
+                    /* Initial cluster startup - try to become master */
+                    LOG_RUN_INF_INHIBIT(LOG_INHIBIT_LEVEL4, 
+                        "[DHB] No master detected, attempting to become master");
                     
                     bool32 got_lock = CM_FALSE;
                     (void)dhb_try_acquire_lock(&got_lock);
                     
                     if (got_lock) {
                         ctx->current_master = ctx->inst_id;
-                        LOG_RUN_INF("[DHB] Became new master after %u failed", lock_owner);
+                        LOG_RUN_INF("[DHB] Became master (initial election)");
                     }
-                }
-            } else if (lock_owner == DSS_INVALID_ID32) {
-                /* No master, try to acquire lock */
-                LOG_RUN_INF("[DHB] No master detected, attempting to grab lock");
-                
-                bool32 got_lock = CM_FALSE;
-                (void)dhb_try_acquire_lock(&got_lock);
-                
-                if (got_lock) {
-                    ctx->current_master = ctx->inst_id;
-                    LOG_RUN_INF("[DHB] Became master (no previous owner)");
                 }
             } else if (lock_owner == ctx->inst_id) {
                 /* We are the master, renew lease */
@@ -417,9 +488,9 @@ status_t dss_dhb_init(const char *volume_path, uint32 inst_id)
     }
     
     LOG_RUN_INF("[DHB] Initializing: volume=%s, inst_id=%u", volume_path, inst_id);
-    LOG_RUN_INF("[DHB] Layout: LOCK @ 0x%llx (8K), Heartbeat @ 0x%llx", 
-        (unsigned long long)DSS_DHB_LOCK_OFFSET, 
-        (unsigned long long)DSS_DHB_AREA_OFFSET);
+    LOG_RUN_INF("[DHB] Layout: LOCK @ 0x%llx (8K), Heartbeat @ 0x%llx (using dss_ctrl_t offsets)", 
+        (unsigned long long)DSS_CTRL_DHB_LOCK_OFFSET, 
+        (unsigned long long)DSS_CTRL_DHB_HEARTBEAT_OFFSET);
     
     /* Clear context */
     errno_t err = memset_s(ctx, sizeof(dss_dhb_ctx_t), 0, sizeof(dss_dhb_ctx_t));
@@ -434,6 +505,10 @@ status_t dss_dhb_init(const char *volume_path, uint32 inst_id)
     ctx->fd = -1;
     ctx->map_lock = 0;
     ctx->current_master = DSS_INVALID_ID32;
+    ctx->lock_transfer_in_progress = CM_FALSE;
+    ctx->lock_transfer_target = DSS_INVALID_ID32;
+    ctx->lock_transfer_start_ns = 0;
+    ctx->failover_detected_ns = 0;
     
     err = strcpy_s(ctx->volume_path, sizeof(ctx->volume_path), volume_path);
     if (err != EOK) {
@@ -450,16 +525,16 @@ status_t dss_dhb_init(const char *volume_path, uint32 inst_id)
     
     LOG_RUN_INF("[DHB] Volume opened: fd=%d", ctx->fd);
     
-    /* Allocate disk lock at DHB_LOCK_OFFSET (288K) */
+    /* Allocate disk lock using structure offset */
     uint32 lease_sec = DSS_DHB_LEASE_TIMEOUT_MS / 1000;
     if (lease_sec < 1) {
         lease_sec = 1;
     }
     
     LOG_RUN_INF("[DHB] Allocating disk lock: offset=0x%llx, inst_id=%u, lease=%u sec",
-        (unsigned long long)DSS_DHB_LOCK_OFFSET, inst_id, lease_sec);
+        (unsigned long long)DSS_CTRL_DHB_LOCK_OFFSET, inst_id, lease_sec);
     
-    ctx->lock_id = cm_dl_alloc_lease(volume_path, DSS_DHB_LOCK_OFFSET, 
+    ctx->lock_id = cm_dl_alloc_lease(volume_path, DSS_CTRL_DHB_LOCK_OFFSET, 
         (unsigned long long)inst_id, lease_sec);
     if (ctx->lock_id == CM_INVALID_LOCK_ID) {
         LOG_RUN_ERR("[DHB] Failed to alloc disk lock");
@@ -647,27 +722,6 @@ status_t dss_dhb_unlock(void)
     return CM_ERROR;
 }
 
-/*
- * Lock block structure (must match cm_disklock.c dl_stat_t)
- * Each instance has a 512-byte block at offset + 512 * (inst_id + 1)
- */
-#define DHB_LOCK_BLOCK_SIZE     512
-#define DHB_LOCK_MAGIC          0xFEDCBA9801234567ULL
-#define DHB_LOCK_PROC_VER       1
-#define DHB_LOCK_STATUS_NONE    0
-#define DHB_LOCK_STATUS_PRE     1
-#define DHB_LOCK_STATUS_LOCKED  2
-
-typedef struct {
-    uint64 magic;
-    uint64 proc_ver;
-    uint64 inst_id;
-    uint64 locked;
-    uint64 lock_time;
-    uint64 unlock_time;
-    char   reserved[DHB_LOCK_BLOCK_SIZE - 48];
-} dhb_lock_block_t;
-
 status_t dss_dhb_trans_lock(uint32 target_inst_id)
 {
     dss_dhb_ctx_t *ctx = &g_dhb_ctx;
@@ -692,58 +746,38 @@ status_t dss_dhb_trans_lock(uint32 target_inst_id)
         return CM_ERROR;
     }
     
-    LOG_RUN_INF("[DHB] Atomic lock transfer: %u -> %u", ctx->inst_id, target_inst_id);
+    LOG_RUN_INF("[DHB] Lock transfer: %u -> %u", ctx->inst_id, target_inst_id);
     
     /*
-     * Atomic transfer strategy:
-     * 1. Write target's lock block with LOCKED status (as if target acquired it)
-     * 2. Clear our own lock block
-     * Target node only needs to renew the lock, no acquisition needed.
+     * Safe transfer strategy using cm_disklock API:
+     * 1. Set transfer flag to prevent DHB thread from grabbing lock
+     * 2. Release our lock via cm_dl_unlock
+     * 3. Target will acquire lock when it receives the MES response
+     * 4. Transfer flag will be cleared when new master is detected
+     * 
+     * Note: The caller (dss_process_switch_lock_inner) has already:
+     * - Paused all sessions
+     * - Set status to READONLY
+     * - Paused background tasks
+     * This ensures data safety before lock transfer.
      */
     
-    /* Step 1: Write target's lock block directly */
-    dhb_lock_block_t target_block;
-    (void)memset_s(&target_block, sizeof(target_block), 0, sizeof(target_block));
-    target_block.magic = DHB_LOCK_MAGIC;
-    target_block.proc_ver = DHB_LOCK_PROC_VER;
-    target_block.inst_id = target_inst_id;
-    target_block.locked = DHB_LOCK_STATUS_LOCKED;
-    target_block.lock_time = dhb_monotonic_ns();  /* Use local monotonic time */
-    target_block.unlock_time = 0;
+    /* Set transfer flag to prevent DHB thread from grabbing lock back */
+    ctx->lock_transfer_target = target_inst_id;
+    ctx->lock_transfer_start_ns = dhb_monotonic_ns();
+    ctx->lock_transfer_in_progress = CM_TRUE;
     
-    off_t target_offset = (off_t)(DSS_DHB_LOCK_OFFSET + DHB_LOCK_BLOCK_SIZE * (target_inst_id + 1));
-    ssize_t written = pwrite(ctx->fd, &target_block, DHB_LOCK_BLOCK_SIZE, target_offset);
-    if (written != DHB_LOCK_BLOCK_SIZE) {
-        LOG_RUN_ERR("[DHB] Failed to write target lock block: written=%zd, errno=%d", written, errno);
+    /* Release our lock */
+    int ret = cm_dl_unlock(ctx->lock_id);
+    if (ret != CM_SUCCESS) {
+        LOG_RUN_ERR("[DHB] Failed to release lock for transfer: ret=%d", ret);
+        ctx->lock_transfer_in_progress = CM_FALSE;
         return CM_ERROR;
     }
     
-    LOG_RUN_INF("[DHB] Wrote lock for target %u at offset 0x%llx", 
-        target_inst_id, (unsigned long long)target_offset);
-    
-    /* Step 2: Clear our own lock block */
-    dhb_lock_block_t self_block;
-    (void)memset_s(&self_block, sizeof(self_block), 0, sizeof(self_block));
-    self_block.magic = DHB_LOCK_MAGIC;
-    self_block.proc_ver = DHB_LOCK_PROC_VER;
-    self_block.inst_id = ctx->inst_id;
-    self_block.locked = DHB_LOCK_STATUS_NONE;
-    self_block.lock_time = 0;
-    self_block.unlock_time = dhb_monotonic_ns();
-    
-    off_t self_offset = (off_t)(DSS_DHB_LOCK_OFFSET + DHB_LOCK_BLOCK_SIZE * (ctx->inst_id + 1));
-    written = pwrite(ctx->fd, &self_block, DHB_LOCK_BLOCK_SIZE, self_offset);
-    if (written != DHB_LOCK_BLOCK_SIZE) {
-        LOG_RUN_ERR("[DHB] Failed to clear self lock block: written=%zd, errno=%d", written, errno);
-        /* Target already has lock, this is not fatal */
-    }
-    
-    /* Also notify cm_disklock that we released (for internal state consistency) */
-    (void)cm_dl_unlock(ctx->lock_id);
-    
     /* Update local state */
-    ctx->current_master = target_inst_id;
-    LOG_RUN_INF("[DHB] Lock transferred atomically to inst %u", target_inst_id);
+    ctx->current_master = DSS_INVALID_ID32;
+    LOG_RUN_INF("[DHB] Lock released for transfer to inst %u", target_inst_id);
     
     return CM_SUCCESS;
 }
@@ -832,12 +866,4 @@ bool32 dss_dhb_check_failed_insts(uint64 failed_insts)
     }
     
     return (online_failures != 0);
-}
-
-void dss_dhb_set_inst_count(uint32 inst_cnt)
-{
-    if (inst_cnt > 0 && inst_cnt <= DSS_MAX_INSTANCES) {
-        g_dhb_ctx.inst_cnt = inst_cnt;
-        LOG_RUN_INF("[DHB] Instance count set to %u", inst_cnt);
-    }
 }
