@@ -47,17 +47,26 @@ extern "C" {
  * Configuration Constants
  * ============================================================================
  * 
- * Timing parameters:
- * - HEARTBEAT_INTERVAL: 500ms - write heartbeat frequency
- * - HEARTBEAT_TIMEOUT:  5s - time before node is considered dead
- * - LEASE_TIMEOUT:      5s - leader lock lease duration
+ * Two-tier failover design:
  * 
- * RTO (Recovery Time Objective) = TIMEOUT = 5 seconds
- * When master heartbeat stops, standby detects it after ~5s and grabs lock.
+ * FAST PATH (CM available):
+ *   1. CM detects node offline (5-10s)
+ *   2. CM calls dsscmd kickinst to notify standby
+ *   3. Standby skips heartbeat wait, grabs lock immediately
+ *   RTO ≈ CM detection time
+ * 
+ * FALLBACK PATH (CM unavailable):
+ *   1. DHB heartbeat timeout (5s)
+ *   2. Disk lock lease timeout (30s)
+ *   RTO ≈ 30s
+ * 
+ * The long lease timeout (30s) is safe because:
+ *   - Normal failover uses CM fast path
+ *   - Long timeout prevents unnecessary failover due to network jitter
  */
 #define DSS_DHB_HEARTBEAT_INTERVAL_MS   500     /* 500ms heartbeat write interval */
 #define DSS_DHB_HEARTBEAT_TIMEOUT_MS    5000    /* 5 seconds before node is dead */
-#define DSS_DHB_LEASE_TIMEOUT_MS        5000    /* 5 seconds lock lease */
+#define DSS_DHB_LEASE_TIMEOUT_MS        30000   /* 30 seconds lock lease (fallback) */
 
 /* ============================================================================
  * Disk Layout - Using dss_ctrl_t structure offsets
