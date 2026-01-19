@@ -1277,23 +1277,28 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
     dss_set_recover_thread_id(dss_get_current_thread_id());
     g_dss_instance.status = DSS_STATUS_RECOVERY;
 
-    /* Acquire leader lock after remote switch */
-    /* Optimized: shorter timeout since old master already agreed to release */
-    #define SWITCH_LOCK_MAX_RETRIES 20
-    #define SWITCH_LOCK_RETRY_INTERVAL_MS 100
+    /* 
+     * Acquire leader lock.
+     * 
+     * dss_dhb_try_lock now handles lease expiry internally:
+     * - If owner is online (planned switch): quick 100ms timeout
+     * - If owner is offline (failover): waits up to LEASE_TIMEOUT+1s for lease expiry
+     * 
+     * We use minimal retries since the blocking is now inside dss_dhb_try_lock.
+     * Retry is mainly for edge cases (lock transfer timing, etc.)
+     */
+    #define SWITCH_LOCK_MAX_RETRIES 3
+    #define SWITCH_LOCK_RETRY_INTERVAL_MS 500
     
     bool32 got_lock = CM_FALSE;
     for (uint32 retry = 0; retry < SWITCH_LOCK_MAX_RETRIES; retry++) {
-        /* Use fast lock acquire - don't wait for lease timeout */
         status = dss_dhb_try_lock(&got_lock);
         if (status == CM_SUCCESS && got_lock) {
             LOG_RUN_INF("[SWITCH] inst %u acquired leader lock (retry %u)", curr_id, retry);
             break;
         }
-        if (retry % 5 == 0) {
-            LOG_RUN_INF("[SWITCH] inst %u waiting for leader lock, retry %u/%u", 
-                curr_id, retry + 1, SWITCH_LOCK_MAX_RETRIES);
-        }
+        LOG_RUN_INF("[SWITCH] inst %u waiting for leader lock, retry %u/%u", 
+            curr_id, retry + 1, SWITCH_LOCK_MAX_RETRIES);
         cm_sleep(SWITCH_LOCK_RETRY_INTERVAL_MS);
     }
     

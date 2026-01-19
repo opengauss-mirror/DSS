@@ -44,6 +44,7 @@
 #include <time.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdlib.h>  /* for posix_memalign, free */
 #endif
 
 /* 
@@ -59,7 +60,14 @@
 typedef struct st_dhb_local_tracker {
     uint64 last_sequence;       /* Last seen sequence number */
     uint64 last_change_ns;      /* Local time when sequence last changed (MONOTONIC) */
+    uint32 timeout_count;       /* Consecutive timeout count for jitter tolerance */
 } dhb_local_tracker_t;
+
+/* Consecutive timeout threshold before marking node offline */
+#define DHB_OFFLINE_THRESHOLD 3
+
+/* Alignment for O_DIRECT I/O (must be multiple of 512) */
+#define DHB_IO_ALIGN 512
 
 typedef struct st_dss_dhb_ctx {
     /* Initialization state */
@@ -68,8 +76,17 @@ typedef struct st_dss_dhb_ctx {
     uint32 inst_cnt;
     char volume_path[DSS_MAX_PATH_BUFFER_SIZE];
     
-    /* File descriptor for heartbeat I/O */
-    int32 fd;
+    /* 
+     * Dedicated file descriptors for DHB I/O (separate from DSS main I/O)
+     * - fd_write: O_SYNC for write persistence
+     * - fd_read:  O_DIRECT to bypass cache and read fresh data from other nodes
+     */
+    int32 fd_write;
+    int32 fd_read;
+    
+    /* Aligned buffers for O_DIRECT I/O */
+    char *write_buf;    /* Aligned buffer for heartbeat write */
+    char *read_buf;     /* Aligned buffer for heartbeat read */
     
     /* Disk lock handle for leader election */
     uint32 lock_id;
@@ -85,6 +102,7 @@ typedef struct st_dss_dhb_ctx {
     
     /* Current known master (from lock) */
     uint32 current_master;
+    uint32 master_lost_count;  /* Jitter tolerance: consecutive times master read as invalid */
     
     /* Lock transfer state - prevents DHB thread from grabbing lock during transfer */
     volatile bool32 lock_transfer_in_progress;
@@ -129,26 +147,26 @@ static status_t dhb_write_heartbeat(void)
 {
     dss_dhb_ctx_t *ctx = &g_dhb_ctx;
     
-    if (ctx->fd <= 0) {
+    if (ctx->fd_write <= 0 || ctx->write_buf == NULL) {
         return CM_ERROR;
     }
     
-    /* Prepare heartbeat data */
-    dss_dhb_heartbeat_t hb;
-    errno_t err = memset_s(&hb, sizeof(hb), 0, sizeof(hb));
+    /* Prepare heartbeat data in aligned buffer */
+    dss_dhb_heartbeat_t *hb = (dss_dhb_heartbeat_t *)ctx->write_buf;
+    errno_t err = memset_s(hb, DSS_DHB_BLOCK_SIZE, 0, DSS_DHB_BLOCK_SIZE);
     if (err != EOK) {
         return CM_ERROR;
     }
     
-    hb.magic = DSS_DHB_MAGIC;
-    hb.inst_id = ctx->inst_id;
-    hb.status = DSS_DHB_NODE_ONLINE;
-    hb.timestamp_ns = dhb_now_ns();
-    hb.sequence = ++ctx->sequence;
+    hb->magic = DSS_DHB_MAGIC;
+    hb->inst_id = ctx->inst_id;
+    hb->status = DSS_DHB_NODE_ONLINE;
+    hb->timestamp_ns = dhb_now_ns();
+    hb->sequence = ++ctx->sequence;
     
-    /* Write to disk at heartbeat area using structure offset */
+    /* Write to disk using dedicated write fd (O_SYNC) */
     int64 offset = DSS_CTRL_DHB_HEARTBEAT_OFFSET + (int64)ctx->inst_id * DSS_DHB_BLOCK_SIZE;
-    ssize_t written = pwrite(ctx->fd, &hb, DSS_DHB_BLOCK_SIZE, offset);
+    ssize_t written = pwrite(ctx->fd_write, hb, DSS_DHB_BLOCK_SIZE, offset);
     
     if (written != DSS_DHB_BLOCK_SIZE) {
         LOG_DEBUG_WAR("[DHB] Write heartbeat failed: written=%zd, offset=%lld, errno=%d", 
@@ -163,13 +181,12 @@ static status_t dhb_read_all_heartbeats(uint64 *new_online_map)
 {
     dss_dhb_ctx_t *ctx = &g_dhb_ctx;
     
-    if (ctx->fd <= 0 || new_online_map == NULL) {
+    if (ctx->fd_read <= 0 || ctx->read_buf == NULL || new_online_map == NULL) {
         return CM_ERROR;
     }
     
-    /* Read all heartbeat blocks using structure offset */
-    char buf[DSS_DHB_AREA_SIZE];
-    ssize_t read_size = pread(ctx->fd, buf, DSS_DHB_AREA_SIZE, DSS_CTRL_DHB_HEARTBEAT_OFFSET);
+    /* Read all heartbeat blocks using dedicated read fd (O_DIRECT bypasses cache) */
+    ssize_t read_size = pread(ctx->fd_read, ctx->read_buf, DSS_DHB_AREA_SIZE, DSS_CTRL_DHB_HEARTBEAT_OFFSET);
     
     if (read_size != DSS_DHB_AREA_SIZE) {
         LOG_DEBUG_WAR("[DHB] Read heartbeats failed: read=%zd, errno=%d", read_size, errno);
@@ -184,11 +201,12 @@ static status_t dhb_read_all_heartbeats(uint64 *new_online_map)
     /* Process each node's heartbeat using SEQUENCE NUMBER change detection */
     /* Always iterate all possible instances, invalid ones are skipped by magic check */
     for (uint32 i = 0; i < DSS_MAX_INSTANCES; i++) {
-        dss_dhb_heartbeat_t *hb = (dss_dhb_heartbeat_t *)(buf + i * DSS_DHB_BLOCK_SIZE);
+        dss_dhb_heartbeat_t *hb = (dss_dhb_heartbeat_t *)(ctx->read_buf + i * DSS_DHB_BLOCK_SIZE);
         dhb_local_tracker_t *tracker = &ctx->local_tracker[i];
         
         /* Validate magic number */
         if (hb->magic != DSS_DHB_MAGIC || hb->inst_id != i) {
+            tracker->timeout_count = 0;  /* Reset for invalid entries */
             continue;
         }
         
@@ -197,6 +215,7 @@ static status_t dhb_read_all_heartbeats(uint64 *new_online_map)
         
         /* Skip if node status is offline */
         if (hb->status != DSS_DHB_NODE_ONLINE) {
+            tracker->timeout_count = 0;
             continue;
         }
         
@@ -205,22 +224,33 @@ static status_t dhb_read_all_heartbeats(uint64 *new_online_map)
          * This works correctly even if clocks are not synchronized.
          */
         if (hb->sequence != tracker->last_sequence) {
-            /* Sequence changed - node is alive */
+            /* Sequence changed - node is alive, reset timeout counter */
             tracker->last_sequence = hb->sequence;
             tracker->last_change_ns = now_mono_ns;
+            tracker->timeout_count = 0;
             *new_online_map |= ((uint64)1 << i);
         } else if (tracker->last_change_ns == 0) {
             /* First time seeing this node */
             tracker->last_sequence = hb->sequence;
             tracker->last_change_ns = now_mono_ns;
+            tracker->timeout_count = 0;
             *new_online_map |= ((uint64)1 << i);
         } else {
             /* Sequence unchanged - check if timeout exceeded */
             uint64 elapsed_ns = now_mono_ns - tracker->last_change_ns;
             if (elapsed_ns < timeout_ns) {
                 *new_online_map |= ((uint64)1 << i);
+            } else {
+                /* Timeout exceeded - use threshold to avoid jitter */
+                tracker->timeout_count++;
+                if (tracker->timeout_count < DHB_OFFLINE_THRESHOLD) {
+                    /* Not yet reached threshold, still consider online */
+                    *new_online_map |= ((uint64)1 << i);
+                    LOG_DEBUG_INF("[DHB] Node %u timeout count %u/%u", 
+                        i, tracker->timeout_count, DHB_OFFLINE_THRESHOLD);
+                }
+                /* else: threshold reached, node is offline */
             }
-            /* else: timeout exceeded, node is offline */
         }
     }
     
@@ -328,11 +358,41 @@ static void dhb_thread_entry(thread_t *thread)
                     (unsigned long long)went_online);
             }
             
-            /* Step 3: Check current master status */
+            /* Step 3: Check current master status with jitter tolerance
+             * 
+             * During lock renewal, cm_dl_lock writes LS_PRE_LOCK first, then LS_LOCKED.
+             * If we read during this window, cm_dl_getowner returns INVALID_ID.
+             * Use jitter tolerance to avoid false master-lost detection.
+             */
             uint32 lock_owner = DSS_INVALID_ID32;
             (void)dhb_get_lock_owner_internal(&lock_owner);
             
-            /* Update current_master */
+            /* Handle jitter tolerance for master status */
+            if (lock_owner == DSS_INVALID_ID32 && ctx->current_master != DSS_INVALID_ID32) {
+                /* Master read as invalid, but we had a valid master before */
+                /* This might be due to renewal window - apply jitter tolerance */
+                ctx->master_lost_count++;
+                
+                if (ctx->master_lost_count < DHB_OFFLINE_THRESHOLD) {
+                    /* Not enough consecutive failures, keep current master */
+                    LOG_DEBUG_INF("[DHB] Master %u read as invalid, jitter count %u/%u",
+                        ctx->current_master, ctx->master_lost_count, DHB_OFFLINE_THRESHOLD);
+                    lock_owner = ctx->current_master;  /* Keep old value */
+                } else {
+                    /* Threshold reached, master is really gone */
+                    LOG_RUN_INF("[DHB] Master %u confirmed lost after %u consecutive invalid reads",
+                        ctx->current_master, ctx->master_lost_count);
+                    ctx->master_lost_count = 0;
+                }
+            } else if (lock_owner != DSS_INVALID_ID32) {
+                /* Valid owner read, reset jitter counter */
+                if (ctx->master_lost_count > 0) {
+                    LOG_DEBUG_INF("[DHB] Master %u recovered, resetting jitter count", lock_owner);
+                }
+                ctx->master_lost_count = 0;
+            }
+            
+            /* Update current_master only when truly changed */
             if (lock_owner != ctx->current_master) {
                 LOG_RUN_INF("[DHB] Master changed: %u -> %u", ctx->current_master, lock_owner);
                 ctx->current_master = lock_owner;
@@ -360,45 +420,40 @@ static void dhb_thread_entry(thread_t *thread)
                     ctx->failover_detected_ns = 0;
                 } else {
                     /* 
-                     * Master heartbeat died - but DON'T grab lock immediately!
-                     * Wait for cm_disklock lease to expire to ensure original master
-                     * has truly stopped writing. This prevents data loss during failover.
+                     * Master heartbeat died - attempt to grab lock.
                      * 
-                     * Sequence:
-                     * 1. Detect heartbeat timeout (now)
-                     * 2. Wait additional LEASE_TIMEOUT for cm_disklock lease to expire
-                     * 3. Only then attempt to grab lock
+                     * SAFETY NOTE: We rely on cm_disklock lease mechanism for safety.
+                     * cm_dl_lock will block until the lease expires, ensuring the original
+                     * master has truly stopped writing. No additional wait needed here.
+                     * 
+                     * Timeline:
+                     * - Master stops at T=0 (stops heartbeat + stops renewing lease)
+                     * - Lease expires at T=LEASE_TIMEOUT (e.g., T=5s)
+                     * - Heartbeat timeout detected at T=HEARTBEAT_TIMEOUT (e.g., T=5s)
+                     * - At this point, lease is already expired, cm_dl_lock can succeed
+                     * 
+                     * Since HEARTBEAT_TIMEOUT >= LEASE_TIMEOUT, by the time we detect
+                     * heartbeat timeout, the lease should already be expired or about to.
                      */
-                    uint64 now_ns = dhb_monotonic_ns();
-                    
                     if (ctx->failover_detected_ns == 0) {
-                        /* First detection - start the wait timer */
-                        ctx->failover_detected_ns = now_ns;
-                        LOG_RUN_WAR("[DHB] Master %u heartbeat died, waiting for lease expiry before failover", 
+                        /* First detection - log and attempt immediately */
+                        ctx->failover_detected_ns = dhb_monotonic_ns();
+                        LOG_RUN_WAR("[DHB] Master %u heartbeat died, attempting failover (lease should be expired)", 
                             lock_owner);
+                    }
+                    
+                    /* Try to acquire lock - cm_disklock will handle lease safety */
+                    bool32 got_lock = CM_FALSE;
+                    (void)dhb_try_acquire_lock(&got_lock);
+                    
+                    if (got_lock) {
+                        ctx->current_master = ctx->inst_id;
+                        ctx->failover_detected_ns = 0;  /* Reset for next time */
+                        LOG_RUN_INF("[DHB] Became new master after %u failed", lock_owner);
                     } else {
-                        /* Check if we've waited long enough (LEASE_TIMEOUT additional wait) */
-                        uint64 wait_ns = (uint64)DSS_DHB_LEASE_TIMEOUT_MS * 1000000ULL;
-                        uint64 elapsed_ns = now_ns - ctx->failover_detected_ns;
-                        
-                        if (elapsed_ns >= wait_ns) {
-                            /* Waited long enough - now safe to attempt failover */
-                            LOG_RUN_INF("[DHB] Lease expired for master %u (waited %llu ms), attempting failover",
-                                lock_owner, (unsigned long long)(elapsed_ns / 1000000ULL));
-                            
-                            bool32 got_lock = CM_FALSE;
-                            (void)dhb_try_acquire_lock(&got_lock);
-                            
-                            if (got_lock) {
-                                ctx->current_master = ctx->inst_id;
-                                ctx->failover_detected_ns = 0;  /* Reset for next time */
-                                LOG_RUN_INF("[DHB] Became new master after %u failed", lock_owner);
-                            }
-                        } else {
-                            LOG_DEBUG_INF("[DHB] Waiting for lease expiry: %llu/%llu ms",
-                                (unsigned long long)(elapsed_ns / 1000000ULL),
-                                (unsigned long long)(wait_ns / 1000000ULL));
-                        }
+                        uint64 elapsed_ns = dhb_monotonic_ns() - ctx->failover_detected_ns;
+                        LOG_DEBUG_INF("[DHB] Failover attempt for master %u, elapsed %llu ms, waiting...",
+                            lock_owner, (unsigned long long)(elapsed_ns / 1000000ULL));
                     }
                 }
             } else if (lock_owner == DSS_INVALID_ID32) {
@@ -429,9 +484,12 @@ static void dhb_thread_entry(thread_t *thread)
                 }
             } else if (lock_owner == ctx->inst_id) {
                 /* We are the master, renew lease */
-                int ret = cm_dl_lock(ctx->lock_id, 0);
+                /* Use 1 second timeout to handle IO latency */
+                int ret = cm_dl_lock(ctx->lock_id, 1000);
                 if (ret != CM_SUCCESS) {
                     LOG_RUN_WAR("[DHB] Failed to renew lock lease: ret=%d", ret);
+                } else {
+                    LOG_DEBUG_INF("[DHB] Lock lease renewed successfully");
                 }
             }
         }
@@ -473,6 +531,41 @@ static void dhb_stop_thread(void)
  * Public Interface - Initialization
  * ============================================================================ */
 
+/* Helper: allocate aligned memory for O_DIRECT I/O */
+static char *dhb_alloc_aligned(size_t size, size_t align)
+{
+    void *ptr = NULL;
+    if (posix_memalign(&ptr, align, size) != 0) {
+        return NULL;
+    }
+    return (char *)ptr;
+}
+
+/* Helper: cleanup resources on init failure */
+static void dhb_cleanup_resources(dss_dhb_ctx_t *ctx)
+{
+    if (ctx->write_buf != NULL) {
+        free(ctx->write_buf);
+        ctx->write_buf = NULL;
+    }
+    if (ctx->read_buf != NULL) {
+        free(ctx->read_buf);
+        ctx->read_buf = NULL;
+    }
+    if (ctx->lock_id != CM_INVALID_LOCK_ID) {
+        (void)cm_dl_dealloc(ctx->lock_id);
+        ctx->lock_id = CM_INVALID_LOCK_ID;
+    }
+    if (ctx->fd_write > 0) {
+        close(ctx->fd_write);
+        ctx->fd_write = -1;
+    }
+    if (ctx->fd_read > 0) {
+        close(ctx->fd_read);
+        ctx->fd_read = -1;
+    }
+}
+
 status_t dss_dhb_init(const char *volume_path, uint32 inst_id)
 {
     dss_dhb_ctx_t *ctx = &g_dhb_ctx;
@@ -502,9 +595,13 @@ status_t dss_dhb_init(const char *volume_path, uint32 inst_id)
     ctx->inst_id = inst_id;
     ctx->inst_cnt = DSS_MAX_INSTANCES;
     ctx->lock_id = CM_INVALID_LOCK_ID;
-    ctx->fd = -1;
+    ctx->fd_write = -1;
+    ctx->fd_read = -1;
+    ctx->write_buf = NULL;
+    ctx->read_buf = NULL;
     ctx->map_lock = 0;
     ctx->current_master = DSS_INVALID_ID32;
+    ctx->master_lost_count = 0;
     ctx->lock_transfer_in_progress = CM_FALSE;
     ctx->lock_transfer_target = DSS_INVALID_ID32;
     ctx->lock_transfer_start_ns = 0;
@@ -516,14 +613,56 @@ status_t dss_dhb_init(const char *volume_path, uint32 inst_id)
         return CM_ERROR;
     }
     
-    /* Open volume for heartbeat I/O (O_SYNC ensures data persistence) */
-    ctx->fd = open(volume_path, O_RDWR | O_SYNC);
-    if (ctx->fd <= 0) {
-        LOG_RUN_ERR("[DHB] Failed to open volume: %s, errno=%d", volume_path, errno);
+    /* 
+     * Allocate aligned buffers for O_DIRECT I/O 
+     * - write_buf: single heartbeat block (512B)
+     * - read_buf:  all heartbeat blocks (32KB)
+     */
+    ctx->write_buf = dhb_alloc_aligned(DSS_DHB_BLOCK_SIZE, DHB_IO_ALIGN);
+    if (ctx->write_buf == NULL) {
+        LOG_RUN_ERR("[DHB] Failed to allocate write buffer");
         return CM_ERROR;
     }
     
-    LOG_RUN_INF("[DHB] Volume opened: fd=%d", ctx->fd);
+    ctx->read_buf = dhb_alloc_aligned(DSS_DHB_AREA_SIZE, DHB_IO_ALIGN);
+    if (ctx->read_buf == NULL) {
+        LOG_RUN_ERR("[DHB] Failed to allocate read buffer");
+        dhb_cleanup_resources(ctx);
+        return CM_ERROR;
+    }
+    
+    LOG_RUN_INF("[DHB] Allocated aligned buffers: write=%p, read=%p", 
+        ctx->write_buf, ctx->read_buf);
+    
+    /* 
+     * Open dedicated file descriptors for DHB I/O:
+     * - fd_write: O_SYNC ensures write persistence
+     * - fd_read:  O_DIRECT bypasses page cache, reads fresh data from disk
+     * 
+     * This separation ensures that:
+     * 1. Our writes are persisted (O_SYNC)
+     * 2. Our reads see other nodes' latest writes (O_DIRECT bypasses cache)
+     */
+    ctx->fd_write = open(volume_path, O_RDWR | O_SYNC);
+    if (ctx->fd_write <= 0) {
+        LOG_RUN_ERR("[DHB] Failed to open write fd: %s, errno=%d", volume_path, errno);
+        dhb_cleanup_resources(ctx);
+        return CM_ERROR;
+    }
+    
+    ctx->fd_read = open(volume_path, O_RDONLY | O_DIRECT);
+    if (ctx->fd_read <= 0) {
+        LOG_RUN_WAR("[DHB] O_DIRECT not supported, falling back to O_SYNC for read");
+        ctx->fd_read = open(volume_path, O_RDONLY | O_SYNC);
+        if (ctx->fd_read <= 0) {
+            LOG_RUN_ERR("[DHB] Failed to open read fd: %s, errno=%d", volume_path, errno);
+            dhb_cleanup_resources(ctx);
+            return CM_ERROR;
+        }
+    }
+    
+    LOG_RUN_INF("[DHB] Dedicated fds opened: fd_write=%d, fd_read=%d", 
+        ctx->fd_write, ctx->fd_read);
     
     /* Allocate disk lock using structure offset */
     uint32 lease_sec = DSS_DHB_LEASE_TIMEOUT_MS / 1000;
@@ -538,8 +677,7 @@ status_t dss_dhb_init(const char *volume_path, uint32 inst_id)
         (unsigned long long)inst_id, lease_sec);
     if (ctx->lock_id == CM_INVALID_LOCK_ID) {
         LOG_RUN_ERR("[DHB] Failed to alloc disk lock");
-        close(ctx->fd);
-        ctx->fd = -1;
+        dhb_cleanup_resources(ctx);
         return CM_ERROR;
     }
     
@@ -561,9 +699,7 @@ status_t dss_dhb_init(const char *volume_path, uint32 inst_id)
     
     /* Start background thread */
     if (dhb_start_thread() != CM_SUCCESS) {
-        cm_dl_dealloc(ctx->lock_id);
-        close(ctx->fd);
-        ctx->fd = -1;
+        dhb_cleanup_resources(ctx);
         return CM_ERROR;
     }
     
@@ -593,10 +729,24 @@ void dss_dhb_uninit(void)
         ctx->lock_id = CM_INVALID_LOCK_ID;
     }
     
-    /* Close file descriptor */
-    if (ctx->fd > 0) {
-        close(ctx->fd);
-        ctx->fd = -1;
+    /* Close dedicated file descriptors */
+    if (ctx->fd_write > 0) {
+        close(ctx->fd_write);
+        ctx->fd_write = -1;
+    }
+    if (ctx->fd_read > 0) {
+        close(ctx->fd_read);
+        ctx->fd_read = -1;
+    }
+    
+    /* Free aligned buffers */
+    if (ctx->write_buf != NULL) {
+        free(ctx->write_buf);
+        ctx->write_buf = NULL;
+    }
+    if (ctx->read_buf != NULL) {
+        free(ctx->read_buf);
+        ctx->read_buf = NULL;
     }
     
     ctx->is_inited = CM_FALSE;
@@ -644,13 +794,16 @@ status_t dss_dhb_try_lock(bool32 *got_lock)
     
     /* If we already hold the lock, just renew lease */
     if (current_owner == ctx->inst_id) {
-        int ret = cm_dl_lock(ctx->lock_id, 0);
+        /* Use 1 second timeout for renewal to handle IO latency */
+        int ret = cm_dl_lock(ctx->lock_id, 1000);
         if (ret == CM_SUCCESS) {
             *got_lock = CM_TRUE;
             LOG_DEBUG_INF("[DHB] Renewed lock lease: inst_id=%u", ctx->inst_id);
-            return CM_SUCCESS;
+        } else {
+            LOG_RUN_WAR("[DHB] Failed to renew lock: ret=%d", ret);
         }
-        LOG_RUN_WAR("[DHB] Failed to renew lock: ret=%d", ret);
+        /* Always return here - we either renewed or failed, don't try to grab again */
+        return CM_SUCCESS;
     }
     
     /* If there's another valid owner, check if they're online */
@@ -668,13 +821,26 @@ status_t dss_dhb_try_lock(bool32 *got_lock)
             }
             return CM_SUCCESS;
         }
-        /* Owner is offline, we can try to take the lock with longer timeout */
-        LOG_RUN_INF("[DHB] Lock owner %u is offline, attempting takeover", current_owner);
+        /* Owner is offline - wait for lease expiry with adequate timeout */
+        LOG_RUN_INF("[DHB] Lock owner %u is offline, waiting for lease expiry", current_owner);
     }
     
-    /* Try to acquire the lock - use shorter timeout for responsiveness */
-    /* If owner is offline, lock should be available after lease expires */
-    int timeout_ms = (current_owner == DSS_INVALID_ID32) ? 100 : 1000;
+    /* 
+     * Try to acquire the lock:
+     * - If no owner: short timeout (lock should be free)
+     * - If owner offline: wait for lease to expire (LEASE_TIMEOUT + buffer)
+     * 
+     * cm_disklock guarantees that the lock cannot be acquired until the
+     * current owner's lease expires. This is the safety boundary.
+     */
+    int timeout_ms;
+    if (current_owner == DSS_INVALID_ID32) {
+        timeout_ms = 100;  /* No owner, should be quick */
+    } else {
+        /* Owner offline - need to wait for lease expiry */
+        /* Add 1 second buffer for clock drift and I/O latency */
+        timeout_ms = DSS_DHB_LEASE_TIMEOUT_MS + 1000;
+    }
     int ret = cm_dl_lock(ctx->lock_id, timeout_ms);
     
     if (ret == CM_SUCCESS) {
