@@ -614,8 +614,8 @@ void dss_check_ft_block_flags(dss_ft_block_t *block, dss_block_flag_e flags)
 void dss_check_ft_node_free(gft_node_t *node)
 {
     bool8 is_invalid = (!dss_cmp_auid(node->parent, DSS_BLOCK_ID_INIT) && !dss_cmp_auid(node->parent, DSS_INVALID_64));
-    DSS_ASSERT_LOG(!is_invalid, "[FT][CHECK] Error parent, node id:%llu, parent:%llu, next:%llu",
-        DSS_ID_TO_U64(node->id), DSS_ID_TO_U64(node->parent), DSS_ID_TO_U64(node->next));
+    DSS_ASSERT_LOG(!is_invalid, "[FT][CHECK] Error parent, node id:%llu, parent:%llu", DSS_ID_TO_U64(node->id),
+        DSS_ID_TO_U64(node->parent));
     dss_ft_block_t *block = dss_get_ft_by_node(node);
     dss_check_ft_block_flags(block, DSS_BLOCK_FLAG_FREE);
 }
@@ -1481,13 +1481,6 @@ status_t dss_init_ft_block(
     gft_node_t *first_node = (gft_node_t *)(block + sizeof(dss_ft_block_t));
     gft_node_t *node;
     gft_node_t *last_node = NULL;
-    
-    // CRITICAL: Check if first needs to be set BEFORE any modifications
-    // This prevents race condition where other nodes see:
-    // first=INVALID, last=valid, count>0 (inconsistent state)
-    bool32 first_was_invalid = dss_cmp_auid(gft->free_list.first, DSS_INVALID_64);
-    uint32 old_count = gft->free_list.count;
-    
     if (ft_block->node_num > 0) {
         node = &first_node[0];
         node->prev = gft->free_list.last;
@@ -1500,49 +1493,17 @@ status_t dss_init_ft_block(
                 return CM_ERROR;
             }
 
-            // Log before modifying last_node->next
-            ftid_t old_next = last_node->next;
-            
             last_node->next = auid;
             last_node->next.block = block_id;
             last_node->next.item = 0;
-            
-            // CRITICAL: Log the modification of last_node->next
-            // This is often the source of free_list corruption!
-            LOG_RUN_INF("[FT][FORMAT][LINK] Linking old_last to new_block: "
-                "old_last:%s, old_last->next_before:%s, old_last->next_after:%s, new_block:%s",
-                dss_display_metaid(last_node->id),
-                dss_display_metaid(old_next),
-                dss_display_metaid(last_node->next),
-                dss_display_metaid(ft_block->common.id));
         }
     }
-    
-    // IMPORTANT UPDATE ORDER:
-    // 1. Set first (if was invalid) - ensures first is valid before count > 0
-    // 2. Init nodes (sets last) - now we have valid first and last
-    // 3. Update count - finally increment count
-    // This order ensures: if count > 0, then first and last are both valid
-    
-    if (first_was_invalid && ft_block->node_num > 0) {
+    dss_init_ft_node(ft_block, first_node, gft, block_id, auid);
+    gft->free_list.count = gft->free_list.count + ft_block->node_num;
+    if (dss_cmp_auid(gft->free_list.first, DSS_INVALID_64)) {
         gft->free_list.first = auid;
         gft->free_list.first.block = block_id;
         gft->free_list.first.item = 0;
-    }
-    
-    dss_init_ft_node(ft_block, first_node, gft, block_id, auid);
-    
-    // Now update count after first and last are both valid
-    gft->free_list.count = gft->free_list.count + ft_block->node_num;
-    
-    if (first_was_invalid) {
-        LOG_DEBUG_INF("[FT][FORMAT] Init ft block, set first: block:%s, first:%s, old_count:%u, new_count:%u, node_num:%u",
-            dss_display_metaid(ft_block->common.id), dss_display_metaid(gft->free_list.first),
-            old_count, gft->free_list.count, ft_block->node_num);
-    } else {
-        LOG_DEBUG_INF("[FT][FORMAT] Init ft block, append to list: block:%s, first:%s, last:%s, old_count:%u, new_count:%u, node_num:%u",
-            dss_display_metaid(ft_block->common.id), dss_display_metaid(gft->free_list.first),
-            dss_display_metaid(gft->free_list.last), old_count, gft->free_list.count, ft_block->node_num);
     }
     DSS_LOG_DEBUG_OP("[FT][FORMAT] dss_init_ft_block blockid:%s.", dss_display_metaid(ft_block->common.id));
     return CM_SUCCESS;
@@ -1698,26 +1659,6 @@ status_t dss_format_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_item,
     redo.old_last_block = old_last;
     redo.old_free_list = bk_list;
     dss_put_log(session, vg_item, DSS_RT_FORMAT_AU_FILE_TABLE, &redo, sizeof(dss_redo_format_ft_t));
-    
-    // CRITICAL FIX: Flush old_last_block to disk!
-    // We modified last_node->next in dss_init_ft_block, but it was only in memory.
-    // Without flushing, when standby syncs metadata from disk, it will read old value
-    // (next=INVALID), causing free_list corruption.
-    if (!dss_cmp_auid(old_last, DSS_INVALID_64)) {
-        dss_ft_block_t *last_block = (dss_ft_block_t *)dss_find_block_in_shm(
-            session, vg_item, old_last, DSS_BLOCK_TYPE_FT, CM_FALSE, NULL, CM_FALSE);
-        if (last_block != NULL) {
-            status = dss_update_ft_block_disk(vg_item, last_block, old_last);
-            if (status != CM_SUCCESS) {
-                LOG_RUN_ERR("[FT][FORMAT] Failed to flush old_last_block:%s to disk.",
-                    dss_display_metaid(old_last));
-                return status;
-            }
-            LOG_RUN_INF("[FT][FORMAT] Flushed old_last_block:%s to disk after format.",
-                dss_display_metaid(old_last));
-        }
-    }
-    
     return CM_SUCCESS;
 }
 
@@ -2121,24 +2062,7 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     if (status != CM_SUCCESS) {
         return NULL;
     }
-
-    // Validate free_list consistency before allocation
-    // Check if first node's next is INVALID but count > 1 (list broken)
-    if (!dss_cmp_auid(gft->free_list.first, DSS_INVALID_64) && gft->free_list.count > 1) {
-        gft_node_t *check_node = dss_get_ft_node_by_ftid(session, vg_item, gft->free_list.first, CM_FALSE, CM_FALSE);
-        if (check_node != NULL && dss_cmp_auid(check_node->next, DSS_INVALID_64)) {
-            LOG_RUN_ERR("[FT][ALLOC][FIX] Free list broken before alloc! "
-                "first:%s, first->next=INVALID but count=%u. Fixing count to 1. file:%s",
-                dss_display_metaid(gft->free_list.first), gft->free_list.count, name);
-            gft->free_list.count = 1;
-            gft->free_list.last = gft->free_list.first;
-        }
-    }
-
     id = gft->free_list.first;
-    LOG_DEBUG_INF("[FT][ALLOC] Before alloc: first:%s, last:%s, count:%u, file:%s",
-        dss_display_metaid(gft->free_list.first), dss_display_metaid(gft->free_list.last),
-        gft->free_list.count, name);
     gft_node_t *node = dss_get_ft_node_by_ftid(session, vg_item, id, check_version, CM_FALSE);
     if (node == NULL) {
         LOG_DEBUG_ERR("[FT][ALLOC] Failed to get file table node when allocating file table node for file %s.", name);
@@ -2169,19 +2093,8 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     gft->free_list.count--;
     bool32 cmp = dss_cmp_auid(gft->free_list.first, DSS_INVALID_64);
     if (cmp) {
-        if (gft->free_list.count != 0) {
-            // Detected inconsistency: first=INVALID but count != 0
-            // This usually happens due to metadata sync issues or redo replay problems
-            LOG_RUN_ERR("[FT][ALLOC][INCONSISTENT] Free list corrupted after alloc! first=INVALID but count=%u != 0. "
-                "alloc_node:%s, alloc_node_next:%s, file:%s, parent:%s. Auto-fixing: reset count to 0.",
-                gft->free_list.count, dss_display_metaid(node->id), dss_display_metaid(node->next),
-                name, parent_node->name);
-            // Auto-fix: reset count to 0 since the list is actually empty
-            gft->free_list.count = 0;
-        } else {
-            LOG_DEBUG_INF("[FT][ALLOC] Free list is now empty after alloc, alloc_node:%s, file:%s",
-                dss_display_metaid(node->id), name);
-        }
+        LOG_DEBUG_INF("[FT][ALLOC] File table node free list will be empty, count:%u.", gft->free_list.count);
+        cm_panic(gft->free_list.count == 0);
         gft->free_list.last = gft->free_list.first;
     }
     DSS_LOG_DEBUG_OP("[FT][ALLOC] Succeed to allocate ftnode:%s for file:%s.", dss_display_metaid(node->id), name);
@@ -2253,16 +2166,12 @@ void dss_free_ft_node_inner(
     if (real_del) {
         dss_ft_block_t *block = dss_get_ft_by_node(node);
         block->common.flags = DSS_BLOCK_FLAG_FREE;
-        ftid_t old_first = gft->free_list.first;
         node->next = gft->free_list.first;
         dss_set_blockid(&node->parent, DSS_BLOCK_ID_INIT);
         dss_set_blockid(&node->prev, DSS_INVALID_64);
         dss_set_blockid(&node->entry, DSS_INVALID_64);
         gft->free_list.first = node->id;
         gft->free_list.count++;
-        LOG_DEBUG_INF("[FT][FREE] Free node to list head: node:%s, node_next(old_first):%s, new_count:%u, file:%s",
-            dss_display_metaid(node->id), dss_display_metaid(old_first),
-            gft->free_list.count, node->name);
     }
 
     dss_redo_free_ft_node_t redo_node;

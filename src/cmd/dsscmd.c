@@ -56,8 +56,6 @@
 #include "dsscmd_interactive.h"
 #include "dss_cli_conn.h"
 #include "dss_vtable.h"
-#include "cm_disklock.h"
-#include "dss_ctrl_def.h"
 #ifndef WIN32
 #include "config.h"
 #endif
@@ -3964,99 +3962,6 @@ static status_t clean_vglock_proc(void)
     return status;
 }
 
-static dss_args_t cmd_clean_dhb_lock_args[] = {
-    {'i', "inst_id", CM_TRUE, CM_TRUE, NULL, NULL, NULL, 0, NULL, NULL, 0},
-    {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
-        NULL, NULL, 0},
-};
-static dss_args_set_t cmd_clean_dhb_lock_args_set = {
-    cmd_clean_dhb_lock_args,
-    sizeof(cmd_clean_dhb_lock_args) / sizeof(dss_args_t),
-    NULL,
-};
-
-static void clean_dhb_lock_help(const char *prog_name, int print_flag)
-{
-    (void)printf("\nUsage:%s clean_dhb_lock <-i inst_id> [-D DSS_HOME]\n", prog_name);
-    (void)printf("[manage command] clean DHB lock for specified instance\n");
-    if (print_flag == DSS_HELP_SIMPLE) {
-        return;
-    }
-    (void)printf("-i/--inst_id <inst_id>, <required>, the id of the instance to clean DHB lock\n");
-    help_param_dsshome();
-}
-
-static status_t clean_dhb_lock_proc(void)
-{
-#ifndef WIN32
-    int64 inst_id;
-    status_t status = cm_str2bigint(cmd_clean_dhb_lock_args[DSS_ARG_IDX_0].input_args, &inst_id);
-    DSS_RETURN_IFERR2(
-        status, DSS_PRINT_ERROR("inst_id:%s is not a valid int64.\n", cmd_clean_dhb_lock_args[DSS_ARG_IDX_0].input_args));
-    char *home = cmd_clean_dhb_lock_args[DSS_ARG_IDX_1].input_args;
-
-    dss_config_t *inst_cfg = dss_get_g_inst_cfg();
-    dss_vg_info_t *vg_info = NULL;
-    DSS_RETURN_IF_ERROR(dss_inq_alloc_vg_info(home, inst_cfg, &vg_info));
-
-    if (vg_info->group_num == 0) {
-        dss_inq_free_vg_info(vg_info);
-        DSS_PRINT_INF("No VG found, skip clean DHB lock.\n");
-        return CM_SUCCESS;
-    }
-
-    /* Use the first (primary) VG */
-    dss_vg_info_item_t *vg_item = &vg_info->volume_group[0];
-    const char *volume_path = vg_item->entry_path;
-
-    if (inst_id < 0 || inst_id >= CM_MAX_INST_COUNT) {
-        DSS_PRINT_ERROR("Invalid inst_id %lld.\n", inst_id);
-        dss_inq_free_vg_info(vg_info);
-        return CM_ERROR;
-    }
-
-    /* Allocate a temporary disk lock handle */
-    uint32 temp_inst_id = (inst_id == 0) ? 1 : 0;
-    uint32 lock_id = cm_dl_alloc(volume_path, DSS_CTRL_DHB_LOCK_OFFSET, (unsigned long long)temp_inst_id);
-    if (lock_id == CM_INVALID_LOCK_ID) {
-        DSS_PRINT_ERROR("Failed to allocate disk lock handle.\n");
-        dss_inq_free_vg_info(vg_info);
-        return CM_ERROR;
-    }
-
-    /* Check current lock owner */
-    unsigned long long owner_id = CM_INVALID_INST_ID;
-    int ret = cm_dl_getowner(lock_id, &owner_id);
-    if (ret != CM_SUCCESS || owner_id == CM_INVALID_INST_ID) {
-        DSS_PRINT_INF("DHB lock has no owner, no need to clean.\n");
-        (void)cm_dl_dealloc(lock_id);
-        dss_inq_free_vg_info(vg_info);
-        return CM_SUCCESS;
-    }
-
-    if ((int64)owner_id != inst_id) {
-        DSS_PRINT_INF("DHB lock owned by inst %llu, target is %lld, skip.\n", owner_id, inst_id);
-        (void)cm_dl_dealloc(lock_id);
-        dss_inq_free_vg_info(vg_info);
-        return CM_SUCCESS;
-    }
-
-    /* Clean the DHB lock */
-    ret = cm_dl_clean(lock_id, (unsigned long long)inst_id);
-    if (ret != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to clean DHB lock for inst %lld: ret=%d.\n", inst_id, ret);
-        (void)cm_dl_dealloc(lock_id);
-        dss_inq_free_vg_info(vg_info);
-        return CM_ERROR;
-    }
-
-    DSS_PRINT_INF("Succeed to clean DHB lock for inst %lld.\n", inst_id);
-    (void)cm_dl_dealloc(lock_id);
-    dss_inq_free_vg_info(vg_info);
-#endif
-    return CM_SUCCESS;
-}
-
 static dss_args_t cmd_repl_args[] = {
     {'g', "vg_name", CM_TRUE, CM_TRUE, dss_check_name, NULL, NULL, 0, NULL, NULL, 0},
     {'o', "old_vol", CM_TRUE, CM_TRUE, dss_check_volume_path, NULL, NULL, 0, NULL, NULL, 0},
@@ -4514,8 +4419,6 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set,
                                       {"scandisk", scandisk_help, scandisk_proc, &cmd_scandisk_args_set, true},
                                       {"clean_vglock", clean_vglock_help, clean_vglock_proc,
                                           &cmd_clean_vglock_args_set, true},
-                                      {"clean_dhb_lock", clean_dhb_lock_help, clean_dhb_lock_proc,
-                                          &cmd_clean_dhb_lock_args_set, true},
                                       {"repl", repl_help, repl_proc, &cmd_repl_args_set, true},
                                       {"rollback", rollback_help, rollback_proc, &cmd_rollback_args_set, true},
                                       {"showmem", showmem_help, showmem_proc, &cmd_showmem_args_set, false},

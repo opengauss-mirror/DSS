@@ -33,7 +33,6 @@
 #include "dss_api.h"
 #include "dss_thv.h"
 #include "dss_hp_interface.h"
-#include "dss_dhb.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -97,26 +96,15 @@ static status_t dss_process_remote(dss_session_t *session)
             LOG_RUN_INF("Req break by recovery");
             return CM_ERROR;
         }
-        
-        /* Quick exit: if DHB already became leader, no need to wait for remote response */
-        if (dss_dhb_is_leader()) {
-            LOG_RUN_INF("[REMOTE] DHB became leader, skip waiting for remote response");
-            DSS_THROW_ERROR(ERR_DSS_MASTER_CHANGE);
-            return CM_ERROR;
-        }
-        
-        /* Quick exit: if remote node is offline, no need to wait */
-        if (!dss_dhb_is_online(remoteid)) {
-            LOG_RUN_INF("[REMOTE] Remote node %u is offline, skip waiting", remoteid);
-            DSS_THROW_ERROR(ERR_DSS_MASTER_CHANGE);
-            return CM_ERROR;
-        }
 
         ret = dss_exec_sync(session, remoteid, currid, &remote_result);
         if (ret != CM_SUCCESS) {
             LOG_DEBUG_ERR(
                 "End of processing the remote request(%d) failed, remote node(%u),current node(%u), result code(%d).",
                 session->recv_pack.head->cmd, remoteid, currid, ret);
+            if (session->recv_pack.head->cmd == DSS_CMD_SWITCH_LOCK) {
+                return ret;
+            }
             cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
             DSS_RETURN_IF_ERROR(dss_get_exec_nodeid(session, &currid, &remoteid));
             if (currid == remoteid) {
@@ -1098,41 +1086,36 @@ static status_t dss_process_switch_lock_inner(dss_session_t *session, uint32 swi
     g_dss_instance.status = DSS_STATUS_SWITCH;
     dss_wait_background_pause(&g_dss_instance);
     dss_close_delay_clean_background_task(&g_dss_instance);
-
-    status_t ret = CM_SUCCESS;
-    dss_set_server_status_flag(DSS_STATUS_READONLY);
-    LOG_RUN_INF("[SWITCH] inst %u set status flag %u when trans lock.", curr_id, DSS_STATUS_READONLY);
-
 #ifdef ENABLE_DSSTEST
-    if (g_simulation_cm.simulation && g_dss_instance.cm_res.is_valid) {
+    dss_set_server_status_flag(DSS_STATUS_READONLY);
+    LOG_RUN_INF("[SWITCH]inst %u set status flag %u when trans lock.", curr_id, DSS_STATUS_READONLY);
+    dss_set_master_id((uint32)switch_id);
+    dss_set_session_running(&g_dss_instance, session->id);
+    g_dss_instance.status = DSS_STATUS_OPEN;
+#endif
+    status_t ret = CM_SUCCESS;
+    // trans lock
+    if (g_dss_instance.cm_res.is_valid) {
+        dss_set_server_status_flag(DSS_STATUS_READONLY);
+        LOG_RUN_INF("[SWITCH]inst %u set status flag %u when trans lock.", curr_id, DSS_STATUS_READONLY);
         ret = cm_res_trans_lock(&g_dss_instance.cm_res.mgr, DSS_CM_LOCK, (uint32)switch_id);
         if (ret != CM_SUCCESS) {
             dss_set_session_running(&g_dss_instance, session->id);
             dss_set_server_status_flag(DSS_STATUS_READWRITE);
+            LOG_RUN_INF("[SWITCH]inst %u set status flag %u when failed to trans lock.", curr_id, DSS_STATUS_READWRITE);
             g_dss_instance.status = DSS_STATUS_OPEN;
-            LOG_RUN_ERR("[SWITCH] simulation cm trans lock failed from %u to %u.", curr_id, (uint32)switch_id);
+            LOG_RUN_ERR("[SWITCH]cm do switch lock failed from %u to %u.", curr_id, master_id);
             return ret;
         }
         dss_set_master_id((uint32)switch_id);
         dss_set_session_running(&g_dss_instance, session->id);
         g_dss_instance.status = DSS_STATUS_OPEN;
-        LOG_RUN_INF("[SWITCH] Old main %u switch to new main %u successfully.", curr_id, (uint32)switch_id);
-        return CM_SUCCESS;
-    }
-#endif
-
-    /* Use disk heartbeat for lock transfer */
-    ret = dss_dhb_trans_lock((uint32)switch_id);
-    if (ret != CM_SUCCESS) {
+    } else {
         dss_set_session_running(&g_dss_instance, session->id);
-        dss_set_server_status_flag(DSS_STATUS_READWRITE);
         g_dss_instance.status = DSS_STATUS_OPEN;
-        LOG_RUN_ERR("[SWITCH] DHB trans lock failed from %u to %u.", curr_id, (uint32)switch_id);
-        return ret;
+        LOG_RUN_ERR("[SWITCH]Only with cm can switch lock.");
+        return CM_ERROR;
     }
-    dss_set_master_id((uint32)switch_id);
-    dss_set_session_running(&g_dss_instance, session->id);
-    g_dss_instance.status = DSS_STATUS_OPEN;
     LOG_RUN_INF(
         "[SWITCH]Old main server %u switch lock to new main server %u successfully.", curr_id, (uint32)switch_id);
     return CM_SUCCESS;
@@ -1163,18 +1146,6 @@ static status_t dss_process_switch_lock(dss_session_t *session)
 */
 static status_t dss_process_remote_switch_lock(dss_session_t *session, uint32 curr_id, uint32 master_id)
 {
-    /* Quick check: if DHB already became leader, no need to send remote request */
-    if (dss_dhb_is_leader()) {
-        LOG_RUN_INF("[SWITCH] DHB already leader before remote request, skip remote switch to %u", master_id);
-        return CM_SUCCESS;
-    }
-    
-    /* Quick check: if master is offline, no need to send remote request */
-    if (!dss_dhb_is_online(master_id)) {
-        LOG_RUN_INF("[SWITCH] Master %u offline before remote request, skip remote switch", master_id);
-        return CM_ERROR;
-    }
-    
     dss_instance_status_e old_status = g_dss_instance.status;
     g_dss_instance.status = DSS_STATUS_SWITCH;
     uint32 current_proto_ver = dss_get_master_proto_ver();
@@ -1184,14 +1155,7 @@ static status_t dss_process_remote_switch_lock(dss_session_t *session, uint32 cu
     LOG_RUN_INF("[SWITCH] Try to switch lock to %u by %u.", curr_id, master_id);
     (void)dss_put_int32(&session->recv_pack, curr_id);
     status_t status = dss_process_remote(session);
-    
-    /* After remote request, check if DHB became leader during the wait */
     if (status != CM_SUCCESS) {
-        if (dss_dhb_is_leader()) {
-            LOG_RUN_INF("[SWITCH] DHB became leader during remote wait, treating as success");
-            g_dss_instance.status = old_status;
-            return CM_SUCCESS;
-        }
         LOG_RUN_ERR("[SWITCH] Failed to switch lock to %u by %u.", curr_id, master_id);
         g_dss_instance.status = old_status;
     }
@@ -1206,28 +1170,6 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
     uint32 master_id;
     DSS_RETURN_IF_ERROR(
         dss_set_audit_resource(session->audit_info.resource, DSS_AUDIT_MODIFY, "set %u as master", curr_id));
-    
-    /* Fast path: if DHB already acquired leader lock, just update DSS state */
-    if (dss_dhb_is_leader()) {
-        LOG_RUN_INF("[SWITCH] DHB already is leader, updating DSS state for inst %u", curr_id);
-        session->recv_pack.head->cmd = DSS_CMD_SET_MAIN_INST;
-        dss_set_recover_thread_id(dss_get_current_thread_id());
-        g_dss_instance.status = DSS_STATUS_RECOVERY;
-        dss_set_master_id(curr_id);
-        status = dss_refresh_meta_info(session);
-        if (status != CM_SUCCESS) {
-            g_dss_instance.status = DSS_STATUS_OPEN;
-            LOG_RUN_ERR("[SWITCH] ABORT INFO: dss instance %u refresh meta failed.", curr_id);
-            cm_fync_logfile();
-            dss_exit(1);
-        }
-        dss_set_server_status_flag(DSS_STATUS_READWRITE);
-        LOG_RUN_INF("[SWITCH] inst %u set status flag READWRITE via DHB fast path.", curr_id);
-        g_dss_instance.status = DSS_STATUS_OPEN;
-        dss_set_recover_thread_id(0);
-        return CM_SUCCESS;
-    }
-    
     while (CM_TRUE) {
         master_id = dss_get_master_id();
         if (master_id == curr_id) {
@@ -1241,13 +1183,6 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
             LOG_RUN_INF("[SWITCH] Set main inst break by recovery");
             return CM_ERROR;
         }
-        
-        /* Check if master is offline, if so, skip remote switch and try to acquire lock directly */
-        if (!dss_dhb_is_online(master_id)) {
-            LOG_RUN_INF("[SWITCH] Master %u is offline, skip remote switch, try to acquire lock directly", master_id);
-            break;
-        }
-        
         if (!cm_latch_timed_x(
             &g_dss_instance.switch_latch, session->id, DSS_PROCESS_REMOTE_INTERVAL, LATCH_STAT(LATCH_SWITCH))) {
             LOG_RUN_INF("[SWITCH] Spin switch lock timed out, just continue.");
@@ -1261,13 +1196,6 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
                 LOG_RUN_INF("[SWITCH] Try set main break because master id is invalid.");
                 return CM_ERROR;
             }
-            
-            /* Check if remote failed because master went offline */
-            if (!dss_dhb_is_online(master_id)) {
-                LOG_RUN_INF("[SWITCH] Master %u went offline during switch, try to acquire lock directly", master_id);
-                break;
-            }
-            
             cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
             continue;
         }
@@ -1276,52 +1204,6 @@ static status_t dss_process_set_main_inst(dss_session_t *session)
     session->recv_pack.head->cmd = DSS_CMD_SET_MAIN_INST;
     dss_set_recover_thread_id(dss_get_current_thread_id());
     g_dss_instance.status = DSS_STATUS_RECOVERY;
-
-    /* 
-     * Acquire leader lock.
-     * 
-     * dss_dhb_try_lock now handles lease expiry internally:
-     * - If owner is online (planned switch): quick 100ms timeout
-     * - If owner is offline (failover): waits up to LEASE_TIMEOUT+1s for lease expiry
-     * 
-     * We use minimal retries since the blocking is now inside dss_dhb_try_lock.
-     * Retry is mainly for edge cases (lock transfer timing, etc.)
-     */
-    #define SWITCH_LOCK_MAX_RETRIES 3
-    #define SWITCH_LOCK_RETRY_INTERVAL_MS 500
-    
-    bool32 got_lock = CM_FALSE;
-    for (uint32 retry = 0; retry < SWITCH_LOCK_MAX_RETRIES; retry++) {
-        status = dss_dhb_try_lock(&got_lock);
-        if (status == CM_SUCCESS && got_lock) {
-            LOG_RUN_INF("[SWITCH] inst %u acquired leader lock (retry %u)", curr_id, retry);
-            break;
-        }
-        LOG_RUN_INF("[SWITCH] inst %u waiting for leader lock, retry %u/%u", 
-            curr_id, retry + 1, SWITCH_LOCK_MAX_RETRIES);
-        cm_sleep(SWITCH_LOCK_RETRY_INTERVAL_MS);
-    }
-    
-    if (!got_lock) {
-        LOG_RUN_ERR("[SWITCH] inst %u failed to acquire leader lock after %u retries",
-            curr_id, SWITCH_LOCK_MAX_RETRIES);
-        
-        /* Failed to get lock, query actual master and become standby */
-        uint32 actual_master = DSS_INVALID_ID32;
-        (void)dss_dhb_get_lock_owner(&actual_master);
-        if (actual_master != DSS_INVALID_ID32 && actual_master != curr_id) {
-            dss_set_master_id(actual_master);
-            dss_set_server_status_flag(DSS_STATUS_READONLY);
-            LOG_RUN_INF("[SWITCH] inst %u failed to become master, actual master is %u, becoming standby",
-                curr_id, actual_master);
-        }
-        
-        g_dss_instance.status = DSS_STATUS_OPEN;
-        dss_set_recover_thread_id(0);
-        cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
-        return CM_ERROR;
-    }
-
     dss_set_master_id(curr_id);
     status = dss_refresh_meta_info(session);
     if (status != CM_SUCCESS) {
@@ -1422,7 +1304,6 @@ static status_t dss_process_disable_grab_lock(dss_session_t *session)
     cm_unlatch(&g_dss_instance.switch_latch, LATCH_STAT(LATCH_SWITCH));
     return ret;
 }
-
 static status_t dss_process_enable_grab_lock(dss_session_t *session)
 {
     dss_config_t *cfg = dss_get_inst_cfg();
