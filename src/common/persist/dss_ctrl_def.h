@@ -49,13 +49,7 @@
 #define DSS_VG_CONF_NAME "dss_vg_conf.ini"
 #define DSS_RECYLE_DIR_NAME ".recycle"
 
-/* DHB (Disk Heartbeat) area sizes */
-#define DSS_DHB_LOCK_SIZE       (SIZE_K(8))     /* cm_disklock needs 8KB */
-#define DSS_DHB_BLOCK_SIZE      512             /* Each heartbeat block */
-#define DSS_DHB_HEARTBEAT_SIZE  (DSS_MAX_INSTANCES * DSS_DHB_BLOCK_SIZE)  /* 64 * 512 = 32KB */
-
-/* Reserve1 reduced by DHB areas: 663K - 8K - 32K = 623K */
-#define DSS_CTRL_RESERVE_SIZE1 (SIZE_K(623))
+#define DSS_CTRL_RESERVE_SIZE1 (SIZE_K(663))
 #define DSS_CTRL_RESERVE_SIZE2 (SIZE_K(15) - 512)
 #define DSS_CTRL_RESERVE_SIZE3 (SIZE_K(32))
 #define DSS_CTRL_RESERVE_SIZE4 512
@@ -66,8 +60,6 @@
 #define DSS_CTRL_VG_LOCK_OFFSET OFFSET_OF(dss_ctrl_t, lock)
 #define DSS_CTRL_ROOT_OFFSET OFFSET_OF(dss_ctrl_t, root)
 #define DSS_CTRL_GLOBAL_CTRL_OFFSET OFFSET_OF(dss_ctrl_t, global_data)
-#define DSS_CTRL_DHB_LOCK_OFFSET OFFSET_OF(dss_ctrl_t, dhb_lock)
-#define DSS_CTRL_DHB_HEARTBEAT_OFFSET OFFSET_OF(dss_ctrl_t, dhb_heartbeat)
 #define DSS_CTRL_REDO_OFFSET OFFSET_OF(dss_ctrl_t, redo_ctrl_data)
 #define DSS_VG_LOCK_SHARE_DISK_OFFSET OFFSET_OF(dss_ctrl_t, disk_lock)
 
@@ -284,9 +276,7 @@ typedef struct st_dss_ctrl {
         dss_redo_ctrl_t redo_ctrl;
         char redo_ctrl_data[DSS_DISK_UNIT_SIZE]; // 512
     };
-    char reserve1[DSS_CTRL_RESERVE_SIZE1];     // 623K (reduced from 663K for DHB)
-    char dhb_lock[DSS_DHB_LOCK_SIZE];          // DHB Lock area, 8KB (for cm_disklock)
-    char dhb_heartbeat[DSS_DHB_HEARTBEAT_SIZE]; // DHB Heartbeat area, 32KB (64 nodes * 512B)
+    char reserve1[DSS_CTRL_RESERVE_SIZE1];     // 663K
     char disk_latch[DSS_INIT_DISK_LATCH_SIZE]; // INIT DISK LATCH 32KB
     union {
         struct {

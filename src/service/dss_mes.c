@@ -35,7 +35,6 @@
 #include "dss_thv.h"
 #include "dss_fault_injection.h"
 #include "dss_param_verify.h"
-#include "dss_dhb.h"
 
 #ifndef WIN32
 static __thread char *g_thv_read_buf = NULL;
@@ -554,48 +553,23 @@ static status_t dss_broadcast_msg(dss_bcast_req_head_t *req, dss_bcast_community
         cm_sleep(DSS_BROADCAST_MSG_TRY_SLEEP_TIME);
         i++;
     } while (i < DSS_BROADCAST_MSG_TRY_MAX && ret != ERR_DSS_UNSUPPORTED_CMD);
-    
-    /* Check if broadcast actually succeeded (all target instances responded) */
-    if (succ_req_inst != succ_ack_inst) {
-        /* Broadcast failed: not all instances responded */
-        /* Calculate which instances failed to respond */
-        uint64 failed_inst_map = succ_req_inst & (~succ_ack_inst);
-        
-        LOG_RUN_WAR("[MES] Broadcast incomplete after %u retries: "
-            "succ_req=0x%llx, succ_ack=0x%llx, failed=0x%llx. Checking heartbeat...",
-            i, succ_req_inst, succ_ack_inst, failed_inst_map);
-        
-        /* 
-         * Check if failed instances went offline.
-         * If a node just went offline, its heartbeat will timeout and we can
-         * treat the broadcast as successful since the node is no longer active.
-         */
-        bool32 any_online = dss_dhb_check_failed_insts(failed_inst_map);
-        uint64 online_map = dss_dhb_get_online_map();
-        
-        if (!any_online) {
-            /* All failed instances went offline - broadcast is considered successful */
-            LOG_RUN_INF("[MES] Broadcast OK: failed instances (0x%llx) went offline, "
-                "online_map=0x%llx", failed_inst_map, online_map);
-            cm_reset_error();
-            return CM_SUCCESS;
+    if (ret != ERR_DSS_UNSUPPORTED_CMD) {
+        // If some instances failed in broadcast, wait one mes timeout and recheck online instances.
+        // If the failed instances are offline after recheck, do not treat it as broadcast error.
+        if (snd_err_inst_map != 0) {
+            cm_sleep(param->mes_wait_timeout);
+            uint64 online_inst_map = dss_get_inst_work_status();
+            uint64 still_fail_inst_map = snd_err_inst_map & online_inst_map;
+            if (still_fail_inst_map == 0) {
+                LOG_RUN_INF("[MES] broadcast failed inst is offline after recheck, ignore broadcast error.");
+                cm_reset_error();
+                return CM_SUCCESS;
+            }
         }
-        
-        /* Some failed instances are still online - this is a real broadcast failure */
-        LOG_RUN_ERR("[MES] Broadcast FAILED: instances still online, "
-            "failed=0x%llx, online_map=0x%llx", failed_inst_map, online_map);
-
-        cm_reset_error();
-        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Broadcast failed: req=0x%llx, ack=0x%llx, failed=0x%llx", 
-            succ_req_inst, succ_ack_inst, failed_inst_map);
-        return CM_ERROR;
-    }
-    
-    if (ret != ERR_DSS_UNSUPPORTED_CMD && ret != CM_SUCCESS) {
         cm_reset_error();
         DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Failed to broadcast msg with try.");
-        LOG_RUN_ERR("[MES] Broadcast error, errcode:%d", cm_get_error_code());
     }
+    LOG_RUN_ERR("[DSS] THROW UP ERROR WHEN BROADCAST FAILED, errcode:%d", cm_get_error_code());
     return ret;
 }
 
@@ -1109,7 +1083,6 @@ static int dss_get_mes_response(ruid_type ruid, mes_msg_t *response, int timeout
     return ret;
 }
 
-
 status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, status_t *remote_result)
 {
     status_t ret = CM_ERROR;
@@ -1549,12 +1522,10 @@ status_t dss_join_cluster(bool32 *join_succ)
 {
     *join_succ = CM_FALSE;
 
-    dss_config_t *cfg = dss_get_inst_cfg();
-    uint32 master_id = dss_get_master_id();
-    LOG_RUN_INF("[MES] Try join cluster: inst=%u, master=%u", 
-        (uint32)(cfg->params.inst_id), master_id);
+    LOG_DEBUG_INF("[MES] Try join cluster begin.");
 
     dss_join_cluster_req_t req;
+    dss_config_t *cfg = dss_get_inst_cfg();
     req.reg_id = (uint32)(cfg->params.inst_id);
 
     status_t remote_result;
@@ -1562,15 +1533,14 @@ status_t dss_join_cluster(bool32 *join_succ)
     status_t ret = dss_exec_on_remote(DSS_CMD_REQ_JOIN_CLUSTER, (char *)&req, sizeof(dss_join_cluster_req_t),
         (char *)&ack, sizeof(dss_join_cluster_ack_t), &remote_result);
     if (ret != CM_SUCCESS || remote_result != CM_SUCCESS) {
-        LOG_RUN_ERR("[MES] Join cluster exec fail: ret=%d, remote_result=%d, master=%u", 
-            ret, remote_result, master_id);
+        LOG_RUN_ERR("Try join cluster exec fail.");
         return CM_ERROR;
     }
     if (ack.is_reg) {
         *join_succ = CM_TRUE;
     }
 
-    LOG_RUN_INF("[MES] Join cluster result: is_reg=%u", (uint32)ack.is_reg);
+    LOG_DEBUG_INF("[MES] Try join cluster exec result:%u.", (uint32)*join_succ);
     return CM_SUCCESS;
 }
 
@@ -1604,9 +1574,8 @@ void dss_proc_join_cluster_req(dss_session_t *session, mes_msg_t *msg)
         ack.is_reg = CM_TRUE;
     }
 
-    LOG_RUN_INF("[MES] Proc join cluster: src=%u, reg_id=%u, work_status=0x%llx, mask=0x%llx, is_reg=%u", 
-        (uint32)(req_head->src_inst), req->reg_id, 
-        (unsigned long long)work_status, (unsigned long long)inst_mask, (uint32)ack.is_reg);
+    LOG_DEBUG_INF("[MES] Proc join cluster from remote node:%u, reg node:%u, is_reg:%u.", (uint32)(req_head->src_inst),
+        req->reg_id, (uint32)ack.is_reg);
     int send_ret = mes_send_response(dst_inst, ack.ack_head.flags, ruid, (char *)&ack, ack.ack_head.size);
     if (send_ret != CM_SUCCESS) {
         LOG_RUN_ERR("Proc join cluster from remote node:%u, reg node:%u send ack fail.", (uint32)dst_inst, req->reg_id);
