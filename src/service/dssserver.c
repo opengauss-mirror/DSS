@@ -424,16 +424,6 @@ status_t dss_set_signal_block()
 
 int main(int argc, char **argv)
 {
-#ifndef WIN32
-    // check root
-    if (geteuid() == 0 || getuid() != geteuid()) {
-        (void)printf("The root user is not permitted to execute the dssserver "
-                     "and the real uids must be the same as the effective uids.\n");
-        (void)fflush(stdout);
-        return CM_ERROR;
-    }
-#endif
-
     if (argc == 2) {
         if (cm_str_equal(argv[1], "-h")) {
             dss_srv_usage();

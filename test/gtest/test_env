@@ -1,0 +1,4 @@
+export CODE_HOME=
+export PATH=$CODE_HOME/output/bin/:$PATH
+export LD_LIBRARY_PATH=$CODE_HOME/output/lib:$LD_LIBRARY_PATH
+export DSS_HOME=$CODE_HOME/test/test_home

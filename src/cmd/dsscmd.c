@@ -4722,27 +4722,8 @@ void dss_cmd_set_path_optional()
     cmd_find_args[0].required = CM_FALSE;
 }
 
-static status_t dss_check_user_permit()
-{
-#ifndef WIN32
-    // check root
-    if (geteuid() == 0 || getuid() != geteuid()) {
-        (void)printf("The root user is not permitted to execute the dsscmd "
-                     "and the real uids must be the same as the effective uids.\n");
-        (void)fflush(stdout);
-        return CM_ERROR;
-    }
-    if (cm_regist_signal(SIGPIPE, SIG_IGN) != CM_SUCCESS) {
-        (void)printf("Can't assign function for SIGPIPE.\n");
-        return CM_ERROR;
-    }
-#endif
-    return CM_SUCCESS;
-}
-
 int main(int argc, char **argv)
 {
-    DSS_RETURN_IF_ERROR(dss_check_user_permit());
     uint32 idx = 0;
     bool8 go_ahead = CM_TRUE;
     bool8 is_interactive = cmd_check_run_interactive(argc, argv);
