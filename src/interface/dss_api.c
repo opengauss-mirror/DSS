@@ -30,6 +30,7 @@
 #include "cm_log.h"
 #include "cm_timer.h"
 #include "dss_cli_conn.h"
+#include "dss_stats.h"
 
 #ifdef _WIN64
 #if !defined(__x86_64__)
@@ -281,6 +282,43 @@ int dss_get_inst_status(dss_server_status_t *dss_status)
     ret = dss_get_inst_status_on_server(conn, dss_status);
     dss_leave_api(conn, CM_FALSE);
     return (int)ret;
+}
+
+int dss_get_time_stat(dss_time_stat_item_t *time_stat, int count)
+{
+    if (time_stat == NULL) {
+        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "time_stat");
+        return CM_ERROR;
+    }
+
+    if (count < (int)DSS_EVT_COUNT) {
+        DSS_THROW_ERROR_EX(ERR_DSS_INVALID_PARAM,
+            "buffer size %d is smaller than required event count %d", count, DSS_EVT_COUNT);
+        return CM_ERROR;
+    }
+
+    dss_conn_t *conn = NULL;
+    status_t ret = dss_enter_api(&conn);
+    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when get time stat"));
+
+    /* Receive stats into internal buffer, then convert to public struct */
+    dss_stat_item_t internal_stat[DSS_EVT_COUNT];
+    ret = dss_get_time_stat_on_server(conn, internal_stat, (uint64)DSS_EVT_COUNT);
+    dss_leave_api(conn, CM_FALSE);
+    if (ret != CM_SUCCESS) {
+        return (int)ret;
+    }
+
+    for (int i = 0; i < DSS_EVT_COUNT; i++) {
+        time_stat[i].total_wait_time =
+            (unsigned long long)cm_atomic_get(&internal_stat[i].total_wait_time);
+        time_stat[i].max_single_time =
+            (unsigned long long)cm_atomic_get(&internal_stat[i].max_single_time);
+        time_stat[i].wait_count =
+            (unsigned long long)cm_atomic_get(&internal_stat[i].wait_count);
+    }
+
+    return CM_SUCCESS;
 }
 
 int dss_is_maintain(unsigned int *is_maintain)
