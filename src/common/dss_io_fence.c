@@ -40,6 +40,51 @@ void dss_destroy_ptlist(ptlist_t *ptlist)
     cm_destroy_ptlist(ptlist);
 }
 
+/*
+ * Format registered keys array for logging
+ * Returns a static buffer, not thread-safe (only for logging)
+ */
+static const char *dss_format_reg_keys(iof_reg_in_t *reg_info)
+{
+    static char key_buf[512];
+    int32 pos = 0;
+    errno_t errcode;
+
+    if (reg_info == NULL || reg_info->key_count == 0) {
+        return "[]";
+    }
+
+    errcode = snprintf_s(key_buf + pos, sizeof(key_buf) - pos, sizeof(key_buf) - pos - 1, "[");
+    if (errcode < 0) {
+        return "[format_error]";
+    }
+    pos = (int32)strlen(key_buf);
+
+    for (int32 i = 0; i < reg_info->key_count && pos < (int32)(sizeof(key_buf) - 20); i++) {
+        if (i > 0) {
+            errcode = snprintf_s(key_buf + pos, sizeof(key_buf) - pos, sizeof(key_buf) - pos - 1, ",");
+            if (errcode < 0) {
+                break;
+            }
+            pos = (int32)strlen(key_buf);
+        }
+        errcode = snprintf_s(key_buf + pos, sizeof(key_buf) - pos, sizeof(key_buf) - pos - 1, "%lld", reg_info->reg_keys[i]);
+        if (errcode < 0) {
+            break;
+        }
+        pos = (int32)strlen(key_buf);
+    }
+
+    if (reg_info->key_count > 0 && pos < (int32)(sizeof(key_buf) - 2)) {
+        errcode = snprintf_s(key_buf + pos, sizeof(key_buf) - pos, sizeof(key_buf) - pos - 1, "]");
+        if (errcode < 0) {
+            return "[format_error]";
+        }
+    }
+
+    return key_buf;
+}
+
 bool32 dss_iof_is_register(char *dev, int64 rk, ptlist_t *regs)
 {
 #ifdef WIN32
@@ -109,6 +154,21 @@ status_t dss_iof_kick_one_volume(dss_config_t *inst_cfg, char *dev, int64 rk, in
         return CM_SUCCESS;
     }
 
+    /* Query device state BEFORE PREEMPT for comparison */
+    iof_reg_in_t pre_preempt_state;
+    errno_t errcode = memset_s(&pre_preempt_state, sizeof(pre_preempt_state), 0, sizeof(pre_preempt_state));
+    securec_check_ret(errcode);
+    pre_preempt_state.dev = dev;
+    status_t inq_status = cm_iof_inql(&pre_preempt_state);
+    if (inq_status == CM_SUCCESS) {
+        LOG_RUN_INF("[FENCE][KICK][BEFORE_PREEMPT] dev=%s, resk=%lld, generation=%u, key_count=%d, "
+                    "reg_keys=[%s], rk=%lld, rk_kick=%lld",
+                    dev, pre_preempt_state.resk, pre_preempt_state.generation, pre_preempt_state.key_count,
+                    dss_format_reg_keys(&pre_preempt_state), rk, rk_kick);
+    } else {
+        LOG_RUN_WAR("[FENCE][KICK][BEFORE_PREEMPT] Failed to query device state, dev=%s, err=%d", dev, inq_status);
+    }
+
     status = cm_iof_kick(&reg_info);
     if (status != CM_SUCCESS) {
         // To be compatible with the earlier version, use type 6 to try again.
@@ -120,6 +180,35 @@ status_t dss_iof_kick_one_volume(dss_config_t *inst_cfg, char *dev, int64 rk, in
             return status;
         }
     }
+    LOG_RUN_INF("[FENCE][KICK][PREEMPT_SUCC] PREEMPT succeeded, rk=%lld, rk_kick=%lld, dev=%s, type=%d",
+                (long long)CM_OUT_SCSI_RK(&reg_info), (long long)CM_OUT_SCSI_SARK(&reg_info),
+                dev, reg_info.type);
+
+    /* Query device state AFTER PREEMPT (before explicit RESERVE) to check if device auto-transferred reservation */
+    iof_reg_in_t post_preempt_state;
+    errcode = memset_s(&post_preempt_state, sizeof(post_preempt_state), 0, sizeof(post_preempt_state));
+    securec_check_ret(errcode);
+    post_preempt_state.dev = dev;
+    inq_status = cm_iof_inql(&post_preempt_state);
+    if (inq_status == CM_SUCCESS) {
+        LOG_RUN_INF("[FENCE][KICK][AFTER_PREEMPT] dev=%s, resk=%lld, generation=%u, key_count=%d, "
+                    "reg_keys=[%s], rk=%lld",
+                    dev, (long long)post_preempt_state.resk, post_preempt_state.generation,
+                    post_preempt_state.key_count, dss_format_reg_keys(&post_preempt_state), rk);
+        if (post_preempt_state.resk == CM_OUT_SCSI_RK(&reg_info)) {
+            LOG_RUN_INF("[FENCE][KICK][AFTER_PREEMPT] Device automatically transferred reservation to rk=%lld (expected behavior)",
+                        (long long)CM_OUT_SCSI_RK(&reg_info));
+        } else if (post_preempt_state.resk == 0) {
+            LOG_RUN_WAR("[FENCE][KICK][AFTER_PREEMPT] Device cleared reservation (resk=0) instead of transferring. "
+                        "Will attempt explicit RESERVE.");
+        } else {
+            LOG_RUN_WAR("[FENCE][KICK][AFTER_PREEMPT] Device reservation held by unexpected key: resk=%lld, expected=%lld",
+                        (long long)post_preempt_state.resk, (long long)CM_OUT_SCSI_RK(&reg_info));
+        }
+    } else {
+        LOG_RUN_WAR("[FENCE][KICK][AFTER_PREEMPT] Failed to query device state, dev=%s, err=%d", dev, inq_status);
+    }
+
 #endif
     return CM_SUCCESS;
 }

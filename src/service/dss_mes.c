@@ -133,6 +133,10 @@ status_t dss_process_check_open_file(dss_session_t *session, dss_bcast_context_t
 
 status_t dss_process_invalidate_meta(dss_session_t *session, dss_bcast_context_t *bcast_ctx)
 {
+    if (bcast_ctx->req_len < sizeof(dss_req_meta_data_t)) {
+        LOG_RUN_ERR("[MES] invalid message req size %u", bcast_ctx->req_len);
+        return CM_ERROR;
+    }
     dss_req_meta_data_t *req_ex = (dss_req_meta_data_t *)bcast_ctx->req_msg;
     bool32 invalidate_ret = CM_FALSE;
     status_t ret = dss_invalidate_meta_remote(
@@ -146,6 +150,10 @@ status_t dss_process_invalidate_meta(dss_session_t *session, dss_bcast_context_t
 
 status_t dss_process_sync_meta(dss_session_t *session, dss_bcast_context_t *bcast_ctx)
 {
+    if (bcast_ctx->req_len < sizeof(dss_req_meta_data_t)) {
+        LOG_RUN_ERR("[MES] invalid message req size %u", bcast_ctx->req_len);
+        return CM_ERROR;
+    }
     dss_req_meta_data_t *req_ex = (dss_req_meta_data_t *)bcast_ctx->req_msg;
     bool32 sync_ret = CM_FALSE;
     status_t ret = dss_meta_syn_remote(session, (dss_meta_syn_t *)req_ex->data, req_ex->data_size, &sync_ret);
@@ -176,9 +184,9 @@ status_t dss_process_ack_check_open_file(dss_bcast_ack_head_t *ack_head, void *a
         return ERR_DSS_MES_ILL;
     }
     dss_ack_common_t *ack = (dss_ack_common_t *)ack_head;
-    if (ack->result != CM_SUCCESS) {
+    if (ack_head->dss_head.result != CM_SUCCESS) {
         DSS_THROW_ERROR(ERR_DSS_FILE_OPENING_REMOTE, ack_head->dss_head.src_inst, ack_head->dss_head.dss_cmd);
-        return ack->result;
+        return ack_head->dss_head.result;
     }
     dss_bcast_ack_bool_t *ack_bool = (dss_bcast_ack_bool_t *)ack_msg_output;
     if (ack_bool->default_ack != ack->cmd_ack) {
@@ -195,8 +203,8 @@ status_t dss_process_ack_invalidate_meta(dss_bcast_ack_head_t *ack_head, void *a
     }
     dss_ack_common_t *ack = (dss_ack_common_t *)ack_head;
     dss_bcast_ack_bool_t *ack_bool = (dss_bcast_ack_bool_t *)ack_msg_output;
-    if (ack->result != CM_SUCCESS) {
-        return ack->result;
+    if (ack_head->dss_head.result != CM_SUCCESS) {
+        return ack_head->dss_head.result;
     }
     // ack_bool->cmd_ack init-ed with the deault, if some node not the same with the default, let's cover
     // the default value
@@ -552,7 +560,7 @@ static status_t dss_broadcast_msg(dss_bcast_req_head_t *req, dss_bcast_community
         new_added_inst_map = (~last_inst_inst_map & cur_work_inst_map);
         cm_sleep(DSS_BROADCAST_MSG_TRY_SLEEP_TIME);
         i++;
-    } while (i < DSS_BROADCAST_MSG_TRY_MAX && ret != ERR_DSS_UNSUPPORTED_CMD);
+    } while (i < DSS_BROADCAST_MSG_TRY_MAX);
     if (ret != ERR_DSS_UNSUPPORTED_CMD) {
         // If some instances failed in broadcast, wait one mes timeout and recheck online instances.
         // If the failed instances are offline after recheck, do not treat it as broadcast error.
