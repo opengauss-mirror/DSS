@@ -165,6 +165,7 @@ extern "C" {
 #define DSS_UNIX_PATH_MAX (uint32)108
 #define DSS_MAX_INSTANCES 64
 #define DSS_VERSION_MAX_LEN 256
+#define DSS_REG_KEY_LIST_BUFFER_SIZE 256  /* Buffer size for formatting registration key list */
 #define DSS_WAIT_TIMEOUT 5
 
 #define DSS_ENV_HOME (char *)"DSS_HOME"

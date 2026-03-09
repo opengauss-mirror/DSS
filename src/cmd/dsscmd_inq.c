@@ -388,16 +388,75 @@ status_t dss_check_volume_register(
         iof_reg_in_t reg_info;
         errno_t errcode = memset_s(&reg_info, sizeof(reg_info), 0, sizeof(reg_info));
         securec_check_ret(errcode);
-
         reg_info.dev = entry_path;
         status_t status = cm_iof_inql(&reg_info);
         if (status != CM_SUCCESS) {
             LOG_DEBUG_ERR("[FENCE] Inquiry reg info for entry path dev failed, dev %s.", reg_info.dev);
             return CM_ERROR;
         }
-        // compatible with linux multipath
-        if (!is_register(&reg_info, host_id, iofence_key) || (!isUnreg && reg_info.resk == 0)) {
+
+        /* Log detailed device state for debugging */
+        char key_list[DSS_REG_KEY_LIST_BUFFER_SIZE] = {0};
+        int32 key_pos = 0;
+        for (int32 i = 0; i < reg_info.key_count && key_pos < (int32)(sizeof(key_list) - 20); i++) {
+            if (i > 0) {
+                (void)snprintf_s(key_list + key_pos, sizeof(key_list) - key_pos, sizeof(key_list) - key_pos - 1, ",");
+                key_pos = (int32)strlen(key_list);
+            }
+            (void)snprintf_s(key_list + key_pos, sizeof(key_list) - key_pos, sizeof(key_list) - key_pos - 1, 
+                            "%lld", reg_info.reg_keys[i]);
+            key_pos = (int32)strlen(key_list);
+        }
+        LOG_RUN_INF("[FENCE][CHECK_REG] dev=%s, host_id=%lld, resk=%lld, generation=%u, "
+                    "key_count=%d, reg_keys=[%s], isUnreg=%d",
+                    entry_path, host_id, reg_info.resk, reg_info.generation, 
+                    reg_info.key_count, key_list, isUnreg);
+
+        /*
+         * Registration status: Check if the host has a registered key (rkey).
+         * 
+         * Note: The original code had a condition "(!isUnreg && reg_info.resk == 0)"
+         * which was intended to detect "no reservation holder in cluster" scenarios.
+         * However, this logic is flawed because:
+         * 1. After PREEMPT/KICK, reservation may be cleared (resk == 0) temporarily,
+         *    but registration keys remain valid.
+         * 2. Registration (rkey) and Reservation (resk) are independent concepts:
+         *    - Registration: "I have permission to participate in fencing"
+         *    - Reservation: "I am currently the active holder"
+         * 
+         * The correct logic:
+         * - If the host has a registered key, it is "registered" regardless of resk.
+         * - If we need to check "cluster has reservation holder", that should be
+         *   a separate check (resk > 0), not mixed with "is this host registered".
+         */
+        bool32 has_rkey = is_register(&reg_info, host_id, iofence_key);
+        if (!has_rkey) {
             *is_reg = DSS_FALSE;
+            LOG_RUN_INF("[FENCE][CHECK_REG] host_id=%lld NOT registered: rkey (host_id+1=%lld) not found in reg_keys",
+                        host_id, host_id + 1);
+        } else {
+            LOG_RUN_INF("[FENCE][CHECK_REG] host_id=%lld IS registered: rkey (host_id+1=%lld) found in reg_keys",
+                        host_id, host_id + 1);
+        }
+        
+        /*
+         * Additional validation: If we're checking registration status (not unregistering),
+         * and there's no reservation holder (resk == 0), this might indicate:
+         * - Normal scenario: PREEMPT just happened, reservation temporarily cleared
+         * - Abnormal scenario: Device reset, all registrations lost (but then rkeys would also be gone)
+         * 
+         * Since we can't distinguish these cases reliably, we rely on rkey presence
+         * as the primary indicator. If rkey exists, the host is registered.
+         * The absence of reservation (resk == 0) is logged but doesn't affect registration status.
+         */
+        if (!isUnreg && reg_info.resk == 0) {
+            LOG_RUN_WAR("[FENCE][CHECK_REG] No reservation holder detected (resk == 0) for dev %s, "
+                        "host_id=%lld. This may indicate: (1) PREEMPT just happened, or (2) device issue. "
+                        "Registration status (is_reg=%d) is based on rkey presence, not resk.",
+                        entry_path, host_id, *is_reg);
+        } else if (!isUnreg && reg_info.resk > 0) {
+            LOG_RUN_INF("[FENCE][CHECK_REG] Reservation holder detected: resk=%lld for dev %s, host_id=%lld",
+                        reg_info.resk, entry_path, host_id);
         }
 
         LOG_RUN_INF(
