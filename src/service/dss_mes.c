@@ -1,26 +1,26 @@
 /*
- * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
- *
- * DSS is licensed under Mulan PSL v2.
- * You can use this software according to the terms and conditions of the Mulan PSL v2.
- * You may obtain a copy of Mulan PSL v2 at:
- *
- *          http://license.coscl.org.cn/MulanPSL2
- *
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PSL v2 for more details.
- * -------------------------------------------------------------------------
- *
- * dss_mes.c
- *
- *
- * IDENTIFICATION
- *    src/service/dss_mes.c
- *
- * -------------------------------------------------------------------------
- */
+* Copyright (c) 2022 Huawei Technologies Co.,Ltd.
+*
+* DSS is licensed under Mulan PSL v2.
+* You can use this software according to the terms and conditions of the Mulan PSL v2.
+* You may obtain a copy of Mulan PSL v2 at:
+*
+*          http://license.coscl.org.cn/MulanPSL2
+*
+* THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+* EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+* MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+* See the Mulan PSL v2 for more details.
+* -------------------------------------------------------------------------
+*
+* dss_mes.c
+*
+*
+* IDENTIFICATION
+*    src/service/dss_mes.c
+*
+* -------------------------------------------------------------------------
+*/
 
 #include "cm_types.h"
 #include "cm_error.h"
@@ -133,10 +133,6 @@ status_t dss_process_check_open_file(dss_session_t *session, dss_bcast_context_t
 
 status_t dss_process_invalidate_meta(dss_session_t *session, dss_bcast_context_t *bcast_ctx)
 {
-    if (bcast_ctx->req_len < sizeof(dss_req_meta_data_t)) {
-        LOG_RUN_ERR("[MES] invalid message req size %u", bcast_ctx->req_len);
-        return CM_ERROR;
-    }
     dss_req_meta_data_t *req_ex = (dss_req_meta_data_t *)bcast_ctx->req_msg;
     bool32 invalidate_ret = CM_FALSE;
     status_t ret = dss_invalidate_meta_remote(
@@ -150,10 +146,6 @@ status_t dss_process_invalidate_meta(dss_session_t *session, dss_bcast_context_t
 
 status_t dss_process_sync_meta(dss_session_t *session, dss_bcast_context_t *bcast_ctx)
 {
-    if (bcast_ctx->req_len < sizeof(dss_req_meta_data_t)) {
-        LOG_RUN_ERR("[MES] invalid message req size %u", bcast_ctx->req_len);
-        return CM_ERROR;
-    }
     dss_req_meta_data_t *req_ex = (dss_req_meta_data_t *)bcast_ctx->req_msg;
     bool32 sync_ret = CM_FALSE;
     status_t ret = dss_meta_syn_remote(session, (dss_meta_syn_t *)req_ex->data, req_ex->data_size, &sync_ret);
@@ -184,9 +176,9 @@ status_t dss_process_ack_check_open_file(dss_bcast_ack_head_t *ack_head, void *a
         return ERR_DSS_MES_ILL;
     }
     dss_ack_common_t *ack = (dss_ack_common_t *)ack_head;
-    if (ack_head->dss_head.result != CM_SUCCESS) {
+    if (ack->result != CM_SUCCESS) {
         DSS_THROW_ERROR(ERR_DSS_FILE_OPENING_REMOTE, ack_head->dss_head.src_inst, ack_head->dss_head.dss_cmd);
-        return ack_head->dss_head.result;
+        return ack->result;
     }
     dss_bcast_ack_bool_t *ack_bool = (dss_bcast_ack_bool_t *)ack_msg_output;
     if (ack_bool->default_ack != ack->cmd_ack) {
@@ -203,8 +195,8 @@ status_t dss_process_ack_invalidate_meta(dss_bcast_ack_head_t *ack_head, void *a
     }
     dss_ack_common_t *ack = (dss_ack_common_t *)ack_head;
     dss_bcast_ack_bool_t *ack_bool = (dss_bcast_ack_bool_t *)ack_msg_output;
-    if (ack_head->dss_head.result != CM_SUCCESS) {
-        return ack_head->dss_head.result;
+    if (ack->result != CM_SUCCESS) {
+        return ack->result;
     }
     // ack_bool->cmd_ack init-ed with the deault, if some node not the same with the default, let's cover
     // the default value
@@ -586,7 +578,7 @@ static bool32 dss_check_srv_status(mes_msg_t *msg)
     dss_message_head_t *dss_head = (dss_message_head_t *)(msg->buffer);
     if (g_dss_instance.status != DSS_STATUS_OPEN && dss_head->dss_cmd != DSS_CMD_ACK_JOIN_CLUSTER) {
         LOG_DEBUG_INF("[MES] Could not exec remote req for the dssserver is not open or msg not join cluster, src "
-                      "node:%u, wait try again.",
+                    "node:%u, wait try again.",
             (uint32)(dss_head->src_inst));
         return CM_FALSE;
     }
@@ -786,8 +778,8 @@ static status_t dss_set_mes_message_pool(unsigned long long recv_msg_buf_size, m
     }
     // want fourth buf_pool smallest
     double fourth_ratio = ((double)(minimum_info.buf_pool_minimum_size[DSS_MSG_BUFFER_NO_3]) /
-                              (mpa->total_size - minimum_info.metadata_size)) +
-                          DBL_EPSILON;
+                            (mpa->total_size - minimum_info.metadata_size)) +
+                        DBL_EPSILON;
     mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_3].proportion = fourth_ratio;
 
     double left_ratio = 1 - fourth_ratio;
@@ -1114,7 +1106,7 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
         ret = dss_get_mes_response(dss_head.ruid, &msg, timeout);
         DSS_RETURN_IFERR2(
             ret, LOG_RUN_ERR("dss server receive msg from remote failed, src node:%u, dst node:%u, cmd:%u.", currtid,
-                     remoteid, session->recv_pack.head->cmd));
+                    remoteid, session->recv_pack.head->cmd));
         // 4. attach remote execution result
         ack_head = (dss_message_head_t *)msg.buffer;
         if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {
