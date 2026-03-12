@@ -434,31 +434,35 @@ status_t dss_check_volume_register(
             *is_reg = DSS_FALSE;
             LOG_RUN_INF("[FENCE][CHECK_REG] host_id=%lld NOT registered: rkey (host_id+1=%lld) not found in reg_keys",
                         host_id, host_id + 1);
-        } else {
-            LOG_RUN_INF("[FENCE][CHECK_REG] host_id=%lld IS registered: rkey (host_id+1=%lld) found in reg_keys",
-                        host_id, host_id + 1);
+            LOG_RUN_INF(
+                "Succeed to check volume register, vol_path is %s, host_id %lld, result is %d.", entry_path, host_id, *is_reg);
+            return CM_SUCCESS;
         }
-        
+
+        LOG_RUN_INF("[FENCE][CHECK_REG] host_id=%lld IS registered: rkey (host_id+1=%lld) found in reg_keys",
+                    host_id, host_id + 1);
+
         /*
-         * Additional validation: If we're checking registration status (not unregistering),
-         * and there's no reservation holder (resk == 0), this might indicate:
-         * - Normal scenario: PREEMPT just happened, reservation temporarily cleared
-         * - Abnormal scenario: Device reset, all registrations lost (but then rkeys would also be gone)
-         * 
-         * Since we can't distinguish these cases reliably, we rely on rkey presence
-         * as the primary indicator. If rkey exists, the host is registered.
-         * The absence of reservation (resk == 0) is logged but doesn't affect registration status.
+         * Special case: this host is registered (has rkey), but there is NO reservation holder on device (resk == 0).
+         * - Query path (isUnreg == DSS_FALSE): treat as \"registered but without reservation\", return CM_TIMEDOUT,
+         *   and let upper layer (dss_inq_reg_core/dss_inq_reg_inner) map it to inq_result = 1.
+         * - Unregister path (isUnreg == DSS_TRUE): only care whether the host is registered, ignore reservation holder,
+         *   and continue as success for unreghl logic.
          */
         if (!isUnreg && reg_info.resk == 0) {
-            LOG_RUN_WAR("[FENCE][CHECK_REG] No reservation holder detected (resk == 0) for dev %s, "
-                        "host_id=%lld. This may indicate: (1) PREEMPT just happened, or (2) device issue. "
-                        "Registration status (is_reg=%d) is based on rkey presence, not resk.",
-                        entry_path, host_id, *is_reg);
-        } else if (!isUnreg && reg_info.resk > 0) {
+            *is_reg = DSS_TRUE;
+            LOG_RUN_WAR("[FENCE][CHECK_REG] host_id=%lld registered but NO reservation holder on dev %s "
+                        "(resk == 0). Treat as pending.",
+                        host_id, entry_path);
+            return CM_TIMEDOUT;
+        }
+
+        if (!isUnreg && reg_info.resk > 0) {
             LOG_RUN_INF("[FENCE][CHECK_REG] Reservation holder detected: resk=%lld for dev %s, host_id=%lld",
                         reg_info.resk, entry_path, host_id);
         }
 
+        *is_reg = DSS_TRUE;
         LOG_RUN_INF(
             "Succeed to check volume register, vol_path is %s, host_id %lld, result is %d.", entry_path, host_id, *is_reg);
         return CM_SUCCESS;
@@ -626,8 +630,14 @@ static status_t dss_inq_reg_inner(dss_vg_info_t *vg_info, dss_config_t *inst_cfg
             if (item->dss_ctrl->volume.defs[j].flag == VOLUME_FREE) {
                 continue;
             }
-            CM_RETURN_IFERR(dss_check_volume_register(
-                item->dss_ctrl->volume.defs[j].name, host_id, inst_cfg, &is_reg, iofence_key, DSS_FALSE));
+            status_t status = dss_check_volume_register(
+                item->dss_ctrl->volume.defs[j].name, host_id, inst_cfg, &is_reg, iofence_key, DSS_FALSE);
+            if (status == CM_TIMEDOUT) {
+                DSS_PRINT_INF("The node %lld is registered but no reservation holder, inq_result = 1.\n", host_id);
+                LOG_RUN_INF("The node %lld is registered but no reservation holder, inq_result = 1.", host_id);
+                return CM_TIMEDOUT;
+            }
+            CM_RETURN_IFERR(status);
             if (!is_reg) {
                 DSS_PRINT_INF("The node %lld is registered partially, inq_result = 1.\n", host_id);
                 LOG_RUN_INF("The node %lld is registered partially, inq_result = 1.", host_id);
@@ -659,6 +669,13 @@ status_t dss_inq_reg_core(const char *home, int64 host_id)
     for (uint32 i = 0; i < vg_info->group_num; i++) {
         status = dss_check_volume_register(vg_info->volume_group[i].entry_path, host_id,
                                            inst_cfg, &is_reg, iofence_key, DSS_FALSE);
+        if (status == CM_TIMEDOUT) {
+            dss_printf_iofence_key(iofence_key);
+            dss_inq_free_vg_info(vg_info);
+            DSS_PRINT_INF("The node %lld is registered but no reservation holder, inq_result = 1.\n", host_id);
+            LOG_RUN_INF("The node %lld is registered but no reservation holder, inq_result = 1.", host_id);
+            return CM_TIMEDOUT;
+        }
         if (status != CM_SUCCESS) {
             dss_inq_free_vg_info(vg_info);
             DSS_PRINT_ERROR("Failed to check vg entry info when inq reg, errcode is %d.\n", status);
