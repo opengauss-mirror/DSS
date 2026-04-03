@@ -143,6 +143,7 @@ typedef struct st_dss_session {
     bool8 put_log;
     bool8 is_holding_hotpatch_latch;
     spinlock_t shm_lock;  // for control current rw of the same session in shm
+    char *thv_read_buf;
 } dss_session_t;
 
 static inline char *dss_init_sendinfo_buf(char *input)
