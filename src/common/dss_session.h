@@ -144,6 +144,7 @@ typedef struct st_dss_session {
     bool8 is_holding_hotpatch_latch;
     bool8 is_remote_req;  // marks remote (standby) request, use force mode for lock to avoid deadlock
     spinlock_t shm_lock;  // for control current rw of the same session in shm
+    char *thv_read_buf;
 } dss_session_t;
 
 static inline char *dss_init_sendinfo_buf(char *input)
