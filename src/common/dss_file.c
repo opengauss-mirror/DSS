@@ -2069,17 +2069,7 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
         return NULL;
     }
     dss_check_ft_node_free(node);
-    if (type == GFT_PATH) {
-        node->items.count = 0;
-        dss_set_auid(&node->items.first, DSS_INVALID_64);
-        dss_set_auid(&node->items.last, DSS_INVALID_64);
-    } else {  // FILE or LINK
-        if (dss_init_ft_node_entry(session, vg_item, node) != CM_SUCCESS) {
-            dss_rollback_mem_update(session, vg_item);
-            LOG_DEBUG_ERR("[FT][ALLOC] Failed to get alloc fs block when allocating file table node %s.", node->name);
-            return NULL;
-        }
-    }
+
     node->type = type;
     node->parent = parent_node->id;
     dss_ft_block_t *block = dss_get_ft_by_node(node);
@@ -2106,6 +2096,17 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     DSS_LOG_DEBUG_OP("[FT][ALLOC] Succeed to allocate ftnode: %s for file:%s.", dss_display_metaid(node->id), name);
     LOG_DEBUG_INF("[FT][ALLOC] Parent node name:%s, %s", parent_node->name, dss_display_metaid(parent_node->id));
     dss_init_alloc_ft_node(gft, node, node_flag, parent_node);
+    if (type == GFT_PATH) {
+        node->items.count = 0;
+        dss_set_auid(&node->items.first, DSS_INVALID_64);
+        dss_set_auid(&node->items.last, DSS_INVALID_64);
+    } else {  // FILE or LINK
+        if (dss_init_ft_node_entry(session, vg_item, node) != CM_SUCCESS) {
+            dss_rollback_mem_update(session, vg_item);
+            LOG_DEBUG_ERR("[FT][ALLOC] Failed to get alloc fs block when allocating file table node %s.", node->name);
+            return NULL;
+        }
+    }
     dss_ft_node_link_list(session, vg_item, parent_node, id, node, gft);
     /*
      * release lock after we flush the ft block to disk, to avoid this concurrency scenario:
