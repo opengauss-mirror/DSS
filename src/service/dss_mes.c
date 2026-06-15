@@ -36,12 +36,6 @@
 #include "dss_fault_injection.h"
 #include "dss_param_verify.h"
 
-#ifndef WIN32
-static __thread char *g_thv_read_buf = NULL;
-#else
-__declspec(thread) char *g_thv_read_buf = NULL;
-#endif
-
 void dss_proc_broadcast_req(dss_session_t *session, mes_msg_t *msg);
 void dss_proc_syb2active_req(dss_session_t *session, mes_msg_t *msg);
 void dss_proc_loaddisk_req(dss_session_t *session, mes_msg_t *msg);
@@ -1338,15 +1332,18 @@ int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, uint32 ver
     if (req->size % DSS_DISK_UNIT_SIZE != 0) {
         return DSS_READ4STANDBY_ERR;
     }
-    if (g_thv_read_buf == NULL) {
-        g_thv_read_buf = (char *)cm_malloc_align(DSS_DISK_UNIT_SIZE, DSS_LOADDISK_BUFFER_SIZE);
-        if (g_thv_read_buf == NULL) {
+    if (session->thv_read_buf == NULL) {
+        session->thv_read_buf = (char *)cm_malloc_align(DSS_DISK_UNIT_SIZE, DSS_LOADDISK_BUFFER_SIZE);
+        if (session->thv_read_buf == NULL) {
             DSS_RETURN_IFERR2(
                 DSS_READ4STANDBY_ERR, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_LOADDISK_BUFFER_SIZE, "g_thv_read_buf"));
         }
     }
+    (void)memset_s(session->thv_read_buf, DSS_LOADDISK_BUFFER_SIZE, 0, DSS_LOADDISK_BUFFER_SIZE);
     dss_lock_vg_mem_and_shm_ex_s(session, req->vg_name);
-    int32 ret = dss_batch_load_core(session, req, g_thv_read_buf, version);
+    int32 ret = dss_batch_load_core(session, req, session->thv_read_buf, version);
+    dss_common_block_t *print = (dss_common_block_t*)session->thv_read_buf;
+    LOG_DEBUG_INF("[MES] dss_batch_load Exec load disk req, type: %u, id:%s, version:%llu.", print->type, dss_display_metaid(print->id), print->version);
     dss_unlock_vg_mem_and_shm_ex(session, req->vg_name);
     return ret;
 }

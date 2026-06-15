@@ -172,6 +172,15 @@ static status_t dss_init_session(dss_session_t *session, const cs_pipe_t *pipe)
         session->dss_session_stat, DSS_EVT_COUNT * sizeof(dss_stat_item_t), 0, DSS_EVT_COUNT * sizeof(dss_stat_item_t));
     securec_check_ret(errcode);
     session->is_holding_hotpatch_latch = CM_FALSE;
+    if (session->thv_read_buf == NULL) {
+        session->thv_read_buf = (char *)cm_malloc_align(DSS_DISK_UNIT_SIZE, DSS_LOADDISK_BUFFER_SIZE);
+        if (session->thv_read_buf == NULL) {
+            DSS_RETURN_IFERR2(
+                DSS_READ4STANDBY_ERR, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_LOADDISK_BUFFER_SIZE, "g_thv_read_buf"));
+        }
+    }
+    (void)memset_s(session->thv_read_buf, DSS_LOADDISK_BUFFER_SIZE, 0, DSS_LOADDISK_BUFFER_SIZE);
+
     return CM_SUCCESS;
 }
 
@@ -241,6 +250,10 @@ void dss_destroy_session_inner(dss_session_t *session)
     session->proto_version = DSS_PROTO_VERSION;
     session->put_log = CM_FALSE;
     session->is_holding_hotpatch_latch = CM_FALSE;
+    if (session->thv_read_buf) {
+        free(session->thv_read_buf);
+        session->thv_read_buf = NULL;
+    }
 }
 void dss_destroy_session(dss_session_t *session)
 {
