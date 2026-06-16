@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
  *
  * DSS is licensed under Mulan PSL v2.
@@ -35,6 +35,7 @@
 #include "dss_malloc.h"
 #include "dss_mes.h"
 #include "dss_lsnr.h"
+#include "dss_handshake_pool.h"
 #include "dss_redo_recovery.h"
 #include "dss_service.h"
 #include "dss_instance.h"
@@ -420,21 +421,62 @@ static status_t dss_handshake(dss_session_t *session)
     return status;
 }
 
-static status_t dss_lsnr_proc(bool32 is_emerg, uds_lsnr_t *lsnr, cs_pipe_t *pipe)
+static status_t dss_process_accepted_connection(const cs_pipe_t *pipe, bool32 disconnect_on_create_fail,
+    bool32 link_ready_done)
 {
     dss_session_t *session = NULL;
     status_t status;
+
     status = dss_create_session(pipe, &session);
-    DSS_RETURN_IFERR2(status, LOG_RUN_ERR("[DSS_CONNECT] create session failed.\n"));
-    // process_handshake
-    status = dss_handshake(session);
-    DSS_RETURN_IFERR3(status, LOG_RUN_ERR("[DSS_CONNECT] handshake failed.\n"), dss_destroy_session(session));
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[DSS_CONNECT] create session failed, conn_sock=%d", (int)pipe->link.uds.sock);
+        if (disconnect_on_create_fail) {
+            cs_disconnect((cs_pipe_t *)pipe);
+        }
+        return CM_ERROR;
+    }
+    if (link_ready_done) {
+        session->proto_type = PROTO_TYPE_GS;
+        status = dss_handshake_core(session);
+    } else {
+        status = dss_handshake(session);
+    }
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[DSS_CONNECT] handshake failed, session=%u, conn_sock=%d, status=%d, err_code=%d", session->id,
+            (int)pipe->link.uds.sock, status, cm_get_error_code());
+        dss_destroy_session(session);
+        return CM_ERROR;
+    }
     status = dss_reactors_add_session(session);
-    DSS_RETURN_IFERR3(status,
-        LOG_RUN_ERR("[DSS_CONNECT]Session:%u socket:%u closed.", session->id, pipe->link.uds.sock),
-        dss_destroy_session(session));
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[DSS_CONNECT]Session:%u socket:%u closed.", session->id, pipe->link.uds.sock);
+        dss_destroy_session(session);
+        return CM_ERROR;
+    }
     LOG_RUN_INF("[DSS_CONNECT]The client has connected, session %u.", session->id);
     return CM_SUCCESS;
+}
+
+static status_t dss_handshake_pool_worker_cb(const cs_pipe_t *pipe)
+{
+    return dss_process_accepted_connection(pipe, CM_TRUE, CM_TRUE);
+}
+
+static status_t dss_lsnr_proc(bool32 is_emerg, uds_lsnr_t *lsnr, cs_pipe_t *pipe)
+{
+    status_t status;
+
+    (void)lsnr;
+    LOG_DEBUG_INF("[DSS_CONNECT] server begin handle connection, conn_sock=%d, is_emerg=%u",
+        (int)pipe->link.uds.sock, (uint32)is_emerg);
+    if (is_emerg) {
+        status = dss_handshake_pool_submit(pipe);
+        if (status != CM_SUCCESS) {
+            return CM_ERROR;
+        }
+        return CM_SUCCESS;
+    }
+    return dss_process_accepted_connection(pipe, CM_FALSE, CM_FALSE);
 }
 
 status_t dss_start_lsnr(dss_instance_t *inst)
@@ -447,7 +489,17 @@ status_t dss_start_lsnr(dss_instance_t *inst)
         return CM_ERROR;
     }
     inst->lsnr.permissions = DSS_USOCKET_PERMSSION;
-    return cs_start_uds_lsnr(&inst->lsnr, dss_lsnr_proc);
+    status_t status = dss_handshake_pool_start(dss_handshake_pool_worker_cb);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("DSS instance failed to start handshake pool!");
+        return CM_ERROR;
+    }
+    status = cs_start_uds_lsnr(&inst->lsnr, dss_lsnr_proc);
+    if (status != CM_SUCCESS) {
+        dss_handshake_pool_stop();
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
 }
 
 status_t dss_write_global_version_to_disk(dss_vg_info_item_t *vg_item, uint32 min_version)

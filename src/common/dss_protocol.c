@@ -186,7 +186,13 @@ status_t dss_write_packet(cs_pipe_t *pipe, dss_packet_t *pack)
         DSS_RETURN_IFERR2(CM_ERROR, CM_THROW_ERROR(ERR_BUFFER_OVERFLOW, pack->head->size, DSS_MAX_PACKET_SIZE));
     }
     status_t status = VIO_SEND_TIMED(pipe, pack->buf, pack->head->size, DSS_DEFAULT_NULL_VALUE);
-    DSS_RETURN_IFERR2(status, CM_THROW_ERROR(ERR_PACKET_SEND, pack->buf_size, pack->head->size, pack->head->size));
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("[DSS_CONNECT] dss write packet failed, sock=%d, cmd=%u, size=%u, errno=%d, errmsg=%s, tid=%u",
+            (int)pipe->link.uds.sock, pack->head->cmd, pack->head->size, cm_get_sock_error(),
+            strerror(cm_get_sock_error()), dss_get_current_thread_id());
+        CM_THROW_ERROR(ERR_PACKET_SEND, pack->buf_size, pack->head->size, pack->head->size);
+        return CM_ERROR;
+    }
     return CM_SUCCESS;
 }
 
@@ -262,12 +268,16 @@ static status_t dss_call_base(cs_pipe_t *pipe, dss_packet_t *req, dss_packet_t *
     bool32 ready = CM_FALSE;
 
     if (dss_write(pipe, req) != CM_SUCCESS) {
-        LOG_RUN_ERR("dss write failed.");
+        LOG_RUN_ERR("[DSS_CONNECT] dss write failed, sock=%d, req_cmd=%u, req_size=%u, errno=%d, errmsg=%s, tid=%u",
+            (int)pipe->link.uds.sock, req->head->cmd, req->head->size, cm_get_sock_error(), strerror(cm_get_sock_error()),
+            dss_get_current_thread_id());
         return CM_ERROR;
     }
 
     if (cs_wait(pipe, CS_WAIT_FOR_READ, pipe->socket_timeout, &ready) != CM_SUCCESS) {
-        LOG_RUN_ERR("cs wait failed.");
+        LOG_RUN_ERR("[DSS_CONNECT] cs wait failed, sock=%d, req_cmd=%u, errno=%d, errmsg=%s, tid=%u",
+            (int)pipe->link.uds.sock, req->head->cmd, cm_get_sock_error(), strerror(cm_get_sock_error()),
+            dss_get_current_thread_id());
         return CM_ERROR;
     }
 
@@ -283,7 +293,10 @@ status_t dss_call_ex(cs_pipe_t *pipe, dss_packet_t *req, dss_packet_t *ack)
 {
     status_t ret = dss_call_base(pipe, req, ack);
     if (ret != CM_SUCCESS) {
-        LOG_RUN_ERR("[DSS] WARNING: dss call server failed, ack command type:%d, will try again.", ack->head->cmd);
+        LOG_RUN_ERR("[DSS_CONNECT] dss call server failed, req_cmd=%u, sock=%d, errno=%d, errmsg=%s, tid=%u, "
+                    "will disconnect and retry",
+            req->head->cmd, (int)pipe->link.uds.sock, cm_get_sock_error(), strerror(cm_get_sock_error()),
+            dss_get_current_thread_id());
         cs_disconnect(pipe);
         cm_fync_logfile();
     }

@@ -25,33 +25,110 @@
 #include "dss_cli_conn.h"
 #include "dss_api_impl.h"
 #include "dss_malloc.h"
+#include "dss_log.h"
+#include "dss_thv.h"
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 char g_dss_inst_path[CM_MAX_PATH_LEN] = {0};
+
+/*
+ * Client connection lifecycle counters (all guarded by conn_latch):
+ *
+ *   conn_inflight         - threads inside dss_try_conn (from entry until return).
+ *   conn_establishing_cnt - UDS connect() succeeded, handshake/init not finished yet.
+ *                           Does NOT mean the connection is ready for IO.
+ *   conn_ready_cnt        - handshake and vol-handle init completed; THV-held connections
+ *                           that may be used by dss_enter_api until dss_conn_release.
+ *
+ * dss_destroy() is deferred until all three counters are zero.
+ * These counters are file-local; do not infer IO readiness from conn_establishing_cnt alone.
+ */
 typedef struct st_dss_conn_info {
-    // protect connections
     latch_t conn_latch;
-    uint32 conn_num;
+    uint32 conn_establishing_cnt;
+    uint32 conn_ready_cnt;
+    uint32 conn_inflight;
     bool32 isinit;
     int32 timeout;  // - 1: never time out
 } dss_conn_info_t;
-static dss_conn_info_t g_dss_conn_info = {{0, 0, 0, 0, 0}, 0, CM_FALSE, 0};
+static dss_conn_info_t g_dss_conn_info = {{0, 0, 0, 0, 0}, 0, 0, 0, CM_FALSE, 0};
+
+static void dss_conn_track_inflight(bool32 inc)
+{
+    cm_latch_x(&g_dss_conn_info.conn_latch, 1, NULL);
+    if (inc) {
+        g_dss_conn_info.conn_inflight++;
+    } else if (g_dss_conn_info.conn_inflight > 0) {
+        g_dss_conn_info.conn_inflight--;
+    }
+    cm_unlatch(&g_dss_conn_info.conn_latch, NULL);
+}
+
+static void dss_try_destroy_client_env(void)
+{
+    bool32 should_destroy = CM_FALSE;
+
+    cm_latch_x(&g_dss_conn_info.conn_latch, 1, NULL);
+    if (g_dss_conn_info.conn_establishing_cnt == 0 && g_dss_conn_info.conn_ready_cnt == 0 &&
+        g_dss_conn_info.conn_inflight == 0) {
+        should_destroy = CM_TRUE;
+    }
+    cm_unlatch(&g_dss_conn_info.conn_latch, NULL);
+    if (should_destroy) {
+        dss_destroy();
+    }
+}
+
+static void dss_conn_on_connect_ok(void)
+{
+    cm_latch_x(&g_dss_conn_info.conn_latch, 1, NULL);
+    g_dss_conn_info.conn_establishing_cnt++;
+    cm_unlatch(&g_dss_conn_info.conn_latch, NULL);
+}
+
+static void dss_conn_on_establish_fail(void)
+{
+    cm_latch_x(&g_dss_conn_info.conn_latch, 1, NULL);
+    if (g_dss_conn_info.conn_establishing_cnt > 0) {
+        g_dss_conn_info.conn_establishing_cnt--;
+    }
+    cm_unlatch(&g_dss_conn_info.conn_latch, NULL);
+}
+
+static void dss_conn_on_establish_ok(void)
+{
+    cm_latch_x(&g_dss_conn_info.conn_latch, 1, NULL);
+    if (g_dss_conn_info.conn_establishing_cnt > 0) {
+        g_dss_conn_info.conn_establishing_cnt--;
+    }
+    g_dss_conn_info.conn_ready_cnt++;
+    cm_unlatch(&g_dss_conn_info.conn_latch, NULL);
+}
+
+static void dss_conn_on_release(void)
+{
+    cm_latch_x(&g_dss_conn_info.conn_latch, 1, NULL);
+    if (g_dss_conn_info.conn_ready_cnt > 0) {
+        g_dss_conn_info.conn_ready_cnt--;
+    }
+    cm_unlatch(&g_dss_conn_info.conn_latch, NULL);
+}
 
 void dss_conn_release(pointer_t thv_addr)
 {
     dss_conn_t *conn = (dss_conn_t *)thv_addr;
     if (conn->pipe.link.uds.closed != CM_TRUE) {
+        LOG_DEBUG_INF("[DSS_CONNECT] client disconnect on release, sock=%d, tid=%u, ready_cnt=%u, establishing_cnt=%u",
+            (int)conn->pipe.link.uds.sock, dss_get_current_thread_id(), g_dss_conn_info.conn_ready_cnt,
+            g_dss_conn_info.conn_establishing_cnt);
         dss_destroy_vol_handle_sync(conn);
         dss_disconnect(conn);
-        cm_latch_x(&g_dss_conn_info.conn_latch, 1, NULL);
-        g_dss_conn_info.conn_num--;
-        if (g_dss_conn_info.conn_num == 0) {
-            dss_destroy();
-        }
-        cm_unlatch(&g_dss_conn_info.conn_latch, NULL);
+        dss_conn_on_release();
+        dss_try_destroy_client_env();
     }
     DSS_FREE_POINT(conn);
 }
@@ -93,28 +170,51 @@ void dss_clt_env_init(void)
 
 status_t dss_try_conn(dss_conn_opt_t *options, dss_conn_t *conn)
 {
-    // establish connection
     status_t status = CM_ERROR;
-    cm_latch_x(&g_dss_conn_info.conn_latch, 1, NULL);
-    do {
-        // avoid buffer leak when disconnect
-        dss_free_packet_buffer(&conn->pack);
-        status = dss_connect(dss_get_inst_path(), options, conn);
-        DSS_BREAK_IFERR2(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client connet server failed."));
-        uint32 max_open_file = DSS_MAX_OPEN_FILES;
-        conn->proto_version = DSS_PROTO_VERSION;
-        status = dss_cli_handshake(conn, max_open_file);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client handshake to server failed."),
-            dss_disconnect(conn));
+    uint32 max_open_file = DSS_MAX_OPEN_FILES;
 
-        status = dss_init_vol_handle_sync(conn);
-        DSS_BREAK_IFERR3(status, LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client init vol handle failed."),
-            dss_disconnect(conn));
+    dss_conn_track_inflight(CM_TRUE);
 
-        g_dss_conn_info.conn_num++;
-    } while (0);
-    cm_unlatch(&g_dss_conn_info.conn_latch, NULL);
-    return status;
+    dss_free_packet_buffer(&conn->pack);
+    status = dss_connect(dss_get_inst_path(), options, conn);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR("[DSS_CONNECT] client try_conn connect failed, path=%s, timeout=%d, tid=%u, status=%d, "
+                    "err_code=%d, errno=%d, errmsg=%s",
+            dss_get_inst_path(), (options != NULL ? options->timeout : g_dss_uds_conn_timeout),
+            dss_get_current_thread_id(), status, cm_get_error_code(), cm_get_os_error(), strerror(cm_get_os_error()));
+        LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client connet server failed.");
+        dss_conn_track_inflight(CM_FALSE);
+        dss_try_destroy_client_env();
+        return CM_ERROR;
+    }
+
+    /* Socket is open; handshake not done yet — not ready for IO. */
+    dss_conn_on_connect_ok();
+
+    conn->proto_version = DSS_PROTO_VERSION;
+    status = dss_cli_handshake(conn, max_open_file);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client handshake to server failed.");
+        dss_disconnect(conn);
+        dss_conn_on_establish_fail();
+        dss_conn_track_inflight(CM_FALSE);
+        dss_try_destroy_client_env();
+        return CM_ERROR;
+    }
+
+    status = dss_init_vol_handle_sync(conn);
+    if (status != CM_SUCCESS) {
+        LOG_RUN_ERR_INHIBIT(LOG_INHIBIT_LEVEL1, "Dss client init vol handle failed.");
+        dss_disconnect(conn);
+        dss_conn_on_establish_fail();
+        dss_conn_track_inflight(CM_FALSE);
+        dss_try_destroy_client_env();
+        return CM_ERROR;
+    }
+
+    dss_conn_on_establish_ok();
+    dss_conn_track_inflight(CM_FALSE);
+    return CM_SUCCESS;
 }
 
 status_t dss_conn_opts_create(pointer_t *result)
@@ -133,6 +233,10 @@ static status_t dss_conn_sync(dss_conn_opt_t *options, dss_conn_t *conn)
 {
     status_t ret = CM_ERROR;
     int timeout = (options != NULL ? options->timeout : g_dss_uds_conn_timeout);
+    uint32 attempt = 0;
+    /* 305 等瞬态 connect 超时：有限次重试，成功路径仍是一次 1s 内完成 */
+    const uint32 max_attempt = 3;
+
     do {
         ret = dss_try_conn(options, conn);
         if (ret == CM_SUCCESS) {
@@ -141,7 +245,17 @@ static status_t dss_conn_sync(dss_conn_opt_t *options, dss_conn_t *conn)
         if (cm_get_os_error() == ENOENT) {
             break;
         }
-    } while (timeout == DSS_CONN_NEVER_TIMEOUT);
+        if (timeout == DSS_CONN_NEVER_TIMEOUT) {
+            continue;
+        }
+        attempt++;
+        if (attempt < max_attempt) {
+            cm_reset_error();
+            LOG_DEBUG_INF("[DSS_CONNECT] client connect retry, attempt=%u, tid=%u, err_code=%d",
+                attempt + 1, dss_get_current_thread_id(), cm_get_error_code());
+        }
+    } while (timeout == DSS_CONN_NEVER_TIMEOUT || attempt < max_attempt);
+
     return ret;
 }
 
@@ -176,9 +290,9 @@ static status_t dss_get_conn(dss_conn_t **conn)
     cm_reset_error();
     dss_clt_env_init();
     if (cm_get_thv(GLOBAL_THV_OBJ0, CM_TRUE, (pointer_t *)conn) != CM_SUCCESS) {
-        LOG_RUN_ERR("[DSS API] ABORT INFO : dss server stoped, application need restart.");
-        cm_fync_logfile();
-        dss_exit(1);
+        LOG_RUN_ERR("[DSS_CONNECT] client create connection failed, tid=%u, err_code=%d, errno=%d",
+            dss_get_current_thread_id(), cm_get_error_code(), cm_get_os_error());
+        return CM_ERROR;
     }
 
 #ifdef ENABLE_DSSTEST
