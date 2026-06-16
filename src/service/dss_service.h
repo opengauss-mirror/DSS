@@ -53,6 +53,7 @@ status_t dss_get_exec_nodeid(dss_session_t *session, uint32 *currid, uint32 *rem
 void dss_wait_session_pause(dss_instance_t *inst);
 void dss_wait_background_pause(dss_instance_t *inst);
 void dss_set_session_running(dss_instance_t *inst, uint32 sid);
+status_t dss_link_ready_ack(cs_pipe_t *pipe);
 status_t dss_diag_proto_type(dss_session_t *session);
 status_t dss_process_handshake_cmd(dss_session_t *session, dss_cmd_type_e cmd);
 status_t dss_process_command(dss_session_t *session);

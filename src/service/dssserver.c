@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
  *
  * DSS is licensed under Mulan PSL v2.
@@ -36,6 +36,7 @@
 #include "dss_errno.h"
 #include "dss_shm.h"
 #include "dss_instance.h"
+#include "dss_handshake_pool.h"
 #include "dss_mes.h"
 #include "dss_blackbox.h"
 #include "dss_zero.h"
@@ -97,6 +98,7 @@ static void dss_close_thread(dss_instance_t *inst)
     cm_latch_x(&inst->uds_lsnr_latch, DSS_DEFAULT_SESSIONID, NULL);
     cs_pause_uds_lsnr(lsnr);
     cm_unlatch(&inst->uds_lsnr_latch, NULL);
+    dss_handshake_pool_stop();
     // close worker thread
     dss_destroy_reactors();
 
