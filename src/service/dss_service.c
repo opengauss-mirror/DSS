@@ -121,27 +121,54 @@ static status_t dss_process_remote(dss_session_t *session)
     return remote_result;
 }
 
-status_t dss_diag_proto_type(dss_session_t *session)
+status_t dss_link_ready_ack(cs_pipe_t *pipe)
 {
     link_ready_ack_t ack;
     uint32 proto_code = 0;
     int32 size;
     errno_t rc_memzero;
-    status_t ret = cs_read_bytes(&session->pipe, (char *)&proto_code, sizeof(proto_code), &size);
-    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("Instance recieve protocol failed, errno:%d.", errno));
+    status_t ret;
+
+    LOG_DEBUG_INF("[DSS_CONNECT] server recv proto begin, sock=%d", (int)pipe->link.uds.sock);
+    ret = cs_read_bytes(pipe, (char *)&proto_code, sizeof(proto_code), &size);
+    if (ret != CM_SUCCESS) {
+        LOG_DEBUG_ERR("[DSS_CONNECT] server recv proto failed, sock=%d, ret=%d, errno=%d, errmsg=%s",
+            (int)pipe->link.uds.sock, ret, cm_get_os_error(), strerror(cm_get_os_error()));
+        LOG_RUN_ERR("Instance recieve protocol failed, errno:%d.", errno);
+        return ret;
+    }
 
     if (size != (int32)sizeof(proto_code) || proto_code != DSS_PROTO_CODE) {
         DSS_THROW_ERROR(ERR_INVALID_PROTOCOL);
+        LOG_DEBUG_ERR("[DSS_CONNECT] server recv invalid proto, sock=%d, size=%d, proto=%u",
+            (int)pipe->link.uds.sock, size, proto_code);
         LOG_RUN_ERR("Instance recieve invalid protocol:%u.", proto_code);
         return CM_ERROR;
     }
 
-    session->proto_type = PROTO_TYPE_GS;
+    LOG_DEBUG_INF("[DSS_CONNECT] server recv proto success, sock=%d, proto=%u", (int)pipe->link.uds.sock, proto_code);
     rc_memzero = memset_s(&ack, sizeof(link_ready_ack_t), 0, sizeof(link_ready_ack_t));
     DSS_SECUREC_RETURN_IF_ERROR(rc_memzero, CM_ERROR);
     ack.endian = (IS_BIG_ENDIAN ? (uint8)1 : (uint8)0);
     ack.version = CS_LOCAL_VERSION;
-    return cs_send_bytes(&session->pipe, (char *)&ack, sizeof(link_ready_ack_t));
+    ret = cs_send_bytes(pipe, (char *)&ack, sizeof(link_ready_ack_t));
+    if (ret != CM_SUCCESS) {
+        LOG_DEBUG_ERR("[DSS_CONNECT] server send link_ready_ack failed, sock=%d, ret=%d, errno=%d, errmsg=%s",
+            (int)pipe->link.uds.sock, ret, cm_get_os_error(), strerror(cm_get_os_error()));
+        return ret;
+    }
+    LOG_DEBUG_INF("[DSS_CONNECT] server send link_ready_ack success, sock=%d", (int)pipe->link.uds.sock);
+    return CM_SUCCESS;
+}
+
+status_t dss_diag_proto_type(dss_session_t *session)
+{
+    status_t status = dss_link_ready_ack(&session->pipe);
+    if (status != CM_SUCCESS) {
+        return status;
+    }
+    session->proto_type = PROTO_TYPE_GS;
+    return CM_SUCCESS;
 }
 
 static void dss_clean_open_files(dss_session_t *session)

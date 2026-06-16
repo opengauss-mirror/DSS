@@ -26,6 +26,8 @@
 #include "dss_param.h"
 #include "dss_lsnr.h"
 
+#define DSS_EMERG_ACCEPT_BATCH 256
+
 static void cs_close_uds_socks(uds_lsnr_t *lsnr)
 {
     uint32 loop;
@@ -48,7 +50,10 @@ static bool32 cs_uds_create_link(socket_t sock_ready, cs_pipe_t *pipe)
     link->sock = (socket_t)accept(sock_ready, SOCKADDR(&link->remote), &link->remote.salen);
 
     if (link->sock == CS_INVALID_SOCKET) {
-        LOG_RUN_INF("Failed to accept connection request, OS error:%d", cm_get_os_error());
+        int32 err = cm_get_os_error();
+        if (err != EAGAIN && err != EWOULDBLOCK) {
+            LOG_RUN_ERR("Failed to accept connection request, OS error:%d", err);
+        }
         return CM_FALSE;
     }
 
@@ -58,12 +63,65 @@ static bool32 cs_uds_create_link(socket_t sock_ready, cs_pipe_t *pipe)
     cs_set_keep_alive(link->sock, CM_TCP_KEEP_IDLE, CM_TCP_KEEP_INTERVAL, CM_TCP_KEEP_COUNT);
     cs_set_linger(link->sock, 1, 1);
     link->closed = CM_FALSE;
+    LOG_DEBUG_INF("[DSS_CONNECT] accept success, listen_sock=%d, conn_sock=%d", (int)sock_ready, (int)link->sock);
     return CM_TRUE;
+}
+
+static status_t cs_handle_accepted_link(uds_lsnr_t *lsnr, socket_t sock_ready, cs_pipe_t *pipe, bool32 is_emerg)
+{
+    status_t status;
+
+    if (lsnr->status != LSNR_STATUS_RUNNING && lsnr->status != LSNR_STATUS_PAUSING) {
+        LOG_RUN_ERR("cs_try_uds_accept error :%u\n", lsnr->status);
+        cs_uds_disconnect(&pipe->link.uds);
+        return CM_ERROR;
+    }
+
+    status = lsnr->action(is_emerg, lsnr, pipe);
+    if (status != CM_SUCCESS) {
+        LOG_DEBUG_ERR("[DSS_CONNECT] listener action failed, listen_sock=%d, conn_sock=%d, status=%d",
+            (int)sock_ready, (int)pipe->link.uds.sock, status);
+        cs_uds_disconnect(&pipe->link.uds);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static void cs_try_accept_on_socket(uds_lsnr_t *lsnr, socket_t sock_ready, cs_pipe_t *pipe)
+{
+    bool32 is_emerg = (sock_ready == lsnr->socks[0]);
+    cs_pipe_t batch[DSS_EMERG_ACCEPT_BATCH];
+    uint32 batch_count = 0;
+    uint32 i;
+
+    if (!is_emerg) {
+        if (cs_uds_create_link(sock_ready, pipe)) {
+            (void)cs_handle_accepted_link(lsnr, sock_ready, pipe, CM_FALSE);
+        }
+        return;
+    }
+
+    /* emerg: 先批量 accept，再统一 dispatch，避免串行 ack 阻塞后续 accept */
+    while (batch_count < DSS_EMERG_ACCEPT_BATCH) {
+        if (!cs_uds_create_link(sock_ready, pipe)) {
+            break;
+        }
+        if (lsnr->status != LSNR_STATUS_RUNNING && lsnr->status != LSNR_STATUS_PAUSING) {
+            cs_uds_disconnect(&pipe->link.uds);
+            break;
+        }
+        batch[batch_count++] = *pipe;
+    }
+
+    for (i = 0; i < batch_count; i++) {
+        if (cs_handle_accepted_link(lsnr, sock_ready, &batch[i], CM_TRUE) != CM_SUCCESS) {
+            continue;
+        }
+    }
 }
 
 static void cs_try_uds_accept(uds_lsnr_t *lsnr, cs_pipe_t *pipe)
 {
-    bool32 is_emerg = CM_FALSE;
     socket_t sock_ready;
     int32 ret;
     int32 loop = 0;
@@ -80,22 +138,10 @@ static void cs_try_uds_accept(uds_lsnr_t *lsnr, cs_pipe_t *pipe)
         }
         return;
     }
-    status_t status = CM_ERROR;
+
     for (loop = 0; loop < ret; loop++) {
         sock_ready = evnts[loop].data.fd;
-        if (!cs_uds_create_link(sock_ready, pipe)) {
-            continue;
-        }
-        if (lsnr->status != LSNR_STATUS_RUNNING && lsnr->status != LSNR_STATUS_PAUSING) {
-            LOG_RUN_ERR("cs_try_uds_accept error :%u\n", lsnr->status);
-            cs_uds_disconnect(&pipe->link.uds);
-            continue;
-        }
-        is_emerg = (sock_ready == lsnr->socks[0]);
-        status = lsnr->action(is_emerg, lsnr, pipe);
-        if (status != CM_SUCCESS) {
-            cs_uds_disconnect(&pipe->link.uds);
-        }
+        cs_try_accept_on_socket(lsnr, sock_ready, pipe);
     }
 }
 
@@ -160,6 +206,9 @@ static status_t cs_create_uds_socks(uds_lsnr_t *lsnr)
         if (cs_uds_create_listener(lsnr->names[loop], &lsnr->socks[loop], (uint16)lsnr->permissions) != CM_SUCCESS) {
             cs_close_uds_socks(lsnr);
             return CM_ERROR;
+        }
+        if (lsnr->sock_count == 0) {
+            (void)cs_set_io_mode(lsnr->socks[loop], CM_TRUE, CM_FALSE);
         }
         (void)cm_atomic_inc(&lsnr->sock_count);
     }
