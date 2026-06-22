@@ -558,22 +558,11 @@ status_t dss_connect(const char *server_locator, dss_conn_opt_t *options, dss_co
     conn->pipe.link.uds.closed = CM_TRUE;
     conn->pipe.type = CS_TYPE_DOMAIN_SCOKET;
     conn->session = NULL;
-    {
-        uint32 tid = dss_get_current_thread_id();
-        LOG_DEBUG_INF("[DSS_CONNECT] client begin connect, server=%s, connect_timeout=%dms, tid=%u", server_locator,
-            conn->pipe.connect_timeout, tid);
-        status_t ret = cs_connect_ex(server_locator, &conn->pipe, NULL, (const char *)(server_locator + uds.len),
-            (const char *)CM_NULL_TEXT.str);
-        if (ret != CM_SUCCESS) {
-            LOG_DEBUG_ERR("[DSS_CONNECT] client connect failed, server=%s, connect_timeout=%dms, tid=%u, ret=%d, "
-                        "err_code=%d, errno=%d, errmsg=%s",
-                server_locator, conn->pipe.connect_timeout, tid, ret, cm_get_error_code(), cm_get_os_error(),
-                strerror(cm_get_os_error()));
-            LOG_DEBUG_ERR("connect server failed, uds path:%s", server_locator);
-            return ret;
-        }
-        LOG_DEBUG_INF("[DSS_CONNECT] client connect success, server=%s, sock=%d, tid=%u", server_locator,
-            (int)conn->pipe.link.uds.sock, tid);
+    status_t ret = cs_connect_ex(server_locator, &conn->pipe, NULL, (const char *)(server_locator + uds.len),
+        (const char *)CM_NULL_TEXT.str);
+    if (ret != CM_SUCCESS) {
+        LOG_DEBUG_ERR("connect server failed, uds path:%s", server_locator);
+        return ret;
     }
     dss_init_packet(&conn->pack, conn->pipe.options);
 
@@ -586,8 +575,6 @@ void dss_disconnect(dss_conn_t *conn)
 {
     dss_set_thv_run_ctx_item(DSS_THV_RUN_CTX_ITEM_SESSION, NULL);
     if (conn->flag == CM_TRUE) {
-        LOG_DEBUG_INF("[DSS_CONNECT] client disconnect, sock=%d, tid=%u, closed=%u", (int)conn->pipe.link.uds.sock,
-            dss_get_current_thread_id(), (uint32)conn->pipe.link.uds.closed);
         cs_disconnect(&conn->pipe);
         dss_free_packet_buffer(&conn->pack);
         conn->flag = CM_FALSE;
