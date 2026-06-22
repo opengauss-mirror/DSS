@@ -187,9 +187,6 @@ status_t dss_write_packet(cs_pipe_t *pipe, dss_packet_t *pack)
     }
     status_t status = VIO_SEND_TIMED(pipe, pack->buf, pack->head->size, DSS_DEFAULT_NULL_VALUE);
     if (status != CM_SUCCESS) {
-        LOG_DEBUG_ERR("[DSS_CONNECT] dss write packet failed, sock=%d, cmd=%u, size=%u, errno=%d, errmsg=%s, tid=%u",
-            (int)pipe->link.uds.sock, pack->head->cmd, pack->head->size, cm_get_sock_error(),
-            strerror(cm_get_sock_error()), dss_get_current_thread_id());
         CM_THROW_ERROR(ERR_PACKET_SEND, pack->buf_size, pack->head->size, pack->head->size);
         return CM_ERROR;
     }
