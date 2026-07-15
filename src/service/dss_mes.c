@@ -1,26 +1,26 @@
 /*
-* Copyright (c) 2022 Huawei Technologies Co.,Ltd.
-*
-* DSS is licensed under Mulan PSL v2.
-* You can use this software according to the terms and conditions of the Mulan PSL v2.
-* You may obtain a copy of Mulan PSL v2 at:
-*
-*          http://license.coscl.org.cn/MulanPSL2
-*
-* THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
-* EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
-* MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-* See the Mulan PSL v2 for more details.
-* -------------------------------------------------------------------------
-*
-* dss_mes.c
-*
-*
-* IDENTIFICATION
-*    src/service/dss_mes.c
-*
-* -------------------------------------------------------------------------
-*/
+ * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
+ *
+ * DSS is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *
+ *          http://license.coscl.org.cn/MulanPSL2
+ *
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ * -------------------------------------------------------------------------
+ *
+ * dss_mes.c
+ *
+ *
+ * IDENTIFICATION
+ *    src/service/dss_mes.c
+ *
+ * -------------------------------------------------------------------------
+ */
 
 #include "cm_types.h"
 #include "cm_error.h"
@@ -35,6 +35,12 @@
 #include "dss_thv.h"
 #include "dss_fault_injection.h"
 #include "dss_param_verify.h"
+
+#ifndef WIN32
+static __thread char *g_thv_read_buf = NULL;
+#else
+__declspec(thread) char *g_thv_read_buf = NULL;
+#endif
 
 void dss_proc_broadcast_req(dss_session_t *session, mes_msg_t *msg);
 void dss_proc_syb2active_req(dss_session_t *session, mes_msg_t *msg);
@@ -546,20 +552,8 @@ static status_t dss_broadcast_msg(dss_bcast_req_head_t *req, dss_bcast_community
         new_added_inst_map = (~last_inst_inst_map & cur_work_inst_map);
         cm_sleep(DSS_BROADCAST_MSG_TRY_SLEEP_TIME);
         i++;
-    } while (i < DSS_BROADCAST_MSG_TRY_MAX);
+    } while (i < DSS_BROADCAST_MSG_TRY_MAX && ret != ERR_DSS_UNSUPPORTED_CMD);
     if (ret != ERR_DSS_UNSUPPORTED_CMD) {
-        // If some instances failed in broadcast, wait one mes timeout and recheck online instances.
-        // If the failed instances are offline after recheck, do not treat it as broadcast error.
-        if (snd_err_inst_map != 0) {
-            cm_sleep(param->mes_wait_timeout);
-            uint64 online_inst_map = dss_get_inst_work_status();
-            uint64 still_fail_inst_map = snd_err_inst_map & online_inst_map;
-            if (still_fail_inst_map == 0) {
-                LOG_RUN_INF("[MES] broadcast failed inst is offline after recheck, ignore broadcast error.");
-                cm_reset_error();
-                return CM_SUCCESS;
-            }
-        }
         cm_reset_error();
         DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Failed to broadcast msg with try.");
     }
@@ -572,7 +566,7 @@ static bool32 dss_check_srv_status(mes_msg_t *msg)
     dss_message_head_t *dss_head = (dss_message_head_t *)(msg->buffer);
     if (g_dss_instance.status != DSS_STATUS_OPEN && dss_head->dss_cmd != DSS_CMD_ACK_JOIN_CLUSTER) {
         LOG_DEBUG_INF("[MES] Could not exec remote req for the dssserver is not open or msg not join cluster, src "
-                    "node:%u, wait try again.",
+                      "node:%u, wait try again.",
             (uint32)(dss_head->src_inst));
         return CM_FALSE;
     }
@@ -691,7 +685,6 @@ static void dss_process_message(uint32 work_idx, ruid_type ruid, mes_msg_t *msg)
     dss_init_packet(&session->send_pack, CM_FALSE);
     dss_init_set(&session->send_pack, dss_head->msg_proto_ver);
     session->proto_version = dss_head->msg_proto_ver;
-    session->is_remote_req = CM_TRUE;
     LOG_DEBUG_INF(
         "[MES] dss process message, cmd is %u, proto_version is %u.", dss_head->dss_cmd, dss_head->msg_proto_ver);
     dss_processor_t *processor = &g_dss_processors[dss_head->dss_cmd];
@@ -772,8 +765,8 @@ static status_t dss_set_mes_message_pool(unsigned long long recv_msg_buf_size, m
     }
     // want fourth buf_pool smallest
     double fourth_ratio = ((double)(minimum_info.buf_pool_minimum_size[DSS_MSG_BUFFER_NO_3]) /
-                            (mpa->total_size - minimum_info.metadata_size)) +
-                        DBL_EPSILON;
+                              (mpa->total_size - minimum_info.metadata_size)) +
+                          DBL_EPSILON;
     mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_3].proportion = fourth_ratio;
 
     double left_ratio = 1 - fourth_ratio;
@@ -1100,7 +1093,7 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
         ret = dss_get_mes_response(dss_head.ruid, &msg, timeout);
         DSS_RETURN_IFERR2(
             ret, LOG_RUN_ERR("dss server receive msg from remote failed, src node:%u, dst node:%u, cmd:%u.", currtid,
-                    remoteid, session->recv_pack.head->cmd));
+                     remoteid, session->recv_pack.head->cmd));
         // 4. attach remote execution result
         ack_head = (dss_message_head_t *)msg.buffer;
         if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {
@@ -1332,18 +1325,15 @@ int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, uint32 ver
     if (req->size % DSS_DISK_UNIT_SIZE != 0) {
         return DSS_READ4STANDBY_ERR;
     }
-    if (session->thv_read_buf == NULL) {
-        session->thv_read_buf = (char *)cm_malloc_align(DSS_DISK_UNIT_SIZE, DSS_LOADDISK_BUFFER_SIZE);
-        if (session->thv_read_buf == NULL) {
+    if (g_thv_read_buf == NULL) {
+        g_thv_read_buf = (char *)cm_malloc_align(DSS_DISK_UNIT_SIZE, DSS_LOADDISK_BUFFER_SIZE);
+        if (g_thv_read_buf == NULL) {
             DSS_RETURN_IFERR2(
                 DSS_READ4STANDBY_ERR, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_LOADDISK_BUFFER_SIZE, "g_thv_read_buf"));
         }
     }
-    (void)memset_s(session->thv_read_buf, DSS_LOADDISK_BUFFER_SIZE, 0, DSS_LOADDISK_BUFFER_SIZE);
     dss_lock_vg_mem_and_shm_ex_s(session, req->vg_name);
-    int32 ret = dss_batch_load_core(session, req, session->thv_read_buf, version);
-    dss_common_block_t *print = (dss_common_block_t*)session->thv_read_buf;
-    LOG_DEBUG_INF("[MES] dss_batch_load Exec load disk req, type: %u, id:%s, version:%llu.", print->type, dss_display_metaid(print->id), print->version);
+    int32 ret = dss_batch_load_core(session, req, g_thv_read_buf, version);
     dss_unlock_vg_mem_and_shm_ex(session, req->vg_name);
     return ret;
 }
@@ -1649,10 +1639,6 @@ status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_pat
         DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid get ft block ack msg vg_name is not exist.");
         return CM_ERROR;
     }
-    if (output_info == NULL) {
-        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid param output_info, output_info is null.");
-        return CM_ERROR;
-    }
     if (output_info->item != NULL) {
         *output_info->item = ack_vg_item;
     }
@@ -1673,10 +1659,6 @@ status_t dss_get_node_by_path_remote(dss_session_t *session, const char *dir_pat
         }
     } else {
         block_id.item = 0;
-        if (output_info->item == NULL) {
-            DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Invalid param output_info->item, output_info->item is null.");
-            return CM_ERROR;
-        }
         ret = dss_refresh_block_in_shm(
             session, *output_info->item, block_id, DSS_BLOCK_TYPE_FT, ack.block, (char **)&shm_block);
         DSS_RETURN_IF_ERROR(ret);
@@ -1734,10 +1716,6 @@ static status_t dss_proc_get_ft_block_req_core(
         dss_unlock_vg_mem_and_shm(session, *vg_item);
         *vg_item = file_vg_item;
         dss_lock_vg_mem_and_shm_s_force(session, *vg_item);
-    }
-    if (out_node == NULL) {
-        LOG_RUN_ERR("Invalid param out_node, out_node is null.");
-        return CM_ERROR;
     }
     ack->node_id = out_node->id;
     DSS_LOG_DEBUG_OP("[MES] Req out node, v:%u,au:%llu,block:%u,item:%u,type:%d,path:%s.", out_node->id.volume,

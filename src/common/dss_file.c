@@ -1224,12 +1224,7 @@ status_t dss_get_ftid_by_path(dss_session_t *session, const char *path, ftid_t *
     dss_vg_info_item_t *vg_item = NULL;
     char name[DSS_MAX_NAME_LEN];
     CM_RETURN_IFERR(dss_find_vg_by_dir(path, name, &vg_item));
-    // use force mode to avoid deadlock with IX lock during truncate broadcast
-    if (session != NULL && session->is_remote_req) {
-        dss_lock_vg_mem_and_shm_s_force(session, vg_item);
-    } else {
-        dss_lock_vg_mem_and_shm_s(session, vg_item);
-    }
+    dss_lock_vg_mem_and_shm_s(session, vg_item);
     status_t status = CM_ERROR;
     gft_node_t *node = dss_get_gft_node_by_path(session, vg_item, path, dir_vg_item);
     if (node != NULL) {
@@ -2047,9 +2042,6 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     CM_ASSERT(name != NULL);
     LOG_DEBUG_INF("[FT][ALLOC] Begin to allocate ftnode for file:%s, parent name:%s, %s", name, parent_node->name,
         dss_display_metaid(parent_node->id));
-#ifdef OPENGAUSS
-    CM_ASSERT(!DSS_STANDBY_CLUSTER_XLOG_VG(vg_item->id));
-#endif
     status_t status;
     ftid_t id;
     dss_ctrl_t *dss_ctrl = vg_item->dss_ctrl;
@@ -2069,7 +2061,17 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
         return NULL;
     }
     dss_check_ft_node_free(node);
-
+    if (type == GFT_PATH) {
+        node->items.count = 0;
+        dss_set_auid(&node->items.first, DSS_INVALID_64);
+        dss_set_auid(&node->items.last, DSS_INVALID_64);
+    } else {  // FILE or LINK
+        if (dss_init_ft_node_entry(session, vg_item, node) != CM_SUCCESS) {
+            dss_rollback_mem_update(session, vg_item);
+            LOG_DEBUG_ERR("[FT][ALLOC] Failed to get alloc fs block when allocating file table node %s.", node->name);
+            return NULL;
+        }
+    }
     node->type = type;
     node->parent = parent_node->id;
     dss_ft_block_t *block = dss_get_ft_by_node(node);
@@ -2096,17 +2098,6 @@ gft_node_t *dss_alloc_ft_node(dss_session_t *session, dss_vg_info_item_t *vg_ite
     DSS_LOG_DEBUG_OP("[FT][ALLOC] Succeed to allocate ftnode: %s for file:%s.", dss_display_metaid(node->id), name);
     LOG_DEBUG_INF("[FT][ALLOC] Parent node name:%s, %s", parent_node->name, dss_display_metaid(parent_node->id));
     dss_init_alloc_ft_node(gft, node, node_flag, parent_node);
-    if (type == GFT_PATH) {
-        node->items.count = 0;
-        dss_set_auid(&node->items.first, DSS_INVALID_64);
-        dss_set_auid(&node->items.last, DSS_INVALID_64);
-    } else {  // FILE or LINK
-        if (dss_init_ft_node_entry(session, vg_item, node) != CM_SUCCESS) {
-            dss_rollback_mem_update(session, vg_item);
-            LOG_DEBUG_ERR("[FT][ALLOC] Failed to get alloc fs block when allocating file table node %s.", node->name);
-            return NULL;
-        }
-    }
     dss_ft_node_link_list(session, vg_item, parent_node, id, node, gft);
     /*
      * release lock after we flush the ft block to disk, to avoid this concurrency scenario:
@@ -3012,7 +3003,7 @@ status_t dss_extend_batch_inner(dss_session_t *session, dss_vg_info_item_t *vg_i
         cm_fync_logfile();
         dss_exit(1);
     }
-    LOG_DEBUG_INF("Finish to batch extend ftid:%s to size:%llu from offset:%llu, end offset:%llu.",
+    LOG_DEBUG_INF("Finish to batch extend ftid:%s to size:%llu from offset:%llu with au_size:%llu.",
         dss_display_metaid(node->id), node->size, (uint64)align_beg, align_end);
 
     *finish = CM_TRUE;
@@ -4102,10 +4093,9 @@ void dss_init_root_fs_block(dss_ctrl_t *dss_ctrl)
     dss_set_auid(&block_root->free.last, CM_INVALID_ID64);
 }
 
-status_t dss_refresh_volume(
-    dss_session_t *session, const char *name_str, uint32 vgid, uint32 volumeid, bool32 is_force)
+status_t dss_refresh_volume(dss_session_t *session, const char *name_str, uint32 vgid, uint32 volumeid)
 {
-    if ((!DSS_STANDBY_CLUSTER && !is_force) && dss_is_readwrite()) {
+    if (!DSS_STANDBY_CLUSTER && dss_is_readwrite()) {
         DSS_ASSERT_LOG(dss_need_exec_local(), "only masterid %u can be readwrite.", dss_get_master_id());
         return CM_SUCCESS;
     }
@@ -4116,17 +4106,7 @@ status_t dss_refresh_volume(
     }
     status_t status;
     dss_enter_shm_x(session, vg_item);
-#ifdef OPENGAUSS
-    if (is_force) {
-        status = dss_init_volume_by_force(vg_item, is_force);
-        LOG_RUN_INF("Success to dss_init_volume %s by_force.", vg_item->vg_name);
-    } else {
-        status = dss_check_volume(vg_item, volumeid);
-    }
-#else
     status = dss_check_volume(vg_item, volumeid);
-#endif
-
     dss_leave_shm(session, vg_item);
     return status;
 }
@@ -4246,12 +4226,7 @@ status_t dss_update_file_written_size(
     uint64 written_size = (uint64)(offset + size);
 
     gft_node_t *node = NULL;
-    // use force mode to avoid deadlock with IX lock during truncate broadcast
-    if (session != NULL && session->is_remote_req) {
-        dss_lock_vg_mem_and_shm_s_force(session, vg_item);
-    } else {
-        dss_lock_vg_mem_and_shm_s(session, vg_item);
-    }
+    dss_lock_vg_mem_and_shm_s(session, vg_item);
 
     status_t status = dss_get_gft_node_with_cache(session, vg_item, fid, ftid, &node);
     if (status != CM_SUCCESS || node == NULL) {
@@ -4428,7 +4403,6 @@ status_t dss_block_data_oper(char *op_desc, bool32 is_write, dss_vg_info_item_t 
         DSS_RETURN_IFERR2(
             status, LOG_DEBUG_ERR("open volume %s failed.", vg_item->dss_ctrl->volume.defs[block_id.volume].name));
         vg_item->volume_handle[block_id.volume] = volume;
-        vg_item->volume_handle[block_id.volume].name_p = vg_item->volume_handle[block_id.volume].name;
     }
 
     int64 vol_offset = dss_get_au_offset(vg_item, block_id) + (uint32)offset;

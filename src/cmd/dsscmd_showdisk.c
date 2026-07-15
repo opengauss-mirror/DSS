@@ -672,7 +672,7 @@ status_t dss_printf_dss_file_table_block(
 
     status = dss_read_volume(&volume, offset, block, (int32)DSS_BLOCK_SIZE);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to read file %lld.\n", volume.handle);
+        DSS_PRINT_ERROR("Failed to read file %d.\n", volume.handle);
         dss_close_volume(&volume);
         DSS_FREE_POINT(block);
         return status;
@@ -715,7 +715,7 @@ static status_t printf_dss_file_space_block(
 
     status = dss_read_volume(&volume, offset, block, (int32)DSS_FILE_SPACE_BLOCK_SIZE);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to read file %lld.\n", volume.handle);
+        DSS_PRINT_ERROR("Failed to read file %d.\n", volume.handle);
         dss_close_volume(&volume);
         DSS_FREE_POINT(block);
         return status;
@@ -743,7 +743,7 @@ static status_t printf_dss_fs_aux_block(
         result, DSS_THROW_ERROR(ERR_ALLOC_MEMORY, DSS_FS_AUX_SIZE, "block"), dss_close_volume(&volume));
     status = dss_read_volume(&volume, offset, block, (int32)DSS_FS_AUX_SIZE);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to read file %lld.\n", volume.handle);
+        DSS_PRINT_ERROR("Failed to read file %d.\n", volume.handle);
         dss_close_volume(&volume);
         DSS_FREE_POINT(block);
         return status;
@@ -781,7 +781,7 @@ static status_t dss_get_block_type(
 
     status = dss_read_volume(&volume, offset, block_type, (int32)core_ctrl->au_size);
     if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to read file %lld.\n", volume.handle);
+        DSS_PRINT_ERROR("Failed to read file %d.\n", volume.handle);
         dss_close_volume(&volume);
         DSS_FREE_POINT(block_type);
         return status;

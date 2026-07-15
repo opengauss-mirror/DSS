@@ -58,13 +58,13 @@ static config_item_t g_dss_params[] = {
         NULL, NULL, NULL},
 #ifdef OPENGAUSS
     {"_LOG_BACKUP_FILE_COUNT", CM_TRUE, ATTR_NONE, "20", NULL, NULL, "-", "[0,1024]", "GS_TYPE_INTEGER", NULL, 4,
-        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_log_backup_file_count, dss_notify_log_backup_file_count, NULL, NULL},
+        EFFECT_REBOOT, CFG_INS, dss_verify_log_backup_file_count, dss_notify_log_backup_file_count, NULL, NULL},
 #else
     {"_LOG_BACKUP_FILE_COUNT", CM_TRUE, ATTR_NONE, "20", NULL, NULL, "-", "[0,128]", "GS_TYPE_INTEGER", NULL, 4,
-        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_log_backup_file_count, dss_notify_log_backup_file_count, NULL, NULL},
+        EFFECT_REBOOT, CFG_INS, dss_verify_log_backup_file_count, dss_notify_log_backup_file_count, NULL, NULL},
 #endif
     {"_LOG_MAX_FILE_SIZE", CM_TRUE, ATTR_NONE, "256M", NULL, NULL, "-", "[1M,4G]", "GS_TYPE_INTEGER", NULL, 5,
-        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_log_file_size, dss_notify_log_file_size, NULL, NULL},
+        EFFECT_REBOOT, CFG_INS, dss_verify_log_file_size, dss_notify_log_file_size, NULL, NULL},
     {"INST_ID", CM_TRUE, ATTR_READONLY, "0", NULL, NULL, "-", "[0,64)", "GS_TYPE_INTEGER", NULL, 6, EFFECT_REBOOT,
         CFG_INS, NULL, NULL, NULL, NULL},
     {"STORAGE_MODE", CM_TRUE, ATTR_READONLY, "DISK", NULL, NULL, "-", "CLUSTER_RAID,RAID,DISK", "GS_TYPE_VARCHAR", NULL,
@@ -79,13 +79,13 @@ static config_item_t g_dss_params[] = {
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 #ifdef OPENGAUSS
     {"_AUDIT_BACKUP_FILE_COUNT", CM_TRUE, ATTR_NONE, "20", NULL, NULL, "-", "[0,1024]", "GS_TYPE_INTEGER", NULL, 12,
-        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_audit_backup_file_count, dss_notify_audit_backup_file_count, NULL, NULL},
+        EFFECT_REBOOT, CFG_INS, dss_verify_audit_backup_file_count, dss_notify_audit_backup_file_count, NULL, NULL},
 #else
     {"_AUDIT_BACKUP_FILE_COUNT", CM_TRUE, ATTR_NONE, "20", NULL, NULL, "-", "[0,128]", "GS_TYPE_INTEGER", NULL, 12,
-        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_audit_backup_file_count, dss_notify_audit_backup_file_count, NULL, NULL},
+        EFFECT_REBOOT, CFG_INS, dss_verify_audit_backup_file_count, dss_notify_audit_backup_file_count, NULL, NULL},
 #endif
     {"_AUDIT_MAX_FILE_SIZE", CM_TRUE, ATTR_NONE, "256M", NULL, NULL, "-", "[1M,4G]", "GS_TYPE_INTEGER", NULL, 13,
-        EFFECT_IMMEDIATELY, CFG_INS, dss_verify_audit_file_size, dss_notify_audit_file_size, NULL, NULL},
+        EFFECT_REBOOT, CFG_INS, dss_verify_audit_file_size, dss_notify_audit_file_size, NULL, NULL},
     {"_LOG_FILE_PERMISSIONS", CM_TRUE, ATTR_READONLY, "600", NULL, NULL, "-", "[600-777]", "GS_TYPE_INTEGER", NULL, 14,
         EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
     {"_LOG_PATH_PERMISSIONS", CM_TRUE, ATTR_READONLY, "700", NULL, NULL, "-", "[700-777]", "GS_TYPE_INTEGER", NULL, 15,
@@ -198,12 +198,6 @@ static config_item_t g_dss_params[] = {
     {"DELAY_CLEAN_SEARCH_FRAGMENT", CM_TRUE, ATTR_NONE, "128", NULL, NULL, "-", "[0,1024]", "GS_TYPE_INTEGER", NULL, 62,
         EFFECT_IMMEDIATELY, CFG_INS, dss_verify_delay_clean_search_fragment, dss_notify_delay_clean_search_fragment,
         NULL, NULL},
-    {"LINUX_MULTIBUS", CM_TRUE, ATTR_READONLY, "FALSE", NULL, NULL, "-", "[FALSE,TRUE]", "GS_TYPE_BOOLEAN", NULL, 63,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    {"MPATHPERSIST_DSS_PATH", CM_TRUE, ATTR_READONLY, "", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 64,
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
-    { "DISK_TYPE", CM_TRUE, CM_FALSE, "NORMAL", NULL, NULL, "-", "-", "GS_TYPE_VARCHAR", NULL, 47, 
-        EFFECT_REBOOT, CFG_INS, NULL, NULL, NULL, NULL},
 };
 
 static const char *g_dss_config_file = (const char *)"dss_inst.ini";
@@ -590,22 +584,6 @@ static status_t dss_load_xlog_vg_id(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
-static status_t dss_load_disk_type(dss_config_t *inst_cfg)
-{
-    char *value = cm_get_config_value(&inst_cfg->config, "DISK_TYPE");
-    
-    if (strcmp(value, "NORMAL") == 0) {
-        inst_cfg->params.disk_type = DISK_NORMAL;
-        LOG_RUN_INF("The disk_type is normal.");
-    } else if (strcmp(value, "VTABLE") == 0) {
-        inst_cfg->params.disk_type = DISK_VTABLE;
-        LOG_RUN_INF("The disk_type is vtable.");
-    } else {
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid DISK_TYPE"));
-    }
-    return CM_SUCCESS;
-}
-
 status_t dss_set_cfg_dir(const char *home, dss_config_t *inst_cfg)
 {
     char home_realpath[DSS_MAX_PATH_BUFFER_SIZE];
@@ -874,36 +852,6 @@ static status_t dss_load_space_usage(dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
-static status_t dss_load_linux_multibus(dss_config_t *inst_cfg)
-{
-    char *value = cm_get_config_value(&inst_cfg->config, "LINUX_MULTIBUS");
-    if (cm_str_equal_ins(value, "TRUE")) {
-        inst_cfg->params.linux_multibus = CM_TRUE;
-    } else if (cm_str_equal_ins(value, "FALSE")) {
-        inst_cfg->params.linux_multibus = CM_FALSE;
-    } else {
-        DSS_PRINT_RUN_ERROR("failed to load params, invalid param LINUX_MULTIBUS.\n");
-        DSS_RETURN_IFERR2(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "LINUX_MULTIBUS"));
-    }
-    LOG_DEBUG_INF("LINUX_MULTIBUS status: %u. (0: off, 1: on)", inst_cfg->params.linux_multibus);
-    return CM_SUCCESS;
-}
-
-static status_t dss_load_mpathpersist_dss_path(dss_config_t *inst_cfg)
-{
-    int32 ret;
-    char *value = cm_get_config_value(&inst_cfg->config, "MPATHPERSIST_DSS_PATH");
-    ret = snprintf_s(inst_cfg->params.mpathpersist_dss_path, sizeof(inst_cfg->params.mpathpersist_dss_path),
-        sizeof(inst_cfg->params.mpathpersist_dss_path) - 1, "%s", value);
-    if (ret == -1 || (inst_cfg->params.linux_multibus && ret == 0)) {
-        DSS_PRINT_RUN_ERROR("failed to load params, invalid MPATHPERSIST_DSS_PATH.\n");
-        DSS_RETURN_IFERR2(
-            CM_ERROR, DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "failed to load params, invalid MPATHPERSIST_DSS_PATH"));
-    }
-    LOG_DEBUG_INF("MPATHPERSIST_DSS_PATH : %s.", inst_cfg->params.mpathpersist_dss_path);
-    return CM_SUCCESS;
-}
-
 status_t dss_load_config(dss_config_t *inst_cfg)
 {
     char file_name[DSS_FILE_NAME_BUFFER_SIZE];
@@ -954,9 +902,7 @@ status_t dss_load_config(dss_config_t *inst_cfg)
     }
 #endif
     CM_RETURN_IFERR(dss_load_space_usage(inst_cfg));
-    CM_RETURN_IFERR(dss_load_linux_multibus(inst_cfg));
-    CM_RETURN_IFERR(dss_load_mpathpersist_dss_path(inst_cfg));
-    CM_RETURN_IFERR(dss_load_disk_type(inst_cfg));
+
     return CM_SUCCESS;
 }
 

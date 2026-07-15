@@ -121,54 +121,27 @@ static status_t dss_process_remote(dss_session_t *session)
     return remote_result;
 }
 
-status_t dss_link_ready_ack(cs_pipe_t *pipe)
+status_t dss_diag_proto_type(dss_session_t *session)
 {
     link_ready_ack_t ack;
     uint32 proto_code = 0;
     int32 size;
     errno_t rc_memzero;
-    status_t ret;
-
-    LOG_DEBUG_INF("[DSS_CONNECT] server recv proto begin, sock=%d", (int)pipe->link.uds.sock);
-    ret = cs_read_bytes(pipe, (char *)&proto_code, sizeof(proto_code), &size);
-    if (ret != CM_SUCCESS) {
-        LOG_DEBUG_ERR("[DSS_CONNECT] server recv proto failed, sock=%d, ret=%d, errno=%d, errmsg=%s",
-            (int)pipe->link.uds.sock, ret, cm_get_os_error(), strerror(cm_get_os_error()));
-        LOG_RUN_ERR("Instance recieve protocol failed, errno:%d.", errno);
-        return ret;
-    }
+    status_t ret = cs_read_bytes(&session->pipe, (char *)&proto_code, sizeof(proto_code), &size);
+    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("Instance recieve protocol failed, errno:%d.", errno));
 
     if (size != (int32)sizeof(proto_code) || proto_code != DSS_PROTO_CODE) {
         DSS_THROW_ERROR(ERR_INVALID_PROTOCOL);
-        LOG_DEBUG_ERR("[DSS_CONNECT] server recv invalid proto, sock=%d, size=%d, proto=%u",
-            (int)pipe->link.uds.sock, size, proto_code);
         LOG_RUN_ERR("Instance recieve invalid protocol:%u.", proto_code);
         return CM_ERROR;
     }
 
-    LOG_DEBUG_INF("[DSS_CONNECT] server recv proto success, sock=%d, proto=%u", (int)pipe->link.uds.sock, proto_code);
+    session->proto_type = PROTO_TYPE_GS;
     rc_memzero = memset_s(&ack, sizeof(link_ready_ack_t), 0, sizeof(link_ready_ack_t));
     DSS_SECUREC_RETURN_IF_ERROR(rc_memzero, CM_ERROR);
     ack.endian = (IS_BIG_ENDIAN ? (uint8)1 : (uint8)0);
     ack.version = CS_LOCAL_VERSION;
-    ret = cs_send_bytes(pipe, (char *)&ack, sizeof(link_ready_ack_t));
-    if (ret != CM_SUCCESS) {
-        LOG_DEBUG_ERR("[DSS_CONNECT] server send link_ready_ack failed, sock=%d, ret=%d, errno=%d, errmsg=%s",
-            (int)pipe->link.uds.sock, ret, cm_get_os_error(), strerror(cm_get_os_error()));
-        return ret;
-    }
-    LOG_DEBUG_INF("[DSS_CONNECT] server send link_ready_ack success, sock=%d", (int)pipe->link.uds.sock);
-    return CM_SUCCESS;
-}
-
-status_t dss_diag_proto_type(dss_session_t *session)
-{
-    status_t status = dss_link_ready_ack(&session->pipe);
-    if (status != CM_SUCCESS) {
-        return status;
-    }
-    session->proto_type = PROTO_TYPE_GS;
-    return CM_SUCCESS;
+    return cs_send_bytes(&session->pipe, (char *)&ack, sizeof(link_ready_ack_t));
 }
 
 static void dss_clean_open_files(dss_session_t *session)
@@ -596,14 +569,10 @@ static status_t dss_process_handshake(dss_session_t *session)
     text_t data;
     cm_str2text(server_home, &data);
     data.len++;  // for keeping the '\0'
-    bool32 isvtable = g_dss_instance.inst_cfg.params.disk_type == DISK_VTABLE ? DSS_TRUE : DSS_FALSE;
     DSS_RETURN_IF_ERROR(dss_put_text(&session->send_pack, &data));
     DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, session->objectid));
     if (session->proto_version >= DSS_VERSION_2) {
         DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, server_pid));
-    }
-    if (session->proto_version >= DSS_VERSION_4) {
-        DSS_RETURN_IF_ERROR(dss_put_int32(&session->send_pack, isvtable));
     }
     return CM_SUCCESS;
 }
@@ -612,17 +581,9 @@ static status_t dss_process_refresh_volume(dss_session_t *session)
 {
     uint32 volumeid;
     uint32 vgid;
-    bool32 is_force = CM_FALSE;
     dss_init_get(&session->recv_pack);
     DSS_RETURN_IF_ERROR(dss_get_int32(&session->recv_pack, (int32 *)&volumeid));
-    
-#ifdef OPENGAUSS
-    if (volumeid == CM_INVALID_ID32) {
-        is_force = true;
-    }
-#endif
-
-    if (volumeid >= DSS_MAX_VOLUMES && !is_force) {
+    if (volumeid >= DSS_MAX_VOLUMES) {
         LOG_DEBUG_ERR("Volume id:%u overflow.", volumeid);
         return CM_ERROR;
     }
@@ -632,7 +593,7 @@ static status_t dss_process_refresh_volume(dss_session_t *session)
     DSS_RETURN_IF_ERROR(dss_set_audit_resource(
         session->audit_info.resource, DSS_AUDIT_MODIFY, "vg_name:%s, volume_id:%u", name_str, volumeid));
 
-    return dss_refresh_volume(session, name_str, vgid, volumeid, is_force);
+    return dss_refresh_volume(session, name_str, vgid, volumeid);
 }
 
 static status_t dss_process_rename(dss_session_t *session)
@@ -1018,7 +979,7 @@ void dss_wait_session_pause(dss_instance_t *inst)
     LOG_DEBUG_INF("Begin to set session paused.");
     cs_pause_uds_lsnr(lsnr);
     dss_pause_reactors();
-    while (cm_atomic_get(&inst->active_sessions) != 0) {
+    while (inst->active_sessions != 0) {
         cm_sleep(1);
     }
     LOG_DEBUG_INF("Succeed to pause all session.");
@@ -1374,61 +1335,58 @@ static status_t dss_process_enable_upgrades(dss_session_t *session)
 
 static dss_cmd_hdl_t g_dss_cmd_handle[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     // modify
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_MKDIR)] = {DSS_CMD_MKDIR, dss_process_mkdir, CM_TRUE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_RMDIR)] = {DSS_CMD_RMDIR, dss_process_rmdir, CM_TRUE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_OPEN_DIR)] = {DSS_CMD_OPEN_DIR, dss_process_open_dir, CM_FALSE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_CLOSE_DIR)] = {DSS_CMD_CLOSE_DIR, dss_process_close_dir, CM_FALSE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_OPEN_FILE)] = {DSS_CMD_OPEN_FILE, dss_process_open_file, CM_FALSE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_CLOSE_FILE)] = {DSS_CMD_CLOSE_FILE, dss_process_close_file, CM_FALSE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_CREATE_FILE)] = {DSS_CMD_CREATE_FILE, dss_process_create_file, CM_TRUE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_DELETE_FILE)] = {DSS_CMD_DELETE_FILE, dss_process_delete_file, CM_TRUE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXTEND_FILE)] = {DSS_CMD_EXTEND_FILE, dss_process_extending_file, CM_TRUE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ATTACH_FILE)] = {DSS_CMD_ATTACH_FILE, NULL, CM_FALSE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_DETACH_FILE)] = {DSS_CMD_DETACH_FILE, NULL, CM_FALSE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_RENAME_FILE)] = {DSS_CMD_RENAME_FILE, dss_process_rename, CM_TRUE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_REFRESH_FILE)] = {DSS_CMD_REFRESH_FILE, dss_process_refresh_file, CM_FALSE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_TRUNCATE_FILE)] = {DSS_CMD_TRUNCATE_FILE, dss_process_truncate_file, CM_TRUE, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_MKDIR)] = {DSS_CMD_MKDIR, dss_process_mkdir, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_RMDIR)] = {DSS_CMD_RMDIR, dss_process_rmdir, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_OPEN_DIR)] = {DSS_CMD_OPEN_DIR, dss_process_open_dir, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_CLOSE_DIR)] = {DSS_CMD_CLOSE_DIR, dss_process_close_dir, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_OPEN_FILE)] = {DSS_CMD_OPEN_FILE, dss_process_open_file, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_CLOSE_FILE)] = {DSS_CMD_CLOSE_FILE, dss_process_close_file, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_CREATE_FILE)] = {DSS_CMD_CREATE_FILE, dss_process_create_file, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_DELETE_FILE)] = {DSS_CMD_DELETE_FILE, dss_process_delete_file, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXTEND_FILE)] = {DSS_CMD_EXTEND_FILE, dss_process_extending_file, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ATTACH_FILE)] = {DSS_CMD_ATTACH_FILE, NULL, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_DETACH_FILE)] = {DSS_CMD_DETACH_FILE, NULL, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_RENAME_FILE)] = {DSS_CMD_RENAME_FILE, dss_process_rename, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_REFRESH_FILE)] = {DSS_CMD_REFRESH_FILE, dss_process_refresh_file, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_TRUNCATE_FILE)] = {DSS_CMD_TRUNCATE_FILE, dss_process_truncate_file, NULL, CM_TRUE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_REFRESH_FILE_TABLE)] = {DSS_CMD_REFRESH_FILE_TABLE, dss_process_refresh_file_table,
-        CM_FALSE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_FALLOCATE_FILE)] = {DSS_CMD_FALLOCATE_FILE, dss_process_fallocate_file, CM_TRUE,
-        CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ADD_VOLUME)] = {DSS_CMD_ADD_VOLUME, dss_process_add_volume, CM_TRUE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_REMOVE_VOLUME)] = {DSS_CMD_REMOVE_VOLUME, dss_process_remove_volume, CM_TRUE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_REFRESH_VOLUME)] = {DSS_CMD_REFRESH_VOLUME, dss_process_refresh_volume,
-        CM_FALSE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_LOAD_CTRL)] = {DSS_CMD_LOAD_CTRL, dss_process_loadctrl, CM_FALSE, CM_TRUE},
+        NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_FALLOCATE_FILE)] = {DSS_CMD_FALLOCATE_FILE, dss_process_fallocate_file, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ADD_VOLUME)] = {DSS_CMD_ADD_VOLUME, dss_process_add_volume, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_REMOVE_VOLUME)] = {DSS_CMD_REMOVE_VOLUME, dss_process_remove_volume, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_REFRESH_VOLUME)] = {DSS_CMD_REFRESH_VOLUME, dss_process_refresh_volume, NULL,
+        CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_LOAD_CTRL)] = {DSS_CMD_LOAD_CTRL, dss_process_loadctrl, NULL, CM_FALSE},
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_UPDATE_WRITTEN_SIZE)] = {DSS_CMD_UPDATE_WRITTEN_SIZE,
-        dss_process_update_file_written_size, CM_TRUE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_STOP_SERVER)] = {DSS_CMD_STOP_SERVER, dss_process_stop_server, CM_FALSE, CM_FALSE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SETCFG)] = {DSS_CMD_SETCFG, dss_process_setcfg, CM_FALSE, CM_FALSE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SYMLINK)] = {DSS_CMD_SYMLINK, dss_process_symlink, CM_TRUE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_UNLINK)] = {DSS_CMD_UNLINK, dss_process_unlink, CM_TRUE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SET_MAIN_INST)] = {DSS_CMD_SET_MAIN_INST, dss_process_set_main_inst, CM_FALSE,
-        CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SWITCH_LOCK)] = {DSS_CMD_SWITCH_LOCK, dss_process_switch_lock, CM_FALSE, CM_FALSE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_DISABLE_GRAB_LOCK)] = {DSS_CMD_DISABLE_GRAB_LOCK, dss_process_disable_grab_lock,
-        CM_FALSE, CM_FALSE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ENABLE_GRAB_LOCK)] = {DSS_CMD_ENABLE_GRAB_LOCK, dss_process_enable_grab_lock,
-        CM_FALSE, CM_FALSE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_HOTPATCH)] = {DSS_CMD_HOTPATCH, dss_process_hotpatch, CM_FALSE, CM_FALSE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ENABLE_UPGRADES)] = {DSS_CMD_ENABLE_UPGRADES, dss_process_enable_upgrades, CM_TRUE,
+        dss_process_update_file_written_size, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_STOP_SERVER)] = {DSS_CMD_STOP_SERVER, dss_process_stop_server, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SETCFG)] = {DSS_CMD_SETCFG, dss_process_setcfg, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SYMLINK)] = {DSS_CMD_SYMLINK, dss_process_symlink, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_UNLINK)] = {DSS_CMD_UNLINK, dss_process_unlink, NULL, CM_TRUE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SET_MAIN_INST)] = {DSS_CMD_SET_MAIN_INST, dss_process_set_main_inst, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_SWITCH_LOCK)] = {DSS_CMD_SWITCH_LOCK, dss_process_switch_lock, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_DISABLE_GRAB_LOCK)] = {DSS_CMD_DISABLE_GRAB_LOCK, dss_process_disable_grab_lock, NULL,
+        CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ENABLE_GRAB_LOCK)] = {DSS_CMD_ENABLE_GRAB_LOCK, dss_process_enable_grab_lock, NULL,
+        CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_HOTPATCH)] = {DSS_CMD_HOTPATCH, dss_process_hotpatch, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_ENABLE_UPGRADES)] = {DSS_CMD_ENABLE_UPGRADES, dss_process_enable_upgrades, NULL,
         CM_TRUE},
     // query
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_HANDSHAKE)] = {DSS_CMD_HANDSHAKE, dss_process_handshake, CM_FALSE, CM_FALSE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST)] = {DSS_CMD_EXIST, dss_process_exist, CM_FALSE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_READLINK)] = {DSS_CMD_READLINK, dss_process_readlink, CM_FALSE, CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_FTID_BY_PATH)] = {DSS_CMD_GET_FTID_BY_PATH, dss_process_get_ftid_by_path, CM_TRUE,
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_HANDSHAKE)] = {DSS_CMD_HANDSHAKE, dss_process_handshake, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_EXIST)] = {DSS_CMD_EXIST, dss_process_exist, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_READLINK)] = {DSS_CMD_READLINK, dss_process_readlink, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_FTID_BY_PATH)] = {DSS_CMD_GET_FTID_BY_PATH, dss_process_get_ftid_by_path, NULL,
         CM_TRUE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GETCFG)] = {DSS_CMD_GETCFG, dss_process_getcfg, CM_FALSE, CM_FALSE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_INST_STATUS)] = {DSS_CMD_GET_INST_STATUS, dss_process_get_inst_status, CM_FALSE,
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GETCFG)] = {DSS_CMD_GETCFG, dss_process_getcfg, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_INST_STATUS)] = {DSS_CMD_GET_INST_STATUS, dss_process_get_inst_status, NULL,
         CM_FALSE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_TIME_STAT)] = {DSS_CMD_GET_TIME_STAT, dss_process_get_time_stat, CM_FALSE,
-        CM_FALSE},
-    [DSS_CMD_TYPE_OFFSET(DSS_CMD_QUERY_HOTPATCH)] = {DSS_CMD_QUERY_HOTPATCH, dss_process_query_hotpatch, CM_FALSE,
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_TIME_STAT)] = {DSS_CMD_GET_TIME_STAT, dss_process_get_time_stat, NULL, CM_FALSE},
+    [DSS_CMD_TYPE_OFFSET(DSS_CMD_QUERY_HOTPATCH)] = {DSS_CMD_QUERY_HOTPATCH, dss_process_query_hotpatch, NULL,
         CM_FALSE},
 };
 
-dss_cmd_hdl_t g_dss_remote_handle = {DSS_CMD_EXEC_REMOTE, dss_process_remote, CM_FALSE, CM_TRUE};
+dss_cmd_hdl_t g_dss_remote_handle = {DSS_CMD_EXEC_REMOTE, dss_process_remote, NULL, CM_FALSE};
 
 static dss_cmd_hdl_t *dss_get_cmd_handle(int32 cmd)
 {
@@ -1436,26 +1394,6 @@ static dss_cmd_hdl_t *dss_get_cmd_handle(int32 cmd)
         return &g_dss_cmd_handle[DSS_CMD_TYPE_OFFSET(cmd)];
     }
     return NULL;
-}
-
-static inline bool32 dss_is_cmd_access_meta(dss_cmd_type_e cmd)
-{
-    DSS_ASSERT_LOG(cmd >= DSS_CMD_BEGIN && cmd < DSS_CMD_END, "cmd %d is invalid", cmd);
-    return g_dss_cmd_handle[DSS_CMD_TYPE_OFFSET(cmd)].is_access_meta;
-}
-
-static inline void dss_inc_active_sessions(dss_session_t *session)
-{
-    atomic_t sessions = cm_atomic_inc(&g_dss_instance.active_sessions);
-    LOG_DEBUG_INF(
-        "session:%u inc active_sessions to:%lld for cmd:%hhu", session->id, sessions, session->recv_pack.head->cmd);
-}
-
-static inline void dss_dec_active_sessions(dss_session_t *session)
-{
-    atomic_t sessions = cm_atomic_dec(&g_dss_instance.active_sessions);
-    LOG_DEBUG_INF(
-        "session:%u dec active_sessions to:%lld for cmd:%hhu", session->id, sessions, session->recv_pack.head->cmd);
 }
 
 static status_t dss_check_proto_version(dss_session_t *session)
@@ -1474,45 +1412,16 @@ static status_t dss_check_proto_version(dss_session_t *session)
     return CM_SUCCESS;
 }
 
-static status_t dss_exec_cmd_inner(dss_session_t *session, bool32 local_req, dss_cmd_type_e cmd)
-{
-    dss_cmd_hdl_t *handle = dss_get_cmd_handle(cmd);
-    if (!dss_is_cmd_access_meta(cmd)) {
-        return handle->proc(session);
-    }
-    
-    if (g_dss_instance.status == DSS_STATUS_RECOVERY || g_dss_instance.status == DSS_STATUS_SWITCH) {
-        DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
-        return CM_ERROR;
-    }
-
-    status_t ret;
-    dss_inc_active_sessions(session);
-    if (g_dss_instance.status == DSS_STATUS_RECOVERY || g_dss_instance.status == DSS_STATUS_SWITCH) {
-        dss_dec_active_sessions(session);
-        DSS_THROW_ERROR(ERR_DSS_RECOVER_CAUSE_BREAK);
-        return CM_ERROR;
-    }
-    if (!dss_need_exec_remote(handle->exec_on_active, local_req)) {
-        ret = handle->proc(session);
-    } else {
-        ret = g_dss_remote_handle.proc(session);
-    }
-    dss_dec_active_sessions(session);
-    return ret;
-}
-
 static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
 {
-    dss_cmd_type_e cmd = (dss_cmd_type_e)session->recv_pack.head->cmd;
-    DSS_LOG_DEBUG_OP("Receive command:%d, server status is %d, is_remote_req is %d.",
-        cmd, (int32)g_dss_instance.status, (int32)session->is_remote_req);
+    DSS_LOG_DEBUG_OP(
+        "Receive command:%d, server status is %d.", session->recv_pack.head->cmd, (int32)g_dss_instance.status);
     // remote req need process for proto_version
     session->proto_version = dss_get_version(&session->recv_pack);
-    dss_cmd_hdl_t *handle = dss_get_cmd_handle(cmd);
+    dss_cmd_hdl_t *handle = dss_get_cmd_handle(session->recv_pack.head->cmd);
 
     if ((handle == NULL) || (handle->proc == NULL)) {
-        LOG_DEBUG_ERR("the req cmd: %d is not valid.", cmd);
+        LOG_DEBUG_ERR("the req cmd: %d is not valid.", session->recv_pack.head->cmd);
         // In rolling upgrade scenarios, the source node needs to detect error code.
         return ERR_DSS_UNSUPPORTED_CMD;
     }
@@ -1520,7 +1429,22 @@ static status_t dss_exec_cmd(dss_session_t *session, bool32 local_req)
     status_t status;
     do {
         cm_reset_error();
-        status = dss_exec_cmd_inner(session, local_req, cmd);
+        dss_inc_active_sessions(session);
+        if (dss_can_cmd_type_no_open(session->recv_pack.head->cmd)) {
+            status = handle->proc(session);
+        } else if (!dss_need_exec_remote(handle->exec_on_active, local_req)) {
+            // if cur node is standby, may reset it to recovery to do recovery
+            if (g_dss_instance.status != DSS_STATUS_OPEN && g_dss_instance.status != DSS_STATUS_PREPARE) {
+                LOG_RUN_INF("Req forbided by recovery for cmd:%u", (uint32)session->recv_pack.head->cmd);
+                dss_dec_active_sessions(session);
+                cm_sleep(DSS_PROCESS_REMOTE_INTERVAL);
+                continue;
+            }
+            status = handle->proc(session);
+        } else {
+            status = g_dss_remote_handle.proc(session);
+        }
+        dss_dec_active_sessions(session);
         if (status != CM_SUCCESS &&
             (cm_get_error_code() == ERR_DSS_RECOVER_CAUSE_BREAK || cm_get_error_code() == ERR_DSS_MASTER_CHANGE)) {
             LOG_RUN_INF("Req breaked by error %d for cmd:%u", cm_get_error_code(), session->recv_pack.head->cmd);
@@ -1554,15 +1478,6 @@ status_t dss_process_command(dss_session_t *session)
 
     cm_reset_error();
     if (cs_wait(&session->pipe, CS_WAIT_FOR_READ, DSS_WAIT_TIMEOUT, &ready) != CM_SUCCESS) {
-        int32 err_code = 0;
-        const char *err_msg = NULL;
-        cm_get_error(&err_code, &err_msg);
-        LOG_RUN_WAR("[DSS_DISCONNECT] session %u cs_wait failed, err_code=%d, err_msg=%s, "
-            "sock=%d, pid=%llu, process=%s, connect_time=%llu",
-            session->id, err_code, err_msg ? err_msg : "NULL",
-            session->pipe.link.uds.sock,
-            session->cli_info.cli_pid, session->cli_info.process_name,
-            session->cli_info.connect_time);
         session->is_closed = CM_TRUE;
         return CM_ERROR;
     }

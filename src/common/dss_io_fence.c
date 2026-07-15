@@ -27,7 +27,6 @@
 #include <fcntl.h>
 #include "dss_log.h"
 #include "dss_io_fence.h"
-#include "dss_vtable.h"
 
 void dss_destroy_ptlist(ptlist_t *ptlist)
 {
@@ -38,51 +37,6 @@ void dss_destroy_ptlist(ptlist_t *ptlist)
         DSS_FREE_POINT(ptlist->items[i]);
     }
     cm_destroy_ptlist(ptlist);
-}
-
-/*
- * Format registered keys array for logging
- * Returns a static buffer, not thread-safe (only for logging)
- */
-static const char *dss_format_reg_keys(iof_reg_in_t *reg_info)
-{
-    static char key_buf[512];
-    int32 pos = 0;
-    errno_t errcode;
-
-    if (reg_info == NULL || reg_info->key_count == 0) {
-        return "[]";
-    }
-
-    errcode = snprintf_s(key_buf + pos, sizeof(key_buf) - pos, sizeof(key_buf) - pos - 1, "[");
-    if (errcode < 0) {
-        return "[format_error]";
-    }
-    pos = (int32)strlen(key_buf);
-
-    for (int32 i = 0; i < reg_info->key_count && pos < (int32)(sizeof(key_buf) - 20); i++) {
-        if (i > 0) {
-            errcode = snprintf_s(key_buf + pos, sizeof(key_buf) - pos, sizeof(key_buf) - pos - 1, ",");
-            if (errcode < 0) {
-                break;
-            }
-            pos = (int32)strlen(key_buf);
-        }
-        errcode = snprintf_s(key_buf + pos, sizeof(key_buf) - pos, sizeof(key_buf) - pos - 1, "%lld", reg_info->reg_keys[i]);
-        if (errcode < 0) {
-            break;
-        }
-        pos = (int32)strlen(key_buf);
-    }
-
-    if (reg_info->key_count > 0 && pos < (int32)(sizeof(key_buf) - 2)) {
-        errcode = snprintf_s(key_buf + pos, sizeof(key_buf) - pos, sizeof(key_buf) - pos - 1, "]");
-        if (errcode < 0) {
-            return "[format_error]";
-        }
-    }
-
-    return key_buf;
 }
 
 bool32 dss_iof_is_register(char *dev, int64 rk, ptlist_t *regs)
@@ -113,35 +67,22 @@ bool32 dss_iof_is_register(char *dev, int64 rk, ptlist_t *regs)
     return CM_FALSE;
 }
 
-status_t dss_iof_kick_one_volume(dss_config_t *inst_cfg, char *dev, int64 rk, int64 rk_kick, ptlist_t *regs)
+status_t dss_iof_kick_one_volume(char *dev, int64 rk, int64 rk_kick, ptlist_t *regs)
 {
 #ifdef WIN32
 #else
     status_t status = CM_SUCCESS;
     iof_reg_out_t reg_info;
     bool32 is_reg = CM_FALSE;
-    char log_home[CM_MAX_LOG_HOME_LEN] = {0};
 
     reg_info.rk = rk;
     reg_info.rk_kick = rk_kick;
     reg_info.dev = dev;
     reg_info.type = RESERV_TYPE_REGISTER_WRITE;
-    reg_info.linux_multibus = dss_get_linux_multibus(inst_cfg);
-    if (reg_info.linux_multibus) {
-        reg_info.mpathpersist_dss_path = dss_get_mpathpersist_dss_path(inst_cfg);
-        status = dss_init_log_home_ex(inst_cfg, log_home, "LOG_HOME", "log");
-        if (status != CM_SUCCESS) {
-            return CM_ERROR;
-        }
-        reg_info.log_path = log_home;
-    } else {
-        reg_info.mpathpersist_dss_path = NULL;
-        reg_info.log_path = NULL;
-    }
 
     is_reg = dss_iof_is_register(dev, rk, regs);
     if (!is_reg) {
-        LOG_RUN_INF("[FENCE][KICK] Need to register node to dev before kick other nodes, dev %s, org rk %lld.",
+        LOG_DEBUG_INF("[FENCE][KICK] Need to register node to dev before kick other nodes, dev %s, org rk %lld.",
             reg_info.dev, reg_info.rk);
         DSS_THROW_ERROR_EX(ERR_DSS_VOLUME_FENCE_CHECK_COND, "Need to register node to dev before kick other nodes");
         return CM_ERROR;
@@ -149,24 +90,10 @@ status_t dss_iof_kick_one_volume(dss_config_t *inst_cfg, char *dev, int64 rk, in
 
     is_reg = dss_iof_is_register(dev, rk_kick, regs);
     if (!is_reg) {
-        LOG_RUN_INF("[FENCE][KICK] The node to be kicked is not registered on the target volume, dev %s, rk_kick %lld.",
-            dev, rk_kick);
+        LOG_DEBUG_INF(
+            "[FENCE][KICK] The node to be kicked is not registered on the target volume, dev %s, rk_kick %lld.", dev,
+            rk_kick);
         return CM_SUCCESS;
-    }
-
-    /* Query device state BEFORE PREEMPT for comparison */
-    iof_reg_in_t pre_preempt_state;
-    errno_t errcode = memset_s(&pre_preempt_state, sizeof(pre_preempt_state), 0, sizeof(pre_preempt_state));
-    securec_check_ret(errcode);
-    pre_preempt_state.dev = dev;
-    status_t inq_status = cm_iof_inql(&pre_preempt_state);
-    if (inq_status == CM_SUCCESS) {
-        LOG_RUN_INF("[FENCE][KICK][BEFORE_PREEMPT] dev=%s, resk=%lld, generation=%u, key_count=%d, "
-                    "reg_keys=[%s], rk=%lld, rk_kick=%lld",
-                    dev, pre_preempt_state.resk, pre_preempt_state.generation, pre_preempt_state.key_count,
-                    dss_format_reg_keys(&pre_preempt_state), rk, rk_kick);
-    } else {
-        LOG_RUN_WAR("[FENCE][KICK][BEFORE_PREEMPT] Failed to query device state, dev=%s, err=%d", dev, inq_status);
     }
 
     status = cm_iof_kick(&reg_info);
@@ -175,46 +102,16 @@ status_t dss_iof_kick_one_volume(dss_config_t *inst_cfg, char *dev, int64 rk, in
         reg_info.type = RESERV_TYPE_REGISTER_ACCESS;
         status = cm_iof_kick(&reg_info);
         if (status != CM_SUCCESS) {
-            LOG_RUN_INF("[FENCE][KICK] kick dev failed, org rk %lld, org sark %lld, dev %s.", reg_info.rk,
+            LOG_DEBUG_ERR("[FENCE][KICK] kick dev failed, org rk %lld, org sark %lld, dev %s.", reg_info.rk,
                 reg_info.rk_kick, reg_info.dev);
             return status;
         }
     }
-    LOG_RUN_INF("[FENCE][KICK][PREEMPT_SUCC] PREEMPT succeeded, rk=%lld, rk_kick=%lld, dev=%s, type=%d",
-                (long long)CM_OUT_SCSI_RK(&reg_info), (long long)CM_OUT_SCSI_SARK(&reg_info),
-                dev, reg_info.type);
-
-    /* Query device state AFTER PREEMPT (before explicit RESERVE) to check if device auto-transferred reservation */
-    iof_reg_in_t post_preempt_state;
-    errcode = memset_s(&post_preempt_state, sizeof(post_preempt_state), 0, sizeof(post_preempt_state));
-    securec_check_ret(errcode);
-    post_preempt_state.dev = dev;
-    inq_status = cm_iof_inql(&post_preempt_state);
-    if (inq_status == CM_SUCCESS) {
-        LOG_RUN_INF("[FENCE][KICK][AFTER_PREEMPT] dev=%s, resk=%lld, generation=%u, key_count=%d, "
-                    "reg_keys=[%s], rk=%lld",
-                    dev, (long long)post_preempt_state.resk, post_preempt_state.generation,
-                    post_preempt_state.key_count, dss_format_reg_keys(&post_preempt_state), rk);
-        if (post_preempt_state.resk == CM_OUT_SCSI_RK(&reg_info)) {
-            LOG_RUN_INF("[FENCE][KICK][AFTER_PREEMPT] Device automatically transferred reservation to rk=%lld (expected behavior)",
-                        (long long)CM_OUT_SCSI_RK(&reg_info));
-        } else if (post_preempt_state.resk == 0) {
-            LOG_RUN_WAR("[FENCE][KICK][AFTER_PREEMPT] Device cleared reservation (resk=0) instead of transferring. "
-                        "Will attempt explicit RESERVE.");
-        } else {
-            LOG_RUN_WAR("[FENCE][KICK][AFTER_PREEMPT] Device reservation held by unexpected key: resk=%lld, expected=%lld",
-                        (long long)post_preempt_state.resk, (long long)CM_OUT_SCSI_RK(&reg_info));
-        }
-    } else {
-        LOG_RUN_WAR("[FENCE][KICK][AFTER_PREEMPT] Failed to query device state, dev=%s, err=%d", dev, inq_status);
-    }
-
 #endif
     return CM_SUCCESS;
 }
 
-status_t dss_iof_kick_all_volumes(
-    dss_config_t *inst_cfg, dss_vg_info_t *dss_vg_info, int64 rk, int64 rk_kick, ptlist_t *reg_list)
+status_t dss_iof_kick_all_volumes(dss_vg_info_t *dss_vg_info, int64 rk, int64 rk_kick, ptlist_t *reg_list)
 {
 #ifdef WIN32
 #else
@@ -223,10 +120,10 @@ status_t dss_iof_kick_all_volumes(
 
     for (uint32 i = 0; i < dss_vg_info->group_num; i++) {
         dss_vg_info_item_t *item = &dss_vg_info->volume_group[i];
-        status = dss_iof_kick_one_volume(inst_cfg, item->entry_path, rk, rk_kick, reg_list);
+        status = dss_iof_kick_one_volume(item->entry_path, rk, rk_kick, reg_list);
         if (status != CM_SUCCESS) {
             // continue to kick next volume
-            LOG_RUN_INF("[FENCE][KICK] kick entry dev failed, dev %s.", item->entry_path);
+            LOG_DEBUG_ERR("[FENCE][KICK] kick entry dev failed, dev %s.", item->entry_path);
         }
 
         // volume_attrs[0] is the sys dev
@@ -235,10 +132,10 @@ status_t dss_iof_kick_all_volumes(
                 continue;
             }
 
-            status = dss_iof_kick_one_volume(inst_cfg, item->dss_ctrl->volume.defs[j].name, rk, rk_kick, reg_list);
+            status = dss_iof_kick_one_volume(item->dss_ctrl->volume.defs[j].name, rk, rk_kick, reg_list);
             if (status != CM_SUCCESS) {
                 // continue to kick next volume
-                LOG_RUN_INF("[FENCE][KICK] kick data dev failed, dev %s.", item->entry_path);
+                LOG_DEBUG_ERR("[FENCE][KICK] kick data dev failed, dev %s.", item->entry_path);
             }
         }
     }
@@ -313,124 +210,59 @@ status_t dss_iof_kick_all(dss_vg_info_t *vg_info, dss_config_t *inst_cfg, int64 
 {
 #ifdef WIN32
 #else
+    status_t status;
+    ptlist_t reg_list;
+
     if (rk_kick == inst_cfg->params.inst_id) {
-        LOG_RUN_INF(
+        LOG_DEBUG_ERR(
             "[FENCE][KICK] Can't kick current node, rk_kick %lld, inst id %lld.", rk_kick, inst_cfg->params.inst_id);
         return CM_ERROR;
     }
 
-    if (inst_cfg->params.disk_type == DISK_VTABLE) {
-        DSS_RETURN_IF_ERROR(dss_init_vtable());
-        for (uint32 i = 0; i < vg_info->group_num; i++) {
-            for (uint32 j = 0; j < DSS_MAX_VOLUMES; j++) {
-                if (vg_info->volume_group[i].dss_ctrl->volume.defs[j].flag == VOLUME_FREE) {
-                    continue;
-                }
-                DSS_RETURN_IF_ERROR(VtableFence(inst_cfg->params.nodes_list.nodes[rk_kick],
-                    vtable_name_to_ptid(vg_info->volume_group[i].dss_ctrl->volume.defs[j].name),
-                    VT_INSERT_BL, VT_PARTIAL_OPERATE));
-            }
-        }
-    } else {
-        status_t status;
-        ptlist_t reg_list;
+    bool32 result = (bool32)(rk == inst_cfg->params.inst_id);
+    DSS_RETURN_IF_FALSE2(
+        result, LOG_DEBUG_ERR("[FENCE][KICK] Must use inst id of current node as rk, rk %lld, inst id %lld.", rk,
+                    inst_cfg->params.inst_id));
 
-        bool32 result = (bool32)(rk == inst_cfg->params.inst_id);
-        DSS_RETURN_IF_FALSE2(
-            result, LOG_RUN_INF("[FENCE][KICK] Must use inst id of current node as rk, rk %lld, inst id %lld.", rk,
-                        inst_cfg->params.inst_id));
+    cm_ptlist_init(&reg_list);
+    status = dss_iof_inql_regs(vg_info, &reg_list);
+    DSS_RETURN_IFERR3(status, dss_destroy_ptlist(&reg_list), LOG_DEBUG_ERR("[FENCE][KICK] Inquiry regs info failed."));
 
-        cm_ptlist_init(&reg_list);
-        status = dss_iof_inql_regs(vg_info, &reg_list);
-        DSS_RETURN_IFERR3(status, dss_destroy_ptlist(&reg_list), LOG_RUN_INF("[FENCE][KICK] Inquiry regs info failed."));
+    status = dss_iof_kick_all_volumes(vg_info, rk, rk_kick, &reg_list);
+    DSS_RETURN_IFERR2(status, dss_destroy_ptlist(&reg_list));
 
-        status = dss_iof_kick_all_volumes(inst_cfg, vg_info, rk, rk_kick, &reg_list);
-        DSS_RETURN_IFERR2(status, dss_destroy_ptlist(&reg_list));
-
-        dss_destroy_ptlist(&reg_list);
-    }
+    dss_destroy_ptlist(&reg_list);
 #endif
     LOG_RUN_INF("IOfence kick all succ.");
+
     return CM_SUCCESS;
 }
 
-status_t dss_iof_register_single(int64 rk, char *dev, dss_config_t *inst_cfg)
+status_t dss_iof_register_single(int64 rk, char *dev)
 {
-    status_t ret = CM_SUCCESS;
-    if (inst_cfg->params.disk_type == DISK_VTABLE) {
-        DSS_RETURN_IF_ERROR(dss_init_vtable());
-        ret = VtableFence(inst_cfg->params.nodes_list.nodes[rk],
-            vtable_name_to_ptid(dev), VT_DELETE_BL, VT_PARTIAL_OPERATE);
-        if (ret != CM_SUCCESS) {
-            LOG_RUN_ERR("Failed to register vtable, rk: %lld, dev: %s, ret: %d.", rk, dev, ret);
-            return CM_ERROR;
-        }
-        LOG_RUN_INF("Register vtable success, rk: %lld, dev: %s.", rk, dev);
-        return CM_SUCCESS;
-    } else {
-        iof_reg_out_t reg_info;
-        char log_home[CM_MAX_LOG_HOME_LEN] = {0};
-        reg_info.rk = rk;
-        reg_info.dev = dev;
-        reg_info.type = RESERV_TYPE_REGISTER_WRITE;
-        reg_info.linux_multibus = dss_get_linux_multibus(inst_cfg);
-        if (reg_info.linux_multibus) {
-            reg_info.mpathpersist_dss_path = dss_get_mpathpersist_dss_path(inst_cfg);
-            ret = dss_init_log_home_ex(inst_cfg, log_home, "LOG_HOME", "log");
-            if (ret != CM_SUCCESS) {
-                return CM_ERROR;
-            }
-            reg_info.log_path = log_home;
-        } else {
-            reg_info.mpathpersist_dss_path = NULL;
-            reg_info.log_path = NULL;
-        }
-
-        ret = cm_iof_register(&reg_info);
-        if (ret != CM_SUCCESS) {
-            if (ret != CM_IOF_ERR_DUP_OP) {
-                LOG_RUN_ERR("Failed to register, rk: %lld, dev: %s, ret: %d.", rk, dev, ret);
-                return CM_ERROR;
-            }
-            LOG_RUN_INF("Register conflict, rk: %lld, dev: %s", rk, dev);
-        }
-        LOG_RUN_INF("Register success, rk: %lld, dev: %s.", rk, dev);
-        return CM_SUCCESS;
-    }
-}
-
-status_t dss_iof_unregister_single(int64 rk, char *dev, dss_config_t *inst_cfg)
-{
-    status_t ret = CM_SUCCESS;
-    if (inst_cfg->params.disk_type == DISK_VTABLE) {
-        DSS_RETURN_IF_ERROR(dss_init_vtable());
-        ret = VtableFence(inst_cfg->params.nodes_list.nodes[rk],
-            vtable_name_to_ptid(dev), VT_INSERT_BL, VT_PARTIAL_OPERATE);
-        if (ret != CM_SUCCESS) {
-            LOG_RUN_ERR("Failed to unregister vtable, rk: %lld, dev: %s, ret: %d.", rk, dev, ret);
-            return CM_ERROR;
-        }
-        LOG_RUN_INF("Unregister vtable success, rk: %lld, dev: %s.", rk, dev);
-        return CM_SUCCESS;
-    }
-
     iof_reg_out_t reg_info;
-    char log_home[CM_MAX_LOG_HOME_LEN] = {0};
     reg_info.rk = rk;
     reg_info.dev = dev;
-    reg_info.linux_multibus = dss_get_linux_multibus(inst_cfg);
-    if (reg_info.linux_multibus) {
-        reg_info.mpathpersist_dss_path = dss_get_mpathpersist_dss_path(inst_cfg);
-        ret = dss_init_log_home_ex(inst_cfg, log_home, "LOG_HOME", "log");
-        if (ret != CM_SUCCESS) {
+    reg_info.type = RESERV_TYPE_REGISTER_WRITE;
+
+    status_t ret = cm_iof_register(&reg_info);
+    if (ret != CM_SUCCESS) {
+        if (ret != CM_IOF_ERR_DUP_OP) {
+            LOG_RUN_ERR("Failed to register, rk: %lld, dev: %s, ret: %d.", rk, dev, ret);
             return CM_ERROR;
         }
-        reg_info.log_path = log_home;
-    } else {
-        reg_info.mpathpersist_dss_path = NULL;
-        reg_info.log_path = NULL;
+        LOG_RUN_INF("Register conflict, rk: %lld, dev: %s", rk, dev);
     }
-    ret = cm_iof_unregister(&reg_info);
+    LOG_RUN_INF("Register success, rk: %lld, dev: %s.", rk, dev);
+    return CM_SUCCESS;
+}
+
+status_t dss_iof_unregister_single(int64 rk, char *dev)
+{
+    iof_reg_out_t reg_info;
+    reg_info.rk = rk;
+    reg_info.dev = dev;
+    status_t ret = cm_iof_unregister(&reg_info);
     if (ret != CM_SUCCESS) {
         if (ret != CM_IOF_ERR_DUP_OP) {
             LOG_RUN_ERR("Failed to unregister, rk: %lld, dev: %s, ret: %d.", rk, dev, ret);
@@ -442,12 +274,12 @@ status_t dss_iof_unregister_single(int64 rk, char *dev, dss_config_t *inst_cfg)
     return CM_SUCCESS;
 }
 
-status_t dss_iof_register_core(int64 rk, dss_vg_info_t *dss_vg_info, dss_config_t *inst_cfg)
+status_t dss_iof_register_core(int64 rk, dss_vg_info_t *dss_vg_info)
 {
     status_t ret;
     for (uint32 i = 0; i < (uint32)dss_vg_info->group_num; i++) {
         dss_vg_info_item_t *item = &dss_vg_info->volume_group[i];
-        ret = dss_iof_register_single(rk, item->entry_path, inst_cfg);
+        ret = dss_iof_register_single(rk, item->entry_path);
         if (ret != CM_SUCCESS) {
             return ret;
         }
@@ -456,18 +288,18 @@ status_t dss_iof_register_core(int64 rk, dss_vg_info_t *dss_vg_info, dss_config_
             if (item->dss_ctrl->volume.defs[j].flag == VOLUME_FREE) {
                 continue;
             }
-            DSS_RETURN_IF_ERROR(dss_iof_register_single(rk, item->dss_ctrl->volume.defs[j].name, inst_cfg));
+            DSS_RETURN_IF_ERROR(dss_iof_register_single(rk, item->dss_ctrl->volume.defs[j].name));
         }
     }
     return CM_SUCCESS;
 }
 
-status_t dss_iof_unregister_core(int64 rk, dss_vg_info_t *dss_vg_info, dss_config_t *inst_cfg)
+status_t dss_iof_unregister_core(int64 rk, dss_vg_info_t *dss_vg_info)
 {
     status_t ret;
     for (uint32 i = 0; i < (uint32)dss_vg_info->group_num; i++) {
         dss_vg_info_item_t *item = &dss_vg_info->volume_group[i];
-        ret = dss_iof_unregister_single(rk, item->entry_path, inst_cfg);
+        ret = dss_iof_unregister_single(rk, item->entry_path);
         if (ret != CM_SUCCESS) {
             return ret;
         }
@@ -476,10 +308,10 @@ status_t dss_iof_unregister_core(int64 rk, dss_vg_info_t *dss_vg_info, dss_confi
             if (item->dss_ctrl->volume.defs[j].flag == VOLUME_FREE) {
                 continue;
             }
-            DSS_RETURN_IF_ERROR(dss_iof_unregister_single(rk, item->dss_ctrl->volume.defs[j].name, inst_cfg));
+            DSS_RETURN_IF_ERROR(dss_iof_unregister_single(rk, item->dss_ctrl->volume.defs[j].name));
         }
     }
-    LOG_RUN_INF("[FENCE][UNREG] Unregister all succ.");
+    LOG_DEBUG_INF("[FENCE][UNREG] Unregister all succ.");
     return CM_SUCCESS;
 }
 

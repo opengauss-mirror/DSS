@@ -135,12 +135,6 @@ typedef enum en_dss_conn_opt_key {
 
 typedef struct st_dss_dirent *dss_dir_item_t;
 typedef struct st_dss_stat *dss_stat_info_t;
-typedef struct st_dss_time_stat_item {
-    unsigned long long total_wait_time;
-    unsigned long long max_single_time;
-    unsigned long long wait_count;
-} dss_time_stat_item_t;
-
 typedef void (*dss_log_output)(dss_log_id_t log_type, dss_log_level_t log_level, const char *code_file_name,
     unsigned int code_line_num, const char *module_name, const char *format, ...);
 typedef void (*dss_exit_callback_t)(int exit_code);
@@ -157,7 +151,6 @@ DSS_DECLARE int dss_fopen(const char *file, int flag, int *handle);
 DSS_DECLARE int dss_fclose(int handle);
 DSS_DECLARE long long dss_fseek(int handle, long long offset, int origin);
 DSS_DECLARE int dss_fwrite(int handle, const void *buf, int size);
-DSS_DECLARE int dss_append(int handle, const void *buf, int size);
 DSS_DECLARE int dss_fread(int handle, void *buf, int size, int *read_size);
 DSS_DECLARE int dss_fcopy(const char *src_path, const char *dest_path);
 DSS_DECLARE int dss_frename(const char *src, const char *dst);
@@ -203,8 +196,6 @@ DSS_DECLARE int dss_disable_grab_lock(void);
 DSS_DECLARE int dss_enable_grab_lock(void);
 DSS_DECLARE int dss_get_inst_status(dss_server_status_t *dss_status);
 DSS_DECLARE int dss_is_maintain(unsigned int *is_maintain);
-// statistics
-DSS_DECLARE int dss_get_time_stat(dss_time_stat_item_t *time_stat, int count);
 
 DSS_DECLARE int dss_stat(const char *path, dss_stat_info_t item);
 DSS_DECLARE int dss_lstat(const char *path, dss_stat_info_t item);
@@ -220,8 +211,6 @@ DSS_DECLARE void dss_show_version(char *version);
 DSS_DECLARE void dss_register_exit_callback(dss_exit_callback_t dss_exit_proc);
 // upgrade
 int dss_enable_upgrades(void);
-
-DSS_DECLARE int dss_reopen_vg_handle(const char *name);
 
 #ifdef __cplusplus
 }
