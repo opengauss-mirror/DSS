@@ -30,7 +30,6 @@
 #include "cm_log.h"
 #include "cm_timer.h"
 #include "dss_cli_conn.h"
-#include "dss_stats.h"
 
 #ifdef _WIN64
 #if !defined(__x86_64__)
@@ -284,43 +283,6 @@ int dss_get_inst_status(dss_server_status_t *dss_status)
     return (int)ret;
 }
 
-int dss_get_time_stat(dss_time_stat_item_t *time_stat, int count)
-{
-    if (time_stat == NULL) {
-        DSS_THROW_ERROR(ERR_DSS_INVALID_PARAM, "time_stat");
-        return CM_ERROR;
-    }
-
-    if (count < (int)DSS_EVT_COUNT) {
-        DSS_THROW_ERROR_EX(ERR_DSS_INVALID_PARAM,
-            "buffer size %d is smaller than required event count %d", count, DSS_EVT_COUNT);
-        return CM_ERROR;
-    }
-
-    dss_conn_t *conn = NULL;
-    status_t ret = dss_enter_api(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when get time stat"));
-
-    /* Receive stats into internal buffer, then convert to public struct */
-    dss_stat_item_t internal_stat[DSS_EVT_COUNT];
-    ret = dss_get_time_stat_on_server(conn, internal_stat, (uint64)DSS_EVT_COUNT);
-    dss_leave_api(conn, CM_FALSE);
-    if (ret != CM_SUCCESS) {
-        return (int)ret;
-    }
-
-    for (int i = 0; i < DSS_EVT_COUNT; i++) {
-        time_stat[i].total_wait_time =
-            (unsigned long long)cm_atomic_get(&internal_stat[i].total_wait_time);
-        time_stat[i].max_single_time =
-            (unsigned long long)cm_atomic_get(&internal_stat[i].max_single_time);
-        time_stat[i].wait_count =
-            (unsigned long long)cm_atomic_get(&internal_stat[i].wait_count);
-    }
-
-    return CM_SUCCESS;
-}
-
 int dss_is_maintain(unsigned int *is_maintain)
 {
     if (is_maintain == NULL) {
@@ -438,22 +400,6 @@ int dss_fwrite(int handle, const void *buf, int size)
     DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fwrite get conn error"));
 
     ret = dss_write_file_impl(conn, HANDLE_VALUE(handle), buf, size);
-    if (ret == CM_SUCCESS) {
-        dss_session_end_stat(conn->session, &begin_tv, DSS_FWRITE);
-    }
-    dss_leave_api(conn, CM_TRUE);
-    return (int)ret;
-}
-
-int dss_append(int handle, const void *buf, int size)
-{
-    timeval_t begin_tv;
-    dss_begin_stat(&begin_tv);
-    dss_conn_t *conn = NULL;
-    status_t ret = dss_enter_api(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_RUN_ERR("fwrite get conn error"));
-
-    ret = dss_append_file_impl(conn, HANDLE_VALUE(handle), buf, size);
     if (ret == CM_SUCCESS) {
         dss_session_end_stat(conn->session, &begin_tv, DSS_FWRITE);
     }
@@ -867,7 +813,7 @@ int dss_aio_prep_pread(void *iocb, int handle, void *buf, size_t count, long lon
     long long new_offset = 0;
     int32 real_count = (int32)count;
     ret = dss_get_fd_by_offset(
-        conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_CLIENT_READ, &dev_fd, &new_offset, &real_count);
+        conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_TRUE, &dev_fd, &new_offset, &real_count);
     if (ret != CM_SUCCESS) {
         dss_leave_api(conn, CM_FALSE);
         return CM_ERROR;
@@ -890,7 +836,7 @@ int dss_aio_prep_pwrite(void *iocb, int handle, void *buf, size_t count, long lo
 
     int dev_fd = DSS_INVALID_HANDLE;
     long long new_offset = 0;
-    ret = dss_get_fd_by_offset(conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_CLIENT_WRITE, &dev_fd, &new_offset, NULL);
+    ret = dss_get_fd_by_offset(conn, HANDLE_VALUE(handle), offset, (int32)count, DSS_FALSE, &dev_fd, &new_offset, NULL);
     if (ret != CM_SUCCESS) {
         dss_leave_api(conn, CM_FALSE);
         return CM_ERROR;
@@ -1004,19 +950,6 @@ int dss_enable_upgrades(void)
     DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("get conn error when enable upgrades"));
     ret = dss_enable_upgrades_on_server(conn);
     dss_leave_api(conn, CM_FALSE);
-    return (int)ret;
-}
-
-int dss_reopen_vg_handle(const char *name)
-{
-    status_t ret = CM_SUCCESS;
-#ifdef OPENGAUSS
-    dss_conn_t *conn = NULL;
-    ret = dss_enter_api(&conn);
-    DSS_RETURN_IFERR2(ret, LOG_DEBUG_ERR("refresh vg handle"));
-    ret = dss_reopen_vg_handel_impl(conn, name);
-    dss_leave_api(conn, CM_FALSE);
-#endif
     return (int)ret;
 }
 

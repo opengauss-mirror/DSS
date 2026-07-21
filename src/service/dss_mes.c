@@ -1,26 +1,26 @@
 /*
-* Copyright (c) 2022 Huawei Technologies Co.,Ltd.
-*
-* DSS is licensed under Mulan PSL v2.
-* You can use this software according to the terms and conditions of the Mulan PSL v2.
-* You may obtain a copy of Mulan PSL v2 at:
-*
-*          http://license.coscl.org.cn/MulanPSL2
-*
-* THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
-* EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
-* MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-* See the Mulan PSL v2 for more details.
-* -------------------------------------------------------------------------
-*
-* dss_mes.c
-*
-*
-* IDENTIFICATION
-*    src/service/dss_mes.c
-*
-* -------------------------------------------------------------------------
-*/
+ * Copyright (c) 2022 Huawei Technologies Co.,Ltd.
+ *
+ * DSS is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *
+ *          http://license.coscl.org.cn/MulanPSL2
+ *
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ * -------------------------------------------------------------------------
+ *
+ * dss_mes.c
+ *
+ *
+ * IDENTIFICATION
+ *    src/service/dss_mes.c
+ *
+ * -------------------------------------------------------------------------
+ */
 
 #include "cm_types.h"
 #include "cm_error.h"
@@ -546,20 +546,8 @@ static status_t dss_broadcast_msg(dss_bcast_req_head_t *req, dss_bcast_community
         new_added_inst_map = (~last_inst_inst_map & cur_work_inst_map);
         cm_sleep(DSS_BROADCAST_MSG_TRY_SLEEP_TIME);
         i++;
-    } while (i < DSS_BROADCAST_MSG_TRY_MAX);
+    } while (i < DSS_BROADCAST_MSG_TRY_MAX && ret != ERR_DSS_UNSUPPORTED_CMD);
     if (ret != ERR_DSS_UNSUPPORTED_CMD) {
-        // If some instances failed in broadcast, wait one mes timeout and recheck online instances.
-        // If the failed instances are offline after recheck, do not treat it as broadcast error.
-        if (snd_err_inst_map != 0) {
-            cm_sleep(param->mes_wait_timeout);
-            uint64 online_inst_map = dss_get_inst_work_status();
-            uint64 still_fail_inst_map = snd_err_inst_map & online_inst_map;
-            if (still_fail_inst_map == 0) {
-                LOG_RUN_INF("[MES] broadcast failed inst is offline after recheck, ignore broadcast error.");
-                cm_reset_error();
-                return CM_SUCCESS;
-            }
-        }
         cm_reset_error();
         DSS_THROW_ERROR(ERR_DSS_MES_ILL, "Failed to broadcast msg with try.");
     }
@@ -572,7 +560,7 @@ static bool32 dss_check_srv_status(mes_msg_t *msg)
     dss_message_head_t *dss_head = (dss_message_head_t *)(msg->buffer);
     if (g_dss_instance.status != DSS_STATUS_OPEN && dss_head->dss_cmd != DSS_CMD_ACK_JOIN_CLUSTER) {
         LOG_DEBUG_INF("[MES] Could not exec remote req for the dssserver is not open or msg not join cluster, src "
-                    "node:%u, wait try again.",
+                      "node:%u, wait try again.",
             (uint32)(dss_head->src_inst));
         return CM_FALSE;
     }
@@ -691,7 +679,6 @@ static void dss_process_message(uint32 work_idx, ruid_type ruid, mes_msg_t *msg)
     dss_init_packet(&session->send_pack, CM_FALSE);
     dss_init_set(&session->send_pack, dss_head->msg_proto_ver);
     session->proto_version = dss_head->msg_proto_ver;
-    session->is_remote_req = CM_TRUE;
     LOG_DEBUG_INF(
         "[MES] dss process message, cmd is %u, proto_version is %u.", dss_head->dss_cmd, dss_head->msg_proto_ver);
     dss_processor_t *processor = &g_dss_processors[dss_head->dss_cmd];
@@ -772,8 +759,8 @@ static status_t dss_set_mes_message_pool(unsigned long long recv_msg_buf_size, m
     }
     // want fourth buf_pool smallest
     double fourth_ratio = ((double)(minimum_info.buf_pool_minimum_size[DSS_MSG_BUFFER_NO_3]) /
-                            (mpa->total_size - minimum_info.metadata_size)) +
-                        DBL_EPSILON;
+                              (mpa->total_size - minimum_info.metadata_size)) +
+                          DBL_EPSILON;
     mpa->buf_pool_attr[DSS_MSG_BUFFER_NO_3].proportion = fourth_ratio;
 
     double left_ratio = 1 - fourth_ratio;
@@ -1100,7 +1087,7 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
         ret = dss_get_mes_response(dss_head.ruid, &msg, timeout);
         DSS_RETURN_IFERR2(
             ret, LOG_RUN_ERR("dss server receive msg from remote failed, src node:%u, dst node:%u, cmd:%u.", currtid,
-                    remoteid, session->recv_pack.head->cmd));
+                     remoteid, session->recv_pack.head->cmd));
         // 4. attach remote execution result
         ack_head = (dss_message_head_t *)msg.buffer;
         if (ack_head->result == ERR_DSS_VERSION_NOT_MATCH) {

@@ -55,7 +55,6 @@
 #include "dsscmd_conn_opt.h"
 #include "dsscmd_interactive.h"
 #include "dss_cli_conn.h"
-#include "dss_vtable.h"
 #ifndef WIN32
 #include "config.h"
 #endif
@@ -443,7 +442,6 @@ static dss_args_t cmd_cv_args[] = {
     {'s', "au_size", CM_FALSE, CM_TRUE, cmd_check_au_size, NULL, NULL, 0, NULL, NULL, 0},
     {'D', "DSS_HOME", CM_FALSE, CM_TRUE, cmd_check_dss_home, cmd_check_convert_dss_home, cmd_clean_check_convert, 0,
         NULL, NULL, 0},
-    {'V', "VTABLE", CM_FALSE, CM_FALSE, NULL, NULL, NULL, 0, NULL, NULL, 0},
 };
 static dss_args_set_t cmd_cv_args_set = {
     cmd_cv_args,
@@ -474,16 +472,6 @@ static status_t cv_proc(void)
     dss_config_t cv_cfg;
     vg_name = cmd_cv_args[DSS_ARG_IDX_0].input_args;
     volume_path = cmd_cv_args[DSS_ARG_IDX_1].input_args;
-
-    bool32 isvtable = cmd_cv_args[DSS_ARG_IDX_4].inputed ? CM_TRUE : CM_FALSE;
-    if (isvtable) {
-        status = dss_init_vtable();
-        if (status != CM_SUCCESS) {
-            DSS_PRINT_ERROR("DSS init vtable failed!\n");
-            return status;
-        }
-    }
-
     // Documentation Constraints:au_size=0 equals default_au_size
     int64 au_size = 0;
     if (cmd_cv_args[DSS_ARG_IDX_2].input_args) {
@@ -3689,70 +3677,6 @@ static status_t getstatus_proc(void)
     return status;
 }
 
-/* ============================================================================
- * switch command - Set current instance as main (primary)
- * ============================================================================ */
-
-static dss_args_t cmd_switch_args[] = {
-    {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
-        0},
-};
-static dss_args_set_t cmd_switch_args_set = {
-    cmd_switch_args,
-    sizeof(cmd_switch_args) / sizeof(dss_args_t),
-    NULL,
-};
-
-static void switch_help(const char *prog_name, int print_flag)
-{
-    (void)printf("\nUsage:%s switch [-U UDS:socket_domain]\n", prog_name);
-    (void)printf("[client command] Set current DSS instance as main (primary) instance.\n");
-    (void)printf("This command triggers leader election and makes the connected instance\n");
-    (void)printf("attempt to become the primary node in the DSS cluster.\n");
-    if (print_flag == DSS_HELP_SIMPLE) {
-        return;
-    }
-    help_param_uds();
-}
-
-static status_t switch_proc(void)
-{
-    const char *input_args = cmd_switch_args[DSS_ARG_IDX_0].input_args;
-    dss_conn_t *conn = dss_get_connection_opt(input_args);
-    if (conn == NULL) {
-        DSS_PRINT_ERROR("Failed to connect to DSS server.\n");
-        return CM_ERROR;
-    }
-
-    DSS_PRINT_INF("Attempting to set this instance as main...\n");
-    
-    status_t status = dss_set_main_inst_on_server(conn);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Failed to set main instance. Error: %s\n", cm_get_errormsg(cm_get_error_code()));
-        return CM_ERROR;
-    }
-
-    /* Verify the switch */
-    dss_server_status_t dss_status;
-    status = dss_get_inst_status_on_server(conn, &dss_status);
-    if (status != CM_SUCCESS) {
-        DSS_PRINT_ERROR("Switch succeeded but failed to get status.\n");
-        return CM_SUCCESS;  /* Switch itself succeeded */
-    }
-
-    if (dss_status.master_id == dss_status.local_instance_id) {
-        DSS_PRINT_INF("SUCCESS: Instance %u is now the main (primary) instance.\n", dss_status.local_instance_id);
-        DSS_PRINT_INF("Server status: %s, %s\n", dss_status.instance_status, dss_status.server_status);
-    } else {
-        DSS_PRINT_INF("Switch completed. Current status:\n");
-        DSS_PRINT_INF("  Local instance: %u\n", dss_status.local_instance_id);
-        DSS_PRINT_INF("  Master instance: %u\n", dss_status.master_id);
-        DSS_PRINT_INF("  Server status: %s, %s\n", dss_status.instance_status, dss_status.server_status);
-    }
-
-    return CM_SUCCESS;
-}
-
 static dss_args_t cmd_stopdss_args[] = {
     {'U', "UDS", CM_FALSE, CM_TRUE, cmd_check_uds, cmd_check_convert_uds_home, cmd_clean_check_convert, 0, NULL, NULL,
         0},
@@ -4414,7 +4338,6 @@ dss_admin_cmd_t g_dss_admin_cmd[] = { {"cv", cv_help, cv_proc, &cmd_cv_args_set,
                                       {"setcfg", setcfg_help, setcfg_proc, &cmd_setcfg_args_set, true},
                                       {"getcfg", getcfg_help, getcfg_proc, &cmd_getcfg_args_set, false},
                                       {"getstatus", getstatus_help, getstatus_proc, &cmd_getstatus_args_set, false},
-                                      {"switch", switch_help, switch_proc, &cmd_switch_args_set, true},
                                       {"stopdss", stopdss_help, stopdss_proc, &cmd_stopdss_args_set, true},
                                       {"scandisk", scandisk_help, scandisk_proc, &cmd_scandisk_args_set, true},
                                       {"clean_vglock", clean_vglock_help, clean_vglock_proc,
@@ -4438,9 +4361,6 @@ void clean_cmd()
 {
     dss_conn_opt_exit();
     dss_free_vg_info();
-    if (g_vtable_func.isInitialize) {
-        VtableExit();
-    }
     ga_reset_app_pools();
 }
 
@@ -4515,7 +4435,7 @@ static void dss_cmd_oper_log(int argc, char **argv, status_t status)
     }
     DSS_RETURN_DRIECT_IFERR(dss_cmd_append_oper_log(log_buf, result, &offset));
 
-    if (offset + 1 >= CM_MAX_LOG_CONTENT_LENGTH) {
+    if (offset + 1 > CM_MAX_LOG_CONTENT_LENGTH) {
         DSS_PRINT_ERROR("Oper log len %u exceeds max %u.\n", offset, CM_MAX_LOG_CONTENT_LENGTH);
         return;
     }
@@ -4625,8 +4545,27 @@ void dss_cmd_set_path_optional()
     cmd_find_args[0].required = CM_FALSE;
 }
 
+static status_t dss_check_user_permit()
+{
+#ifndef WIN32
+    // check root
+    if (geteuid() == 0 || getuid() != geteuid()) {
+        (void)printf("The root user is not permitted to execute the dsscmd "
+                     "and the real uids must be the same as the effective uids.\n");
+        (void)fflush(stdout);
+        return CM_ERROR;
+    }
+    if (cm_regist_signal(SIGPIPE, SIG_IGN) != CM_SUCCESS) {
+        (void)printf("Can't assign function for SIGPIPE.\n");
+        return CM_ERROR;
+    }
+#endif
+    return CM_SUCCESS;
+}
+
 int main(int argc, char **argv)
 {
+    DSS_RETURN_IF_ERROR(dss_check_user_permit());
     uint32 idx = 0;
     bool8 go_ahead = CM_TRUE;
     bool8 is_interactive = cmd_check_run_interactive(argc, argv);
