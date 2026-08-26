@@ -24,6 +24,7 @@
 
 #include "cm_types.h"
 #include "cm_error.h"
+#include "cm_date.h"
 #include "dss_malloc.h"
 #include "dss_session.h"
 #include "dss_file.h"
@@ -80,25 +81,94 @@ static inline mes_priority_t dss_get_cmd_prio_id(dss_mes_command_t cmd)
     return g_dss_processors[cmd].prio_id;
 }
 
-typedef void (*dss_remote_ack_proc)(dss_session_t *session, dss_remote_exec_succ_ack_t *remote_ack);
+typedef status_t (*dss_remote_ack_proc)(dss_session_t *session, dss_remote_exec_succ_ack_t *remote_ack);
 typedef struct st_dss_remote_ack_hdl {
     dss_remote_ack_proc proc;
 } dss_remote_ack_hdl_t;
-void dss_process_remote_ack_for_get_ftid_by_path(dss_session_t *session, dss_remote_exec_succ_ack_t *remote_ack)
+
+static status_t dss_check_remote_ack_ft_volume(dss_find_node_t *ft_node, dss_vg_info_item_t *vg_item)
 {
-    uint32 body_size = remote_ack->ack_head.size - DSS_MES_MSG_HEAD_SIZE;
-    if (body_size < (sizeof(uint32) + sizeof(dss_find_node_t))) {
-        LOG_RUN_ERR("[MES] Invalid get ftid ack msg size %u.", body_size);
-        return;
+    if (!dss_is_valid_ftid(ft_node->ftid)) {
+        LOG_RUN_ERR("[MES] invalid ftid volume %u for get ftid by path.", (uint32)ft_node->ftid.volume);
+        DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "ftid volume", (uint64)ft_node->ftid.volume);
+        return CM_ERROR;
     }
-    dss_find_node_t *ft_node = (dss_find_node_t *)(remote_ack->body_buf + sizeof(uint32));
-    ft_node->vg_name[DSS_MAX_NAME_LEN - 1] = '\0';
-    dss_vg_info_item_t *vg_item = dss_find_vg_item(ft_node->vg_name);
-    if (vg_item == NULL) {
-        LOG_RUN_ERR("[MES] Invalid get ftid ack msg vg_name is not exist.");
-        return;
+    if (!is_ft_root_block(ft_node->ftid) &&
+        vg_item->dss_ctrl->volume.defs[ft_node->ftid.volume].flag != VOLUME_OCCUPY) {
+        LOG_RUN_ERR("[MES] ftid volume %u is not occupy for get ftid by path.", (uint32)ft_node->ftid.volume);
+        DSS_THROW_ERROR(ERR_DSS_INVALID_ID, "ftid volume", (uint64)ft_node->ftid.volume);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_check_remote_ack_find_node(
+    dss_remote_exec_succ_ack_t *remote_ack, dss_find_node_t **out_node, dss_vg_info_item_t **out_vg)
+{
+    uint32 body_size;
+    uint32 data_len;
+    char vg_name[DSS_MAX_NAME_LEN];
+    dss_find_node_t *ft_node = NULL;
+    dss_vg_info_item_t *vg_item = NULL;
+    errno_t errcode;
+
+    if (remote_ack == NULL || remote_ack->ack_head.size < DSS_MES_MSG_HEAD_SIZE) {
+        LOG_RUN_ERR("[MES] invalid remote ack for get ftid by path.");
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
+        return CM_ERROR;
+    }
+    body_size = remote_ack->ack_head.size - DSS_MES_MSG_HEAD_SIZE;
+    if (body_size < (sizeof(uint32) + sizeof(dss_find_node_t))) {
+        LOG_RUN_ERR("[MES] invalid remote ack body size %u for get ftid by path.", body_size);
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
+        return CM_ERROR;
+    }
+    data_len = *(uint32 *)(void *)remote_ack->body_buf;
+    if (data_len != sizeof(dss_find_node_t) || body_size < (sizeof(uint32) + data_len)) {
+        LOG_RUN_ERR("[MES] invalid remote ack data len %u for get ftid by path.", data_len);
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
+        return CM_ERROR;
+    }
+
+    ft_node = (dss_find_node_t *)(remote_ack->body_buf + sizeof(uint32));
+    errcode = memcpy_s(vg_name, DSS_MAX_NAME_LEN, ft_node->vg_name, DSS_MAX_NAME_LEN);
+    if (errcode != EOK) {
+        LOG_RUN_ERR("[MES] copy vg_name failed for get ftid by path.");
+        DSS_THROW_ERROR(ERR_DSS_MES_ILL, "vg_name is invalid");
+        return CM_ERROR;
+    }
+    vg_name[DSS_MAX_NAME_LEN - 1] = '\0';
+    if (dss_check_name(vg_name) != CM_SUCCESS) {
+        LOG_RUN_ERR("[MES] invalid vg_name for get ftid by path.");
+        return CM_ERROR;
+    }
+
+    vg_item = dss_find_vg_item(vg_name);
+    if (vg_item == NULL || vg_item->dss_ctrl == NULL) {
+        LOG_RUN_ERR("[MES] vg %s not exist for get ftid by path.", vg_name);
+        DSS_THROW_ERROR(ERR_DSS_VG_NOT_EXIST, vg_name);
+        return CM_ERROR;
+    }
+
+    if (dss_check_remote_ack_ft_volume(ft_node, vg_item) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
+
+    *out_node = ft_node;
+    *out_vg = vg_item;
+    return CM_SUCCESS;
+}
+
+static status_t dss_process_remote_ack_for_get_ftid_by_path(
+    dss_session_t *session, dss_remote_exec_succ_ack_t *remote_ack)
+{
+    dss_find_node_t *ft_node = NULL;
+    dss_vg_info_item_t *vg_item = NULL;
+    if (dss_check_remote_ack_find_node(remote_ack, &ft_node, &vg_item) != CM_SUCCESS) {
+        return CM_ERROR;
     }
     (void)dss_get_ft_node_by_ftid(session, vg_item, ft_node->ftid, CM_TRUE, CM_FALSE);
+    return CM_SUCCESS;
 }
 
 static status_t dss_check_meta_data_req(dss_bcast_context_t *bcast_ctx, uint32 min_data_size,
@@ -1189,7 +1259,12 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
             session->recv_pack.head->cmd, body_size);
         dss_remote_ack_hdl_t *handle = dss_get_remote_ack_handle(session->recv_pack.head->cmd);
         if (handle != NULL && handle->proc != NULL) {
-            handle->proc(session, succ_ack);
+            if (handle->proc(session, succ_ack) != CM_SUCCESS) {
+                LOG_RUN_ERR("[MES] process remote ack failed, cmd:%u.", session->recv_pack.head->cmd);
+                mes_release_msg(&msg);
+                *remote_result = CM_ERROR;
+                return CM_SUCCESS;
+            }
         }
         // do not parse the format
         ret = dss_put_data(&session->send_pack, succ_ack->body_buf, body_size);
@@ -1376,7 +1451,12 @@ static int32 dss_batch_load_core(dss_session_t *session, dss_loaddisk_req_t *req
 
 int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, uint32 version)
 {
-    if (req->size % DSS_DISK_UNIT_SIZE != 0) {
+    if (req->size == 0 || req->size > DSS_MAX_LOAD_DISK_SIZE || req->size % DSS_DISK_UNIT_SIZE != 0) {
+        LOG_RUN_ERR("[MES] invalid load disk size:%u, max:%u.", req->size, (uint32)DSS_MAX_LOAD_DISK_SIZE);
+        return DSS_READ4STANDBY_ERR;
+    }
+    if (req->offset > ((uint64)(-1) - (uint64)req->size)) {
+        LOG_RUN_ERR("[MES] load disk offset overflow, offset:%llu, size:%u.", req->offset, req->size);
         return DSS_READ4STANDBY_ERR;
     }
     if (session->thv_read_buf == NULL) {
@@ -1388,6 +1468,21 @@ int32 dss_batch_load(dss_session_t *session, dss_loaddisk_req_t *req, uint32 ver
     }
     (void)memset_s(session->thv_read_buf, DSS_LOADDISK_BUFFER_SIZE, 0, DSS_LOADDISK_BUFFER_SIZE);
     dss_lock_vg_mem_and_shm_ex_s(session, req->vg_name);
+
+    dss_vg_info_item_t *vg_item = dss_find_vg_item(req->vg_name);
+    if (vg_item == NULL || vg_item->dss_ctrl == NULL || req->volumeid >= DSS_MAX_VOLUMES) {
+        dss_unlock_vg_mem_and_shm_ex(session, req->vg_name);
+        LOG_RUN_ERR("[MES] invalid vg or volume id, vg:%s, volumeid:%u.", req->vg_name, req->volumeid);
+        return DSS_READ4STANDBY_ERR;
+    }
+    uint64 volumesize = vg_item->dss_ctrl->core.volume_attrs[req->volumeid].size;
+    if (req->offset > volumesize || (uint64)req->size > (volumesize - req->offset)) {
+        dss_unlock_vg_mem_and_shm_ex(session, req->vg_name);
+        LOG_RUN_ERR("[MES] load disk range overflow volume, offset:%llu, size:%u, volsize:%llu.", req->offset,
+            req->size, volumesize);
+        return DSS_READ4STANDBY_ERR;
+    }
+
     int32 ret = dss_batch_load_core(session, req, session->thv_read_buf, version);
     dss_common_block_t *print = (dss_common_block_t*)session->thv_read_buf;
     LOG_DEBUG_INF("[MES] dss_batch_load Exec load disk req, type: %u, id:%s, version:%llu.", print->type, dss_display_metaid(print->id), print->version);
@@ -1500,9 +1595,58 @@ static status_t dss_rec_msgs(ruid_type ruid, void *buf, uint32 size)
     return CM_SUCCESS;
 }
 
+static status_t dss_mes_refresh_proto_on_mismatch(
+    uint32 dst_inst, uint32 *msg_proto_ver, uint32 *tried_mask, uint32 *retry_cnt, date_t begin)
+{
+    uint32 old_ver = *msg_proto_ver;
+    uint32 new_ver = dss_get_remote_proto_ver(dst_inst);
+    date_t now = cm_now();
+
+    (*retry_cnt)++;
+    if (*retry_cnt > DSS_MES_VERSION_RETRY_MAX) {
+        LOG_RUN_ERR("[CHECK_PROTO]version mismatch retry exceed max %u, dst inst %u, old %u, new %u.",
+            DSS_MES_VERSION_RETRY_MAX, dst_inst, old_ver, new_ver);
+        DSS_THROW_ERROR(ERR_DSS_VERSION_NOT_MATCH, old_ver, new_ver);
+        return ERR_DSS_VERSION_NOT_MATCH;
+    }
+    if (now > begin &&
+        ((uint64)(now - begin) >
+            ((uint64)DSS_MES_VERSION_RETRY_TIMEOUT_MS * MICROSECS_PER_SECOND / MILLISECS_PER_SECOND))) {
+        LOG_RUN_ERR("[CHECK_PROTO]version mismatch retry timeout, dst inst %u, old %u, new %u.", dst_inst, old_ver,
+            new_ver);
+        DSS_THROW_ERROR(ERR_DSS_VERSION_NOT_MATCH, old_ver, new_ver);
+        return ERR_DSS_VERSION_NOT_MATCH;
+    }
+    if (new_ver == old_ver) {
+        LOG_RUN_ERR("[CHECK_PROTO]version mismatch with no progress, dst inst %u, ver %u.", dst_inst, new_ver);
+        DSS_THROW_ERROR(ERR_DSS_VERSION_NOT_MATCH, old_ver, new_ver);
+        return ERR_DSS_VERSION_NOT_MATCH;
+    }
+    if (new_ver < DSS_MES_PROTO_VER_BIT_WIDTH && (((*tried_mask) & ((uint32)1 << new_ver)) != 0)) {
+        LOG_RUN_ERR(
+            "[CHECK_PROTO]version mismatch oscillated, dst inst %u, old %u, new %u.", dst_inst, old_ver, new_ver);
+        DSS_THROW_ERROR(ERR_DSS_VERSION_NOT_MATCH, old_ver, new_ver);
+        return ERR_DSS_VERSION_NOT_MATCH;
+    }
+    if (new_ver < DSS_MES_PROTO_VER_BIT_WIDTH) {
+        *tried_mask |= ((uint32)1 << new_ver);
+    }
+    LOG_RUN_INF("[CHECK_PROTO]read volume remote proto version changed, old is %u, new is %u.", old_ver, new_ver);
+    *msg_proto_ver = new_ver;
+    return CM_SUCCESS;
+}
+
 static status_t dss_read_volume_remote_core(dss_session_t *session, dss_loaddisk_req_t *req, void *buf)
 {
     status_t ret = CM_ERROR;
+    uint32 retry_cnt = 0;
+    uint32 tried_mask = 0;
+    date_t begin = cm_now();
+
+    (void)session;
+    if (req->dss_head.msg_proto_ver < DSS_MES_PROTO_VER_BIT_WIDTH) {
+        tried_mask = ((uint32)1 << req->dss_head.msg_proto_ver);
+    }
     do {
         dss_message_head_t *dss_head = &req->dss_head;
         LOG_DEBUG_INF("[MES] Ready msg cmd:%u, src node:%u, dst node:%u end", dss_head->dss_cmd,
@@ -1517,8 +1661,11 @@ static status_t dss_read_volume_remote_core(dss_session_t *session, dss_loaddisk
         // 3. receive msg from remote
         ret = dss_rec_msgs(dss_head->ruid, buf, req->size);
         if (ret == ERR_DSS_VERSION_NOT_MATCH) {
-            req->dss_head.msg_proto_ver = dss_get_remote_proto_ver(req->dss_head.dst_inst);
-            // if msg version has changed, please motify your change
+            ret = dss_mes_refresh_proto_on_mismatch(
+                req->dss_head.dst_inst, &req->dss_head.msg_proto_ver, &tried_mask, &retry_cnt, begin);
+            if (ret != CM_SUCCESS) {
+                return ret;
+            }
             continue;
         }
         break;

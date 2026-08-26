@@ -371,7 +371,10 @@ status_t dss_get_block_from_disk(
     dss_vg_info_item_t *vg_item, dss_block_id_t block_id, char *buf, int64_t offset, int32 size, bool32 calc_checksum)
 {
     bool32 remote = calc_checksum;
-    CM_ASSERT(block_id.volume < DSS_MAX_VOLUMES);
+    if (block_id.volume >= DSS_MAX_VOLUMES) {
+        LOG_RUN_ERR("Invalid volume id:%u when get block from disk, max:%u.", (uint32)block_id.volume, DSS_MAX_VOLUMES);
+        return CM_ERROR;
+    }
     status_t status = dss_check_read_volume(vg_item, (uint32)block_id.volume, offset, buf, size, &remote);
     if (status != CM_SUCCESS) {
         return status;
