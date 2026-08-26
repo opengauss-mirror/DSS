@@ -38,7 +38,7 @@ extern "C" {
 
 typedef struct st_dss_conn dss_conn_t;
 int dss_get_pack_err(dss_conn_t *conn, dss_packet_t *pack);
-void dss_cli_get_err(dss_packet_t *pack, int32 *errcode, char **errmsg);
+status_t dss_cli_get_err(dss_packet_t *pack, int32 *errcode, char **errmsg);
 
 #ifdef __cplusplus
 }
