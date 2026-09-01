@@ -208,6 +208,17 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
     }
 
     *ack = CM_FALSE;
+    uint32 meta_offset = OFFSET_OF(dss_meta_syn_t, meta);
+    if (meta_syn == NULL || size < meta_offset || meta_syn->meta_type >= DSS_BLOCK_TYPE_MAX) {
+        LOG_DEBUG_ERR("Invalid syn meta request size:%u or type:%u.", size,
+            meta_syn == NULL ? DSS_BLOCK_TYPE_MAX : meta_syn->meta_type);
+        return CM_ERROR;
+    }
+    uint32 meta_len = dss_buffer_cache_get_block_size(meta_syn->meta_type);
+    if (meta_syn->meta_len != meta_len || meta_len > size - meta_offset) {
+        LOG_DEBUG_ERR("Invalid syn meta length:%u, expected:%u, request size:%u.", meta_syn->meta_len, meta_len, size);
+        return CM_ERROR;
+    }
 
     LOG_DEBUG_INF("notify syn meta file:%llu, file_ver:%llu, vg :%u, block:%llu type:%u, with version:%llu.",
         meta_syn->fid, meta_syn->file_ver, meta_syn->vg_id, meta_syn->meta_block_id, meta_syn->meta_type,
@@ -218,10 +229,13 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
         DSS_RETURN_IFERR2(CM_ERROR, LOG_DEBUG_ERR("Failed to find vg:%u.", meta_syn->vg_id));
     }
 
-    uint32 meta_len = dss_buffer_cache_get_block_size(meta_syn->meta_type);
+    dss_block_id_t meta_block_id;
+    dss_set_blockid(&meta_block_id, meta_syn->meta_block_id);
     uint32 check_sum = dss_get_checksum(meta_syn->meta, meta_len);
     dss_common_block_t *syn_meta_block = DSS_GET_COMMON_BLOCK_HEAD(meta_syn->meta);
-    if (meta_len != meta_syn->meta_len || check_sum != syn_meta_block->checksum) {
+    if (meta_len != meta_syn->meta_len || check_sum != syn_meta_block->checksum ||
+        syn_meta_block->type != meta_syn->meta_type ||
+        dss_buffer_cache_key_compare(&syn_meta_block->id, &meta_block_id) != CM_TRUE) {
         DSS_RETURN_IFERR2(CM_ERROR,
             LOG_DEBUG_ERR(
                 "syn meta file:%llu, file_ver:%llu, vg :%u, block: %llu, type:%u, with version:%llu data error skip.",
@@ -230,8 +244,6 @@ status_t dss_meta_syn_remote(dss_session_t *session, dss_meta_syn_t *meta_syn, u
     }
 
     ga_obj_id_t out_obj_id;
-    dss_block_id_t meta_block_id;
-    dss_set_blockid(&meta_block_id, meta_syn->meta_block_id);
     char *block = dss_find_block_in_shm_no_refresh_ex(session, vg_item, meta_block_id, &out_obj_id);
     if (block == NULL) {
         LOG_DEBUG_INF(

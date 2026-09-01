@@ -2827,6 +2827,10 @@ static status_t dss_decode_handshake(dss_packet_t *ack_pack, void *ack)
         DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_HANDSHAKE), "get home info length error");
         return CM_ERROR;
     }
+    if (ack_info.str[ack_info.len - 1] != '\0') {
+        DSS_THROW_ERROR(ERR_DSS_CLI_EXEC_FAIL, dss_get_cmd_desc(DSS_CMD_HANDSHAKE), "home info is not terminated");
+        return CM_ERROR;
+    }
     dss_get_server_info_t *output_info = (dss_get_server_info_t *)ack;
     output_info->home = ack_info.str;
     CM_RETURN_IFERR(dss_get_int32(ack_pack, (int32 *)&output_info->objectid));
