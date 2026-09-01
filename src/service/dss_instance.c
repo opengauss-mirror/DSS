@@ -592,6 +592,10 @@ void dss_check_peer_by_inst(dss_instance_t *inst, uint64 inst_id)
         return;
     }
 
+    if (inst_id >= DSS_MAX_INSTANCES) {
+        return;
+    }
+
     // Not cfg the inst
     uint64 inst_mask = ((uint64)0x1 << inst_id);
     if ((inst_cfg->params.nodes_list.inst_map & inst_mask) == 0) {
