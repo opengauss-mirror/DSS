@@ -771,6 +771,17 @@ static status_t dss_add_buffer_cache(dss_session_t *session, dss_vg_info_item_t 
 status_t dss_refresh_block_in_shm(dss_session_t *session, dss_vg_info_item_t *vg_item, dss_block_id_t block_id,
     dss_block_type_t type, char *buf, char **shm_buf)
 {
+    if (buf == NULL) {
+        LOG_RUN_ERR("Invalid remote block buffer.");
+        return CM_ERROR;
+    }
+    dss_common_block_t *remote_block = DSS_GET_COMMON_BLOCK_HEAD(buf);
+    if (remote_block->type != type ||
+        dss_buffer_cache_key_compare(&remote_block->id, &block_id) != CM_TRUE) {
+        LOG_RUN_ERR("[MES] Reject remote block with mismatched identity or type.");
+        return CM_ERROR;
+    }
+
     char *meta_addr = NULL;
     uint32 hash = DSS_BUFFER_CACHE_HASH(block_id);
     meta_addr = dss_find_block_in_bucket(session, vg_item, hash, (uint64 *)&block_id, CM_FALSE, NULL);

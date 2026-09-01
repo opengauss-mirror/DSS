@@ -86,10 +86,39 @@ typedef struct st_dss_remote_ack_hdl {
 } dss_remote_ack_hdl_t;
 void dss_process_remote_ack_for_get_ftid_by_path(dss_session_t *session, dss_remote_exec_succ_ack_t *remote_ack)
 {
+    uint32 body_size = remote_ack->ack_head.size - DSS_MES_MSG_HEAD_SIZE;
+    if (body_size < (sizeof(uint32) + sizeof(dss_find_node_t))) {
+        LOG_RUN_ERR("[MES] Invalid get ftid ack msg size %u.", body_size);
+        return;
+    }
     dss_find_node_t *ft_node = (dss_find_node_t *)(remote_ack->body_buf + sizeof(uint32));
+    ft_node->vg_name[DSS_MAX_NAME_LEN - 1] = '\0';
     dss_vg_info_item_t *vg_item = dss_find_vg_item(ft_node->vg_name);
+    if (vg_item == NULL) {
+        LOG_RUN_ERR("[MES] Invalid get ftid ack msg vg_name is not exist.");
+        return;
+    }
     (void)dss_get_ft_node_by_ftid(session, vg_item, ft_node->ftid, CM_TRUE, CM_FALSE);
 }
+
+static status_t dss_check_meta_data_req(dss_bcast_context_t *bcast_ctx, uint32 min_data_size,
+    dss_req_meta_data_t **req_ex)
+{
+    uint32 data_offset = OFFSET_OF(dss_req_meta_data_t, data);
+    if (bcast_ctx->req_len < data_offset) {
+        LOG_RUN_ERR("[MES] invalid metadata request header size %u", bcast_ctx->req_len);
+        return CM_ERROR;
+    }
+    dss_req_meta_data_t *req = (dss_req_meta_data_t *)bcast_ctx->req_msg;
+    if (req->data_size < min_data_size || req->data_size > sizeof(req->data) ||
+        req->data_size > bcast_ctx->req_len - data_offset) {
+        LOG_RUN_ERR("[MES] invalid metadata request data size %u, message size %u", req->data_size, bcast_ctx->req_len);
+        return CM_ERROR;
+    }
+    *req_ex = req;
+    return CM_SUCCESS;
+}
+
 static dss_remote_ack_hdl_t g_dss_remote_ack_handle[DSS_CMD_TYPE_OFFSET(DSS_CMD_END)] = {
     [DSS_CMD_TYPE_OFFSET(DSS_CMD_GET_FTID_BY_PATH)] = {dss_process_remote_ack_for_get_ftid_by_path},
 };
@@ -127,7 +156,10 @@ status_t dss_process_check_open_file(dss_session_t *session, dss_bcast_context_t
 
 status_t dss_process_invalidate_meta(dss_session_t *session, dss_bcast_context_t *bcast_ctx)
 {
-    dss_req_meta_data_t *req_ex = (dss_req_meta_data_t *)bcast_ctx->req_msg;
+    dss_req_meta_data_t *req_ex = NULL;
+    if (dss_check_meta_data_req(bcast_ctx, sizeof(dss_invalidate_meta_msg_t), &req_ex) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
     bool32 invalidate_ret = CM_FALSE;
     status_t ret = dss_invalidate_meta_remote(
         session, (dss_invalidate_meta_msg_t *)req_ex->data, req_ex->data_size, &invalidate_ret);
@@ -140,7 +172,10 @@ status_t dss_process_invalidate_meta(dss_session_t *session, dss_bcast_context_t
 
 status_t dss_process_sync_meta(dss_session_t *session, dss_bcast_context_t *bcast_ctx)
 {
-    dss_req_meta_data_t *req_ex = (dss_req_meta_data_t *)bcast_ctx->req_msg;
+    dss_req_meta_data_t *req_ex = NULL;
+    if (dss_check_meta_data_req(bcast_ctx, OFFSET_OF(dss_meta_syn_t, meta), &req_ex) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
     bool32 sync_ret = CM_FALSE;
     status_t ret = dss_meta_syn_remote(session, (dss_meta_syn_t *)req_ex->data, req_ex->data_size, &sync_ret);
     if (ret != CM_SUCCESS) {
@@ -667,6 +702,10 @@ static void dss_process_message(uint32 work_idx, ruid_type ruid, mes_msg_t *msg)
         return;
     }
     dss_message_head_t *dss_head = (dss_message_head_t *)msg->buffer;
+    if (dss_head->size != msg->size) {
+        LOG_DEBUG_ERR("Invalid message size, header:%u, actual:%u.", dss_head->size, msg->size);
+        return;
+    }
     LOG_DEBUG_INF("[MES] Proc msg cmd:%u, src node:%u, dst node:%u begin.", (uint32)(dss_head->dss_cmd),
         (uint32)(dss_head->src_inst), (uint32)(dss_head->dst_inst));
 
@@ -1065,8 +1104,14 @@ static int dss_get_mes_response(ruid_type ruid, mes_msg_t *response, int timeout
 {
     int ret = mes_get_response(ruid, response, timeout_ms);
     if (ret == CM_SUCCESS) {
+        if (response->size < DSS_MES_MSG_HEAD_SIZE) {
+            LOG_RUN_ERR("Invalid response size");
+            DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
+            mes_release_msg(response);
+            return ERR_DSS_MES_ILL;
+        }
         dss_message_head_t *ack_head = (dss_message_head_t *)response->buffer;
-        if (ack_head->size < DSS_MES_MSG_HEAD_SIZE) {
+        if (ack_head->size < DSS_MES_MSG_HEAD_SIZE || ack_head->size > response->size) {
             LOG_RUN_ERR("Invalid message size");
             DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid");
             mes_release_msg(response);
@@ -1136,13 +1181,14 @@ status_t dss_exec_sync(dss_session_t *session, uint32 remoteid, uint32 currtid, 
             DSS_RETURN_IFERR3(CM_ERROR, DSS_THROW_ERROR(ERR_DSS_MES_ILL, "msg len is invalid"), mes_release_msg(&msg));
         }
         dss_remote_exec_fail_ack_t *fail_ack = (dss_remote_exec_fail_ack_t *)msg.buffer;
+        msg.buffer[ack_head->size - 1] = '\0';
         DSS_THROW_ERROR(ERR_DSS_PROCESS_REMOTE, fail_ack->err_code, fail_ack->err_msg);
     } else if (body_size > 0) {
         dss_remote_exec_succ_ack_t *succ_ack = (dss_remote_exec_succ_ack_t *)msg.buffer;
         LOG_DEBUG_INF("[MES] dss server receive msg from remote node, cmd:%u, ack to cli data size:%u.",
             session->recv_pack.head->cmd, body_size);
         dss_remote_ack_hdl_t *handle = dss_get_remote_ack_handle(session->recv_pack.head->cmd);
-        if (handle != NULL) {
+        if (handle != NULL && handle->proc != NULL) {
             handle->proc(session, succ_ack);
         }
         // do not parse the format
@@ -1207,6 +1253,7 @@ status_t dss_exec_on_remote(uint8 cmd, char *req, int32 req_size, char *ack, int
             DSS_RETURN_IFERR3(CM_ERROR, dss_destroy_session(session), mes_release_msg(&msg));
         }
         dss_remote_exec_fail_ack_t *fail_ack = (dss_remote_exec_fail_ack_t *)msg.buffer;
+        msg.buffer[ack_head->size - 1] = '\0';
         DSS_THROW_ERROR(ERR_DSS_PROCESS_REMOTE, fail_ack->err_code, fail_ack->err_msg);
     } else {
         if (ack_head->size != ack_size) {
@@ -1386,11 +1433,15 @@ static status_t dss_init_readvlm_remote_params(
 
 static bool32 dss_packets_verify(big_packets_ctrl_t *lastctrl, big_packets_ctrl_t *ctrl, uint32 size)
 {
+    if (ctrl->offset > ctrl->totalsize || ctrl->cursize > ctrl->totalsize - ctrl->offset) {
+        LOG_RUN_ERR("[MES] packet offset or size is invalid.");
+        return CM_FALSE;
+    }
     if (ctrl->endflag != CM_TRUE && size != ctrl->totalsize) {
         LOG_RUN_ERR("[MES] end flag is not CM_TRUE.");
         return CM_FALSE;
     }
-    if (ctrl->endflag == CM_TRUE && ctrl->cursize + ctrl->offset != ctrl->totalsize) {
+    if (ctrl->endflag == CM_TRUE && ctrl->cursize != ctrl->totalsize - ctrl->offset) {
         LOG_RUN_ERR("[MES]size is not true, cursize is %u, offset is %u, total size is %u.", ctrl->cursize,
             ctrl->offset, ctrl->totalsize);
         return CM_FALSE;
@@ -1434,7 +1485,8 @@ static status_t dss_rec_msgs(ruid_type ruid, void *buf, uint32 size)
             LOG_RUN_ERR("dss server receive msg verify failed.");
             return CM_ERROR;
         }
-        if (size < ctrl->offset + ctrl->cursize || ack_head->size != (sizeof(big_packets_ctrl_t) + ctrl->cursize)) {
+        if (ctrl->offset > size || ctrl->cursize > size - ctrl->offset ||
+            ctrl->cursize != ack_head->size - sizeof(big_packets_ctrl_t)) {
             mes_release_msg(&msg);
             LOG_RUN_ERR("dss server receive msg size is invalid.");
             return CM_ERROR;
@@ -1543,6 +1595,10 @@ status_t dss_join_cluster(bool32 *join_succ)
 
 void dss_proc_join_cluster_req(dss_session_t *session, mes_msg_t *msg)
 {
+    if (msg->size != sizeof(dss_join_cluster_req_t)) {
+        LOG_RUN_ERR("Proc join cluster from remote node check actual msg size fail.");
+        return;
+    }
     dss_message_head_t *req_head = (dss_message_head_t *)msg->buffer;
     if (req_head->size != sizeof(dss_join_cluster_req_t)) {
         LOG_RUN_ERR("Proc join cluster from remote node:%u check req msg fail.", (uint32)(req_head->src_inst));
@@ -1566,6 +1622,11 @@ void dss_proc_join_cluster_req(dss_session_t *session, mes_msg_t *msg)
     ack.is_reg = CM_FALSE;
     ack.ack_head.result = CM_SUCCESS;
     uint64 work_status = dss_get_inst_work_status();
+    if (req->reg_id >= DSS_MAX_INSTANCES) {
+        LOG_RUN_ERR("[MES] Proc join cluster reg_id %u out of range.", req->reg_id);
+        dss_proc_remote_req_err(session, req_head, DSS_CMD_ACK_JOIN_CLUSTER, CM_ERROR);
+        return;
+    }
     uint64 inst_mask = ((uint64)0x1 << req->reg_id);
     if (work_status & inst_mask) {
         ack.is_reg = CM_TRUE;
@@ -1785,12 +1846,13 @@ void dss_proc_get_ft_block_req(dss_session_t *session, mes_msg_t *msg)
         return;
     }
     dss_get_ft_block_req_t *req = (dss_get_ft_block_req_t *)msg->buffer;
+    req->path[sizeof(req->path) - 1] = '\0';
     uint16 src_inst = req->dss_head.dst_inst;
     uint16 dst_inst = req->dss_head.src_inst;
     ruid_type ruid = req->dss_head.ruid;
     uint32 proto_ver = req->dss_head.msg_proto_ver;
     // please solve with your proto_ver
-    if (req->type > GFT_LINK) {
+    if ((uint32)req->type > (uint32)GFT_LINK) {
         LOG_RUN_ERR("Get ft block from remote node:%u check req msg type:%d fail.", (uint32)dst_inst, req->type);
         dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_GET_FT_BLOCK, CM_ERROR);
         return;
@@ -1806,8 +1868,9 @@ void dss_proc_get_ft_block_req(dss_session_t *session, mes_msg_t *msg)
     status = dss_get_name_from_path(req->path, &beg_pos, vg_name);
     if (status != CM_SUCCESS) {
         dss_proc_remote_req_err(session, &req->dss_head, DSS_CMD_ACK_GET_FT_BLOCK, status);
+        return;
     }
-    dss_get_ft_block_ack_t ack;
+    dss_get_ft_block_ack_t ack = {0};
     dss_init_mes_head(&ack.ack_head, DSS_CMD_ACK_GET_FT_BLOCK, 0, src_inst, dst_inst, sizeof(dss_get_ft_block_ack_t),
         proto_ver, ruid);
     dss_vg_info_item_t *vg_item = dss_find_vg_item(vg_name);

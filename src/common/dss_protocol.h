@@ -297,11 +297,12 @@ static inline status_t dss_get_data(dss_packet_t *pack, uint32 size, void **buf)
 static inline status_t dss_get_packet_strlen(dss_packet_t *pack, char *str, size_t *str_len)
 {
     uint32 rem_len = (pack->head->size - pack->offset) - 1;
-    while (str[*str_len] != '\0') {
-        if ((*str_len)++ > rem_len) {
-            CM_THROW_ERROR(ERR_TYPE_OVERFLOW, "UNSIGNED STRING");
-            return CM_ERROR;
-        }
+    while (*str_len <= rem_len && str[*str_len] != '\0') {
+        (*str_len)++;
+    }
+    if (*str_len > rem_len) {
+        CM_THROW_ERROR(ERR_TYPE_OVERFLOW, "UNSIGNED STRING");
+        return CM_ERROR;
     }
     (*str_len)++;
     return CM_SUCCESS;
