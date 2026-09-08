@@ -93,6 +93,17 @@ void dss_latch_degrade(latch_t *latch, uint32 sid, latch_statis_t *stat);
 
 void dss_set_latch_extent(dss_latch_extent_t *latch_extent, uint16 stat, uint16 shared_count);
 
+/* Shared latch may be granted on S, or on IX when is_force. Wait loops must use the same states. */
+static inline bool32 dss_latch_s_can_share(uint32 stat, bool32 is_force)
+{
+    return (stat == LATCH_STATUS_S) || (is_force && stat == LATCH_STATUS_IX);
+}
+
+static inline bool32 dss_latch_s_can_acquire(uint32 stat, bool32 is_force)
+{
+    return (stat == LATCH_STATUS_IDLE) || dss_latch_s_can_share(stat, is_force);
+}
+
 #ifdef __cplusplus
 }
 #endif

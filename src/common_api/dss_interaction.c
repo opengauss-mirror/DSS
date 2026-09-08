@@ -30,23 +30,35 @@
 extern "C" {
 #endif
 
-void dss_cli_get_err(dss_packet_t *pack, int32 *errcode, char **errmsg)
+status_t dss_cli_get_err(dss_packet_t *pack, int32 *errcode, char **errmsg)
 {
     dss_init_get(pack);
-    (void)dss_get_int32(pack, errcode);
-    (void)dss_get_str(pack, errmsg);
+    if (dss_get_int32(pack, errcode) != CM_SUCCESS) {
+        LOG_RUN_ERR("[DSS API] Failed to parse errcode from server error ack.");
+        return CM_ERROR;
+    }
+    if (dss_get_str(pack, errmsg) != CM_SUCCESS) {
+        LOG_RUN_ERR("[DSS API] Failed to parse errmsg from server error ack, errcode:%d.", *errcode);
+        return CM_ERROR;
+    }
     if (*errcode == ERR_DSS_MES_ILL) {
-        LOG_RUN_ERR("[DSS API] ABORT INFO : server broadcast failed, errcode:%d, errmsg:%s.", *errcode, *errmsg);
+        const char *safe_errmsg = (*errmsg == NULL) ? "" : *errmsg;
+        LOG_RUN_ERR("[DSS API] ABORT INFO : server broadcast failed, errcode:%d, errmsg:%s.", *errcode, safe_errmsg);
         cm_fync_logfile();
         dss_exit(1);
     }
+    return CM_SUCCESS;
 }
 
 int32 dss_get_pack_err(dss_conn_t *conn, dss_packet_t *pack)
 {
     int32 errcode = -1;
     char *errmsg = NULL;
-    dss_cli_get_err(pack, &errcode, &errmsg);
+    if (dss_cli_get_err(pack, &errcode, &errmsg) != CM_SUCCESS) {
+        LOG_RUN_ERR("[DSS API] Invalid error ack from server, disconnect.");
+        cs_disconnect(&conn->pipe);
+        return CM_ERROR;
+    }
     if (errcode == ERR_DSS_VERSION_NOT_MATCH) {
         conn->server_version = dss_get_version(pack);
         uint32 new_proto_version = MIN(DSS_PROTO_VERSION, conn->server_version);
@@ -59,10 +71,9 @@ int32 dss_get_pack_err(dss_conn_t *conn, dss_packet_t *pack)
         dss_set_version(&conn->pack, conn->proto_version);
         dss_set_client_version(&conn->pack, DSS_PROTO_VERSION);
         return errcode;
-    } else {
-        DSS_THROW_ERROR_EX(errcode, "%s", errmsg);
-        return CM_ERROR;
     }
+    DSS_THROW_ERROR_EX(errcode, "%s", (errmsg == NULL) ? "" : errmsg);
+    return CM_ERROR;
 }
 
 #ifdef __cplusplus
