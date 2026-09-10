@@ -30,6 +30,7 @@
 #include "dss_file.h"
 #include "dss_thv.h"
 #include "dss_vtable.h"
+#include "dss_ctrl_def.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -457,6 +458,25 @@ static int32 dss_try_append_volume(dss_volume_t *volume, int64 offset, char *buf
 
 #endif
 
+static status_t dss_check_vg_header_write(
+    const dss_volume_t *volume, int64 offset, const dss_vg_header_t *header, int32 size)
+{
+    /* The initial full-control write is part of VG creation and happens before valid_flag is set. */
+    if (volume == NULL || (offset != DSS_CTRL_VG_DATA_OFFSET && offset != DSS_CTRL_BAK_VG_DATA_OFFSET) ||
+        size == (int32)sizeof(dss_ctrl_t)) {
+        return CM_SUCCESS;
+    }
+    if (header != NULL && size == (int32)DSS_VG_DATA_SIZE && header->valid_flag == DSS_CTRL_VALID_FLAG) {
+        return CM_SUCCESS;
+    }
+    if (volume->id != 0) {
+        return CM_SUCCESS;
+    }
+    LOG_RUN_ERR("Reject invalid vg header write, volume:%s, id:%u, offset:%lld, size:%d.",
+        volume->name_p == NULL ? "" : volume->name_p, volume->id, (long long)offset, size);
+    return CM_ERROR;
+}
+
 status_t dss_read_volume(dss_volume_t *volume, int64 offset, void *buf, int32 size)
 {
     status_t ret;
@@ -498,6 +518,10 @@ status_t dss_write_volume(dss_volume_t *volume, int64 offset, const void *buf, i
 {
     status_t ret;
     int32 curr_size, total_size;
+
+    if (dss_check_vg_header_write(volume, offset, (const dss_vg_header_t *)buf, size) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
 #ifdef WIN32
     if (dss_seek_volume(volume, offset) != CM_SUCCESS) {
         LOG_RUN_ERR("failed to seek volume %s , volume id:%u", volume->name_p, volume->id);
