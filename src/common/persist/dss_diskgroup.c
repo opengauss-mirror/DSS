@@ -610,6 +610,112 @@ void dss_checksum_vg_ctrl(dss_vg_info_item_t *vg_item)
     LOG_RUN_INF("Succeed to checksum vg:%s ctrl.", vg_item->vg_name);
 }
 
+static bool32 dss_is_vg_header_valid(const dss_vg_header_t *header, const char *vg_name)
+{
+    if (header == NULL || header->valid_flag != DSS_CTRL_VALID_FLAG) {
+        return CM_FALSE;
+    }
+    if (dss_get_checksum((void *)header, DSS_VG_DATA_SIZE) != header->checksum) {
+        return CM_FALSE;
+    }
+    if (vg_name != NULL && strncmp(header->vg_name, vg_name, DSS_MAX_NAME_LEN) != 0) {
+        return CM_FALSE;
+    }
+    return CM_TRUE;
+}
+
+static status_t dss_recover_vg_header_locked(dss_vg_info_item_t *vg_item, dss_volume_t *volume)
+{
+#ifndef WIN32
+    char primary[DSS_VG_DATA_SIZE] __attribute__((__aligned__(DSS_DISK_UNIT_SIZE)));
+    char backup[DSS_VG_DATA_SIZE] __attribute__((__aligned__(DSS_DISK_UNIT_SIZE)));
+#else
+    char primary[DSS_VG_DATA_SIZE];
+    char backup[DSS_VG_DATA_SIZE];
+#endif
+    status_t status = CM_ERROR;
+
+    if (volume->handle == DSS_INVALID_HANDLE &&
+        dss_open_volume(vg_item->entry_path, NULL, DSS_INSTANCE_OPEN_FLAG, volume) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to open volume %s before recovering vg:%s header.", vg_item->entry_path, vg_item->vg_name);
+    } else if (dss_read_volume(volume, DSS_CTRL_VG_DATA_OFFSET, primary, (int32)DSS_VG_DATA_SIZE) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to read primary vg:%s header before recovery.", vg_item->vg_name);
+    } else if (dss_is_vg_header_valid((dss_vg_header_t *)primary, vg_item->vg_name)) {
+        if (memcpy_s(vg_item->dss_ctrl->vg_data, DSS_VG_DATA_SIZE, primary, DSS_VG_DATA_SIZE) != EOK) {
+            LOG_RUN_ERR("Failed to refresh primary vg:%s header in memory.", vg_item->vg_name);
+        } else {
+            status = CM_SUCCESS;
+        }
+    } else if (dss_read_volume(volume, DSS_CTRL_BAK_VG_DATA_OFFSET, backup, (int32)DSS_VG_DATA_SIZE) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to read backup vg:%s header at offset %lld.", vg_item->vg_name,
+            (long long)DSS_CTRL_BAK_VG_DATA_OFFSET);
+    } else if (!dss_is_vg_header_valid((dss_vg_header_t *)backup, vg_item->vg_name)) {
+        LOG_RUN_ERR("Both primary and backup vg:%s headers are invalid.", vg_item->vg_name);
+    } else if (memcpy_s(vg_item->dss_ctrl->vg_data, DSS_VG_DATA_SIZE, backup, DSS_VG_DATA_SIZE) != EOK) {
+        LOG_RUN_ERR("Failed to copy backup vg:%s header to memory.", vg_item->vg_name);
+    } else {
+        status = dss_write_ctrl_to_disk(vg_item, DSS_CTRL_VG_DATA_OFFSET, vg_item->dss_ctrl->vg_data,
+            DSS_VG_DATA_SIZE);
+        if (status != CM_SUCCESS) {
+            LOG_RUN_ERR("Failed to persist recovered vg:%s header to primary disk.", vg_item->vg_name);
+        } else {
+            LOG_RUN_INF("Recovered vg:%s primary header from backup.", vg_item->vg_name);
+        }
+    }
+    return status;
+}
+
+static status_t dss_recover_vg_header_from_bak(dss_vg_info_item_t *vg_item)
+{
+    dss_config_t *inst_cfg = dss_get_inst_cfg();
+    dss_volume_t *volume = &vg_item->volume_handle[0];
+    status_t status;
+
+    if (dss_lock_vg_storage_w(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to acquire write lock before recovering vg:%s header.", vg_item->vg_name);
+        return CM_ERROR;
+    }
+    status = dss_recover_vg_header_locked(vg_item, volume);
+    if (dss_unlock_vg_storage(vg_item, vg_item->entry_path, inst_cfg) != CM_SUCCESS) {
+        LOG_RUN_ERR("Failed to release write lock after recovering vg:%s header.", vg_item->vg_name);
+        status = CM_ERROR;
+    }
+    return status;
+}
+
+static status_t dss_check_vg_header_write(
+    const dss_vg_info_item_t *vg_item, int64 offset, const dss_vg_header_t *header, uint32 size)
+{
+    if (offset != DSS_CTRL_VG_DATA_OFFSET && offset != DSS_CTRL_BAK_VG_DATA_OFFSET) {
+        return CM_SUCCESS;
+    }
+    if (header == NULL || size != DSS_VG_DATA_SIZE || !dss_is_vg_header_valid(header, vg_item->vg_name)) {
+        LOG_RUN_ERR("Reject invalid vg:%s header write, offset:%lld, size:%u.", vg_item->vg_name,
+            (long long)offset, size);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
+static status_t dss_validate_or_recover_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock)
+{
+    if (dss_is_vg_header_valid(&vg_item->dss_ctrl->vg_info, vg_item->vg_name)) {
+        return CM_SUCCESS;
+    }
+    if (!is_lock) {
+        DSS_THROW_ERROR(ERR_DSS_VG_CHECK_NOT_INIT);
+        LOG_RUN_ERR("Invalid vg %s ctrl loaded without recovery authority.", vg_item->vg_name);
+        return CM_ERROR;
+    }
+    LOG_RUN_WAR("Invalid vg %s primary header, try to recover it from backup.", vg_item->vg_name);
+    if (dss_recover_vg_header_from_bak(vg_item) != CM_SUCCESS) {
+        DSS_THROW_ERROR(ERR_DSS_VG_CHECK_NOT_INIT);
+        LOG_RUN_ERR("Failed to recover invalid vg %s ctrl.", vg_item->vg_name);
+        return CM_ERROR;
+    }
+    return CM_SUCCESS;
+}
+
 // NOTE:only called initializing.no check redo and recovery.
 status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock)
 {
@@ -642,9 +748,7 @@ status_t dss_load_vg_ctrl(dss_vg_info_item_t *vg_item, bool32 is_lock)
             return CM_ERROR;
         }
     }
-    if (!DSS_VG_IS_VALID(vg_item->dss_ctrl)) {
-        DSS_THROW_ERROR(ERR_DSS_VG_CHECK_NOT_INIT);
-        LOG_RUN_ERR("Invalid vg %s ctrl", vg_item->vg_name);
+    if (dss_validate_or_recover_vg_ctrl(vg_item, is_lock) != CM_SUCCESS) {
         return CM_ERROR;
     }
     if (vg_item->id == 0 && vg_item->dss_ctrl->vg_info.proto_version > DSS_PROTO_VERSION) {
@@ -1256,6 +1360,10 @@ status_t dss_write_ctrl_to_disk(dss_vg_info_item_t *vg_item, int64 offset, void 
     CM_ASSERT(vg_item != NULL);
     CM_ASSERT(buf != NULL);
     status_t status;
+
+    if (dss_check_vg_header_write(vg_item, offset, (const dss_vg_header_t *)buf, size) != CM_SUCCESS) {
+        return CM_ERROR;
+    }
 
     if (vg_item->volume_handle[0].handle != DSS_INVALID_HANDLE) {
         return dss_write_volume_inst(vg_item, &vg_item->volume_handle[0], offset, buf, size);
@@ -2182,6 +2290,17 @@ status_t dss_read_volume_4standby(const char *vg_name, uint32 volume_id, int64 o
     if (volume_id >= DSS_MAX_VOLUMES) {
         LOG_RUN_ERR("Read volume for standby failed, vg(%s) volume id[%u] error.", vg_name, volume_id);
         return CM_ERROR;
+    }
+
+    if (volume_id == 0 && offset == DSS_CTRL_VG_DATA_OFFSET && size == sizeof(dss_ctrl_t) && buf != NULL &&
+        vg_item->dss_ctrl != NULL && dss_is_vg_header_valid(&vg_item->dss_ctrl->vg_info, vg_item->vg_name)) {
+        errno_t errcode = memcpy_s(buf, size, vg_item->dss_ctrl, sizeof(dss_ctrl_t));
+        if (errcode != EOK) {
+            LOG_RUN_ERR("Read volume for standby failed, copy vg(%s) ctrl from memory error.", vg_name);
+            return CM_ERROR;
+        }
+        LOG_DEBUG_INF("Load vg(%s) ctrl from active memory for standby.", vg_name);
+        return CM_SUCCESS;
     }
 
     dss_volume_t *volume = &vg_item->volume_handle[volume_id];
