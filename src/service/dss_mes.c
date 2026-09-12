@@ -1747,19 +1747,14 @@ void dss_proc_join_cluster_req(dss_session_t *session, mes_msg_t *msg)
         return;
     }
     dss_message_head_t *req_head = (dss_message_head_t *)msg->buffer;
-    if (msg->size != sizeof(dss_join_cluster_req_t) || req_head->size != sizeof(dss_join_cluster_req_t)) {
+    if (req_head->size != sizeof(dss_join_cluster_req_t)) {
         LOG_RUN_ERR("Proc join cluster from remote node:%u check req msg fail.", (uint32)(req_head->src_inst));
-        return;
-    }
-    if (msg->src_inst >= DSS_MAX_INSTANCES) {
-        LOG_RUN_ERR("Proc join cluster from invalid MES node:%u.", (uint32)msg->src_inst);
         return;
     }
 
     dss_join_cluster_req_t *req = (dss_join_cluster_req_t *)msg->buffer;
-    dss_config_t *cfg = dss_get_inst_cfg();
-    uint16 dst_inst = (uint16)msg->src_inst;
-    uint16 src_inst = (uint16)cfg->params.inst_id;
+    uint16 dst_inst = req_head->src_inst;
+    uint16 src_inst = req_head->dst_inst;
     uint32 version = req_head->msg_proto_ver;
     ruid_type ruid = req_head->ruid;
     // please solve with your proto_ver
