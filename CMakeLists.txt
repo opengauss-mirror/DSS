@@ -43,14 +43,14 @@ EXECUTE_PROCESS(
 )
 
 # DSS_VERSION_STR can be used for api/cmd/server
-# DSS_VERSION_STR like: (openGauss build ab4a14da) compiled at 2000-01-01 00:00:00 debug)
+# DSS_VERSION_STR like: (openGauss 7.0.0 build ab4a14da) compiled at 2000-01-01 00:00:00 debug)
 if (ENABLE_DSSTEST)
     SET(DSS_VERSION_STR
-        "(${COMPONENT} build ${COMMIT_ID}) compiled at ${COMPILE_TIME} ${CMAKE_BUILD_TYPE} (DSSTEST ON)"
+        "(${COMPONENT} 7.0.0 build ${COMMIT_ID}) compiled at ${COMPILE_TIME} ${CMAKE_BUILD_TYPE} (DSSTEST ON)"
     )
 else()
     SET(DSS_VERSION_STR
-        "(${COMPONENT} build ${COMMIT_ID}) compiled at ${COMPILE_TIME} ${CMAKE_BUILD_TYPE} (DSSTEST OFF)"
+        "(${COMPONENT} 7.0.0 build ${COMMIT_ID}) compiled at ${COMPILE_TIME} ${CMAKE_BUILD_TYPE} (DSSTEST OFF)"
     )
 endif()
 
