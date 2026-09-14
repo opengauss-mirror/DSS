@@ -1600,6 +1600,15 @@ status_t dss_process_command(dss_session_t *session)
 
 status_t dss_proc_standby_req(dss_session_t *session)
 {
+    dss_cmd_type_e cmd = (dss_cmd_type_e)session->recv_pack.head->cmd;
+    dss_cmd_hdl_t *handle = dss_get_cmd_handle(cmd);
+    // Allow the internal switch-lock request, which is not an automatically forwarded command.
+    if (handle == NULL || handle->proc == NULL ||
+        (handle->exec_on_active != CM_TRUE && cmd != DSS_CMD_SWITCH_LOCK)) {
+        LOG_RUN_ERR("Reject standby-to-active command:%d without forwarding permission.", (int32)cmd);
+        return ERR_DSS_UNSUPPORTED_CMD;
+    }
+
     if (dss_is_readonly() == CM_TRUE && !dss_need_exec_local()) {
         dss_config_t *cfg = dss_get_inst_cfg();
         uint32 id = (uint32)(cfg->params.inst_id);
