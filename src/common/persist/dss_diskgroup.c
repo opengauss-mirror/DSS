@@ -1984,6 +1984,10 @@ status_t dss_init_volume(dss_vg_info_item_t *vg_item, dss_volume_ctrl_t *volume)
 
 static status_t dss_check_free_volume(dss_vg_info_item_t *vg_item, uint32 volumeid)
 {
+    if (volumeid >= DSS_MAX_VOLUMES) {
+        LOG_DEBUG_ERR("[VOL] Invalid volume id %u, max is %u.", volumeid, DSS_MAX_VOLUMES);
+        return CM_ERROR;
+    }
     if (vg_item->dss_ctrl->volume.defs[volumeid].flag == VOLUME_OCCUPY) {
         return CM_SUCCESS;
     }
@@ -2022,6 +2026,11 @@ status_t dss_check_volume(dss_vg_info_item_t *vg_item, uint32 volumeid)
 {
     status_t status = CM_SUCCESS;
     dss_volume_ctrl_t *volume;
+
+    if (volumeid != CM_INVALID_ID32 && volumeid >= DSS_MAX_VOLUMES) {
+        LOG_DEBUG_ERR("[VOL] Invalid volume id %u, max is %u.", volumeid, DSS_MAX_VOLUMES);
+        return CM_ERROR;
+    }
 
     if (volumeid == CM_INVALID_ID32) {
         volume = (dss_volume_ctrl_t *)cm_malloc_align(DSS_ALIGN_SIZE, DSS_VOLUME_CTRL_SIZE);
@@ -2130,7 +2139,8 @@ status_t dss_read_volume_inst(
         }
         status = remote_read_proc(vg_item->vg_name, volume, offset, buf, size);
         if (status != CM_SUCCESS) {
-            if (status == DSS_READ4STANDBY_ERR || get_instance_status_proc() == DSS_STATUS_PREPARE) {
+            if (status == DSS_READ4STANDBY_ERR || status == ERR_DSS_VERSION_NOT_MATCH ||
+                get_instance_status_proc() == DSS_STATUS_PREPARE) {
                 LOG_RUN_ERR("Failed to load disk(%s) data from the active node, result:%d", volume->name_p, status);
                 return CM_ERROR;
             }

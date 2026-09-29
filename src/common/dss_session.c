@@ -303,7 +303,7 @@ status_t dss_lock_shm_meta_s_without_stack(
             cm_latch_stat_inc(stat, count);
             return CM_SUCCESS;
         }
-        if ((shared_latch->latch.stat == LATCH_STATUS_S) || (shared_latch->latch.stat == LATCH_STATUS_IX && is_force)) {
+        if (dss_latch_s_can_share(shared_latch->latch.stat, is_force)) {
             shared_latch->latch.shared_count++;
             shared_latch->latch_extent.shared_sid_count += sid;
             cm_spin_unlock(&shared_latch->latch.lock);
@@ -315,7 +315,7 @@ status_t dss_lock_shm_meta_s_without_stack(
         if (stat != NULL) {
             stat->misses++;
         }
-        while (shared_latch->latch.stat != LATCH_STATUS_IDLE && shared_latch->latch.stat != LATCH_STATUS_S) {
+        while (!dss_latch_s_can_acquire(shared_latch->latch.stat, is_force)) {
             count++;
             if (count < GS_SPIN_COUNT) {
                 continue;
@@ -374,7 +374,7 @@ status_t dss_lock_shm_meta_s_with_stack(
             cm_latch_stat_inc(stat, count);
             return CM_SUCCESS;
         }
-        if ((shared_latch->latch.stat == LATCH_STATUS_S) || (shared_latch->latch.stat == LATCH_STATUS_IX && is_force)) {
+        if (dss_latch_s_can_share(shared_latch->latch.stat, is_force)) {
             session->latch_stack.op = LATCH_SHARED_OP_LATCH_S_BEG;
 
             shared_latch->latch.shared_count++;
@@ -394,7 +394,7 @@ status_t dss_lock_shm_meta_s_with_stack(
         if (stat != NULL) {
             stat->misses++;
         }
-        while (shared_latch->latch.stat != LATCH_STATUS_IDLE && shared_latch->latch.stat != LATCH_STATUS_S) {
+        while (!dss_latch_s_can_acquire(shared_latch->latch.stat, is_force)) {
             count++;
             if (count < GS_SPIN_COUNT) {
                 continue;

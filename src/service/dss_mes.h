@@ -60,6 +60,9 @@ typedef enum en_dss_msg_buffer_number {
 #define DSS_MES_PRIO_CNT 2
 #define DSS_MES_THREAD_NUM 2
 #define DSS_MES_TRY_TIMES 100
+#define DSS_MES_VERSION_RETRY_MAX ((uint32)3)
+#define DSS_MES_VERSION_RETRY_TIMEOUT_MS 10000
+#define DSS_MES_PROTO_VER_BIT_WIDTH ((uint32)32)
 #define DSS_BROADCAST_WAIT_INFINITE (0xFFFFFFFF)
 #define DSS_IS_INST_SEND(bits, id) (((bits) >> (id)) & 0x1)
 #define DSS_MSG_BUFFER_QUEUE_NUM (8)

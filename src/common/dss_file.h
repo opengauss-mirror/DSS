@@ -331,6 +331,11 @@ static inline bool32 is_ft_root_block(ftid_t ftid)
     return ftid.au == 0 && ftid.block == 0;
 }
 
+static inline bool32 dss_is_valid_ftid(ftid_t ftid)
+{
+    return (bool32)(ftid.volume < DSS_MAX_VOLUMES);
+}
+
 static inline dss_block_ctrl_t *dss_get_block_ctrl_by_node(gft_node_t *node)
 {
     if (is_ft_root_block(node->id)) {

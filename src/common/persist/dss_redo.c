@@ -1798,7 +1798,14 @@ status_t rp_redo_truncate_fs_block_batch(dss_session_t *session, dss_vg_info_ite
             src_begin++;
         }
         src_block->head.used_num = (uint16_t)(redo->src_old_used_num - redo->count);
-        dst_block->head.used_num = redo->dst_old_used_num + redo->count;
+        /*
+         * Truncate batch overwrites dst[dst_begin, dst_begin+count). used_num must cover
+         * that range, but must not grow by count when dst_begin < dst_old_used_num
+         * (the recycle-entry detach path used to record old_used_num=1 at dst_begin=0).
+         */
+        uint16 replay_dst_used_num = (uint16)(redo->dst_begin + redo->count);
+        dst_block->head.used_num =
+            (redo->dst_old_used_num > replay_dst_used_num) ? redo->dst_old_used_num : replay_dst_used_num;
     }
 
     status = dss_update_fs_bitmap_block_disk(vg_item, src_block, DSS_FILE_SPACE_BLOCK_SIZE, CM_FALSE);
@@ -1836,7 +1843,12 @@ status_t rb_redo_truncate_fs_block_batch(dss_session_t *session, dss_vg_info_ite
     }
     DSS_ASSERT_LOG(src_block->head.used_num == redo->src_old_used_num, "src block used num is %u, except is %u.",
         src_block->head.used_num, redo->src_old_used_num);
-    DSS_ASSERT_LOG(dst_block->head.used_num == redo->dst_old_used_num, "dst block used num is %u, except is %u.",
+    /*
+     * dst_old_used_num is the logical base after an uncommitted detach SET (used_num=0),
+     * while disk still holds the last committed recycle-init state (used_num=1).
+     * Reloading from disk already restores that committed state.
+     */
+    DSS_ASSERT_LOG(dst_block->head.used_num >= redo->dst_old_used_num, "dst block used num is %u, except >= %u.",
         dst_block->head.used_num, redo->dst_old_used_num);
     return CM_SUCCESS;
 }
